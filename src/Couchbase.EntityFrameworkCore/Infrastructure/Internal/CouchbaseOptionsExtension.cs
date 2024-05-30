@@ -7,61 +7,41 @@ using Couchbase.EntityFrameworkCore.Extensions;
 
 namespace Couchbase.EntityFrameworkCore.Infrastructure.Internal;
 
-public class CouchbaseDbOptionsExtension : IDbContextOptionsExtension
+public class CouchbaseOptionsExtension : IDbContextOptionsExtension
 {
     private ClusterOptions? _clusterOptions;
-    private string? _connectionString;
-    private string? _bucketName;
-    private ICluster? _cluster;
     private DbContextOptionsExtensionInfo? _info;
     
-    public CouchbaseDbOptionsExtension()
+    public CouchbaseOptionsExtension()
     {
     }
 
-    public CouchbaseDbOptionsExtension(CouchbaseDbOptionsExtension copyFrom)
+    public CouchbaseOptionsExtension(CouchbaseOptionsExtension copyFrom)
     {
-        _cluster = copyFrom._cluster;
+        _clusterOptions = copyFrom._clusterOptions;
     }
-
-    public CouchbaseDbOptionsExtension(ICluster cluster)
-    {
-        _cluster = cluster;
-    }
-
-    public CouchbaseDbOptionsExtension(ClusterOptions clusterOptions)
-    {
-        _clusterOptions = clusterOptions;
-    }
-
-    public CouchbaseDbOptionsExtension(string connectionString, string bucketName, ClusterOptions clusterOptions = null)
-    {
-        _connectionString = connectionString;
-        _bucketName = bucketName;
-        _clusterOptions = clusterOptions;
-    }
-
-    public CouchbaseDbOptionsExtension WithCluster(ICluster cluster)
-    {
-        var clone = Clone();
-        clone._cluster = cluster;
-        return clone;
-    }
-
-    public CouchbaseDbOptionsExtension WithConnectionString(string connectionString)
-    {
-        var clone = Clone();
-        clone._connectionString = connectionString;
-        return clone;
-    }
-
-    private CouchbaseDbOptionsExtension Clone() => new(this);
     
-    public void ApplyServices(IServiceCollection services) => services.AddEntityFrameworkCouchbaseProvider();
+    public CouchbaseOptionsExtension(ClusterOptions clusterOptions)
+    {
+        _clusterOptions = clusterOptions;
+    }
+
+    public CouchbaseOptionsExtension WithClusterOptions(ClusterOptions clusterOptions)
+    {
+        var clone = Clone();
+        clone._clusterOptions = clusterOptions;
+        return clone;
+    }
+    
+    private CouchbaseOptionsExtension Clone() => new(this);
+    
+    public void ApplyServices(IServiceCollection services) => services.AddEntityFrameworkCouchbaseProvider(this);
 
     public void Validate(IDbContextOptions options)
     {
     }
+    
+    internal ClusterOptions ClusterOptions => _clusterOptions;
 
     public DbContextOptionsExtensionInfo Info => _info ??= new CouchbaseExtensionInfo(this);
 
@@ -74,6 +54,8 @@ public class CouchbaseDbOptionsExtension : IDbContextOptionsExtension
             : base(extension)
         {
         }
+
+        private new CouchbaseOptionsExtension Extension => (CouchbaseOptionsExtension)base.Extension;
 
         public override int GetServiceProviderHashCode()
         {
@@ -92,10 +74,11 @@ public class CouchbaseDbOptionsExtension : IDbContextOptionsExtension
 
         }
 
-        public override bool ShouldUseSameServiceProvider(DbContextOptionsExtensionInfo other)
-        {
-            throw new NotImplementedException();
-        }
+        public override bool ShouldUseSameServiceProvider(DbContextOptionsExtensionInfo other) =>
+            other is CouchbaseExtensionInfo otherInfo
+            && Extension._clusterOptions == otherInfo.Extension._clusterOptions;
+        
+        
 
         public override void PopulateDebugInfo(IDictionary<string, string> debugInfo)
         {

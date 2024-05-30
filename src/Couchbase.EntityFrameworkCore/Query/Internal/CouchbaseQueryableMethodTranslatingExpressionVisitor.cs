@@ -1,12 +1,15 @@
 using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Query;
+using Microsoft.EntityFrameworkCore.Query.SqlExpressions;
 using Microsoft.EntityFrameworkCore.Storage;
 
 namespace Couchbase.EntityFrameworkCore.Query.Internal;
 
 public class CouchbaseQueryableMethodTranslatingExpressionVisitor : QueryableMethodTranslatingExpressionVisitor
 {
+    private readonly RelationalSqlTranslatingExpressionVisitor _sqlTranslator;
+    //private readonly RelationalQueryableMethodTranslatingExpressionVisitor.SharedTypeEntityExpandingExpressionVisitor _sharedTypeEntityExpandingExpressionVisitor;
     public CouchbaseQueryableMethodTranslatingExpressionVisitor(QueryableMethodTranslatingExpressionVisitorDependencies dependencies, QueryCompilationContext queryCompilationContext, bool subquery) 
         : base(dependencies, queryCompilationContext, subquery)
     {
@@ -213,6 +216,42 @@ public class CouchbaseQueryableMethodTranslatingExpressionVisitor : QueryableMet
 
     protected override ShapedQueryExpression? TranslateWhere(ShapedQueryExpression source, LambdaExpression predicate)
     {
+        SqlExpression sqlExpression = this.TranslateLambdaExpression(source, predicate);
+        if (sqlExpression == null)
+            return (ShapedQueryExpression) null;
+        ((SelectExpression) source.QueryExpression).ApplyPredicate(sqlExpression);
+        return source;
+    }
+    
+    protected virtual SqlExpression? TranslateLambdaExpression(
+        ShapedQueryExpression shapedQueryExpression,
+        LambdaExpression lambdaExpression)
+    {
+        return this.TranslateExpression(this.RemapLambdaBody(shapedQueryExpression, lambdaExpression));
+    }
+    
+    protected virtual SqlExpression? TranslateExpression(Expression expression)
+    {
+        SqlExpression sqlExpression = this._sqlTranslator.Translate(expression);
+        if (sqlExpression != null || this._sqlTranslator.TranslationErrorDetails == null)
+            return sqlExpression;
+        this.AddTranslationErrorDetails(this._sqlTranslator.TranslationErrorDetails);
+        return sqlExpression;
+    }
+    
+    private Expression RemapLambdaBody(
+        ShapedQueryExpression shapedQueryExpression,
+        LambdaExpression lambdaExpression)
+    {
+        Expression lambdaBody = ReplacingExpressionVisitor.Replace((Expression) lambdaExpression.Parameters.Single<ParameterExpression>(), shapedQueryExpression.ShaperExpression, lambdaExpression.Body);
+        return this.ExpandSharedTypeEntities((SelectExpression) shapedQueryExpression.QueryExpression, lambdaBody);
+    }
+
+    private Expression ExpandSharedTypeEntities(
+        SelectExpression selectExpression,
+        Expression lambdaBody)
+    {
         throw new NotImplementedException();
+       // return this._sharedTypeEntityExpandingExpressionVisitor.Expand(selectExpression, lambdaBody);
     }
 }

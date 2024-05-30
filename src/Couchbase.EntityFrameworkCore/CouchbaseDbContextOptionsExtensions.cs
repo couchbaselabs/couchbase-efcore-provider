@@ -1,4 +1,6 @@
-﻿using Couchbase.EntityFrameworkCore.Infrastructure;
+﻿using System.Data.Common;
+using Couchbase.EntityFrameworkCore.Extensions;
+using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.EntityFrameworkCore.Infrastructure.Internal;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -7,28 +9,28 @@ namespace Couchbase.EntityFrameworkCore;
 
 public static class CouchbaseDbContextOptionsExtensions
 {
-    public static DbContextOptionsBuilder<TContext> UseCouchbase<TContext>(
-        this DbContextOptionsBuilder<TContext> optionsBuilder, 
-        ICluster cluster,
-        Action<ICouchbaseDbContextOptionsBuilder>? optionsAction = null) 
-        where TContext : DbContext 
-        => (DbContextOptionsBuilder<TContext>)UseCouchbaseDB(
-        optionsBuilder,
-        cluster,
-        optionsAction);
+  public static DbContextOptionsBuilder UseCouchbase(
+      this DbContextOptionsBuilder optionsBuilder, 
+      ClusterOptions clusterOptions,
+      Action<CouchbaseDbContextOptionsBuilder>? couchbaseActionOptions = null)
+  {
+    var extension = CouchbaseDbContextOptionsBuilderExtensions.GetOrCreateExtension(optionsBuilder, clusterOptions);
+    ((IDbContextOptionsBuilderInfrastructure) optionsBuilder).AddOrUpdateExtension(extension);
+    CouchbaseDbContextOptionsBuilderExtensions.ConfigureWarnings(optionsBuilder);  
+    couchbaseActionOptions?.Invoke(new CouchbaseDbContextOptionsBuilder(optionsBuilder, clusterOptions));
+    return optionsBuilder;
+  }
+  
 
-    public static DbContextOptionsBuilder UseCouchbaseDB(this DbContextOptionsBuilder optionsBuilder,
-        ICluster cluster, Action<ICouchbaseDbContextOptionsBuilder>? optionsAction = null)
-    {
-        ArgumentNullException.ThrowIfNull(optionsBuilder);
-        ArgumentNullException.ThrowIfNull(cluster);
+  #nullable disable
+  private static CouchbaseOptionsExtension GetOrCreateExtension(DbContextOptionsBuilder options)
+  {
+    return options.Options.FindExtension<CouchbaseOptionsExtension>() ?? new CouchbaseOptionsExtension();
+  }
 
-        var extension = (optionsBuilder.Options.FindExtension<CouchbaseDbOptionsExtension>()
-                         ?? new CouchbaseDbOptionsExtension())
-            .WithCluster(cluster);
-        
-        ((IDbContextOptionsBuilderInfrastructure)optionsBuilder).AddOrUpdateExtension(extension);
-        optionsAction?.Invoke(new CouchbaseDbContextOptionsBuilder(optionsBuilder));
-        return optionsBuilder;
-    }
+  private static void ConfigureWarnings(DbContextOptionsBuilder optionsBuilder)
+  {
+    CoreOptionsExtension extension = RelationalOptionsExtension.WithDefaultWarningConfiguration(optionsBuilder.Options.FindExtension<CoreOptionsExtension>() ?? new CoreOptionsExtension());
+    ((IDbContextOptionsBuilderInfrastructure) optionsBuilder).AddOrUpdateExtension<CoreOptionsExtension>(extension);
+  }
 }
