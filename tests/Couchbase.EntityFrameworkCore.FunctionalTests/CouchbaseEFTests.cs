@@ -31,22 +31,40 @@ public class CouchbaseEFTests
             .WithCredentials("Administrator", "password")
             .WithLogging(loggerFactory);
 
-        var cluster = await Cluster.ConnectAsync(options);
-        var context = TravelSampleDbContext.Create(cluster);
-        var airline = context.Find<Airline>("airline_", 10);//composite key
+        var context = new TravelSampleDbContext(options);
+        var airline = new Airline
+        {
+            Type = "airline",
+            Id = 10,
+            Callsign = "MILE-AIR",
+            Country = "United States",
+            Icao = "MLA",
+            Iata = "Q5",
+            Name = "40-Mile Air"
+        };
+            
+        context.Add(airline);
+        airline.Name = "foo";
+        context.Update(airline);
+        
+        var found = context.Find<Airline>("airline", 10);
+        context.Remove(airline);
+        await context.SaveChangesAsync();
     }
 
     public class TravelSampleDbContext : DbContext
     {
-        public TravelSampleDbContext(DbContextOptions options)
-            : base(options)
-        {
-        }
+        private readonly ClusterOptions _clusterOptions;
 
-        public static TravelSampleDbContext Create(ICluster cluster) =>
-            new(new DbContextOptionsBuilder<TravelSampleDbContext>()
-                .UseCouchbase(cluster)
-                .Options);
+        public TravelSampleDbContext(ClusterOptions clusterOptions)
+        {
+            _clusterOptions = clusterOptions;
+        }
+        protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+        {
+            optionsBuilder.UseCouchbase(_clusterOptions);
+            base.OnConfiguring(optionsBuilder);
+        }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
