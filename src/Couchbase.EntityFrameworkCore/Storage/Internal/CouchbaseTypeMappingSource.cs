@@ -4,12 +4,12 @@ using System.Text.Json.Nodes;
 
 namespace Couchbase.EntityFrameworkCore.Storage.Internal;
 
-public class CouchbaseTypeMappingSource: TypeMappingSource
+public class CouchbaseTypeMappingSource: RelationalTypeMappingSource
 {
     private readonly Dictionary<Type, CouchbaseTypeMapping> _clrTypeMappings;
     
-    public CouchbaseTypeMappingSource(TypeMappingSourceDependencies dependencies) 
-        : base(dependencies)
+    public CouchbaseTypeMappingSource(TypeMappingSourceDependencies dependencies, RelationalTypeMappingSourceDependencies relationalDependencies) 
+        : base(dependencies, relationalDependencies)
     {
         _clrTypeMappings
             = new Dictionary<Type, CouchbaseTypeMapping>
@@ -30,14 +30,14 @@ public class CouchbaseTypeMappingSource: TypeMappingSource
             };
     }
 
-    protected override CoreTypeMapping? FindMapping(in TypeMappingInfo mappingInfo)
+    protected override RelationalTypeMapping? FindMapping(in RelationalTypeMappingInfo mappingInfo)
     {
-        var clrType = mappingInfo.ClrType;
-        if (clrType == null)
-        {
-            throw new InvalidOperationException($"Cannot map type {clrType}");
-        }
+       var clrType = mappingInfo.ClrType;
+       if (clrType == null)
+       {
+           throw new InvalidOperationException($"Cannot map type {clrType}");
+       }
 
-        return _clrTypeMappings.TryGetValue(clrType, out var mapping) ? mapping : base.FindMapping(in mappingInfo);
+       return _clrTypeMappings.TryGetValue(clrType, out var mapping) ? mapping : base.FindMapping(in mappingInfo);
     }
 }

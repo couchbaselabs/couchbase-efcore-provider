@@ -5,28 +5,31 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 namespace Couchbase.EntityFrameworkCore.Storage.Internal;
 
-public class CouchbaseTypeMapping : CoreTypeMapping
+public class CouchbaseTypeMapping : RelationalTypeMapping
 {
-    protected CouchbaseTypeMapping(CoreTypeMappingParameters parameters) : base(parameters)
+    private readonly Type _clrType;
+    private readonly ValueComparer? _comparer;
+    private readonly ValueComparer? _keyComparer;
+    private readonly JsonValueReaderWriter? _jsonValueReaderWriter;
+
+    protected CouchbaseTypeMapping(RelationalTypeMappingParameters relationalParameters) : base(relationalParameters)
     {
     }
     
-    public CouchbaseTypeMapping(
+   public CouchbaseTypeMapping(
         Type clrType,
         ValueComparer? comparer = null,
         ValueComparer? keyComparer = null,
-        JsonValueReaderWriter? jsonValueReaderWriter = null)
-        : base(
-            new CoreTypeMappingParameters(
-                clrType,
-                converter: null,
-                comparer,
-                keyComparer,
-                jsonValueReaderWriter: jsonValueReaderWriter))
-    {
-    }
+        JsonValueReaderWriter? jsonValueReaderWriter = null) 
+       : base(new RelationalTypeMappingParameters(new CoreTypeMappingParameters(clrType), "couchbase"))
+   {
+       _clrType = clrType;
+       _comparer = comparer;
+       _keyComparer = keyComparer;
+       _jsonValueReaderWriter = jsonValueReaderWriter;
+   }
 
-    protected override CoreTypeMapping Clone(CoreTypeMappingParameters parameters)
+    protected override RelationalTypeMapping Clone(RelationalTypeMappingParameters parameters)
     {
         return new CouchbaseTypeMapping(parameters);
     }
