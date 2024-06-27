@@ -1,9 +1,11 @@
+using System.Linq.Expressions;
 using System.Reflection;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking.Internal;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Metadata.Internal;
+using Microsoft.EntityFrameworkCore.Query;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.EntityFrameworkCore.Update;
 using Database = Microsoft.EntityFrameworkCore.Storage.Database;
@@ -17,6 +19,13 @@ public class CouchbaseDatabaseWrapper(DatabaseDependencies dependencies, ICouchb
     {
         throw new NotImplementedException();
     }
+
+  
+   /*public override Func<QueryContext, TResult> CompileQuery<TResult>(Expression query, bool async)
+    {
+        var compiledQuery = base.CompileQuery<TResult>(query, async);
+        return compiledQuery;
+    }*/
 
     public override async Task<int> SaveChangesAsync(IList<IUpdateEntry> entries, CancellationToken cancellationToken = new CancellationToken())
     {

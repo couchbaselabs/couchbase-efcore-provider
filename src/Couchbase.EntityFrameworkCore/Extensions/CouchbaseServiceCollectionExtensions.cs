@@ -1,6 +1,8 @@
 using Couchbase.EntityFrameworkCore.Diagnostics.Internal;
 using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.EntityFrameworkCore.Infrastructure.Internal;
+using Couchbase.EntityFrameworkCore.Metadata.Conventions;
+using Couchbase.EntityFrameworkCore.Query;
 using Couchbase.EntityFrameworkCore.Query.Internal;
 using Couchbase.EntityFrameworkCore.Storage.Internal;
 using Microsoft.EntityFrameworkCore;
@@ -14,6 +16,7 @@ using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.EntityFrameworkCore.Update;
 using Microsoft.Extensions.DependencyInjection;
 using Couchbase.Extensions.DependencyInjection;
+using Microsoft.EntityFrameworkCore.Query.Internal;
 using Microsoft.Extensions.Logging;
 
 namespace Couchbase.EntityFrameworkCore.Extensions;
@@ -32,11 +35,9 @@ public static class CouchbaseServiceCollectionExtensions
             options.UseCouchbase(clusterOptions, couchbaseOptionsAction);
         });
 
-    public static IServiceCollection AddEntityFrameworkCouchbaseProvider(this IServiceCollection serviceCollection, CouchbaseOptionsExtension optionsExtension)
+    public static IServiceCollection AddEntityFrameworkCouchbaseProvider(this IServiceCollection serviceCollection,
+        CouchbaseOptionsExtension optionsExtension)
     {
-        if (serviceCollection is null)
-            throw new ArgumentNullException(nameof(serviceCollection));
-        
         serviceCollection.AddCouchbase(options =>
         {
             options.WithConnectionString(optionsExtension.ClusterOptions.ConnectionString);
@@ -45,48 +46,42 @@ public static class CouchbaseServiceCollectionExtensions
         serviceCollection.AddCouchbaseBucket<INamedBucketProvider>("default");
         serviceCollection.AddLogging(); //this should be injectible from the app side
         
-        new EntityFrameworkServicesBuilder(serviceCollection)
-
-            //The following registrations are required to pass basic Query tests (i.e. NorthwindWhereQueryRelationalTestBase)
-            .TryAdd<LoggingDefinitions, CouchbaseLoggingDefinitions>()
-            .TryAdd<IDatabase, CouchbaseDatabaseWrapper>()
+        var builder = new EntityFrameworkRelationalServicesBuilder(serviceCollection)
+            .TryAdd<IRelationalTypeMappingSource, CouchbaseTypeMappingSource>()
             .TryAdd<IDatabaseProvider, DatabaseProvider<CouchbaseOptionsExtension>>()
-            .TryAdd<ITypeMappingSource, CouchbaseTypeMappingSource>()
-            .TryAdd<IQueryContextFactory, CouchbaseQueryContextFactory>()
-            .TryAdd<IQueryableMethodTranslatingExpressionVisitorFactory, CouchbaseQueryableMethodTranslatingExpressionVisitorFactory>()
+            .TryAdd<LoggingDefinitions, CouchbaseLoggingDefinitions>()
+            .TryAdd<IModificationCommandBatchFactory, CouchbaseModificationCommandBatchFactory>()
+            .TryAdd<IUpdateSqlGenerator, CouchbaseUpdateSqlGenerator>()
+            .TryAdd<IAsyncQueryProvider, CouchbaseQueryProvider>()
+            .TryAdd<IQuerySqlGeneratorFactory, CouchbaseQuerySqlGeneratorFactory>()
+            .TryAdd<ISqlGenerationHelper, CouchbaseSqlGenerationHelper>()
             .TryAdd<IShapedQueryCompilingExpressionVisitorFactory, CouchbaseShapedQueryCompilingExpressionVisitorFactory>()
-             /*.TryAdd<IRelationalTypeMappingSource, SampleProviderTypeMappingSource>()
-             .TryAdd<ISqlGenerationHelper, SampleProviderSqlGenerationHelper>()
-             .TryAdd<IRelationalAnnotationProvider, SampleProviderAnnotationProvider>()
-             */.TryAdd<IModelValidator, CouchbaseModelValidator>()
-            /*.TryAdd<IProviderConventionSetBuilder, SampleProviderConventionSetBuilder>()
-            .TryAdd<IModificationCommandBatchFactory, SampleProviderModificationCommandBatchFactory>()
-            .TryAdd<IRelationalConnection>(p => p.GetService<ISampleProviderRelationalConnection>()!)
-            .TryAdd<IMigrationsSqlGenerator, SampleProviderMigrationsSqlGenerator>()
-            .TryAdd<IRelationalDatabaseCreator, SampleProviderDatabaseCreator>()
-            .TryAdd<IHistoryRepository, SampleProviderHistoryRepository>()
-            .TryAdd<IRelationalQueryStringFactory, SampleProviderQueryStringFactory>()
-            .TryAdd<IMethodCallTranslatorProvider, SampleProviderMethodCallTranslatorProvider>()
-            .TryAdd<IAggregateMethodCallTranslatorProvider, SampleProviderAggregateMethodCallTranslatorProvider>()
-            .TryAdd<IMemberTranslatorProvider, SampleProviderMemberTranslatorProvider>()
-            .TryAdd<IQuerySqlGeneratorFactory, SampleProviderQuerySqlGeneratorFactory>()
-            .TryAdd<IQueryableMethodTranslatingExpressionVisitorFactory, SampleProviderQueryableMethodTranslatingExpressionVisitorFactory>()
-            .TryAdd<IRelationalSqlTranslatingExpressionVisitorFactory, SampleProviderSqlTranslatingExpressionVisitorFactory>()
-            .TryAdd<IQueryTranslationPostprocessorFactory, SampleProviderQueryTranslationPostprocessorFactory>()
-            .TryAdd<IUpdateSqlGenerator, SampleProviderUpdateSqlGenerator>()
-            .TryAdd<ISqlExpressionFactory, SampleProviderSqlExpressionFactory>()
+            //.TryAdd<IModificationCommandBatchFactory, CouchbaseModificationCommandBatchFactory>()
+            
+            //Found that this was necessary, because the default convention of determining a
+            //Model's primary key automatically based off of properties that have 'Id' in their
+            //name was getting ignored.
+            .TryAdd<IProviderConventionSetBuilder, CouchbaseConventionSetBuilder>()
 
-            //Added to main branch for Sqlite provider on Nov. 30th 2022.  Implement post EFCore 7.0.1.
-            //.TryAdd<IRelationalParameterBasedSqlProcessorFactory, SampleProviderParameterBasedSqlProcessorFactory>()
+            .TryAddProviderSpecificServices(m => m
+                .TryAddScoped<QuerySqlGenerator, CouchbaseQuerySqlGenerator>()
+                .TryAddScoped<ICouchbaseConnection, CouchbaseConnection>()
+                .TryAddScoped<IQueryProvider, CouchbaseQueryProvider>()
+                .TryAddScoped<IRelationalCommand, CouchbaseCommand>()
+            )
 
-            .TryAddProviderSpecificServices(serviceCollectionMap => serviceCollectionMap
-                    .TryAddScoped<ISampleProviderRelationalConnection, SampleProviderRelationalConnection>()
-            )*/
-            .TryAddProviderSpecificServices(serviceCollectionMap => serviceCollectionMap
-                .TryAddScoped<ICouchbaseClientWrapper, CouchbaseClientWrapper>()
-                /*.TryAddScoped<ISqlExpressionFactory, SqlExpressionFactory>()*/)//try to use existing SQL generator
-            .TryAddCoreServices();
-        
+            .TryAdd<IRelationalConnection>(p => p.GetService<ICouchbaseConnection>());
+
+        builder.TryAddCoreServices();
+
+        serviceCollection
+          
+           // .AddScoped<IRelationalConnection, CouchbaseConnection>()
+           //.AddScoped<IQueryCompiler, CouchbaseQueryCompiler>()
+            .AddSingleton<ISqlGenerationHelper, CouchbaseSqlGenerationHelper>()
+            .AddScoped<IRelationalDatabaseCreator, CouchbaseDatabaseCreator>();
+
         return serviceCollection;
+
     }
 }

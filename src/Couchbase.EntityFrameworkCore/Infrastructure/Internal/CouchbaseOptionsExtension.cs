@@ -4,91 +4,69 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Couchbase;
 using Couchbase.EntityFrameworkCore.Extensions;
+using Couchbase.Extensions.DependencyInjection;
 
 namespace Couchbase.EntityFrameworkCore.Infrastructure.Internal;
 
-public class CouchbaseOptionsExtension : IDbContextOptionsExtension
+public class CouchbaseOptionsExtension : RelationalOptionsExtension
 {
-    private ClusterOptions? _clusterOptions;
-    private DbContextOptionsExtensionInfo? _info;
-    
-    public CouchbaseOptionsExtension()
-    {
-    }
+    private readonly ClusterOptions _clusterOptions;
+    private CouchbaseOptionsExtensionInfo? _info;
 
-    public CouchbaseOptionsExtension(CouchbaseOptionsExtension copyFrom)
-    {
-        _clusterOptions = copyFrom._clusterOptions;
-    }
-    
     public CouchbaseOptionsExtension(ClusterOptions clusterOptions)
     {
         _clusterOptions = clusterOptions;
     }
-
-    public CouchbaseOptionsExtension WithClusterOptions(ClusterOptions clusterOptions)
+    protected internal CouchbaseOptionsExtension(CouchbaseOptionsExtension copyFrom)
+        : base(copyFrom)
     {
-        var clone = Clone();
-        clone._clusterOptions = clusterOptions;
-        return clone;
+
+    }
+
+    public ClusterOptions ClusterOptions => _clusterOptions;
+
+    public override string? ConnectionString => _clusterOptions.ConnectionString;
+
+    public override DbContextOptionsExtensionInfo Info => _info ??= new CouchbaseOptionsExtensionInfo(this);
+
+    public override void ApplyServices(IServiceCollection services)
+    {
+        services.AddEntityFrameworkCouchbaseProvider(this);
     }
     
-    private CouchbaseOptionsExtension Clone() => new(this);
-    
-    public void ApplyServices(IServiceCollection services) => services.AddEntityFrameworkCouchbaseProvider(this);
-
-    public void Validate(IDbContextOptions options)
+    public override void Validate(IDbContextOptions options)
     {
+        // You can add any validation logic here, if necessary.
     }
-    
-    internal ClusterOptions ClusterOptions => _clusterOptions;
 
-    public DbContextOptionsExtensionInfo Info => _info ??= new CouchbaseExtensionInfo(this);
+    protected override RelationalOptionsExtension Clone() => new CouchbaseOptionsExtension(this);
 
-    //TODO use RelationalExtensionInfo as an example for implementation JM
-    private sealed class CouchbaseExtensionInfo : DbContextOptionsExtensionInfo
+
+    public class CouchbaseOptionsExtensionInfo : DbContextOptionsExtensionInfo
     {
-        private int? _serviceProviderHash;
+        private readonly ClusterOptions _clusterOptions;
 
-        public CouchbaseExtensionInfo(IDbContextOptionsExtension extension)
+        public CouchbaseOptionsExtensionInfo(CouchbaseOptionsExtension extension)
             : base(extension)
         {
         }
 
-        private new CouchbaseOptionsExtension Extension => (CouchbaseOptionsExtension)base.Extension;
+        public override bool IsDatabaseProvider => true;
 
-        public override int GetServiceProviderHashCode()
-        {
-            if (_serviceProviderHash == null)
-            {
-                var hashCode = new HashCode();
-                hashCode.Add(0);//TODO this may need to be removed when below TODO is resolved
+        public override string LogFragment => $"Using Custom SQLite Provider - ConnectionString: {ConnectionString}";
 
-                //TODO: Add to hashCode each option property.  Example: https://github.com/npgsql/efcore.pg/blob/main/src/EFCore.PG/Infrastructure/Internal/NpgsqlOptionsExtension.cs#L414
-                //  hashCode.Add(Extension.PostgresVersion);
+        public override int GetServiceProviderHashCode() => ConnectionString.GetHashCode();
 
-                _serviceProviderHash = hashCode.ToHashCode();
-            }
-
-            return _serviceProviderHash.Value;
-
-        }
-
-        public override bool ShouldUseSameServiceProvider(DbContextOptionsExtensionInfo other) =>
-            other is CouchbaseExtensionInfo otherInfo
-            && Extension._clusterOptions == otherInfo.Extension._clusterOptions;
-        
-        
+        public override bool ShouldUseSameServiceProvider(DbContextOptionsExtensionInfo other) => other is CouchbaseOptionsExtensionInfo;
 
         public override void PopulateDebugInfo(IDictionary<string, string> debugInfo)
         {
-            //TODO: Add to debugInfo each option property as a string of its GetHashCode() value.  Example: https://github.com/npgsql/efcore.pg/blob/main/src/EFCore.PG/Infrastructure/Internal/NpgsqlOptionsExtension.cs#L433
-            //  debugInfo["ServantSoftware.EntityFrameworkCore.SampleProvider:" + nameof(NpgsqlDbContextOptionsBuilder.SetPostgresVersion)]
-            //    = (Extension.PostgresVersion?.GetHashCode() ?? 0).ToString(CultureInfo.InvariantCulture);
+            debugInfo["Couchbase:ConnectionString"] = ConnectionString;
         }
 
-        public override bool IsDatabaseProvider { get; }
-        
-        public override string LogFragment { get; }
+        public override CouchbaseOptionsExtension Extension => (CouchbaseOptionsExtension)base.Extension;
+        private string? ConnectionString => Extension.Connection == null ?
+            Extension.ConnectionString :
+            Extension.Connection.ConnectionString;
     }
 }

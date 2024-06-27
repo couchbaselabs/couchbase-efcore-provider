@@ -3,6 +3,7 @@ using Couchbase.EntityFrameworkCore.Extensions;
 using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.EntityFrameworkCore.Infrastructure.Internal;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 
 namespace Couchbase.EntityFrameworkCore;
@@ -23,14 +24,20 @@ public static class CouchbaseDbContextOptionsExtensions
   
 
   #nullable disable
-  private static CouchbaseOptionsExtension GetOrCreateExtension(DbContextOptionsBuilder options)
-  {
-    return options.Options.FindExtension<CouchbaseOptionsExtension>() ?? new CouchbaseOptionsExtension();
-  }
+  private static CouchbaseOptionsExtension GetOrCreateExtension(DbContextOptionsBuilder optionsBuilder, ClusterOptions clusterOptions)
+    => optionsBuilder.Options.FindExtension<CouchbaseOptionsExtension>() is CouchbaseOptionsExtension existing
+      ? new CouchbaseOptionsExtension(existing)
+      : new CouchbaseOptionsExtension(clusterOptions);
 
   private static void ConfigureWarnings(DbContextOptionsBuilder optionsBuilder)
   {
-    CoreOptionsExtension extension = RelationalOptionsExtension.WithDefaultWarningConfiguration(optionsBuilder.Options.FindExtension<CoreOptionsExtension>() ?? new CoreOptionsExtension());
-    ((IDbContextOptionsBuilderInfrastructure) optionsBuilder).AddOrUpdateExtension<CoreOptionsExtension>(extension);
+    var coreOptionsExtension = optionsBuilder.Options.FindExtension<CoreOptionsExtension>()
+                               ?? new CoreOptionsExtension();
+
+    coreOptionsExtension = coreOptionsExtension.WithWarningsConfiguration(
+      coreOptionsExtension.WarningsConfiguration.TryWithExplicit(
+        RelationalEventId.AmbientTransactionWarning, WarningBehavior.Throw));
+
+    ((IDbContextOptionsBuilderInfrastructure)optionsBuilder).AddOrUpdateExtension(coreOptionsExtension);
   }
 }
