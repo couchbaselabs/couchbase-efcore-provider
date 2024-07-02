@@ -2,6 +2,7 @@ using Couchbase.EntityFrameworkCore.Diagnostics.Internal;
 using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.EntityFrameworkCore.Infrastructure.Internal;
 using Couchbase.EntityFrameworkCore.Metadata.Conventions;
+using Couchbase.EntityFrameworkCore.Migrations.Internal;
 using Couchbase.EntityFrameworkCore.Query;
 using Couchbase.EntityFrameworkCore.Query.Internal;
 using Couchbase.EntityFrameworkCore.Storage.Internal;
@@ -56,6 +57,7 @@ public static class CouchbaseServiceCollectionExtensions
             .TryAdd<IQuerySqlGeneratorFactory, CouchbaseQuerySqlGeneratorFactory>()
             .TryAdd<ISqlGenerationHelper, CouchbaseSqlGenerationHelper>()
             .TryAdd<IShapedQueryCompilingExpressionVisitorFactory, CouchbaseShapedQueryCompilingExpressionVisitorFactory>()
+            .TryAdd<IHistoryRepository, CouchbaseHistoryRepository>()//not used but required by ASP.NET
             //.TryAdd<IModificationCommandBatchFactory, CouchbaseModificationCommandBatchFactory>()
             
             //Found that this was necessary, because the default convention of determining a
@@ -71,6 +73,7 @@ public static class CouchbaseServiceCollectionExtensions
             )
 
             .TryAdd<IRelationalConnection>(p => p.GetService<ICouchbaseConnection>());
+
 
         builder.TryAddCoreServices();
 

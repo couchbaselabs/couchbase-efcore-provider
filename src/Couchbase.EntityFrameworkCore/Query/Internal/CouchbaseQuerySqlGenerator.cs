@@ -78,8 +78,7 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
 
     protected override string GetOperator(SqlBinaryExpression binaryExpression)
     {
-        if (binaryExpression == null)
-            throw new ArgumentNullException(nameof(binaryExpression));
+        ArgumentNullException.ThrowIfNull(binaryExpression);
 
         return binaryExpression.OperatorType == ExpressionType.Add
                && binaryExpression.Type == typeof(string)
@@ -89,8 +88,7 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
 
     protected override void GenerateLimitOffset(SelectExpression selectExpression)
     {
-        if (selectExpression == null)
-            throw new ArgumentNullException(nameof(selectExpression));
+        ArgumentNullException.ThrowIfNull(selectExpression);
 
         if (selectExpression.Limit != null
             || selectExpression.Offset != null)
@@ -113,10 +111,8 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
 
     protected override void GenerateSetOperationOperand(SetOperationBase setOperation, SelectExpression operand)
     {
-        if (setOperation == null)
-            throw new ArgumentNullException(nameof(setOperation));
-        if (operand == null)
-            throw new ArgumentNullException(nameof(operand));
+        ArgumentNullException.ThrowIfNull(setOperation);
+        ArgumentNullException.ThrowIfNull(operand);
 
         // Sqlite doesn't support parentheses around set operation operands
         Visit(operand);
