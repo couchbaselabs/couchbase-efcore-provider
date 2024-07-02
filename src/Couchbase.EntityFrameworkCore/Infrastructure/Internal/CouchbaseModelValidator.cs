@@ -38,8 +38,6 @@ public class CouchbaseModelValidator : RelationalModelValidator
             if (unmappedProperty != null)
             {
             }
-            
-            
         } 
     }
 }

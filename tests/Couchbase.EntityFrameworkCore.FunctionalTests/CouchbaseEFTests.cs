@@ -2,6 +2,7 @@
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Runtime.Serialization;
 using System.Text.Json.Serialization;
+using Couchbase.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.TestUtilities;
 using Microsoft.Extensions.DependencyInjection;
@@ -57,13 +58,13 @@ public class CouchbaseEFTests
       //  var found = context.Find<Airline>("airline", 11);
 
       //var ab = await context.Airlines.FindAsync("airline", 11);
-      var airlines1 = await context.Airlines
+     /* var airlines1 = await context.Airlines
           .OrderBy(x => x.Id).ToListAsync<Airline>();
 
       foreach (var a in airlines1)
       {
           _outputHelper.WriteLine(a.ToString());
-      }
+      }*/
 
       var airlines = await context.Airlines
           .OrderBy(x => x.Id)
@@ -140,12 +141,14 @@ public class CouchbaseEFTests
         }
     }
     
+    [NotMapped]
+    [Couchbase("travel-sample")]
     public class Airline
     {
         [JsonProperty("callsign", NullValueHandling = NullValueHandling.Ignore)]
         [JsonPropertyName("callsign")]
         public string Callsign { get; set; }
-
+        
         [JsonProperty("country", NullValueHandling = NullValueHandling.Ignore)]
         [JsonPropertyName("country")]
         public string Country { get; set; }
