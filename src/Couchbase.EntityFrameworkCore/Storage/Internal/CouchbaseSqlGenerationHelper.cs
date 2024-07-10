@@ -17,5 +17,12 @@ public class CouchbaseSqlGenerationHelper : RelationalSqlGenerationHelper
     }
     
    public override string DelimitIdentifier(string identifier)
-        => $"`{EscapeIdentifier(identifier)}`"; // Interpolation okay; strings
+        => $"`{EscapeIdentifier(identifier)}`";
+
+   public override string GenerateParameterName(string name) =>
+       name.StartsWith("$", StringComparison.Ordinal)
+       ? name : "$" + name;
+
+   public override void GenerateParameterName(StringBuilder builder, string name)
+       => builder.Append('$').Append(name);
 }

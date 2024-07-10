@@ -1,12 +1,23 @@
+using System.Reflection;
+using Couchbase.EntityFrameworkCore.Metadata;
 using Couchbase.Extensions.DependencyInjection;
 using Couchbase.KeyValue;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.Extensions.Logging;
 
 namespace Couchbase.EntityFrameworkCore.Storage.Internal;
 
-public class CouchbaseClientWrapper(INamedBucketProvider namedBucketProvider, ILogger<CouchbaseClientWrapper> _logger) 
+public class CouchbaseClientWrapper 
     : ICouchbaseClientWrapper
 {
+    private readonly INamedBucketProvider _namedBucketProvider;
+    private readonly ILogger<CouchbaseClientWrapper> _logger;
+
+    public CouchbaseClientWrapper(INamedBucketProvider namedBucketProvider, ILogger<CouchbaseClientWrapper> logger)
+    {
+        _namedBucketProvider = namedBucketProvider;
+        _logger = logger;
+    }
     private IBucket? _bucket;
 
     public async Task<bool> CreateDocument<TEntity>(string id, TEntity entity)
@@ -14,7 +25,8 @@ public class CouchbaseClientWrapper(INamedBucketProvider namedBucketProvider, IL
         bool success;
         try
         {
-            var collection = await GetCollection().ConfigureAwait(false);
+            var contextId = GetContextId(entity);
+            var collection = await GetCollection(contextId.scope, contextId.collection).ConfigureAwait(false);
             await collection.InsertAsync(id, entity).ConfigureAwait(false);
             success = true;
         }
@@ -32,7 +44,8 @@ public class CouchbaseClientWrapper(INamedBucketProvider namedBucketProvider, IL
         bool success;
         try
         {
-            var collection = await GetCollection().ConfigureAwait(false);
+            var contextId = GetContextId(entity);
+            var collection = await GetCollection(contextId.scope, contextId.collection).ConfigureAwait(false);
             await collection.UpsertAsync(id, entity).ConfigureAwait(false);
             success = true;
         }
@@ -45,12 +58,13 @@ public class CouchbaseClientWrapper(INamedBucketProvider namedBucketProvider, IL
         return success;
     }
 
-    public async Task<bool> DeleteDocument(string id)
+    public async Task<bool> DeleteDocument<TEntity>(string id, TEntity entity)
     {
         bool success;
         try
         {
-            var collection = await GetCollection().ConfigureAwait(false);
+            var contextId = GetContextId(entity);
+            var collection = await GetCollection(contextId.scope, contextId.collection).ConfigureAwait(false);
             await collection.RemoveAsync(id).ConfigureAwait(false);
             success = true;
         }
@@ -68,7 +82,8 @@ public class CouchbaseClientWrapper(INamedBucketProvider namedBucketProvider, IL
         TEntity entity = default;
         try
         {
-            var collection = await GetCollection().ConfigureAwait(false);
+            var contextId = GetContextId(entity);
+            var collection = await GetCollection(contextId.scope, contextId.collection).ConfigureAwait(false);
             var getResult = await collection.GetAsync(id).ConfigureAwait(false);
             entity = getResult.ContentAs<TEntity>();
         }
@@ -80,17 +95,26 @@ public class CouchbaseClientWrapper(INamedBucketProvider namedBucketProvider, IL
         return entity;
     }
 
-    private async Task<ICouchbaseCollection> GetCollection()
+    private async Task<ICouchbaseCollection> GetCollection(string scope, string collection)
     {
         try
         {
-            _bucket ??= await namedBucketProvider.GetBucketAsync().ConfigureAwait(false);
+            _bucket ??= await _namedBucketProvider.GetBucketAsync().ConfigureAwait(false);
         }
         catch (Exception e)
         {
            _logger.LogError(e, "Could not fetch collection");
         }
 
-        return _bucket.DefaultCollection();
+        return _bucket.Scope(scope).Collection(collection);
+    }
+
+    private static (string bucket, string scope, string collection) GetContextId(object entity)
+    {
+        var attribute = (CouchbaseAttribute)entity.
+            GetType().GetCustomAttributes().
+            First(x => x.GetType() == typeof(CouchbaseAttribute));
+
+        return (attribute.Bucket, attribute.Scope, attribute.Collection);
     }
 }

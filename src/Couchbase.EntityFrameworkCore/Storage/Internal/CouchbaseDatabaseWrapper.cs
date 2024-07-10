@@ -1,6 +1,7 @@
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Text;
+using Couchbase.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking.Internal;
 using Microsoft.EntityFrameworkCore.Metadata;
@@ -36,7 +37,7 @@ public class CouchbaseDatabaseWrapper(DatabaseDependencies dependencies, ICouchb
             var entity = entityEntry.Entity;
             var entityType = updateEntry.EntityType;
             var primaryKey = GetPrimaryKey(entity, entityType);
-           
+            
             switch (updateEntry.EntityState)
             {
                 case EntityState.Detached:
@@ -44,7 +45,7 @@ public class CouchbaseDatabaseWrapper(DatabaseDependencies dependencies, ICouchb
                 case EntityState.Unchanged:
                     break;
                 case EntityState.Deleted:
-                    await couchbaseClient.DeleteDocument(primaryKey).ConfigureAwait(false);
+                    await couchbaseClient.DeleteDocument(primaryKey, entity).ConfigureAwait(false);
                     break;
                 case EntityState.Modified:
                     await couchbaseClient.UpdateDocument(primaryKey, entity).ConfigureAwait(false);
@@ -62,7 +63,7 @@ public class CouchbaseDatabaseWrapper(DatabaseDependencies dependencies, ICouchb
         return updateCount;
     }
 
-    private string GetPrimaryKey(object entity, IEntityType entityType)
+    private static string GetPrimaryKey(object entity, IEntityType entityType)
     {
         var keys = entityType.FindPrimaryKey().Properties.ToArray(); //TODO If no primary key found we should fail hard
 

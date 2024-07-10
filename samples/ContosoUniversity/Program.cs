@@ -1,17 +1,22 @@
 using ContosoUniversity.Data;
 using Couchbase;
 using Couchbase.EntityFrameworkCore;
+using Serilog.Extensions.Logging.File;
 using Couchbase.EntityFrameworkCore.Extensions;
 using Couchbase.EntityFrameworkCore.Infrastructure.Internal;
+using Couchbase.Extensions.DependencyInjection;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddControllersWithViews();
 
-builder.Services.AddDbContext<SchoolContext>(options=>options.UseCouchbase(new ClusterOptions()
+builder.Services.AddDbContext<SchoolContext>(options=>
+    options.UseCouchbase<INamedBucketProvider>(new ClusterOptions()
     .WithCredentials("Administrator", "password")
     .WithConnectionString("couchbase://localhost")));
+
+builder.Logging.AddFile("Logs/myapp-{Date}.txt");
 
 var app = builder.Build();
 

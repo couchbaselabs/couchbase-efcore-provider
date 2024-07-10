@@ -1,9 +1,12 @@
 using System.Linq.Expressions;
+using System.Text;
+using Couchbase.Core.Utils;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Query;
 using Microsoft.EntityFrameworkCore.Query.SqlExpressions;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.EntityFrameworkCore.Storage.Internal;
+using Microsoft.Extensions.Primitives;
 
 namespace Couchbase.EntityFrameworkCore.Query.Internal;
 
@@ -49,14 +52,22 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
 
     protected override Expression VisitTable(TableExpression tableExpression)
     {
-        //TODO we need to correlate a specific bucket->scope-collection in place of a table
-       /* Sql.Append(Dependencies.SqlGenerationHelper.DelimitIdentifier(tableExpression.Name, tableExpression.Schema))
+        //Not ideal but we need to reformat the table (really the bucket+scope+collection) to N1QL
+        //format of `bucket`.`scope`.`collection`. TableExpression is sealed and not injectable AFAIK.
+        var contextId = tableExpression.Name.Split('.');
+        var contextBuilder = new StringBuilder();
+        for (var i = 0; i < contextId.Length; i++)
+        {
+            contextBuilder.Append(contextId[i].EscapeIfRequired());
+            if (i < contextId.Length-1)
+            {
+                contextBuilder.Append('.');
+            }
+        }
+
+        Sql.Append(contextBuilder.ToString())
             .Append(AliasSeparator)
-            .Append(Dependencies.SqlGenerationHelper.DelimitIdentifier(tableExpression.Alias));*/
-       
-       Sql.Append(Dependencies.SqlGenerationHelper.DelimitIdentifier("travel-sample", tableExpression.Schema))
-           .Append(AliasSeparator)
-           .Append(Dependencies.SqlGenerationHelper.DelimitIdentifier(tableExpression.Alias));
+            .Append(Dependencies.SqlGenerationHelper.DelimitIdentifier(tableExpression.Alias));
 
         return tableExpression;
     }
@@ -114,7 +125,6 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
         ArgumentNullException.ThrowIfNull(setOperation);
         ArgumentNullException.ThrowIfNull(operand);
 
-        // Sqlite doesn't support parentheses around set operation operands
         Visit(operand);
     }
 
@@ -174,5 +184,59 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
         sql = string.Format(sql, substitutions);
 
         Sql.AppendLines(sql);
+    }
+    
+    protected override Expression VisitSqlFunction(SqlFunctionExpression sqlFunctionExpression)
+    {
+        if (sqlFunctionExpression.IsBuiltIn)
+        {
+            if (sqlFunctionExpression.Instance != null)
+            {
+                Visit(sqlFunctionExpression.Instance);
+                Sql.Append(".");
+            }
+
+            Sql.Append(" RAW ");
+            Sql.Append(sqlFunctionExpression.Name);
+        }
+        else
+        {
+            if (!string.IsNullOrEmpty(sqlFunctionExpression.Schema))
+            {
+                Sql
+                    .Append(Dependencies.SqlGenerationHelper.DelimitIdentifier(sqlFunctionExpression.Schema))
+                    .Append(".");
+            }
+
+            Sql
+                .Append(Dependencies.SqlGenerationHelper.DelimitIdentifier(sqlFunctionExpression.Name));
+        }
+
+        if (!sqlFunctionExpression.IsNiladic)
+        {
+            Sql.Append("(");
+            GenerateList(sqlFunctionExpression.Arguments, e => Visit(e));
+            Sql.Append(")");
+        }
+
+        return sqlFunctionExpression;
+    }
+    
+    private void GenerateList<T>(
+        IReadOnlyList<T> items,
+        Action<T> generationAction,
+        Action<IRelationalCommandBuilder>? joinAction = null)
+    {
+        joinAction ??= (isb => isb.Append(", "));
+
+        for (var i = 0; i < items.Count; i++)
+        {
+            if (i > 0)
+            {
+                joinAction(Sql);
+            }
+
+            generationAction(items[i]);
+        }
     }
 }

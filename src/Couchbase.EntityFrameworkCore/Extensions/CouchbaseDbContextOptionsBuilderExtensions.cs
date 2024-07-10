@@ -1,5 +1,6 @@
 using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.EntityFrameworkCore.Infrastructure.Internal;
+using Couchbase.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -8,25 +9,27 @@ namespace Couchbase.EntityFrameworkCore.Extensions;
 
 public static class CouchbaseDbContextOptionsBuilderExtensions
 {
-    public static DbContextOptionsBuilder UseCouchbaseProvider(
+    public static DbContextOptionsBuilder UseCouchbaseProvider<TNamedBucketProvider>(
         this DbContextOptionsBuilder optionsBuilder,
         ClusterOptions clusterOptions,
-        Action<CouchbaseDbContextOptionsBuilder>? couchbaseOptionsAction = null)
+        Action<CouchbaseDbContextOptionsBuilder>? couchbaseOptionsAction = null) where TNamedBucketProvider : class, INamedBucketProvider
     {
         ArgumentNullException.ThrowIfNull(optionsBuilder);
 
-        ((IDbContextOptionsBuilderInfrastructure)optionsBuilder).AddOrUpdateExtension(GetOrCreateExtension(optionsBuilder, clusterOptions));
+        var extension = GetOrCreateExtension<TNamedBucketProvider>(optionsBuilder, clusterOptions);
+        ((IDbContextOptionsBuilderInfrastructure)optionsBuilder).AddOrUpdateExtension(extension);
         ConfigureWarnings(optionsBuilder);
         couchbaseOptionsAction?.Invoke(new CouchbaseDbContextOptionsBuilder(optionsBuilder, clusterOptions));
 
         return optionsBuilder;
     }
 
-    internal static CouchbaseOptionsExtension GetOrCreateExtension(DbContextOptionsBuilder optionsBuilder,
-        ClusterOptions clusterOptions)
-        => optionsBuilder.Options.FindExtension<CouchbaseOptionsExtension>() is CouchbaseOptionsExtension existing
-            ? new CouchbaseOptionsExtension(existing)
-            : new CouchbaseOptionsExtension(clusterOptions);
+    internal static CouchbaseOptionsExtension<TNamedBucketProvider> GetOrCreateExtension<TNamedBucketProvider>(DbContextOptionsBuilder optionsBuilder,
+        ClusterOptions clusterOptions) where TNamedBucketProvider : class, INamedBucketProvider
+        => optionsBuilder.Options.FindExtension<CouchbaseOptionsExtension<TNamedBucketProvider>>()
+            is CouchbaseOptionsExtension<TNamedBucketProvider> existing
+            ? new CouchbaseOptionsExtension<TNamedBucketProvider>(existing)
+            : new CouchbaseOptionsExtension<TNamedBucketProvider>(clusterOptions);
 
     internal static void ConfigureWarnings(DbContextOptionsBuilder optionsBuilder)
     {

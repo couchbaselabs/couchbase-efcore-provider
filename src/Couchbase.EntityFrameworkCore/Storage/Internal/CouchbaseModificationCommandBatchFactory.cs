@@ -12,6 +12,7 @@ public class CouchbaseModificationCommandBatchFactory : IModificationCommandBatc
     }
     public ModificationCommandBatch Create()
     {
-        return new SingularModificationCommandBatch(_dependencies);
+        //SingleModificationCommandBatch
+        return new CouchbaseModificationCommandBatch(_dependencies);
     }
 }

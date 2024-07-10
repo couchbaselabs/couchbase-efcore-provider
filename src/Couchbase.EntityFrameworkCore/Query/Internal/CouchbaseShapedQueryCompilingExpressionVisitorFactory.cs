@@ -1,5 +1,6 @@
 using Couchbase.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore.Query;
+using Microsoft.EntityFrameworkCore.Query.Internal;
 using Microsoft.EntityFrameworkCore.Storage;
 
 namespace Couchbase.EntityFrameworkCore.Query.Internal;
@@ -10,12 +11,11 @@ public class CouchbaseShapedQueryCompilingExpressionVisitorFactory : IShapedQuer
     private readonly RelationalShapedQueryCompilingExpressionVisitorDependencies _relationalDependencies;
     private readonly IQuerySqlGeneratorFactory _querySqlGeneratorFactory;
     private readonly IClusterProvider _clusterProvider;
-    private readonly IRelationalCommandBuilder _relationalCommandBuilder;
-
     public CouchbaseShapedQueryCompilingExpressionVisitorFactory(
         ShapedQueryCompilingExpressionVisitorDependencies dependencies, 
         RelationalShapedQueryCompilingExpressionVisitorDependencies relationalDependencies,
-        IQuerySqlGeneratorFactory querySqlGeneratorFactory, IClusterProvider clusterProvider)
+        IQuerySqlGeneratorFactory querySqlGeneratorFactory, 
+        IClusterProvider clusterProvider)
     {
         _dependencies = dependencies;
         _relationalDependencies = relationalDependencies;
@@ -27,6 +27,10 @@ public class CouchbaseShapedQueryCompilingExpressionVisitorFactory : IShapedQuer
     {
         //the QuerySqlGenerator may be cacheable - if so make a field and call create in ctor above
         return new CouchbaseShapedQueryCompilingExpressionVisitor(
-            _dependencies, _relationalDependencies, queryCompilationContext, _querySqlGeneratorFactory.Create(), _clusterProvider);
+            _dependencies, 
+            _relationalDependencies, 
+            queryCompilationContext, 
+            _querySqlGeneratorFactory.Create(),
+            _clusterProvider);
     }
 }

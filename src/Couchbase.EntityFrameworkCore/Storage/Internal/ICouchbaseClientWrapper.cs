@@ -1,3 +1,5 @@
+using Microsoft.EntityFrameworkCore.Metadata.Conventions;
+
 namespace Couchbase.EntityFrameworkCore.Storage.Internal;
 
 public interface ICouchbaseClientWrapper
@@ -6,7 +8,7 @@ public interface ICouchbaseClientWrapper
 
     Task<bool> UpdateDocument<TEntity>(string id, TEntity entity);
 
-    Task<bool> DeleteDocument(string id);
+    Task<bool> DeleteDocument<TEntity>(string id, TEntity entity);
 
     Task<TEntity> SelectDocument<TEntity>(string id);
 }
