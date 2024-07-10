@@ -1,4 +1,5 @@
 using System.Text;
+using Couchbase.Core.Utils;
 
 namespace Couchbase.EntityFrameworkCore.Metadata;
 

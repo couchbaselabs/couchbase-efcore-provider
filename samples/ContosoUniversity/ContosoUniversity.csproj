@@ -18,4 +18,8 @@
       <_ContentIncludedByDefault Remove="Views\Shared\_ValidationScriptsPartial.cshtml" />
     </ItemGroup>
 
+    <ItemGroup>
+      <PackageReference Include="Serilog.Extensions.Logging.File" Version="3.0.0" />
+    </ItemGroup>
+
 </Project>

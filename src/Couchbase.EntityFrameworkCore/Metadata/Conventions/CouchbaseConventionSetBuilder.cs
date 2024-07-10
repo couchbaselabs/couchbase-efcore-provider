@@ -12,6 +12,8 @@ public class CouchbaseConventionSetBuilder : RelationalConventionSetBuilder
 
     public override ConventionSet CreateConventionSet()
     {
-        return base.CreateConventionSet();
+        var conventionSet = base.CreateConventionSet();
+        conventionSet.Add(new CouchbaseContextConvention(Dependencies));
+        return conventionSet;
     }
 }
