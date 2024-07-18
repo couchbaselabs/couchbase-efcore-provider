@@ -2,7 +2,7 @@
 
     <PropertyGroup>
         <TargetFramework>net8.0</TargetFramework>
-        <Nullable>enable</Nullable>
+        <!--<Nullable>enable</Nullable>-->
         <ImplicitUsings>enable</ImplicitUsings>
     </PropertyGroup>
 
@@ -20,6 +20,10 @@
 
     <ItemGroup>
       <PackageReference Include="Serilog.Extensions.Logging.File" Version="3.0.0" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <Folder Include="Logs\" />
     </ItemGroup>
 
 </Project>

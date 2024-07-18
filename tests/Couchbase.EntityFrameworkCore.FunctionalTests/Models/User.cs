@@ -38,7 +38,7 @@ public class CreditCard
     public string Expiration { get; set; }
 }
 
-[Couchbase("tenant_agent_00", "users")]
+[CouchbaseKeyspace("tenant_agent_00", "users")]
 public class User
 {
     [JsonProperty("name", NullValueHandling = NullValueHandling.Ignore)]

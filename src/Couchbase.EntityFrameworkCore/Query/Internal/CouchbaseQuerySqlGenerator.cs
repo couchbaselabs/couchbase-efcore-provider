@@ -50,6 +50,24 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
         }
     }
 
+    protected override void GenerateExists(ExistsExpression existsExpression, bool negated)
+    {
+        Sql.Append(" RAW ");
+        if (negated)
+        {
+            Sql.Append("NOT ");
+        }
+
+        Sql.AppendLine("EXISTS (");
+
+        using (Sql.Indent())
+        {
+            Visit(existsExpression.Subquery);
+        }
+
+        Sql.Append(")");
+    }
+
     protected override Expression VisitTable(TableExpression tableExpression)
     {
         //Not ideal but we need to reformat the table (really the bucket+scope+collection) to N1QL
@@ -196,7 +214,12 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
                 Sql.Append(".");
             }
 
-            Sql.Append(" RAW ");
+            //make the response scalar with no extra JSON
+            if (sqlFunctionExpression.Name == "COUNT")
+            {
+                Sql.Append(" RAW ");
+            }
+
             Sql.Append(sqlFunctionExpression.Name);
         }
         else

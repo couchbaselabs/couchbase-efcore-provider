@@ -146,4 +146,32 @@ public class CrudTests
             await context.SaveChangesAsync();
         }
     }
+
+    [Fact]
+    public async Task Test_AddRange()
+    {
+        var airlines = new List<Airline>
+        {
+            new Airline
+            {
+                Type = "airline",
+                Id = 11,
+                Callsign = "MILE-AIR",
+                Country = "United States",
+                Icao = "MLA",
+                Iata = "Q5",
+                Name = "40-Mile Air"
+            },
+            new Airline
+            {
+                Type = "airline",
+                Id = 11,
+                Callsign = "MILE-AIR",
+                Country = "United States",
+                Icao = "MLA",
+                Iata = "Q5",
+                Name = "40-Mile Air"
+            }
+        };
+    }
 }

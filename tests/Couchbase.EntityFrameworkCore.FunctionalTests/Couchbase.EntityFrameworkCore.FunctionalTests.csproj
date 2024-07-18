@@ -7,6 +7,9 @@
     </PropertyGroup>
 
     <ItemGroup>
+      <ProjectReference Include="..\..\..\efcore\src\EFCore.Design\EFCore.Design.csproj" />
+      <ProjectReference Include="..\..\..\efcore\src\EFCore.Sqlite.NTS\EFCore.Sqlite.NTS.csproj" />
+      <ProjectReference Include="..\..\samples\ContosoUniversity\ContosoUniversity.csproj" />
       <ProjectReference Include="..\..\src\Couchbase.EntityFrameworkCore\Couchbase.EntityFrameworkCore.csproj" />
     </ItemGroup>
 
@@ -17,10 +20,8 @@
       <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.9.0" />
       <PackageReference Include="Serilog.Extensions.Logging.File" Version="3.0.0" />
       <PackageReference Include="xunit" Version="2.8.0" />
-    </ItemGroup>
-
-    <ItemGroup>
-      <Folder Include="Utils\" />
+        <PackageReference Include="SQLitePCLRaw.provider.sqlite3" Version="2.1.8" />
+   
     </ItemGroup>
 
 </Project>

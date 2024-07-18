@@ -14,7 +14,8 @@ builder.Services.AddControllersWithViews();
 builder.Services.AddDbContext<SchoolContext>(options=>
     options.UseCouchbase<INamedBucketProvider>(new ClusterOptions()
     .WithCredentials("Administrator", "password")
-    .WithConnectionString("couchbase://localhost")));
+    .WithConnectionString("couchbase://localhost")
+    .WithBuckets("contoso")));
 
 builder.Logging.AddFile("Logs/myapp-{Date}.txt");
 
@@ -39,4 +40,24 @@ app.MapControllerRoute(
     name: "default",
     pattern: "{controller=Home}/{action=Index}/{id?}");
 
+CreateDbIfNotExists(app);
+
 app.Run();
+
+void CreateDbIfNotExists(IHost host)
+{
+    using (var scope = host.Services.CreateScope())
+    {
+        var services = scope.ServiceProvider;
+        try
+        {
+            var context = services.GetRequiredService<SchoolContext>();
+            DbInitializer.Initialize(context);
+        }
+        catch (Exception ex)
+        {
+            var logger = services.GetRequiredService<ILogger<Program>>();
+            logger.LogError(ex, "An error occurred creating the DB.");
+        }
+    }
+}

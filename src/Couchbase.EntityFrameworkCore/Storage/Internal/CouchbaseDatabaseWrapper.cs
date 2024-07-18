@@ -18,16 +18,9 @@ public class CouchbaseDatabaseWrapper(DatabaseDependencies dependencies, ICouchb
 {
     public override int SaveChanges(IList<IUpdateEntry> entries)
     {
-        throw new NotImplementedException();
+       return Task.Run(async () => await SaveChangesAsync(entries).ConfigureAwait(false)).Result;
     }
-
-  
-   /*public override Func<QueryContext, TResult> CompileQuery<TResult>(Expression query, bool async)
-    {
-        var compiledQuery = base.CompileQuery<TResult>(query, async);
-        return compiledQuery;
-    }*/
-
+    
     public override async Task<int> SaveChangesAsync(IList<IUpdateEntry> entries, CancellationToken cancellationToken = new CancellationToken())
     {
         var updateCount = 0;
@@ -37,6 +30,7 @@ public class CouchbaseDatabaseWrapper(DatabaseDependencies dependencies, ICouchb
             var entity = entityEntry.Entity;
             var entityType = updateEntry.EntityType;
             var primaryKey = GetPrimaryKey(entity, entityType);
+            var keyspace = entityType.GetTableName();
             
             switch (updateEntry.EntityState)
             {
@@ -45,19 +39,26 @@ public class CouchbaseDatabaseWrapper(DatabaseDependencies dependencies, ICouchb
                 case EntityState.Unchanged:
                     break;
                 case EntityState.Deleted:
-                    await couchbaseClient.DeleteDocument(primaryKey, entity).ConfigureAwait(false);
+                    if (await couchbaseClient.DeleteDocument(primaryKey, keyspace, entity).ConfigureAwait(false))
+                    {
+                        updateCount++;
+                    }
                     break;
                 case EntityState.Modified:
-                    await couchbaseClient.UpdateDocument(primaryKey, entity).ConfigureAwait(false);
+                    if (await couchbaseClient.UpdateDocument(primaryKey, keyspace, entity).ConfigureAwait(false))
+                    {
+                        updateCount++;
+                    }
                     break;
                 case EntityState.Added:
-                    await couchbaseClient.CreateDocument(primaryKey, entity).ConfigureAwait(false);
+                    if (await couchbaseClient.CreateDocument(primaryKey, keyspace, entity).ConfigureAwait(false))
+                    {
+                        updateCount++;
+                    }
                     break;
                 default:
                     throw new ArgumentOutOfRangeException();
             }
-
-            updateCount++;
         }
 
         return updateCount;
