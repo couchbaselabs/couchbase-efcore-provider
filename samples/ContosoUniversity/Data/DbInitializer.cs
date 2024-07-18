@@ -21,21 +21,21 @@ namespace ContosoUniversity.Data
             var students = new Student[]
             {
                 new Student { FirstMidName = "Carson",   LastName = "Alexander",
-                    EnrollmentDate = DateTime.Parse("2010-09-01") },
+                    EnrollmentDate = DateTime.Parse("2010-09-01"), ID = 1 },
                 new Student { FirstMidName = "Meredith", LastName = "Alonso",
-                    EnrollmentDate = DateTime.Parse("2012-09-01") },
+                    EnrollmentDate = DateTime.Parse("2012-09-01"), ID = 2},
                 new Student { FirstMidName = "Arturo",   LastName = "Anand",
-                    EnrollmentDate = DateTime.Parse("2013-09-01") },
+                    EnrollmentDate = DateTime.Parse("2013-09-01"), ID = 3},
                 new Student { FirstMidName = "Gytis",    LastName = "Barzdukas",
-                    EnrollmentDate = DateTime.Parse("2012-09-01") },
+                    EnrollmentDate = DateTime.Parse("2012-09-01"), ID = 4},
                 new Student { FirstMidName = "Yan",      LastName = "Li",
-                    EnrollmentDate = DateTime.Parse("2012-09-01") },
+                    EnrollmentDate = DateTime.Parse("2012-09-01"), ID = 5 },
                 new Student { FirstMidName = "Peggy",    LastName = "Justice",
-                    EnrollmentDate = DateTime.Parse("2011-09-01") },
+                    EnrollmentDate = DateTime.Parse("2011-09-01"), ID = 6 },
                 new Student { FirstMidName = "Laura",    LastName = "Norman",
-                    EnrollmentDate = DateTime.Parse("2013-09-01") },
+                    EnrollmentDate = DateTime.Parse("2013-09-01"), ID = 7 },
                 new Student { FirstMidName = "Nino",     LastName = "Olivetto",
-                    EnrollmentDate = DateTime.Parse("2005-09-01") }
+                    EnrollmentDate = DateTime.Parse("2005-09-01"), ID = 8 }
             };
 
             context.Students.AddRange(students);
@@ -44,15 +44,15 @@ namespace ContosoUniversity.Data
             var instructors = new Instructor[]
             {
                 new Instructor { FirstMidName = "Kim",     LastName = "Abercrombie",
-                    HireDate = DateTime.Parse("1995-03-11") },
+                    HireDate = DateTime.Parse("1995-03-11"), ID = 9},
                 new Instructor { FirstMidName = "Fadi",    LastName = "Fakhouri",
-                    HireDate = DateTime.Parse("2002-07-06") },
+                    HireDate = DateTime.Parse("2002-07-06"), ID = 10},
                 new Instructor { FirstMidName = "Roger",   LastName = "Harui",
-                    HireDate = DateTime.Parse("1998-07-01") },
+                    HireDate = DateTime.Parse("1998-07-01"), ID = 11 },
                 new Instructor { FirstMidName = "Candace", LastName = "Kapoor",
-                    HireDate = DateTime.Parse("2001-01-15") },
+                    HireDate = DateTime.Parse("2001-01-15"), ID = 12 },
                 new Instructor { FirstMidName = "Roger",   LastName = "Zheng",
-                    HireDate = DateTime.Parse("2004-02-12") }
+                    HireDate = DateTime.Parse("2004-02-12"), ID = 13  }
             };
 
             context.Instructors.AddRange(instructors);
@@ -62,16 +62,16 @@ namespace ContosoUniversity.Data
             {
                 new Department { Name = "English",     Budget = 350000,
                     StartDate = DateTime.Parse("2007-09-01"),
-                    InstructorID  = instructors.Single( i => i.LastName == "Abercrombie").ID },
+                    InstructorID  = instructors.Single( i => i.LastName == "Abercrombie").ID, DepartmentID = 1},
                 new Department { Name = "Mathematics", Budget = 100000,
                     StartDate = DateTime.Parse("2007-09-01"),
-                    InstructorID  = instructors.Single( i => i.LastName == "Fakhouri").ID },
+                    InstructorID  = instructors.Single( i => i.LastName == "Fakhouri").ID, DepartmentID = 2 },
                 new Department { Name = "Engineering", Budget = 350000,
                     StartDate = DateTime.Parse("2007-09-01"),
-                    InstructorID  = instructors.Single( i => i.LastName == "Harui").ID },
+                    InstructorID  = instructors.Single( i => i.LastName == "Harui").ID, DepartmentID = 3 },
                 new Department { Name = "Economics",   Budget = 100000,
                     StartDate = DateTime.Parse("2007-09-01"),
-                    InstructorID  = instructors.Single( i => i.LastName == "Kapoor").ID }
+                    InstructorID  = instructors.Single( i => i.LastName == "Kapoor").ID, DepartmentID = 4 }
             };
 
             context.Departments.AddRange(departments);
@@ -221,15 +221,18 @@ namespace ContosoUniversity.Data
                     }
             };
 
+            var id = 1;
             foreach (Enrollment e in enrollments)
             {
                 var enrollmentInDataBase = context.Enrollments.Where(
                     s =>
                             s.Student.ID == e.StudentID &&
                             s.Course.CourseID == e.CourseID).SingleOrDefault();
+                e.EnrollmentID = id;
                 if (enrollmentInDataBase == null)
                 {
                     context.Enrollments.Add(e);
+                    id++;
                 }
             }
             context.SaveChanges();

@@ -16,4 +16,8 @@
       <ProjectReference Include="..\..\..\efcore\src\EFCore\EFCore.csproj" />
     </ItemGroup>
 
+    <ItemGroup>
+      <Folder Include="ValueGeneration\" />
+    </ItemGroup>
+
 </Project>

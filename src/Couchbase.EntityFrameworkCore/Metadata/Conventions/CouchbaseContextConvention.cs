@@ -6,15 +6,15 @@ using Microsoft.EntityFrameworkCore.Metadata.Conventions.Infrastructure;
 
 namespace Couchbase.EntityFrameworkCore.Metadata.Conventions;
 
-public class CouchbaseContextConvention : TypeAttributeConventionBase<CouchbaseAttribute>
+public class CouchbaseContextConvention : TypeAttributeConventionBase<CouchbaseKeyspaceAttribute>
 {
     public CouchbaseContextConvention(ProviderConventionSetBuilderDependencies dependencies) : base(dependencies)
     {
     }
 
-    protected override void ProcessEntityTypeAdded(IConventionEntityTypeBuilder entityTypeBuilder, CouchbaseAttribute attribute,
+    protected override void ProcessEntityTypeAdded(IConventionEntityTypeBuilder entityTypeBuilder, CouchbaseKeyspaceAttribute keyspaceAttribute,
         IConventionContext<IConventionEntityTypeBuilder> context)
     {
-        entityTypeBuilder.ToTable(attribute.GetContextId());
+        entityTypeBuilder.ToTable(keyspaceAttribute.GetKeySpace());
     }
 }

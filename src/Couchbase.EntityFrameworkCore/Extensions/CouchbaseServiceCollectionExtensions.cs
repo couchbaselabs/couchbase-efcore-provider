@@ -5,6 +5,7 @@ using Couchbase.EntityFrameworkCore.Metadata.Conventions;
 using Couchbase.EntityFrameworkCore.Migrations.Internal;
 using Couchbase.EntityFrameworkCore.Query;
 using Couchbase.EntityFrameworkCore.Query.Internal;
+using Couchbase.EntityFrameworkCore.Query.Internal.Translators;
 using Couchbase.EntityFrameworkCore.Storage.Internal;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
@@ -46,7 +47,7 @@ public static class CouchbaseServiceCollectionExtensions
         });
         
         serviceCollection.AddCouchbaseBucket<TNamedBucketProvider>(bucketName);
-        serviceCollection.AddLogging(); //this should be injectible from the app side
+        serviceCollection.AddLogging(); //this should be injectable from the app side
         
         var builder = new EntityFrameworkRelationalServicesBuilder(serviceCollection)
             .TryAdd<IRelationalTypeMappingSource, CouchbaseTypeMappingSource>()
@@ -60,8 +61,8 @@ public static class CouchbaseServiceCollectionExtensions
             .TryAdd<ISqlGenerationHelper, CouchbaseSqlGenerationHelper>()
             .TryAdd<IShapedQueryCompilingExpressionVisitorFactory, CouchbaseShapedQueryCompilingExpressionVisitorFactory>()
             .TryAdd<IHistoryRepository, CouchbaseHistoryRepository>()//not used but required by ASP.NET
-            
             .TryAdd<IModificationCommandBatchFactory, CouchbaseModificationCommandBatchFactory>()
+            .TryAdd<IMethodCallTranslatorProvider, CouchbaseMethodCallTranslatorProvider>()
             
             //Found that this was necessary, because the default convention of determining a
             //Model's primary key automatically based off of properties that have 'Id' in their

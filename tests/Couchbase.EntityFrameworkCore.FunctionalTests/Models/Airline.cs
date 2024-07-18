@@ -4,7 +4,7 @@ using Newtonsoft.Json;
 
 namespace Couchbase.EntityFrameworkCore.FunctionalTests.Models;
 
-[Couchbase("travel-sample")]
+[CouchbaseKeyspace("travel-sample")]
 public class Airline
 {
     [JsonProperty("callsign", NullValueHandling = NullValueHandling.Ignore)]

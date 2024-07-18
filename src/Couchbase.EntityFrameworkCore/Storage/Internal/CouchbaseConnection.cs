@@ -1,5 +1,6 @@
 using System.Data;
 using System.Data.Common;
+using System.Runtime.InteropServices.ComTypes;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 
@@ -147,6 +148,6 @@ public class CouchbaseConnection : IRelationalConnection, ICouchbaseConnection
 
     public ValueTask DisposeAsync()
     {
-        throw new NotImplementedException();
+        return ValueTask.CompletedTask;
     }
 }
