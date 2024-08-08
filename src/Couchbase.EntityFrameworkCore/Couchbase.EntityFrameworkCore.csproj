@@ -20,4 +20,8 @@
       <Folder Include="ValueGeneration\" />
     </ItemGroup>
 
+    <ItemGroup>
+      <Compile Remove="Query\Internal\CouchbaseShapedQueryCompilingExpressionVisitor2.cs" />
+    </ItemGroup>
+
 </Project>

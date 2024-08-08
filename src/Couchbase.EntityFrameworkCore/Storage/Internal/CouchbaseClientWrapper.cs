@@ -6,6 +6,7 @@ using Couchbase.Extensions.DependencyInjection;
 using Couchbase.KeyValue;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Serialization;
 
 namespace Couchbase.EntityFrameworkCore.Storage.Internal;
 
@@ -48,11 +49,13 @@ public class CouchbaseClientWrapper : ICouchbaseClientWrapper
                 new JsonSerializerSettings
                 {
                     // PreserveReferencesHandling = PreserveReferencesHandling.Objects
-                    ReferenceLoopHandling = ReferenceLoopHandling.Ignore
+                    ReferenceLoopHandling = ReferenceLoopHandling.Ignore,
+                    //ContractResolver = new CamelCasePropertyNamesContractResolver() 
                 },
                 new JsonSerializerSettings
                 {
-                    PreserveReferencesHandling = PreserveReferencesHandling.Objects
+                    PreserveReferencesHandling = PreserveReferencesHandling.Objects,
+                    //ContractResolver = new CamelCasePropertyNamesContractResolver() 
                 }));
             var contextIdTuple = DelimitContextId(contextId);
             var collection = await GetCollection(contextIdTuple.scope, contextIdTuple.collection).ConfigureAwait(false);

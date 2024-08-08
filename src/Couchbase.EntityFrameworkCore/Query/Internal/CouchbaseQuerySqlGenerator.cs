@@ -49,6 +49,94 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
                 break;
         }
     }
+    
+        /// <inheritdoc />
+    protected override Expression VisitSelect(SelectExpression selectExpression)
+    {
+        IDisposable? subQueryIndent = null;
+        if (selectExpression.Alias != null)
+        {
+            Sql.AppendLine("(");
+            subQueryIndent =   Sql.Indent();
+        }
+
+        if (!TryGenerateWithoutWrappingSelect(selectExpression))
+        {
+            Sql.Append("SELECT ");
+
+            if (selectExpression.IsDistinct)
+            {
+                Sql.Append("DISTINCT ");
+            }
+
+            GenerateTop(selectExpression);
+
+            if (selectExpression.Projection.Any())
+            {
+                var dedupedProjections = new Dictionary<string, ProjectionExpression>();
+                foreach (var expression in selectExpression.Projection)
+                {
+                    dedupedProjections.TryAdd(expression.Alias, expression);
+                }
+                GenerateList(dedupedProjections.Values.ToList(), e => Visit(e));
+                
+                
+               // GenerateList(selectExpression.Projection, e => Visit(e));
+            }
+            else
+            {
+                GenerateEmptyProjection(selectExpression);
+            }
+
+            if (selectExpression.Tables.Any())
+            {
+                Sql.AppendLine().Append("FROM ");
+
+                GenerateList(selectExpression.Tables, e => Visit(e), sql => sql.AppendLine());
+            }
+            else
+            {
+                GeneratePseudoFromClause();
+            }
+
+            if (selectExpression.Predicate != null)
+            {
+                Sql.AppendLine().Append("WHERE ");
+
+                Visit(selectExpression.Predicate);
+            }
+
+            if (selectExpression.GroupBy.Count > 0)
+            {
+                Sql.AppendLine().Append("GROUP BY ");
+
+                GenerateList(selectExpression.GroupBy, e => Visit(e));
+            }
+
+            if (selectExpression.Having != null)
+            {
+                Sql.AppendLine().Append("HAVING ");
+
+                Visit(selectExpression.Having);
+            }
+
+            GenerateOrderings(selectExpression);
+            GenerateLimitOffset(selectExpression);
+        }
+
+        if (selectExpression.Alias != null)
+        {
+            subQueryIndent!.Dispose();
+
+            Sql.AppendLine()
+                .Append(")")
+                .Append(AliasSeparator)
+                .Append(Dependencies.SqlGenerationHelper.DelimitIdentifier(selectExpression.Alias));
+        }
+
+        return selectExpression;
+    }
+
 
     protected override void GenerateExists(ExistsExpression existsExpression, bool negated)
     {
@@ -89,13 +177,13 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
 
         return tableExpression;
     }
-
     protected override Expression VisitColumn(ColumnExpression columnExpression)
     {
         var helper = Dependencies.SqlGenerationHelper;
         Sql.Append(helper.DelimitIdentifier(columnExpression.TableAlias))
             .Append(".")
-            .Append(helper.DelimitIdentifier(columnExpression.Name.ToLower()));//TODO ToLower is a hack this should be done during entity translation
+            .Append(helper.DelimitIdentifier(columnExpression.Name));
+
         return columnExpression;
     }
 
@@ -251,7 +339,7 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
         Action<IRelationalCommandBuilder>? joinAction = null)
     {
         joinAction ??= (isb => isb.Append(", "));
-
+        
         for (var i = 0; i < items.Count; i++)
         {
             if (i > 0)

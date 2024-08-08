@@ -1,47 +1,46 @@
-using System.Data.Common;
-using System.Diagnostics;
-using System.Diagnostics.CodeAnalysis;
-using System.Reflection.Metadata;
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+
+using System.Linq.Expressions;
+using System.Reflection;
+using Couchbase.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Internal;
 using Microsoft.EntityFrameworkCore.Query;
 using Microsoft.EntityFrameworkCore.Query.Internal;
 using Microsoft.EntityFrameworkCore.Query.SqlExpressions;
 using Microsoft.EntityFrameworkCore.Storage;
-using System.Linq.Expressions;
-using System.Reflection;
-using System.Runtime.CompilerServices;
-using System.Text.Json;
-using Couchbase.Extensions.DependencyInjection;
-using Microsoft.EntityFrameworkCore.ChangeTracking.Internal;
-using Microsoft.EntityFrameworkCore.Internal;
-using Microsoft.EntityFrameworkCore.Metadata;
-using Microsoft.EntityFrameworkCore.Metadata.Internal;
-using Microsoft.EntityFrameworkCore.Storage.Json;
 using static System.Linq.Expressions.Expression;
-
 
 namespace Couchbase.EntityFrameworkCore.Query.Internal;
 
-public class CouchbaseShapedQueryCompilingExpressionVisitor : RelationalShapedQueryCompilingExpressionVisitor
+/// <inheritdoc />
+public partial class CouchbaseShapedQueryCompilingExpressionVisitor : ShapedQueryCompilingExpressionVisitor
 {
     private readonly QuerySqlGenerator _querySqlGenerator;
     private readonly IClusterProvider _clusterProvider;
-    private readonly RelationalCommandCache _relationalCommandCache;
     private readonly Type _contextType;
     private readonly ISet<string> _tags;
     private readonly bool _threadSafetyChecksEnabled;
-    private bool _detailedErrorsEnabled;
+    private readonly bool _detailedErrorsEnabled;
     private readonly bool _useRelationalNulls;
-    
-    public CouchbaseShapedQueryCompilingExpressionVisitor(ShapedQueryCompilingExpressionVisitorDependencies dependencies,
+
+    /// <summary>
+    ///     Creates a new instance of the <see cref="ShapedQueryCompilingExpressionVisitor" /> class.
+    /// </summary>
+    /// <param name="dependencies">Parameter object containing dependencies for this class.</param>
+    /// <param name="relationalDependencies">Parameter object containing relational dependencies for this class.</param>
+    /// <param name="queryCompilationContext">The query compilation context object to use.</param>
+    public CouchbaseShapedQueryCompilingExpressionVisitor(
+        ShapedQueryCompilingExpressionVisitorDependencies dependencies,
         RelationalShapedQueryCompilingExpressionVisitorDependencies relationalDependencies,
-        QueryCompilationContext queryCompilationContext, 
+        QueryCompilationContext queryCompilationContext,
         QuerySqlGenerator querySqlGenerator, 
         IClusterProvider clusterProvider)
-    : base(dependencies, relationalDependencies, queryCompilationContext)
+        : base(dependencies, queryCompilationContext)
     {
         _querySqlGenerator = querySqlGenerator;
         _clusterProvider = clusterProvider;
@@ -53,276 +52,356 @@ public class CouchbaseShapedQueryCompilingExpressionVisitor : RelationalShapedQu
         _detailedErrorsEnabled = dependencies.CoreSingletonOptions.AreDetailedErrorsEnabled;
         _useRelationalNulls = RelationalOptionsExtension.Extract(queryCompilationContext.ContextOptions).UseRelationalNulls;
     }
-    
-    protected override RelationalShapedQueryCompilingExpressionVisitorDependencies RelationalDependencies { get; }
 
-    protected override Expression VisitShapedQuery(ShapedQueryExpression shapedQueryExpression)
-    {
-        var selectExpression = (SelectExpression)shapedQueryExpression.QueryExpression;
-        var nonComposedFromSql = selectExpression.IsNonComposedFromSql();
-        var querySplittingBehavior = ((RelationalQueryCompilationContext)QueryCompilationContext).QuerySplittingBehavior;
-        var splitQuery = querySplittingBehavior == QuerySplittingBehavior.SplitQuery;
-        var collectionCount = 0;
-        
-        var shaper = new ShaperProcessingExpressionVisitor(this, selectExpression, _tags, splitQuery, nonComposedFromSql).ProcessShaper(
-            shapedQueryExpression.ShaperExpression,
-            out var relationalCommandCache, out var readerColumns, out var relatedDataLoaders, ref collectionCount);
-     
-       return New(typeof(CouchbaseQueryEnumerable<>).MakeGenericType(shaper.ReturnType).GetConstructors()[0],
-           Convert(QueryCompilationContext.QueryContextParameter, typeof(RelationalQueryContext)),
-           Constant(relationalCommandCache),
-           Constant(_clusterProvider));
-    }
+    /// <summary>
+    ///     Relational provider-specific dependencies for this service.
+    /// </summary>
+    protected virtual RelationalShapedQueryCompilingExpressionVisitorDependencies RelationalDependencies { get; }
 
-    private sealed class ShaperProcessingExpressionVisitor : ExpressionVisitor
+    /// <inheritdoc />
+    protected override Expression VisitExtension(Expression extensionExpression)
+        => extensionExpression is NonQueryExpression nonQueryExpression
+            ? VisitNonQuery(nonQueryExpression)
+            : base.VisitExtension(extensionExpression);
+
+    /// <summary>
+    ///     Visits the given <paramref name="nonQueryExpression" />, returning an expression that when compiled, can execute the non-
+    ///     query operation against the database.
+    /// </summary>
+    /// <param name="nonQueryExpression">The expression to be compiled.</param>
+    /// <returns>An expression which executes a non-query operation.</returns>
+    protected virtual Expression VisitNonQuery(NonQueryExpression nonQueryExpression)
     {
-        private int _collectionId;
-        private ParameterExpression _indexMapParameter;
-        private readonly List<Expression> _expressions = new();
-        private List<ParameterExpression>? _variables = new();
-        private readonly CouchbaseShapedQueryCompilingExpressionVisitor _parentVisitor;
-        private SelectExpression _selectExpression;
-        private IReadOnlyList<ReaderColumn?> _readerColumns;
-        private ParameterExpression _dataReaderParameter;
-        private bool _containsCollectionMaterialization;
-        private bool _generateCommandCache;
-        private List<Expression> _includeExpressions = new();
-        private List<Expression> _jsonEntityExpressions = new();
-        private ParameterExpression _resultContextParameter;
-        private ParameterExpression _resultCoordinatorParameter;
-        private MemberExpression _valuesArrayExpression;
-        private bool _splitQuery;
-        private List<Expression> _collectionPopulatingExpressions;
-        private List<Expression> _valuesArrayInitializers;
-        private bool _isAsync;
-        private readonly ParameterExpression? _executionStrategyParameter;
-        private readonly IDiagnosticsLogger<DbLoggerCategory.Query> _queryLogger;
-        private readonly bool _isTracking;
-        private readonly ISet<string> _tags;
-        private readonly bool _detailedErrorsEnabled;
-        
-        public ShaperProcessingExpressionVisitor(
-            CouchbaseShapedQueryCompilingExpressionVisitor parentVisitor,
-            SelectExpression selectExpression,
-            ISet<string> tags,
-            bool splitQuery,
-            bool indexMap)
+        // Apply tags
+        var innerExpression = nonQueryExpression.Expression;
+        switch (innerExpression)
         {
-            _parentVisitor = parentVisitor;
-            _queryLogger = parentVisitor.QueryCompilationContext.Logger;
-            _resultCoordinatorParameter = Parameter(
-                splitQuery ? typeof(SplitQueryResultCoordinator) : typeof(SingleQueryResultCoordinator), "resultCoordinator");
-            _executionStrategyParameter = splitQuery ? Parameter(typeof(IExecutionStrategy), "executionStrategy") : null;
+            case UpdateExpression updateExpression:
+                innerExpression = updateExpression.ApplyTags(_tags);
+                break;
 
-            _selectExpression = selectExpression;
-            _tags = tags;
-            _dataReaderParameter = Parameter(typeof(DbDataReader), "dataReader");
-            _resultContextParameter = Parameter(typeof(ResultContext), "resultContext");
-            _indexMapParameter = indexMap ? Parameter(typeof(int[]), "indexMap") : null;
-            if (parentVisitor.QueryCompilationContext.IsBuffering)
-            {
-                _readerColumns = new ReaderColumn?[_selectExpression.Projection.Count];
-            }
-
-            _generateCommandCache = true;
-            _detailedErrorsEnabled = parentVisitor._detailedErrorsEnabled;
-            _isTracking = parentVisitor.QueryCompilationContext.QueryTrackingBehavior == QueryTrackingBehavior.TrackAll;
-            _isAsync = parentVisitor.QueryCompilationContext.IsAsync;
-            _splitQuery = splitQuery;
-
-            _selectExpression.ApplyTags(_tags);
+            case DeleteExpression deleteExpression:
+                innerExpression = deleteExpression.ApplyTags(_tags);
+                break;
         }
 
-        public LambdaExpression ProcessShaper(
-            Expression shaperExpression,
-            out RelationalCommandCache? relationalCommandCache,
-            out IReadOnlyList<ReaderColumn?>? readerColumns,
-            out LambdaExpression? relatedDataLoaders,
-            ref int collectionId)
+        var relationalCommandCache = new RelationalCommandCache(
+            Dependencies.MemoryCache,
+            RelationalDependencies.QuerySqlGeneratorFactory,
+            RelationalDependencies.RelationalParameterBasedSqlProcessorFactory,
+            innerExpression,
+            _useRelationalNulls);
+
+        return Call(
+            QueryCompilationContext.IsAsync ? NonQueryAsyncMethodInfo : NonQueryMethodInfo,
+            Convert(QueryCompilationContext.QueryContextParameter, typeof(RelationalQueryContext)),
+            Constant(relationalCommandCache),
+            Constant(_contextType),
+            Constant(nonQueryExpression.CommandSource),
+            Constant(_threadSafetyChecksEnabled));
+    }
+
+    private static readonly MethodInfo NonQueryMethodInfo
+        = typeof(RelationalShapedQueryCompilingExpressionVisitor).GetTypeInfo()
+            .GetDeclaredMethods(nameof(NonQueryResult))
+            .Single(mi => mi.GetParameters().Length == 5);
+
+    private static readonly MethodInfo NonQueryAsyncMethodInfo
+        = typeof(RelationalShapedQueryCompilingExpressionVisitor).GetTypeInfo()
+            .GetDeclaredMethods(nameof(NonQueryResultAsync))
+            .Single(mi => mi.GetParameters().Length == 5);
+
+    private static int NonQueryResult(
+        RelationalQueryContext relationalQueryContext,
+        RelationalCommandCache relationalCommandCache,
+        Type contextType,
+        CommandSource commandSource,
+        bool threadSafetyChecksEnabled)
+    {
+        try
         {
-            relatedDataLoaders = null;
-            _collectionId = collectionId;
-
-            if (_indexMapParameter != null)
+            if (threadSafetyChecksEnabled)
             {
-                var result = Visit(shaperExpression);
-                _expressions.Add(result);
-                result = Block(_variables, _expressions);
-
-                relationalCommandCache = new RelationalCommandCache(
-                    _parentVisitor.Dependencies.MemoryCache,
-                    _parentVisitor.RelationalDependencies.QuerySqlGeneratorFactory,
-                    _parentVisitor.RelationalDependencies.RelationalParameterBasedSqlProcessorFactory,
-                    _selectExpression,
-                    _parentVisitor._useRelationalNulls);
-                readerColumns = _readerColumns;
-
-                return Lambda(
-                    result,
-                    QueryCompilationContext.QueryContextParameter,
-                    _dataReaderParameter,
-                    _indexMapParameter);
+                relationalQueryContext.ConcurrencyDetector.EnterCriticalSection();
             }
 
-            _containsCollectionMaterialization = new CollectionShaperFindingExpressionVisitor()
-                .ContainsCollectionMaterialization(shaperExpression);
-
-            if (!_containsCollectionMaterialization)
+            try
             {
-                var result = Visit(shaperExpression);
-                _expressions.AddRange(_includeExpressions);
-                _expressions.AddRange(_jsonEntityExpressions);
-                _expressions.Add(result);
-                result = Block(_variables, _expressions);
+                return relationalQueryContext.ExecutionStrategy.Execute(
+                    (relationalQueryContext, relationalCommandCache, commandSource),
+                    static (_, state) =>
+                    {
+                        EntityFrameworkEventSource.Log.QueryExecuting();
 
-                relationalCommandCache = _generateCommandCache
-                    ? new RelationalCommandCache(
-                        _parentVisitor.Dependencies.MemoryCache,
-                        _parentVisitor.RelationalDependencies.QuerySqlGeneratorFactory,
-                        _parentVisitor.RelationalDependencies.RelationalParameterBasedSqlProcessorFactory,
-                        _selectExpression,
-                        _parentVisitor._useRelationalNulls)
-                    : null;
-                readerColumns = _readerColumns;
+                        var relationalCommand = state.relationalCommandCache.RentAndPopulateRelationalCommand(state.relationalQueryContext);
 
-                return Lambda(
-                    result,
-                    QueryCompilationContext.QueryContextParameter,
-                    _dataReaderParameter,
-                    _resultContextParameter,
-                    _resultCoordinatorParameter);
+                        return relationalCommand.ExecuteNonQuery(
+                            new RelationalCommandParameterObject(
+                                state.relationalQueryContext.Connection,
+                                state.relationalQueryContext.ParameterValues,
+                                null,
+                                state.relationalQueryContext.Context,
+                                state.relationalQueryContext.CommandLogger,
+                                state.commandSource));
+                    },
+                    null);
+            }
+            finally
+            {
+                if (threadSafetyChecksEnabled)
+                {
+                    relationalQueryContext.ConcurrencyDetector.ExitCriticalSection();
+                }
+            }
+        }
+        catch (Exception exception)
+        {
+            if (relationalQueryContext.ExceptionDetector.IsCancellation(exception))
+            {
+                relationalQueryContext.QueryLogger.QueryCanceled(contextType);
             }
             else
             {
-                _valuesArrayExpression = MakeMemberAccess(_resultContextParameter, ResultContextValuesMemberInfo);
-                _collectionPopulatingExpressions = new List<Expression>();
-                _valuesArrayInitializers = new List<Expression>();
-
-                var result = Visit(shaperExpression);
-
-                var valueArrayInitializationExpression = Assign(
-                    _valuesArrayExpression, NewArrayInit(typeof(object), _valuesArrayInitializers));
-
-                _expressions.AddRange(_jsonEntityExpressions);
-                _expressions.Add(valueArrayInitializationExpression);
-                _expressions.AddRange(_includeExpressions);
-
-                if (_splitQuery)
+                switch (commandSource)
                 {
-                    _expressions.Add(Default(result.Type));
+                    case CommandSource.ExecuteDelete:
+                        relationalQueryContext.QueryLogger.ExecuteDeleteFailed(contextType, exception);
+                        break;
 
-                    var initializationBlock = Block(_variables, _expressions);
-                    result = Condition(
-                        Equal(_valuesArrayExpression, Constant(null, typeof(object[]))),
-                        initializationBlock,
-                        result);
+                    case CommandSource.ExecuteUpdate:
+                        relationalQueryContext.QueryLogger.ExecuteUpdateFailed(contextType, exception);
+                        break;
 
-                    if (_isAsync)
-                    {
-                        var tasks = NewArrayInit(
-                            typeof(Func<Task>), _collectionPopulatingExpressions.Select(
-                                e => Lambda<Func<Task>>(e)));
-                        relatedDataLoaders =
-                            Lambda<Func<QueryContext, IExecutionStrategy, SplitQueryResultCoordinator, Task>>(
-                                Call(TaskAwaiterMethodInfo, tasks),
-                                QueryCompilationContext.QueryContextParameter,
-                                _executionStrategyParameter!,
-                                _resultCoordinatorParameter);
-                    }
-                    else
-                    {
-                        relatedDataLoaders =
-                            Lambda<Action<QueryContext, IExecutionStrategy, SplitQueryResultCoordinator>>(
-                                Block(_collectionPopulatingExpressions),
-                                QueryCompilationContext.QueryContextParameter,
-                                _executionStrategyParameter!,
-                                _resultCoordinatorParameter);
-                    }
+                    default:
+                        relationalQueryContext.QueryLogger.NonQueryOperationFailed(contextType, exception);
+                        break;
                 }
-                else
-                {
-                    var initializationBlock = Block(_variables, _expressions);
-
-                    var conditionalMaterializationExpressions = new List<Expression>
-                    {
-                        IfThen(
-                            Equal(_valuesArrayExpression, Constant(null, typeof(object[]))),
-                            initializationBlock)
-                    };
-
-                    conditionalMaterializationExpressions.AddRange(_collectionPopulatingExpressions);
-
-                    conditionalMaterializationExpressions.Add(
-                        Condition(
-                            IsTrue(
-                                MakeMemberAccess(
-                                    _resultCoordinatorParameter, SingleQueryResultCoordinatorResultReadyMemberInfo)),
-                            result,
-                            Default(result.Type)));
-
-                    result = Block(conditionalMaterializationExpressions);
-                }
-
-                relationalCommandCache = _generateCommandCache
-                    ? new RelationalCommandCache(
-                        _parentVisitor.Dependencies.MemoryCache,
-                        _parentVisitor.RelationalDependencies.QuerySqlGeneratorFactory,
-                        _parentVisitor.RelationalDependencies.RelationalParameterBasedSqlProcessorFactory,
-                        _selectExpression,
-                        _parentVisitor._useRelationalNulls)
-                    : null;
-                readerColumns = _readerColumns;
-
-                collectionId = _collectionId;
-
-                return Lambda(
-                    result,
-                    QueryCompilationContext.QueryContextParameter,
-                    _dataReaderParameter,
-                    _resultContextParameter,
-                    _resultCoordinatorParameter);
             }
-        }
 
-        private static readonly MemberInfo ResultContextValuesMemberInfo
-            = typeof(ResultContext).GetMember(nameof(ResultContext.Values))[0];
-        
-        private static readonly MemberInfo SingleQueryResultCoordinatorResultReadyMemberInfo
-            = typeof(SingleQueryResultCoordinator).GetMember(nameof(SingleQueryResultCoordinator.ResultReady))[0];
-        
-        private static readonly MethodInfo TaskAwaiterMethodInfo
-            = typeof(ShaperProcessingExpressionVisitor).GetTypeInfo().GetDeclaredMethod(nameof(TaskAwaiter))!;
+            throw;
+        }
     }
-    
-    private sealed class CollectionShaperFindingExpressionVisitor : ExpressionVisitor
+
+    private static Task<int> NonQueryResultAsync(
+        RelationalQueryContext relationalQueryContext,
+        RelationalCommandCache relationalCommandCache,
+        Type contextType,
+        CommandSource commandSource,
+        bool threadSafetyChecksEnabled)
     {
-        private bool _containsCollection;
-
-        public bool ContainsCollectionMaterialization(Expression expression)
+        try
         {
-            _containsCollection = false;
+            if (threadSafetyChecksEnabled)
+            {
+                relationalQueryContext.ConcurrencyDetector.EnterCriticalSection();
+            }
 
-            Visit(expression);
+            try
+            {
+                return relationalQueryContext.ExecutionStrategy.ExecuteAsync(
+                    (relationalQueryContext, relationalCommandCache, commandSource),
+                    static (_, state, cancellationToken) =>
+                    {
+                        EntityFrameworkEventSource.Log.QueryExecuting();
 
-            return _containsCollection;
+                        var relationalCommand = state.relationalCommandCache.RentAndPopulateRelationalCommand(state.relationalQueryContext);
+
+                        return relationalCommand.ExecuteNonQueryAsync(
+                            new RelationalCommandParameterObject(
+                                state.relationalQueryContext.Connection,
+                                state.relationalQueryContext.ParameterValues,
+                                null,
+                                state.relationalQueryContext.Context,
+                                state.relationalQueryContext.CommandLogger,
+                                state.commandSource),
+                            cancellationToken);
+                    },
+                    null,
+                    relationalQueryContext.CancellationToken);
+            }
+            finally
+            {
+                if (threadSafetyChecksEnabled)
+                {
+                    relationalQueryContext.ConcurrencyDetector.ExitCriticalSection();
+                }
+            }
         }
-
-        [return: NotNullIfNotNull("expression")]
-        public override Expression? Visit(Expression? expression)
+        catch (Exception exception)
         {
-            if (_containsCollection)
+            if (relationalQueryContext.ExceptionDetector.IsCancellation(exception))
             {
-                return expression;
+                relationalQueryContext.QueryLogger.QueryCanceled(contextType);
+            }
+            else
+            {
+                switch (commandSource)
+                {
+                    case CommandSource.ExecuteDelete:
+                        relationalQueryContext.QueryLogger.ExecuteDeleteFailed(contextType, exception);
+                        break;
+
+                    case CommandSource.ExecuteUpdate:
+                        relationalQueryContext.QueryLogger.ExecuteUpdateFailed(contextType, exception);
+                        break;
+
+                    default:
+                        relationalQueryContext.QueryLogger.NonQueryOperationFailed(contextType, exception);
+                        break;
+                }
             }
 
-            if (expression is RelationalCollectionShaperExpression or RelationalSplitCollectionShaperExpression)
-            {
-                _containsCollection = true;
+            throw;
+        }
+    }
 
-                return expression;
+    /// <inheritdoc />
+    protected override Expression VisitShapedQuery(ShapedQueryExpression shapedQueryExpression)
+    {
+        var selectExpression = (SelectExpression)shapedQueryExpression.QueryExpression;
+
+        VerifyNoClientConstant(shapedQueryExpression.ShaperExpression);
+        var querySplittingBehavior = ((RelationalQueryCompilationContext)QueryCompilationContext).QuerySplittingBehavior;
+        var splitQuery = querySplittingBehavior == QuerySplittingBehavior.SplitQuery;
+        var collectionCount = 0;
+
+        if (shapedQueryExpression.ShaperExpression is RelationalGroupByResultExpression relationalGroupByResultExpression)
+        {
+            var elementSelector = new ShaperProcessingExpressionVisitor(this, selectExpression, selectExpression.Tags, splitQuery, false)
+                .ProcessRelationalGroupingResult(
+                    relationalGroupByResultExpression,
+                    out var relationalCommandCache,
+                    out var readerColumns,
+                    out var keySelector,
+                    out var keyIdentifier,
+                    out var relatedDataLoaders,
+                    ref collectionCount);
+
+            if (querySplittingBehavior == null
+                && collectionCount > 1)
+            {
+                QueryCompilationContext.Logger.MultipleCollectionIncludeWarning();
             }
 
-            return base.Visit(expression);
+            if (splitQuery)
+            {
+                var relatedDataLoadersParameter = Constant(
+                    QueryCompilationContext.IsAsync ? null : relatedDataLoaders?.Compile(),
+                    typeof(Action<QueryContext, IExecutionStrategy, SplitQueryResultCoordinator>));
+
+                var relatedDataLoadersAsyncParameter = Constant(
+                    QueryCompilationContext.IsAsync ? relatedDataLoaders?.Compile() : null,
+                    typeof(Func<QueryContext, IExecutionStrategy, SplitQueryResultCoordinator, Task>));
+
+                return New(
+                    typeof(GroupBySplitQueryingEnumerable<,>).MakeGenericType(
+                        keySelector.ReturnType,
+                        elementSelector.ReturnType).GetConstructors()[0],
+                    Convert(QueryCompilationContext.QueryContextParameter, typeof(RelationalQueryContext)),
+                    Constant(relationalCommandCache),
+                    Constant(readerColumns, typeof(IReadOnlyList<ReaderColumn?>)),
+                    Constant(keySelector.Compile()),
+                    Constant(keyIdentifier.Compile()),
+                    Constant(relationalGroupByResultExpression.KeyIdentifierValueComparers, typeof(IReadOnlyList<ValueComparer>)),
+                    Constant(elementSelector.Compile()),
+                    relatedDataLoadersParameter,
+                    relatedDataLoadersAsyncParameter,
+                    Constant(_contextType),
+                    Constant(
+                        QueryCompilationContext.QueryTrackingBehavior == QueryTrackingBehavior.NoTrackingWithIdentityResolution),
+                    Constant(_detailedErrorsEnabled),
+                    Constant(_threadSafetyChecksEnabled));
+            }
+
+            return New(
+                typeof(GroupBySingleQueryingEnumerable<,>).MakeGenericType(
+                    keySelector.ReturnType,
+                    elementSelector.ReturnType).GetConstructors()[0],
+                Convert(QueryCompilationContext.QueryContextParameter, typeof(RelationalQueryContext)),
+                Constant(relationalCommandCache),
+                Constant(readerColumns, typeof(IReadOnlyList<ReaderColumn?>)),
+                Constant(keySelector.Compile()),
+                Constant(keyIdentifier.Compile()),
+                Constant(relationalGroupByResultExpression.KeyIdentifierValueComparers, typeof(IReadOnlyList<ValueComparer>)),
+                Constant(elementSelector.Compile()),
+                Constant(_contextType),
+                Constant(
+                    QueryCompilationContext.QueryTrackingBehavior == QueryTrackingBehavior.NoTrackingWithIdentityResolution),
+                Constant(_detailedErrorsEnabled),
+                Constant(_threadSafetyChecksEnabled));
+        }
+        else
+        {
+            var nonComposedFromSql = selectExpression.IsNonComposedFromSql();
+            var shaper = new ShaperProcessingExpressionVisitor(this, selectExpression, _tags, splitQuery, nonComposedFromSql).ProcessShaper(
+                shapedQueryExpression.ShaperExpression,
+                out var relationalCommandCache, out var readerColumns, out var relatedDataLoaders, ref collectionCount);
+            
+            if (querySplittingBehavior == null
+                && collectionCount > 1)
+            {
+                QueryCompilationContext.Logger.MultipleCollectionIncludeWarning();
+            }
+
+            if (nonComposedFromSql)
+            {
+                return New(
+                    typeof(FromSqlQueryingEnumerable<>).MakeGenericType(shaper.ReturnType).GetConstructors()[0],
+                    Convert(QueryCompilationContext.QueryContextParameter, typeof(RelationalQueryContext)),
+                    Constant(relationalCommandCache),
+                    Constant(readerColumns, typeof(IReadOnlyList<ReaderColumn?>)),
+                    Constant(
+                        selectExpression.Projection.Select(pe => ((ColumnExpression)pe.Expression).Name).ToList(),
+                        typeof(IReadOnlyList<string>)),
+                    Constant(shaper.Compile()),
+                    Constant(_contextType),
+                    Constant(
+                        QueryCompilationContext.QueryTrackingBehavior == QueryTrackingBehavior.NoTrackingWithIdentityResolution),
+                    Constant(_detailedErrorsEnabled),
+                    Constant(_threadSafetyChecksEnabled));
+            }
+
+            if (splitQuery)
+            {
+                var relatedDataLoadersParameter = Constant(
+                    QueryCompilationContext.IsAsync ? null : relatedDataLoaders?.Compile(),
+                    typeof(Action<QueryContext, IExecutionStrategy, SplitQueryResultCoordinator>));
+
+                var relatedDataLoadersAsyncParameter = Constant(
+                    QueryCompilationContext.IsAsync ? relatedDataLoaders?.Compile() : null,
+                    typeof(Func<QueryContext, IExecutionStrategy, SplitQueryResultCoordinator, Task>));
+
+                return New(
+                    typeof(SplitQueryingEnumerable<>).MakeGenericType(shaper.ReturnType).GetConstructors().Single(),
+                    Convert(QueryCompilationContext.QueryContextParameter, typeof(RelationalQueryContext)),
+                    Constant(relationalCommandCache),
+                    Constant(readerColumns, typeof(IReadOnlyList<ReaderColumn?>)),
+                    Constant(shaper.Compile()),
+                    relatedDataLoadersParameter,
+                    relatedDataLoadersAsyncParameter,
+                    Constant(_contextType),
+                    Constant(
+                        QueryCompilationContext.QueryTrackingBehavior == QueryTrackingBehavior.NoTrackingWithIdentityResolution),
+                    Constant(_detailedErrorsEnabled),
+                    Constant(_threadSafetyChecksEnabled));
+            }
+            
+            return New(typeof(CouchbaseQueryEnumerable<>).MakeGenericType(shaper.ReturnType).GetConstructors()[0],
+                Convert(QueryCompilationContext.QueryContextParameter, typeof(RelationalQueryContext)),
+                Constant(relationalCommandCache),
+                Constant(_clusterProvider));
+
+            /*return New(
+                typeof(SingleQueryingEnumerable<>).MakeGenericType(shaper.ReturnType).GetConstructors()[0],
+                Convert(QueryCompilationContext.QueryContextParameter, typeof(RelationalQueryContext)),
+                Constant(relationalCommandCache),
+                Constant(readerColumns, typeof(IReadOnlyList<ReaderColumn?>)),
+                Constant(shaper.Compile()),
+                Constant(_contextType),
+                Constant(
+                    QueryCompilationContext.QueryTrackingBehavior == QueryTrackingBehavior.NoTrackingWithIdentityResolution),
+                Constant(_detailedErrorsEnabled),
+                Constant(_threadSafetyChecksEnabled));*/
         }
     }
 }

@@ -1,3 +1,4 @@
+using Couchbase.EntityFrameworkCore.Extensions;
 using Couchbase.EntityFrameworkCore.FunctionalTests.Models;
 using Couchbase.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
@@ -56,6 +57,7 @@ public class CouchbaseFixture : IAsyncLifetime
         {
             base.OnModelCreating(modelBuilder);
             modelBuilder.Entity<Airline>().HasKey(x=>new {x.Type, x.Id});//composite key mapping
+            modelBuilder.Entity<User>().ToCouchbaseCollection("travel-sample", "users", "users");
         }
 
         private interface ITravelSampleBucketProvider : INamedBucketProvider;

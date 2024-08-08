@@ -24,6 +24,21 @@ public class CrudTests
     }
 
     [Fact]
+    public async Task Test_ComplexObject()
+    {
+        var context = _couchbaseFixture.GetDbContext;
+        var user = new User
+        {
+            ID = 1,
+            Name = "Jeff Morris",
+            DrivingLicence = "A^&*GUIOO",
+            PreferredEmail = "jefry@job.com",
+        };
+        await context.AddAsync(user);
+        await context.SaveChangesAsync();
+    }
+
+    [Fact]
     public async Task Test_AddAsync()
     {
         var context = _couchbaseFixture.GetDbContext;

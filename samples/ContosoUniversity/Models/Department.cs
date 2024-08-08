@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using System.Text.Json.Serialization;
 
 namespace ContosoUniversity.Models
 {
@@ -13,7 +14,6 @@ namespace ContosoUniversity.Models
         public string Name { get; set; }
 
         [DataType(DataType.Currency)]
-        [Column(TypeName = "money")]
         public decimal Budget { get; set; }
 
         [DataType(DataType.Date)]
