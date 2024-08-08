@@ -1,6 +1,8 @@
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Text;
+using System.Text.Json.Nodes;
+using Couchbase.Core.Exceptions;
 using Couchbase.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking.Internal;
@@ -9,6 +11,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Internal;
 using Microsoft.EntityFrameworkCore.Query;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.EntityFrameworkCore.Update;
+using Newtonsoft.Json.Serialization;
 using Database = Microsoft.EntityFrameworkCore.Storage.Database;
 
 namespace Couchbase.EntityFrameworkCore.Storage.Internal;
@@ -51,11 +54,15 @@ public class CouchbaseDatabaseWrapper(DatabaseDependencies dependencies, ICouchb
                     }
                     break;
                 case EntityState.Added:
+                {
+                    GenerateJson(updateEntry);
                     if (await couchbaseClient.CreateDocument(primaryKey, keyspace, entity).ConfigureAwait(false))
                     {
                         updateCount++;
                     }
+
                     break;
+                }
                 default:
                     throw new ArgumentOutOfRangeException();
             }
@@ -78,10 +85,23 @@ public class CouchbaseDatabaseWrapper(DatabaseDependencies dependencies, ICouchb
                 {
                     compositeKey.Append("_"); //TODO delimiter should be optional and customizable
                 }
+
                 var keyValue = property.GetValue(entity);
                 compositeKey.Append(keyValue);
             }
         }
+
         return compositeKey.ToString();
+    }
+    
+    
+    private JsonObject GenerateJson(IUpdateEntry updateEntry)
+    {
+        var document = new JsonObject();
+        foreach (var property in updateEntry.EntityType.GetProperties())
+        {
+            document.Add(property.Name, JsonValue.Create(updateEntry.GetCurrentValue(property)));
+        }
+        return document;
     }
 }

@@ -61,7 +61,6 @@ public class CouchbaseQueryProvider : IAsyncQueryProvider, IQueryProvider
     public virtual TResult ExecuteAsync<TResult>(Expression expression, CancellationToken cancellationToken = default)
         => _queryCompiler.ExecuteAsync<TResult>(expression, cancellationToken);
     
-    //Below is From QueryCompiler
     /*public virtual Expression ExtractParameters(
         Expression query,
         IParameterValues parameterValues,

@@ -56,7 +56,7 @@ public static class CouchbaseServiceCollectionExtensions
             .TryAdd<LoggingDefinitions, CouchbaseLoggingDefinitions>()
             .TryAdd<IModificationCommandBatchFactory, CouchbaseModificationCommandBatchFactory>()
             .TryAdd<IUpdateSqlGenerator, CouchbaseUpdateSqlGenerator>()
-            .TryAdd<IAsyncQueryProvider, CouchbaseQueryProvider>()
+            //.TryAdd<IAsyncQueryProvider, CouchbaseQueryProvider>()
             .TryAdd<IQuerySqlGeneratorFactory, CouchbaseQuerySqlGeneratorFactory>()
             .TryAdd<ISqlGenerationHelper, CouchbaseSqlGenerationHelper>()
             .TryAdd<IShapedQueryCompilingExpressionVisitorFactory, CouchbaseShapedQueryCompilingExpressionVisitorFactory>()
@@ -68,24 +68,22 @@ public static class CouchbaseServiceCollectionExtensions
             //Model's primary key automatically based off of properties that have 'Id' in their
             //name was getting ignored.
             .TryAdd<IProviderConventionSetBuilder, CouchbaseConventionSetBuilder>()
-
             .TryAddProviderSpecificServices(m => m
                 .TryAddScoped<QuerySqlGenerator, CouchbaseQuerySqlGenerator>()
-                .TryAddScoped<ICouchbaseConnection, CouchbaseConnection>()
-                .TryAddScoped<IQueryProvider, CouchbaseQueryProvider>()
+                //.TryAddScoped<IRelationalConnection, CouchbaseConnection>()
+                //.TryAddScoped<IQueryProvider, CouchbaseQueryProvider>()
                 .TryAddScoped<IRelationalCommand, CouchbaseCommand>()
                 .TryAddScoped<QueryContext, RelationalQueryContext>()
                 .TryAddScoped<ICouchbaseClientWrapper, CouchbaseClientWrapper>()
-            )
-
-            .TryAdd<IRelationalConnection>(p => p.GetService<ICouchbaseConnection>());
-
+                .TryAddScoped<IRelationalCommandBuilder, RelationalCommandBuilder>()
+            );
+        
 
         builder.TryAddCoreServices();
 
         serviceCollection
-           // .AddScoped<IRelationalConnection, CouchbaseConnection>()
-           //.AddScoped<IQueryCompiler, CouchbaseQueryCompiler>()
+            .AddScoped<IRelationalConnection, CouchbaseConnection2>()
+            .AddScoped<IQueryCompiler, CouchbaseQueryCompiler>()
             .AddSingleton<ISqlGenerationHelper, CouchbaseSqlGenerationHelper>()
             .AddScoped<IRelationalDatabaseCreator, CouchbaseDatabaseCreator>();
 

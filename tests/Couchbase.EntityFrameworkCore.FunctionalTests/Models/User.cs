@@ -6,6 +6,8 @@ namespace Couchbase.EntityFrameworkCore.FunctionalTests.Models;
 
 public class Address
 {
+    public string ID { get; set; }
+    
     [JsonProperty("type", NullValueHandling = NullValueHandling.Ignore)]
     [JsonPropertyName("type")]
     public string Type { get; set; }
@@ -25,6 +27,8 @@ public class Address
 
 public class CreditCard
 {
+    public string ID { get; set; }
+    
     [JsonProperty("type", NullValueHandling = NullValueHandling.Ignore)]
     [JsonPropertyName("type")]
     public string Type { get; set; }
@@ -41,6 +45,8 @@ public class CreditCard
 [CouchbaseKeyspace("tenant_agent_00", "users")]
 public class User
 {
+    public int ID { get; set; }
+    
     [JsonProperty("name", NullValueHandling = NullValueHandling.Ignore)]
     [JsonPropertyName("name")]
     public string Name { get; set; }
