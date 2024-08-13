@@ -33,6 +33,18 @@ public class CrudTests
             Name = "Jeff Morris",
             DrivingLicence = "A^&*GUIOO",
             PreferredEmail = "jefry@job.com",
+            Addresses =
+            [
+                new Address
+                {
+                    City = "Huntington Beach", Country = "USA", HomeAddress = "10032 Stonybrook Drive", ID = "1",
+                    Type = "Home"
+                },
+                new Address
+                {
+                    City = "Newport", ID = "2", HomeAddress = "123 Balboa Ave", Country = "USA", Type = "Work"
+                }
+            ]
         };
         await context.AddAsync(user);
         await context.SaveChangesAsync();

@@ -11,7 +11,7 @@ namespace Couchbase.EntityFrameworkCore;
 
 public static class CouchbaseDbContextOptionsExtensions
 {
-  public static DbContextOptionsBuilder UseCouchbase<TNamedBucketProvider>(
+  public static DbContextOptionsBuilder UseCouchbase(
       this DbContextOptionsBuilder optionsBuilder, 
       ClusterOptions clusterOptions,
       Action<CouchbaseDbContextOptionsBuilder>? couchbaseActionOptions = null)

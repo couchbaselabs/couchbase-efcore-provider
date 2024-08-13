@@ -1,6 +1,8 @@
 using System.Linq.Expressions;
 using System.Reflection;
+using System.Reflection.Emit;
 using System.Text;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Couchbase.Core.Exceptions;
 using Couchbase.EntityFrameworkCore.Metadata;
@@ -11,6 +13,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Internal;
 using Microsoft.EntityFrameworkCore.Query;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.EntityFrameworkCore.Update;
+using Microsoft.EntityFrameworkCore.Utilities;
 using Newtonsoft.Json.Serialization;
 using Database = Microsoft.EntityFrameworkCore.Storage.Database;
 
@@ -34,7 +37,7 @@ public class CouchbaseDatabaseWrapper(DatabaseDependencies dependencies, ICouchb
             var entityType = updateEntry.EntityType;
             var primaryKey = GetPrimaryKey(entity, entityType);
             var keyspace = entityType.GetTableName();
-            
+            var document= GenerateRootJson(updateEntry);
             switch (updateEntry.EntityState)
             {
                 case EntityState.Detached:
@@ -42,21 +45,21 @@ public class CouchbaseDatabaseWrapper(DatabaseDependencies dependencies, ICouchb
                 case EntityState.Unchanged:
                     break;
                 case EntityState.Deleted:
-                    if (await couchbaseClient.DeleteDocument(primaryKey, keyspace, entity).ConfigureAwait(false))
+                    if (await couchbaseClient.DeleteDocument(primaryKey, keyspace, document).ConfigureAwait(false))
                     {
                         updateCount++;
                     }
                     break;
                 case EntityState.Modified:
-                    if (await couchbaseClient.UpdateDocument(primaryKey, keyspace, entity).ConfigureAwait(false))
+                    if (await couchbaseClient.UpdateDocument(primaryKey, keyspace, document).ConfigureAwait(false))
                     {
                         updateCount++;
                     }
                     break;
                 case EntityState.Added:
                 {
-                    GenerateJson(updateEntry);
-                    if (await couchbaseClient.CreateDocument(primaryKey, keyspace, entity).ConfigureAwait(false))
+                    var options = new JsonSerializerOptions { WriteIndented = true };
+                    if (await couchbaseClient.CreateDocument(primaryKey, keyspace, document).ConfigureAwait(false))
                     {
                         updateCount++;
                     }
@@ -73,7 +76,8 @@ public class CouchbaseDatabaseWrapper(DatabaseDependencies dependencies, ICouchb
 
     private static string GetPrimaryKey(object entity, IEntityType entityType)
     {
-        var keys = entityType.FindPrimaryKey().Properties.ToArray(); //TODO If no primary key found we should fail hard
+        var keys = entityType.FindPrimaryKey().Properties
+            .ToArray(); //TODO If no primary key found we should fail hard
 
         var compositeKey = new StringBuilder();
         foreach (var property in entity.GetType().GetProperties().Reverse())
@@ -95,13 +99,42 @@ public class CouchbaseDatabaseWrapper(DatabaseDependencies dependencies, ICouchb
     }
     
     
-    private JsonObject GenerateJson(IUpdateEntry updateEntry)
+    private byte[] GenerateRootJson(IUpdateEntry updateEntry)
     {
-        var document = new JsonObject();
-        foreach (var property in updateEntry.EntityType.GetProperties())
+        try
         {
-            document.Add(property.Name, JsonValue.Create(updateEntry.GetCurrentValue(property)));
+            var entityType = updateEntry.EntityType;
+            JsonWriterOptions writerOptions = new() { Indented = true, };
+
+            using MemoryStream stream = new();
+            using Utf8JsonWriter writer = new(stream, writerOptions);
+            writer.WriteStartObject();
+
+            foreach (var property in entityType.GetProperties())
+            {
+                var value = updateEntry.GetCurrentValue(property);
+                switch (property.ClrType.Name)
+                {
+                    case "String":
+                        writer.WriteString(property.Name, value.ToString());
+                        break;
+                    case "Int32":
+                        writer.WriteNumber(property.Name, (int)value);
+                        break;
+                    default:
+                        break;
+                }
+            }
+
+            writer.WriteEndObject();
+            writer.Flush();
+            return stream.ToArray();
         }
-        return document;
+        catch (Exception e)
+        {
+            
+        }
+
+        return null;
     }
 }

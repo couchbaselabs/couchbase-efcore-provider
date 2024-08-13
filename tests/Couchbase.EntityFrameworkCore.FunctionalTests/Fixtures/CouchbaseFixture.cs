@@ -50,7 +50,7 @@ public class CouchbaseFixture : IAsyncLifetime
 
             base.OnConfiguring(optionsBuilder);
             optionsBuilder.UseLoggerFactory(loggerFactory);
-            optionsBuilder.UseCouchbase<ITravelSampleBucketProvider>(_clusterOptions);
+            optionsBuilder.UseCouchbase(_clusterOptions);
         }
         
         protected override void OnModelCreating(ModelBuilder modelBuilder)

@@ -41,4 +41,9 @@ public class CouchbaseTypeMapping : RelationalTypeMapping
         return new CouchbaseTypeMapping(Parameters.WithComposedConverter(converter, comparer, keyComparer,
             elementMapping, jsonValueReaderWriter));
     }
+
+    /// <summary>
+    /// SQL++ requires that that discriminator values are encased in quotation marks. This may break other things...
+    /// </summary>
+    protected override string SqlLiteralFormatString => "\"{0}\"";
 }

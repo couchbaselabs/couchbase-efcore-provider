@@ -6,9 +6,9 @@ using System.Text.Json.Serialization;
 
 namespace ContosoUniversity.Models
 {
-    public class Instructor
+    public class Instructor : Person
     {
-        public int ID { get; set; } 
+       /* public int ID { get; set; } 
 
         [Required]
         [StringLength(50)]
@@ -22,7 +22,7 @@ namespace ContosoUniversity.Models
         public string FirstMidName { get; set; }
 
         [Display(Name = "Full Name")]
-        public string FullName => LastName + ", " + FirstMidName;
+        public string FullName => LastName + ", " + FirstMidName;*/
 
         [DataType(DataType.Date)]
         [DisplayFormat(DataFormatString = "{0:yyyy-MM-dd}", ApplyFormatInEditMode = true)]
