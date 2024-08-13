@@ -45,7 +45,7 @@ public class CouchbaseClientWrapper : ICouchbaseClientWrapper
         bool success;
         try
         {
-            var serializer =  new JsonTranscoder(new DefaultSerializer(
+            /*var serializer =  new JsonTranscoder(new DefaultSerializer(
                 new JsonSerializerSettings
                 {
                     // PreserveReferencesHandling = PreserveReferencesHandling.Objects
@@ -56,7 +56,8 @@ public class CouchbaseClientWrapper : ICouchbaseClientWrapper
                 {
                     PreserveReferencesHandling = PreserveReferencesHandling.Objects,
                     //ContractResolver = new CamelCasePropertyNamesContractResolver() 
-                }));
+                }));*/
+            var serializer = new RawJsonTranscoder();
             var contextIdTuple = DelimitContextId(contextId);
             var collection = await GetCollection(contextIdTuple.scope, contextIdTuple.collection).ConfigureAwait(false);
             await collection.InsertAsync(id, entity, new InsertOptions().Transcoder(serializer)).ConfigureAwait(false);

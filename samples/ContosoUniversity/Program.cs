@@ -12,7 +12,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllersWithViews();
 
 builder.Services.AddDbContext<SchoolContext>(options=>
-    options.UseCouchbase<INamedBucketProvider>(new ClusterOptions()
+    options.UseCouchbase(new ClusterOptions()
     .WithCredentials("Administrator", "password")
     .WithConnectionString("couchbase://localhost")
     .WithBuckets("contoso")));

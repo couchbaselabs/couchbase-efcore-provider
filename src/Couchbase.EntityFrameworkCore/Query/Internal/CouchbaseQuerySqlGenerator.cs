@@ -332,7 +332,7 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
 
         return sqlFunctionExpression;
     }
-    
+
     private void GenerateList<T>(
         IReadOnlyList<T> items,
         Action<T> generationAction,

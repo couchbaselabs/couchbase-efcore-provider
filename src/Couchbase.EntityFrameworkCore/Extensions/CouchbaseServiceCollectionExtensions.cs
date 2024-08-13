@@ -34,7 +34,7 @@ public static class CouchbaseServiceCollectionExtensions
         => serviceCollection.AddDbContext<TContext>((_, options) =>
         {
             optionsAction?.Invoke(options);
-            options.UseCouchbase<TNamedBucketProvider>(clusterOptions, couchbaseOptionsAction);
+            options.UseCouchbase(clusterOptions, couchbaseOptionsAction);
         });
 
     public static IServiceCollection AddEntityFrameworkCouchbaseProvider<TNamedBucketProvider>(this IServiceCollection serviceCollection,
@@ -82,7 +82,7 @@ public static class CouchbaseServiceCollectionExtensions
         builder.TryAddCoreServices();
 
         serviceCollection
-            .AddScoped<IRelationalConnection, CouchbaseConnection2>()
+            .AddScoped<IRelationalConnection, CouchbaseConnection>()
             .AddScoped<IQueryCompiler, CouchbaseQueryCompiler>()
             .AddSingleton<ISqlGenerationHelper, CouchbaseSqlGenerationHelper>()
             .AddScoped<IRelationalDatabaseCreator, CouchbaseDatabaseCreator>();
