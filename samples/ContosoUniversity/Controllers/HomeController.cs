@@ -9,6 +9,7 @@ using Microsoft.EntityFrameworkCore;
 using ContosoUniversity.Data;
 using ContosoUniversity.Models.SchoolViewModels;
 using System.Data.Common;
+using Microsoft.EntityFrameworkCore.Metadata.Internal;
 
 namespace ContosoUniversity.Controllers
 {
@@ -28,9 +29,17 @@ namespace ContosoUniversity.Controllers
 
         public async Task<ActionResult> About()
         {
-            List<EnrollmentDateGroup> groups = new List<EnrollmentDateGroup>();
-            var conn = _context.Database.GetDbConnection();
-            try
+          //  List<EnrollmentDateGroup> groups = new List<EnrollmentDateGroup>();
+            //var conn = _context.Database.GetDbConnection();
+
+            var query = from s in _context.Students
+                group s by s.EnrollmentDate
+                into grp
+                select new EnrollmentDateGroup  { EnrollmentDate = grp.Key, StudentCount = grp.Count()};
+
+            var groups = await query.ToListAsync().ConfigureAwait(false);
+            
+           /* try
             {
                 await conn.OpenAsync();
                 using (var command = conn.CreateCommand())
@@ -56,7 +65,7 @@ namespace ContosoUniversity.Controllers
             finally
             {
                 conn.Close();
-            }
+            }*/
             return View(groups);
         }
 

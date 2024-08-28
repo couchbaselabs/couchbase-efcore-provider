@@ -1,86 +1,57 @@
 using System.Data;
 using System.Data.Common;
-using System.Runtime.InteropServices.ComTypes;
-using Couchbase.EntityFrameworkCore.Infrastructure.Internal;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Diagnostics;
-using Microsoft.EntityFrameworkCore.Infrastructure;
-using Microsoft.EntityFrameworkCore.Storage;
 
 namespace Couchbase.EntityFrameworkCore.Storage.Internal;
 
-public class CouchbaseConnection : RelationalConnection, IDbConnection, ICouchbaseConnection
+public class CouchbaseConnection :  DbConnection
 {
-    private IDbContextTransaction? _currentTransaction;
-    private IDbContextTransaction? _currentTransaction1;
-    private IRelationalCommand _relationalCommand;
-    private IRawSqlCommandBuilder _rawSqlCommandBuilder;
-    private readonly RelationalConnectionDependencies _dependencies;
-    private IDiagnosticsLogger<DbLoggerCategory.Infrastructure> logger;
+    private static Dictionary<string, ICluster> _clusters = new();
     private string _connectionString;
+    private readonly ClusterOptions _clusterOptions;
 
-    public CouchbaseConnection(RelationalConnectionDependencies dependencies, IDiagnosticsLogger<DbLoggerCategory.Infrastructure> logger, IRawSqlCommandBuilder rawSqlCommandBuilder) : base(dependencies)
+    public CouchbaseConnection(string connectionString, ClusterOptions clusterOptions)
     {
-        _dependencies = dependencies;
-        this.logger = logger;
-        this._rawSqlCommandBuilder = rawSqlCommandBuilder;
+        _connectionString = connectionString;
+        _clusterOptions = clusterOptions;
+    }
+    
+    protected override DbTransaction BeginDbTransaction(IsolationLevel isolationLevel)
+    {
+        throw new NotImplementedException();
+    }
 
-        /*var optionsExtension = dependencies.ContextOptions.Extensions.OfType<CouchbaseOptionsExtension>().FirstOrDefault();
-        if (optionsExtension != null)
+    public override void ChangeDatabase(string databaseName)
+    {
+        throw new NotSupportedException();
+    }
+
+    public override void Close()
+    {
+    }
+
+    public override void Open()
+    {
+        if (_clusters.ContainsKey(_connectionString))
         {
+            return;
+        }
 
-            var relationalOptions = RelationalOptionsExtension.Extract(dependencies.ContextOptions);
-            _commandTimeout = relationalOptions.CommandTimeout;
-
-            if (relationalOptions.Connection != null)
-            {
-                InitializeDbConnection(relationalOptions.Connection);
-            }
-        }*/
+        var cluster = Cluster.ConnectAsync(_clusterOptions).GetAwaiter().GetResult();
+        _clusters.Add(_connectionString, cluster);
     }
 
-    protected override DbConnection CreateDbConnection()
-    {
-     //   var connection = new CouchbaseConnection(_dependencies.co, )
-     throw new NotImplementedException();
-    }
+    public override string ConnectionString { get; set; }
+    public override string Database { get; }
+    public override ConnectionState State { get; }
+    public override string DataSource { get; }
+    public override string ServerVersion { get; }
 
-    private void InitializeDbConnection(DbConnection connection)
-    {
-    }
-
-
-    public IDbTransaction BeginTransaction()
-    {
-        throw new NotImplementedException();
-    }
-
-    public IDbTransaction BeginTransaction(IsolationLevel il)
-    {
-        throw new NotImplementedException();
-    }
-
-    public void ChangeDatabase(string databaseName)
-    {
-        throw new NotImplementedException();
-    }
-
-    public void Close()
-    {
-        throw new NotImplementedException();
-    }
-
-    public IDbCommand CreateCommand()
-    {
-        throw new NotImplementedException();
-    }
-
-    public void Open()
-    {
-        throw new NotImplementedException();
-    }
-
-    public int ConnectionTimeout { get; }
-    public string Database { get; }
-    public ConnectionState State { get; }
+    protected override DbCommand CreateDbCommand()
+        => new CouchbaseCommand
+        {
+            Connection = this,
+         //   CommandTimeout = DefaultTimeout,
+          //  Transaction = Transaction
+        };
 }
