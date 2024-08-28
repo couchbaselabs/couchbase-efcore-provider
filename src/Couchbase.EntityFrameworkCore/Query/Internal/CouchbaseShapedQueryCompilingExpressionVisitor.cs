@@ -385,7 +385,8 @@ public partial class CouchbaseShapedQueryCompilingExpressionVisitor : ShapedQuer
                     Constant(_detailedErrorsEnabled),
                     Constant(_threadSafetyChecksEnabled));
             }
-            
+
+            var shaperC = shaper.Compile();
             return New(typeof(CouchbaseQueryEnumerable<>).MakeGenericType(shaper.ReturnType).GetConstructors()[0],
                 Convert(QueryCompilationContext.QueryContextParameter, typeof(RelationalQueryContext)),
                 Constant(relationalCommandCache),

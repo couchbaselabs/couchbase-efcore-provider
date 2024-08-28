@@ -72,7 +72,7 @@ public static class CouchbaseServiceCollectionExtensions
                 .TryAddScoped<QuerySqlGenerator, CouchbaseQuerySqlGenerator>()
                 //.TryAddScoped<IRelationalConnection, CouchbaseConnection>()
                 //.TryAddScoped<IQueryProvider, CouchbaseQueryProvider>()
-                .TryAddScoped<IRelationalCommand, CouchbaseCommand>()
+                .TryAddScoped<IRelationalCommand, CouchbaseRelationalCommand>()
                 .TryAddScoped<QueryContext, RelationalQueryContext>()
                 .TryAddScoped<ICouchbaseClientWrapper, CouchbaseClientWrapper>()
                 .TryAddScoped<IRelationalCommandBuilder, RelationalCommandBuilder>()
@@ -82,7 +82,7 @@ public static class CouchbaseServiceCollectionExtensions
         builder.TryAddCoreServices();
 
         serviceCollection
-            .AddScoped<IRelationalConnection, CouchbaseConnection>()
+            .AddScoped<IRelationalConnection, CouchbaseRelationalConnection>()
             .AddScoped<IQueryCompiler, CouchbaseQueryCompiler>()
             .AddSingleton<ISqlGenerationHelper, CouchbaseSqlGenerationHelper>()
             .AddScoped<IRelationalDatabaseCreator, CouchbaseDatabaseCreator>();

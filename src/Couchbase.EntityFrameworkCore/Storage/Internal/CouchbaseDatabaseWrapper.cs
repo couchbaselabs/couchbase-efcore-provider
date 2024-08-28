@@ -113,7 +113,8 @@ public class CouchbaseDatabaseWrapper(DatabaseDependencies dependencies, ICouchb
             foreach (var property in entityType.GetProperties())
             {
                 var value = updateEntry.GetCurrentValue(property);
-                switch (property.ClrType.Name)
+                var propertyType = GetUnderlyingType(property.ClrType);
+                switch (propertyType.Name)
                 {
                     case "String":
                         writer.WriteString(property.Name, value.ToString());
@@ -121,8 +122,17 @@ public class CouchbaseDatabaseWrapper(DatabaseDependencies dependencies, ICouchb
                     case "Int32":
                         writer.WriteNumber(property.Name, (int)value);
                         break;
-                    default:
+                    case "DateTime":
+                        writer.WriteString(property.Name, (DateTime)value);
                         break;
+                    case "Decimal":
+                        writer.WriteNumber(property.Name, (decimal)value);
+                        break;
+                    case "Byte[]":
+                        writer.WriteBase64String(property.Name, new ReadOnlyMemory<byte>((byte[])value).Span);
+                        break;
+                    default:
+                        throw new NotFiniteNumberException(property.ClrType.Name);  
                 }
             }
 
@@ -136,5 +146,15 @@ public class CouchbaseDatabaseWrapper(DatabaseDependencies dependencies, ICouchb
         }
 
         return null;
+    }
+
+    private Type? GetUnderlyingType(Type type)
+    {
+        if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Nullable<>))
+        {
+            return Nullable.GetUnderlyingType(type);
+        }
+
+        return type;
     }
 }

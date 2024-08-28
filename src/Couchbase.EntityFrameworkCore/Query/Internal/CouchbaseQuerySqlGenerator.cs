@@ -1,4 +1,6 @@
 using System.Linq.Expressions;
+using System.Reflection;
+using System.Reflection.Emit;
 using System.Text;
 using Couchbase.Core.Utils;
 using Microsoft.EntityFrameworkCore.Diagnostics;
@@ -15,7 +17,25 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
     public CouchbaseQuerySqlGenerator(QuerySqlGeneratorDependencies dependencies) : base(dependencies)
     {
     }
-    
+
+    protected override Expression VisitSqlConstant(SqlConstantExpression sqlConstantExpression)
+    {
+        var value = sqlConstantExpression.Value;
+        var type = value.GetType();
+        if (type.Name == "Int32")
+        {
+            Sql
+                .Append(sqlConstantExpression.Value.ToString());
+        }
+        else
+        {
+            Sql
+                .Append(sqlConstantExpression.TypeMapping!.GenerateSqlLiteral(sqlConstantExpression.Value)); 
+        }
+        
+        return sqlConstantExpression;
+    }
+
     protected override void GenerateRootCommand(Expression queryExpression)
     {
         switch (queryExpression)
@@ -73,15 +93,30 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
 
             if (selectExpression.Projection.Any())
             {
-                var dedupedProjections = new Dictionary<string, ProjectionExpression>();
-                foreach (var expression in selectExpression.Projection)
+                if (selectExpression.Projection.Count == 1)
                 {
-                    dedupedProjections.TryAdd(expression.Alias, expression);
+                    if (selectExpression.Projection.First().Expression is SqlFunctionExpression sqlFunctionExpression)
+                    {
+                        if (sqlFunctionExpression.Name == "COUNT")
+                        {
+                            Sql.Append(" RAW ");
+                        }
+                    }
+                    GenerateList(selectExpression.Projection, e => Visit(e));
                 }
-                GenerateList(dedupedProjections.Values.ToList(), e => Visit(e));
-                
-                
-               // GenerateList(selectExpression.Projection, e => Visit(e));
+                else
+                {
+                    var dedupedProjections = new Dictionary<string, ProjectionExpression>();
+                    foreach (var expression in selectExpression.Projection)
+                    {
+                        dedupedProjections.TryAdd(expression.Alias, expression);
+                    }
+
+                    GenerateList(dedupedProjections.Values.ToList(), e => Visit(e));
+                }
+
+
+                // GenerateList(selectExpression.Projection, e => Visit(e));
             }
             else
             {
@@ -303,10 +338,10 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
             }
 
             //make the response scalar with no extra JSON
-            if (sqlFunctionExpression.Name == "COUNT")
+/*if (sqlFunctionExpression.Name == "COUNT")
             {
                 Sql.Append(" RAW ");
-            }
+            }*/
 
             Sql.Append(sqlFunctionExpression.Name);
         }
