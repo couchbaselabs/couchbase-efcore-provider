@@ -45,7 +45,6 @@ public partial class CouchbaseShapedQueryCompilingExpressionVisitor : ShapedQuer
         _querySqlGenerator = querySqlGenerator;
         _clusterProvider = clusterProvider;
         RelationalDependencies = relationalDependencies;
-
         _contextType = queryCompilationContext.ContextType;
         _tags = queryCompilationContext.Tags;
         _threadSafetyChecksEnabled = dependencies.CoreSingletonOptions.AreThreadSafetyChecksEnabled;
@@ -390,6 +389,8 @@ public partial class CouchbaseShapedQueryCompilingExpressionVisitor : ShapedQuer
             return New(typeof(CouchbaseQueryEnumerable<>).MakeGenericType(shaper.ReturnType).GetConstructors()[0],
                 Convert(QueryCompilationContext.QueryContextParameter, typeof(RelationalQueryContext)),
                 Constant(relationalCommandCache),
+                Constant(
+                    QueryCompilationContext.QueryTrackingBehavior == QueryTrackingBehavior.NoTrackingWithIdentityResolution),
                 Constant(_clusterProvider));
 
             /*return New(

@@ -9,7 +9,7 @@ using Xunit.Abstractions;
 namespace Couchbase.EntityFrameworkCore.FunctionalTests.ContosoUniversityTests;
 
 [Collection(ContosoTestingCollection.Name)]
-public class StudentTests
+public class StudentTests : IAsyncDisposable, IDisposable
 {
     private readonly ContosoFixture _contosoFixture;
     private readonly ITestOutputHelper _outputHelper;
@@ -19,7 +19,7 @@ public class StudentTests
         _contosoFixture = contosoFixture;
         _outputHelper = outputHelper;
     }
-    
+
     //[InlineData(null, null, "Alonso", null)]
     //[Theory]
     public async Task Test_Get(string sortOrder,
@@ -69,65 +69,41 @@ public class StudentTests
     public async Task Test_PersonStudent_AddRange()
     {
         var context = _contosoFixture.DbContext;
-        try
-        {
-            context.Students.AddRange(_students);
-            var count = await context.SaveChangesAsync();
-            
-            Assert.Equal(8, count);
-        }
-        finally
-        {
-            context.Students.RemoveRange(_students);
-            await context.SaveChangesAsync();
-        }
+        context.Students.AddRange(_students);
+
+        var count = await context.SaveChangesAsync();
+        Assert.Equal(8, count);
     }
 
     [Fact]
     public async Task Test_PersonStudent_RemoveRange()
     {
         var context = _contosoFixture.DbContext;
-        try
-        {
-            context.Students.AddRange(_students);
-            var count = await context.SaveChangesAsync();
+        context.Students.AddRange(_students);
 
-            Assert.Equal(8, count);
+        var count = await context.SaveChangesAsync();
+        Assert.Equal(8, count);
 
-            context.Students.RemoveRange(_students);
-            var count1 = await context.SaveChangesAsync();
+        context.Students.RemoveRange(_students);
+        var count1 = await context.SaveChangesAsync();
 
-            Assert.Equal(8, count1);
-            Assert.Equal(0, await context.Students.CountAsync());
-        }
-        finally
-        {
-            context.Students.RemoveRange(_students);
-            await context.SaveChangesAsync();
-        }
+        Assert.Equal(8, count1);
+        Assert.Equal(0, await context.Students.CountAsync());
     }
     
     [Fact]
     public async Task Test_PersonStudent_UpdateRange()
     {
         var context = _contosoFixture.DbContext;
-        try
-        {
-            context.Students.AddRange(_students);
-            var count = await context.SaveChangesAsync();
+        context.Students.AddRange(_students);
 
-            Assert.Equal(8, count);
+        var count = await context.SaveChangesAsync();
+        Assert.Equal(8, count);
 
-            context.Students.RemoveRange(_students);
-            var count1 = await context.SaveChangesAsync();
+        context.Students.RemoveRange(_students);
+        var count1 = await context.SaveChangesAsync();
 
-            Assert.Equal(8, count1);
-        }
-        finally
-        {
-            context.Students.RemoveRange(_students);
-            await context.SaveChangesAsync();
-        }
+        Assert.Equal(8, count1);
     }
 
     #region Data
@@ -151,7 +127,18 @@ public class StudentTests
         new Student { FirstMidName = "Nino",     LastName = "Olivetto",
             EnrollmentDate = DateTime.Parse("2005-09-01"), ID = 7 }
     ];
-    
+
     #endregion
 
+    public async ValueTask DisposeAsync()
+    {
+        var context = _contosoFixture.DbContext;
+        context.Students.RemoveRange(_students);
+        await context.SaveChangesAsync();
+    }
+
+    public void Dispose()
+    {
+        DisposeAsync().GetAwaiter().GetResult();
+    }
 }

@@ -1,4 +1,5 @@
 using Couchbase.Extensions.DependencyInjection;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Query;
 using Microsoft.EntityFrameworkCore.Query.Internal;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -11,10 +12,11 @@ public class CouchbaseShapedQueryCompilingExpressionVisitorFactory : IShapedQuer
     private readonly RelationalShapedQueryCompilingExpressionVisitorDependencies _relationalDependencies;
     private readonly IQuerySqlGeneratorFactory _querySqlGeneratorFactory;
     private readonly IClusterProvider _clusterProvider;
+
     public CouchbaseShapedQueryCompilingExpressionVisitorFactory(
         ShapedQueryCompilingExpressionVisitorDependencies dependencies, 
         RelationalShapedQueryCompilingExpressionVisitorDependencies relationalDependencies,
-        IQuerySqlGeneratorFactory querySqlGeneratorFactory, 
+        IQuerySqlGeneratorFactory querySqlGeneratorFactory,
         IClusterProvider clusterProvider)
     {
         _dependencies = dependencies;

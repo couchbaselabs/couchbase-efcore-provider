@@ -14,6 +14,7 @@ public class CouchbaseClientWrapper : ICouchbaseClientWrapper
 {
     private readonly INamedBucketProvider _namedBucketProvider;
     private readonly ILogger<CouchbaseClientWrapper> _logger;
+    private readonly  ITypeTranscoder _transcoder = new RawJsonTranscoder();
     private IBucket? _bucket;
     public CouchbaseClientWrapper(INamedBucketProvider namedBucketProvider, ILogger<CouchbaseClientWrapper> logger)
     {
@@ -45,22 +46,9 @@ public class CouchbaseClientWrapper : ICouchbaseClientWrapper
         bool success;
         try
         {
-            /*var serializer =  new JsonTranscoder(new DefaultSerializer(
-                new JsonSerializerSettings
-                {
-                    // PreserveReferencesHandling = PreserveReferencesHandling.Objects
-                    ReferenceLoopHandling = ReferenceLoopHandling.Ignore,
-                    //ContractResolver = new CamelCasePropertyNamesContractResolver() 
-                },
-                new JsonSerializerSettings
-                {
-                    PreserveReferencesHandling = PreserveReferencesHandling.Objects,
-                    //ContractResolver = new CamelCasePropertyNamesContractResolver() 
-                }));*/
-            var serializer = new RawJsonTranscoder();
             var contextIdTuple = DelimitContextId(contextId);
             var collection = await GetCollection(contextIdTuple.scope, contextIdTuple.collection).ConfigureAwait(false);
-            await collection.InsertAsync(id, entity, new InsertOptions().Transcoder(serializer)).ConfigureAwait(false);
+            await collection.InsertAsync(id, entity, new InsertOptions().Transcoder(_transcoder)).ConfigureAwait(false);
             success = true;
         }
         catch (Exception e)
@@ -79,7 +67,7 @@ public class CouchbaseClientWrapper : ICouchbaseClientWrapper
         {
             var contextIdTuple = DelimitContextId(contextId);
             var collection = await GetCollection(contextIdTuple.scope, contextIdTuple.collection).ConfigureAwait(false);
-            await collection.UpsertAsync(id, entity).ConfigureAwait(false);
+            await collection.UpsertAsync(id, entity, new UpsertOptions().Transcoder(_transcoder)).ConfigureAwait(false);
             success = true;
         }
         catch (Exception e)

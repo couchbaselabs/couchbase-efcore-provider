@@ -61,20 +61,4 @@ public class CouchbaseQueryProvider : IAsyncQueryProvider, IQueryProvider
     public virtual TResult ExecuteAsync<TResult>(Expression expression, CancellationToken cancellationToken = default)
         => _queryCompiler.ExecuteAsync<TResult>(expression, cancellationToken);
     
-    /*public virtual Expression ExtractParameters(
-        Expression query,
-        IParameterValues parameterValues,
-        IDiagnosticsLogger<DbLoggerCategory.Query> logger,
-        bool parameterize = true,
-        bool generateContextAccessors = false)
-    {
-        
-        return new ParameterExtractingExpressionVisitor(this._evaluatableExpressionFilter, parameterValues, this._contextType, this._model, logger, parameterize, generateContextAccessors).ExtractParameters(query);
-    }
-    
-    public virtual Func<QueryContext, TResult> CreateCompiledAsyncQuery<TResult>(Expression query)
-    {
-        query = this.ExtractParameters(query, (IParameterValues) this._queryContextFactory.Create(), this._logger, false);
-        return  _database.CompileQuery<TResult>(query, false);
-    }*/
 }
