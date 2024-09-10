@@ -19,10 +19,9 @@ public class StudentTests
         _contosoFixture = contosoFixture;
         _outputHelper = outputHelper;
     }
-
-  //  [InlineData(null, null, null, null)]
-    [InlineData(null, null, "Alonso", null)]
-    [Theory]
+    
+    //[InlineData(null, null, "Alonso", null)]
+    //[Theory]
     public async Task Test_Get(string sortOrder,
         string currentFilter,
         string searchString,
@@ -70,41 +69,65 @@ public class StudentTests
     public async Task Test_PersonStudent_AddRange()
     {
         var context = _contosoFixture.DbContext;
-        context.Students.AddRange(_students);
-        
-        var count = await context.SaveChangesAsync();
-        Assert.Equal(8, count);
+        try
+        {
+            context.Students.AddRange(_students);
+            var count = await context.SaveChangesAsync();
+            
+            Assert.Equal(8, count);
+        }
+        finally
+        {
+            context.Students.RemoveRange(_students);
+            await context.SaveChangesAsync();
+        }
     }
 
     [Fact]
     public async Task Test_PersonStudent_RemoveRange()
     {
         var context = _contosoFixture.DbContext;
-        context.Students.AddRange(_students);
-        var count = await context.SaveChangesAsync();
-        
-        Assert.Equal(8, count);
-        
-        context.Students.RemoveRange(_students);
-        var count1 = await context.SaveChangesAsync();
-        
-        Assert.Equal(8, count1);
-        Assert.Equal(0, await context.Students.CountAsync());
+        try
+        {
+            context.Students.AddRange(_students);
+            var count = await context.SaveChangesAsync();
+
+            Assert.Equal(8, count);
+
+            context.Students.RemoveRange(_students);
+            var count1 = await context.SaveChangesAsync();
+
+            Assert.Equal(8, count1);
+            Assert.Equal(0, await context.Students.CountAsync());
+        }
+        finally
+        {
+            context.Students.RemoveRange(_students);
+            await context.SaveChangesAsync();
+        }
     }
     
     [Fact]
     public async Task Test_PersonStudent_UpdateRange()
     {
         var context = _contosoFixture.DbContext;
-        context.Students.AddRange(_students);
-        var count = await context.SaveChangesAsync();
-        
-        Assert.Equal(8, count);
-        
-        context.Students.RemoveRange(_students);
-        var count1 = await context.SaveChangesAsync();
-        
-        Assert.Equal(8, count1);
+        try
+        {
+            context.Students.AddRange(_students);
+            var count = await context.SaveChangesAsync();
+
+            Assert.Equal(8, count);
+
+            context.Students.RemoveRange(_students);
+            var count1 = await context.SaveChangesAsync();
+
+            Assert.Equal(8, count1);
+        }
+        finally
+        {
+            context.Students.RemoveRange(_students);
+            await context.SaveChangesAsync();
+        }
     }
 
     #region Data

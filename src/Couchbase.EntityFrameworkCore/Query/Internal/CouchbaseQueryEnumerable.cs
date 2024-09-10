@@ -45,13 +45,20 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>
         return GetEnumerator();
     }
 
-    public IAsyncEnumerator<T> GetAsyncEnumerator(CancellationToken cancellationToken = new CancellationToken())
+    public async IAsyncEnumerator<T> GetAsyncEnumerator(CancellationToken cancellationToken = new CancellationToken())
     {
         var command = _relationalCommandCache.RentAndPopulateRelationalCommand(_relationalQueryContext);
         var queryOptions = GetParameters(command);
         var cluster = _clusterProvider.GetClusterAsync().GetAwaiter().GetResult();
         var result = cluster.QueryAsync<T>(command.CommandText, queryOptions).GetAwaiter().GetResult();
-        return result.GetAsyncEnumerator(cancellationToken);
+
+        
+        await foreach (var doc in result)
+        {
+            //_relationalQueryContext.StartTracking()
+            yield return doc;
+        }
+        //return result.GetAsyncEnumerator(cancellationToken);
     }
 
     private QueryOptions GetParameters(IRelationalCommand command)

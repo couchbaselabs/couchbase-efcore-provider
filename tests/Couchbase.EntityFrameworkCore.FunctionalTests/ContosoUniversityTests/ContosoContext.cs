@@ -1,11 +1,6 @@
 using ContosoUniversity.Data;
-using ContosoUniversity.Models;
-using Couchbase.EntityFrameworkCore.FunctionalTests.Fixtures;
-using Couchbase.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
-using Microsoft.Data.Sqlite;
-using Microsoft.EntityFrameworkCore;
 
 namespace Couchbase.EntityFrameworkCore.FunctionalTests.ContosoUniversityTests;
 

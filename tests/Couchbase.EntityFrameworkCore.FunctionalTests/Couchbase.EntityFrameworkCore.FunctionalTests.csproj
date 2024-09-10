@@ -6,9 +6,12 @@
         <Nullable>enable</Nullable>
     </PropertyGroup>
 
-    <ItemGroup>
+    <ItemGroup><!-- <ProjectReference Include="..\..\..\efcore\src\dotnet-ef\dotnet-ef.csproj" />
       <ProjectReference Include="..\..\..\efcore\src\EFCore.Design\EFCore.Design.csproj" />
       <ProjectReference Include="..\..\..\efcore\src\EFCore.Sqlite.NTS\EFCore.Sqlite.NTS.csproj" />
+      <ProjectReference Include="..\..\samples\ContosoUniversity\ContosoUniversity.csproj" />
+      <ProjectReference Include="..\..\src\Couchbase.EntityFrameworkCore\Couchbase.EntityFrameworkCore.csproj" />-->
+    
       <ProjectReference Include="..\..\samples\ContosoUniversity\ContosoUniversity.csproj" />
       <ProjectReference Include="..\..\src\Couchbase.EntityFrameworkCore\Couchbase.EntityFrameworkCore.csproj" />
     </ItemGroup>
