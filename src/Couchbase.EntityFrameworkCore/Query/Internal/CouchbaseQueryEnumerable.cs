@@ -1,6 +1,7 @@
 using System.Collections;
 using Couchbase.Extensions.DependencyInjection;
 using Couchbase.Query;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Internal;
 using Microsoft.EntityFrameworkCore.Query;
 using Microsoft.EntityFrameworkCore.Query.Internal;
@@ -14,14 +15,20 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>
 {
     private readonly RelationalQueryContext _relationalQueryContext;
     private readonly RelationalCommandCache _relationalCommandCache;
+    private readonly DbContext _dbContext;
     private readonly IClusterProvider _clusterProvider;
+    private readonly bool _standAloneStateManager;
    
     public CouchbaseQueryEnumerable(
         RelationalQueryContext relationalQueryContext, 
         RelationalCommandCache relationalCommandCache,
+        bool standAloneStateManager,
         IClusterProvider clusterProvider)
     {
+
+        _dbContext = relationalQueryContext.Context;
         _clusterProvider = clusterProvider;
+        _standAloneStateManager = standAloneStateManager;
         _relationalQueryContext = relationalQueryContext;
         _relationalCommandCache = relationalCommandCache;
     }
@@ -35,9 +42,18 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>
         }
         var command = _relationalCommandCache.RentAndPopulateRelationalCommand(_relationalQueryContext);
         var cluster = _clusterProvider.GetClusterAsync().GetAwaiter().GetResult();
-        
         var result = cluster.QueryAsync<T>(command.CommandText, queryOptions).GetAwaiter().GetResult();
-        return result.ToEnumerable().GetEnumerator();
+
+        _relationalQueryContext.InitializeStateManager(false);
+
+        var model = _dbContext.Model;
+        var entityType = model.FindEntityType(typeof(T));
+
+        foreach (var doc in result.ToEnumerable())
+        {
+            _relationalQueryContext.StartTracking(entityType, doc, new ValueBuffer());
+            yield return doc;
+        }
     }
 
     IEnumerator IEnumerable.GetEnumerator()
@@ -51,14 +67,17 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>
         var queryOptions = GetParameters(command);
         var cluster = _clusterProvider.GetClusterAsync().GetAwaiter().GetResult();
         var result = cluster.QueryAsync<T>(command.CommandText, queryOptions).GetAwaiter().GetResult();
-
         
+        _relationalQueryContext.InitializeStateManager(false);
+
+        var model = _dbContext.Model;
+        var entityType = model.FindEntityType(typeof(T));
+
         await foreach (var doc in result)
         {
-            //_relationalQueryContext.StartTracking()
+            _relationalQueryContext.StartTracking(entityType, doc, new ValueBuffer());
             yield return doc;
         }
-        //return result.GetAsyncEnumerator(cancellationToken);
     }
 
     private QueryOptions GetParameters(IRelationalCommand command)
