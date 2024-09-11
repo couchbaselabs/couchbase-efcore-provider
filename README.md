@@ -23,4 +23,14 @@
    * Any others that I missed ;)
  * Assuming you have the bucket, scopes/collections, and the indexes setup, it should just work...except for the Instructers page (NullReferenceException) because it uses Include/ThenInclude which currently isn't supported.
  * If you want to step through EFCore or EFCore.Relational projects your will need to pull the EFCore repo (git@github.com:dotnet/efcore.git) into an adjacent directory and then add the Couchbase.EFCore and ContosoUniversity projects to the EFCore solution.
+
+ # What works:
+ * Basic projections/queries
+ * Some SQL++ functions - COUNT, CONTAINS, etc
+ * Basic CRUD and change tracking
+
+ # What doesn't work
+ * Include/ThenInclude (Instucters page in the Contoso app)
+ * Most all SQL++ functions
+
    
