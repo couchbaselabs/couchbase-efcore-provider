@@ -4,6 +4,7 @@ using System.Reflection.Emit;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
 using Couchbase.Core.Exceptions;
 using Couchbase.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore;
@@ -104,7 +105,7 @@ public class CouchbaseDatabaseWrapper(DatabaseDependencies dependencies, ICouchb
         try
         {
             var entityType = updateEntry.EntityType;
-            JsonWriterOptions writerOptions = new() { Indented = true, };
+            JsonWriterOptions writerOptions = new() { Indented = true };
 
             using MemoryStream stream = new();
             using Utf8JsonWriter writer = new(stream, writerOptions);
@@ -117,7 +118,7 @@ public class CouchbaseDatabaseWrapper(DatabaseDependencies dependencies, ICouchb
                 switch (propertyType.Name)
                 {
                     case "String":
-                        writer.WriteString(property.Name, value.ToString());
+                        writer.WriteString(property.Name, (string)value);
                         break;
                     case "Int32":
                         writer.WriteNumber(property.Name, (int)value);
@@ -132,7 +133,17 @@ public class CouchbaseDatabaseWrapper(DatabaseDependencies dependencies, ICouchb
                         writer.WriteBase64String(property.Name, new ReadOnlyMemory<byte>((byte[])value).Span);
                         break;
                     default:
-                        throw new NotFiniteNumberException(property.ClrType.Name);  
+                    {
+                        if (propertyType.IsEnum)
+                        {
+                            writer.WriteString(property.Name, value != null ? value.ToString() : string.Empty);
+                        }
+                        else
+                        {
+                            throw new JsonException();
+                        }
+                        break;
+                    }
                 }
             }
 
