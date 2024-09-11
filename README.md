@@ -21,6 +21,6 @@ Getting started:
    * CREATE INDEX `idxOfficeAssignment` ON `contoso`.`officeAssignment`.`officeAssignment`(`InstructorID`)
    * CREATE PRIMARY INDEX `#primary` ON `contoso`.`person`.`person`
    * Any others that I missed ;)
- * Assuming you have the bucket, scopes/collections, and the indexes setup, it should just work...except for the Instructers page because it uses Include/ThenInclude which currently isn't supported.
+ * Assuming you have the bucket, scopes/collections, and the indexes setup, it should just work...except for the Instructers page (NullReferenceException) because it uses Include/ThenInclude which currently isn't supported.
  * If you want to step through EFCore or EFCore.Relational projects your will need to pull the EFCore repo (git@github.com:dotnet/efcore.git) into an adjacent directory and then add the Couchbase.EFCore and ContosoUniversity projects to the EFCore solution.
    
