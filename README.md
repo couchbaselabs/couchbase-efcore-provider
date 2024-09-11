@@ -1,7 +1,7 @@
 # EFCore.Couchbase
 
 ## Getting started:
-* Requires .NET 8 to build
+* Requires [.NET 8 SDK](https://dotnet.microsoft.com/en-us/download/dotnet/8.0) to build
 * The sample app, Contoso University, requires a Couchbase instance installed on localhost:8091
 * You need to create a bucket called "contoso" on the Couchbase instance
 * The following scopes and collections must be created:
