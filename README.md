@@ -1,6 +1,6 @@
 # EFCore.Couchbase
 
-Getting started:
+## Getting started:
 * Requires .NET 8 to build
 * The sample app, Contoso University, requires a Couchbase instance installed on localhost:8091
 * You need to create a bucket called "contoso" on the Couchbase instance
