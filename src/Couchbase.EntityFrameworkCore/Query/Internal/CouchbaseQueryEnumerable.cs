@@ -51,7 +51,13 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>
 
         foreach (var doc in result.ToEnumerable())
         {
-            _relationalQueryContext.StartTracking(entityType, doc, new ValueBuffer());
+            //If the returned type is an entity add start change tracking
+            //Scalar values for functions like COUNT are not tracked.
+            if (entityType != null)
+            {
+                _relationalQueryContext.StartTracking(entityType, doc, new ValueBuffer());
+            }
+
             yield return doc;
         }
     }
@@ -75,7 +81,13 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>
 
         await foreach (var doc in result)
         {
-            _relationalQueryContext.StartTracking(entityType, doc, new ValueBuffer());
+            //If the returned type is an entity add start change tracking
+            //Scalar values for functions like COUNT are not tracked.
+            if (entityType != null)
+            {
+                _relationalQueryContext.StartTracking(entityType, doc, new ValueBuffer());
+            }
+
             yield return doc;
         }
     }

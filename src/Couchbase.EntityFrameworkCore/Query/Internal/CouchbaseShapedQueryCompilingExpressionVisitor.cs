@@ -391,19 +391,6 @@ public partial class CouchbaseShapedQueryCompilingExpressionVisitor : ShapedQuer
                 Constant(relationalCommandCache),
                 Constant(
                     QueryCompilationContext.QueryTrackingBehavior == QueryTrackingBehavior.NoTrackingWithIdentityResolution),
-                Constant(_clusterProvider));
-
-            /*return New(
-                typeof(SingleQueryingEnumerable<>).MakeGenericType(shaper.ReturnType).GetConstructors()[0],
-                Convert(QueryCompilationContext.QueryContextParameter, typeof(RelationalQueryContext)),
-                Constant(relationalCommandCache),
-                Constant(readerColumns, typeof(IReadOnlyList<ReaderColumn?>)),
-                Constant(shaper.Compile()),
-                Constant(_contextType),
-                Constant(
-                    QueryCompilationContext.QueryTrackingBehavior == QueryTrackingBehavior.NoTrackingWithIdentityResolution),
-                Constant(_detailedErrorsEnabled),
-                Constant(_threadSafetyChecksEnabled));*/
-        }
+                Constant(_clusterProvider));        }
     }
 }

@@ -194,14 +194,12 @@ public class CouchbaseStringMethodTranslator : IMethodCallTranslator
                         _sqlExpressionFactory.IsNotNull(instance),
                         _sqlExpressionFactory.AndAlso(
                             _sqlExpressionFactory.IsNotNull(pattern),
-                            _sqlExpressionFactory.GreaterThan(
                                 _sqlExpressionFactory.Function(
                                     "CONTAINS",
                                     new[] { instance, pattern },
                                     nullable: true,
                                     argumentsPropagateNullability: new[] { true, true },
-                                    typeof(int)),
-                                _sqlExpressionFactory.Constant(0))));
+                                    typeof(int))));
             }
         }
 
