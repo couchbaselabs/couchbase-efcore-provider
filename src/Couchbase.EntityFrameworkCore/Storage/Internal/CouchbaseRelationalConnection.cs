@@ -76,5 +76,4 @@ public class CouchbaseRelationalConnection : RelationalConnection, ICouchbaseCon
     {
         return new CouchbaseConnection(_connectionString, _clusterOptions);
     }
-    
 }

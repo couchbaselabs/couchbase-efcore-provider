@@ -3,45 +3,40 @@ using Couchbase.Core.Utils;
 
 namespace Couchbase.EntityFrameworkCore.Metadata;
 
+/// <summary>
+/// Maps an entity to a Scope and Collection. The other part of the keyspace,
+/// the Bucket name, is pulled from the ClusterOptions that is injected via DI
+/// </summary>
 [AttributeUsage(AttributeTargets.Class)]
 public class CouchbaseKeyspaceAttribute : Attribute
 {
-    private string _contextId;
+    private string _keyspace;
     
-    public CouchbaseKeyspaceAttribute(string bucket)
-    {
-        Bucket = bucket ?? throw new NullReferenceException(nameof(bucket));
-    }
-    
-    public CouchbaseKeyspaceAttribute(string bucket, string scope) : this(bucket)
+    public CouchbaseKeyspaceAttribute(string scope)
     {
         Scope = scope?? throw new NullReferenceException(nameof(scope));
     }
     
-    public CouchbaseKeyspaceAttribute(string bucket, string scope, string collection) : this(bucket, scope)
+    public CouchbaseKeyspaceAttribute(string scope, string collection) : this(scope)
     {
         Collection = collection ?? throw new NullReferenceException(nameof(collection));
     }
     
-    public string Bucket { get; }
-
     public string Scope { get; } = "_default";
 
     public string Collection { get; } = "_default";
 
     public string GetKeySpace()
     {
-        if (_contextId == null)
+        if (_keyspace == null)
         {
-            var contextBuilder = new StringBuilder();
-            contextBuilder.Append(Bucket);
-            contextBuilder.Append('.');
-            contextBuilder.Append(Scope);
-            contextBuilder.Append('.');
-            contextBuilder.Append(Collection);
-            _contextId = contextBuilder.ToString();
+            var keyspaceBuilder = new StringBuilder();
+            keyspaceBuilder.Append(Scope);
+            keyspaceBuilder.Append('.');
+            keyspaceBuilder.Append(Collection);
+            _keyspace = keyspaceBuilder.ToString();
         }
 
-        return _contextId;
+        return _keyspace;
     }
 }

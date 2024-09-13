@@ -6,7 +6,7 @@
 using System.Collections;
 using System.Diagnostics;
 
-namespace Microsoft.EntityFrameworkCore.Utilities;
+namespace Couchbase.EntityFrameworkCore.Extensions;
 
 [DebuggerStepThrough]
 internal static class EnumerableExtensions

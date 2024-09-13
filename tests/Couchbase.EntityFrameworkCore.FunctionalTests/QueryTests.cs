@@ -55,10 +55,9 @@ public class QueryTests
             select a;
 
         var count = await airlines.CountAsync();
-        Assert.Equal(31591, count);
+        Assert.Equal(188, count);
     }
-    
-    
+
     [Fact]
     public async Task Test()
     {
@@ -81,7 +80,7 @@ public class QueryTests
       //  var found = context.Find<Airline>("airline", 11);
       
       var ab = await context.Airlines.FindAsync("airline", 11);
-     var airlines1 = await context.Airlines
+      var airlines1 = await context.Airlines
           .OrderBy(x => x.Id).ToListAsync<Airline>();
 
       foreach (var a in airlines1)
@@ -89,7 +88,7 @@ public class QueryTests
           _outputHelper.WriteLine(a.ToString());
       }
 
-     var airlines = await context.Airlines
+      var airlines = await context.Airlines
           .OrderBy(x => x.Id)
           .FirstAsync();
 

@@ -1,110 +1,113 @@
+using System.Collections.Concurrent;
 using System.Reflection;
-using Couchbase.Core.IO.Serializers;
 using Couchbase.Core.IO.Transcoders;
 using Couchbase.EntityFrameworkCore.Metadata;
 using Couchbase.Extensions.DependencyInjection;
 using Couchbase.KeyValue;
 using Microsoft.Extensions.Logging;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Serialization;
+// ReSharper disable MethodHasAsyncOverload
 
 namespace Couchbase.EntityFrameworkCore.Storage.Internal;
 
-public class CouchbaseClientWrapper : ICouchbaseClientWrapper
+public class CouchbaseClientWrapper(INamedBucketProvider namedBucketProvider, ILogger<CouchbaseClientWrapper> logger)
+    : ICouchbaseClientWrapper
 {
-    private readonly INamedBucketProvider _namedBucketProvider;
-    private readonly ILogger<CouchbaseClientWrapper> _logger;
+    private readonly ConcurrentDictionary<string, (string scope, string collection)> _keyspaceCache = new ();
     private readonly  ITypeTranscoder _transcoder = new RawJsonTranscoder();
     private IBucket? _bucket;
-    public CouchbaseClientWrapper(INamedBucketProvider namedBucketProvider, ILogger<CouchbaseClientWrapper> logger)
-    {
-        _namedBucketProvider = namedBucketProvider;
-        _logger = logger;
-    }
 
-    public async Task<bool> DeleteDocument<TEntity>(string id, string? contextId, TEntity entity)
+    public async Task<bool> DeleteDocument(string id, string? scopeAndCollection)
     {
         bool success;
         try
         {
-            var contextIdTuple = DelimitContextId(contextId);
-            var collection = await GetCollection(contextIdTuple.scope, contextIdTuple.collection).ConfigureAwait(false);
+            var keyspace = GetOrAddKeyspace(scopeAndCollection);
+            var collection = await GetCollection(keyspace.scope, keyspace.collection).ConfigureAwait(false);
             await collection.RemoveAsync(id).ConfigureAwait(false);
             success = true;
         }
         catch (Exception e)
         {
             success = false;
-            _logger.LogError(e, "Delete failed");
+            logger.LogError(e, "Delete failed for key {Id} in keyspace {ScopeAndCollection}", 
+                id, scopeAndCollection);
         }
 
         return success;
     }
 
-    public async Task<bool> CreateDocument<TEntity>(string id, string contextId, TEntity entity)
+    public async Task<bool> CreateDocument<TEntity>(string id, string scopeAndCollection, TEntity entity)
     {
         bool success;
         try
         {
-            var contextIdTuple = DelimitContextId(contextId);
-            var collection = await GetCollection(contextIdTuple.scope, contextIdTuple.collection).ConfigureAwait(false);
+            var keyspace = GetOrAddKeyspace(scopeAndCollection);
+            var collection = await GetCollection(keyspace.scope, keyspace.collection).ConfigureAwait(false);
             await collection.InsertAsync(id, entity, new InsertOptions().Transcoder(_transcoder)).ConfigureAwait(false);
             success = true;
         }
         catch (Exception e)
         {
             success = false;
-            _logger.LogError(e, "Insert failed");
+            logger.LogError(e, "Insert failed for key {Id} in keyspace {ScopeAndCollection}", 
+                id, scopeAndCollection);
         }
 
         return success;
     }
 
-    public async Task<bool> UpdateDocument<TEntity>(string id, string? contextId, TEntity entity)
+    public async Task<bool> UpdateDocument<TEntity>(string id, string? scopeAndCollection, TEntity entity)
     {
         bool success;
         try
         {
-            var contextIdTuple = DelimitContextId(contextId);
-            var collection = await GetCollection(contextIdTuple.scope, contextIdTuple.collection).ConfigureAwait(false);
+            var keyspace = GetOrAddKeyspace(scopeAndCollection);
+            var collection = await GetCollection(keyspace.scope, keyspace.collection).ConfigureAwait(false);
             await collection.UpsertAsync(id, entity, new UpsertOptions().Transcoder(_transcoder)).ConfigureAwait(false);
             success = true;
         }
         catch (Exception e)
         {
             success = false;
-            _logger.LogError(e, "Update failed");
+            logger.LogError(e, "Update failed for key {Id} in keyspace {ScopeAndCollection}", 
+                id, scopeAndCollection);
         }
 
         return success;
     }
 
+    public string BucketName => namedBucketProvider.BucketName;
+
     private async Task<ICouchbaseCollection> GetCollection(string scope, string collection)
     {
         try
         {
-            _bucket ??= await _namedBucketProvider.GetBucketAsync().ConfigureAwait(false);
+            _bucket ??= await namedBucketProvider.GetBucketAsync().ConfigureAwait(false);
         }
         catch (Exception e)
         {
-           _logger.LogError(e, "Could not fetch collection");
+           logger.LogError(e, "Bucket {BucketName} not found!", namedBucketProvider.BucketName);
         }
 
+        // ReSharper disable once MethodHasAsyncOverload
         return _bucket.Scope(scope).Collection(collection);
     }
 
-    private static (string bucket, string scope, string collection) DelimitContextId(string contextId)
+    private (string scope, string collection) GetOrAddKeyspace(string scopeAndCollection)
     {
-        var delimitedContextId = contextId.Split(".");
-        return (delimitedContextId[0], delimitedContextId[1], delimitedContextId[2]);
+        return _keyspaceCache.GetOrAdd(scopeAndCollection, s =>
+        {
+            var delimitedScopeAndCollection = s.Split(".");
+            return (delimitedScopeAndCollection[0], delimitedScopeAndCollection[1]);
+        });
     }
     
-    private static (string bucket, string scope, string collection) GetContextId(object entity)
+    private static (string scope, string collection) GetContextId(object entity)
     {
         var attribute = (CouchbaseKeyspaceAttribute)entity.
             GetType().GetCustomAttributes().
             First(x => x.GetType() == typeof(CouchbaseKeyspaceAttribute));
 
-        return (attribute.Bucket, attribute.Scope, attribute.Collection);
+        return (attribute.Scope, attribute.Collection);
     }
 }

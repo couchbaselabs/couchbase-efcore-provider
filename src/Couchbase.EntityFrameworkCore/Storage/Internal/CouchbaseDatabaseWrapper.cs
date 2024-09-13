@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using Couchbase.Core.Exceptions;
+using Couchbase.EntityFrameworkCore.Extensions;
 using Couchbase.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking.Internal;
@@ -36,8 +37,8 @@ public class CouchbaseDatabaseWrapper(DatabaseDependencies dependencies, ICouchb
             var entityEntry = updateEntry.ToEntityEntry();
             var entity = entityEntry.Entity;
             var entityType = updateEntry.EntityType;
-            var primaryKey = GetPrimaryKey(entity, entityType);
-            var keyspace = entityType.GetTableName();
+            var primaryKey = entityType.GetPrimaryKey(entity);
+            var scopeAndCollection = entityType.GetScopeAndCollection();
             var document= GenerateRootJson(updateEntry);
             switch (updateEntry.EntityState)
             {
@@ -46,21 +47,20 @@ public class CouchbaseDatabaseWrapper(DatabaseDependencies dependencies, ICouchb
                 case EntityState.Unchanged:
                     break;
                 case EntityState.Deleted:
-                    if (await couchbaseClient.DeleteDocument(primaryKey, keyspace, document).ConfigureAwait(false))
+                    if (await couchbaseClient.DeleteDocument(primaryKey, scopeAndCollection).ConfigureAwait(false))
                     {
                         updateCount++;
                     }
                     break;
                 case EntityState.Modified:
-                    if (await couchbaseClient.UpdateDocument(primaryKey, keyspace, document).ConfigureAwait(false))
+                    if (await couchbaseClient.UpdateDocument(primaryKey, scopeAndCollection, document).ConfigureAwait(false))
                     {
                         updateCount++;
                     }
                     break;
                 case EntityState.Added:
                 {
-                    var options = new JsonSerializerOptions { WriteIndented = true };
-                    if (await couchbaseClient.CreateDocument(primaryKey, keyspace, document).ConfigureAwait(false))
+                    if (await couchbaseClient.CreateDocument(primaryKey, scopeAndCollection, document).ConfigureAwait(false))
                     {
                         updateCount++;
                     }
