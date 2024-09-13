@@ -3,6 +3,7 @@ using Couchbase.EntityFrameworkCore.FunctionalTests.Models;
 using Couchbase.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using EFCore.NamingConventions;
 using Xunit;
 
 namespace Couchbase.EntityFrameworkCore.FunctionalTests.Fixtures;
@@ -51,13 +52,14 @@ public class CouchbaseFixture : IAsyncLifetime
             base.OnConfiguring(optionsBuilder);
             optionsBuilder.UseLoggerFactory(loggerFactory);
             optionsBuilder.UseCouchbase(_clusterOptions);
+            optionsBuilder.UseCamelCaseNamingConvention();
         }
         
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
             modelBuilder.Entity<Airline>().HasKey(x=>new {x.Type, x.Id});//composite key mapping
-            modelBuilder.Entity<User>().ToCouchbaseCollection("travel-sample", "users", "users");
+            modelBuilder.Entity<User>().ToCouchbaseCollection("users", "users");
         }
 
         private interface ITravelSampleBucketProvider : INamedBucketProvider;

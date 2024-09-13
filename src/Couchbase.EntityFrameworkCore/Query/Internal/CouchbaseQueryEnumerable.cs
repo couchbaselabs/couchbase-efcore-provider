@@ -5,7 +5,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Internal;
 using Microsoft.EntityFrameworkCore.Query;
 using Microsoft.EntityFrameworkCore.Query.Internal;
-using Microsoft.EntityFrameworkCore.Query.SqlExpressions;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.EntityFrameworkCore.Storage.Internal;
 
@@ -51,11 +50,18 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>
 
         foreach (var doc in result.ToEnumerable())
         {
-            //If the returned type is an entity add start change tracking
-            //Scalar values for functions like COUNT are not tracked.
-            if (entityType != null)
+            try
             {
-                _relationalQueryContext.StartTracking(entityType, doc, new ValueBuffer());
+                //If the returned type is an entity add start change tracking
+                //Scalar values for functions like COUNT are not tracked.
+                if (entityType != null)
+                {
+                    _relationalQueryContext.StartTracking(entityType, doc, new ValueBuffer());
+                }
+            }
+            catch (Exception e)
+            {
+                //log error
             }
 
             yield return doc;
@@ -81,14 +87,22 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>
 
         await foreach (var doc in result)
         {
-            //If the returned type is an entity add start change tracking
-            //Scalar values for functions like COUNT are not tracked.
-            if (entityType != null)
+            try
             {
-                _relationalQueryContext.StartTracking(entityType, doc, new ValueBuffer());
+                //If the returned type is an entity add start change tracking
+                //Scalar values for functions like COUNT are not tracked.
+                if (entityType != null)
+                {
+                    _relationalQueryContext.StartTracking(entityType, doc, new ValueBuffer());
+                }
+            }
+            catch (Exception e)
+            {
+                //log error
             }
 
             yield return doc;
+        
         }
     }
 

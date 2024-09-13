@@ -3,6 +3,7 @@ using System.Reflection;
 using System.Reflection.Emit;
 using System.Text;
 using Couchbase.Core.Utils;
+using Couchbase.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Query;
 using Microsoft.EntityFrameworkCore.Query.SqlExpressions;
@@ -14,8 +15,11 @@ namespace Couchbase.EntityFrameworkCore.Query.Internal;
 
 public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
 {
-    public CouchbaseQuerySqlGenerator(QuerySqlGeneratorDependencies dependencies) : base(dependencies)
+    private readonly INamedBucketProvider _namedBucketProvider;
+
+    public CouchbaseQuerySqlGenerator(QuerySqlGeneratorDependencies dependencies, INamedBucketProvider namedBucketProvider) : base(dependencies)
     {
+        _namedBucketProvider = namedBucketProvider;
     }
 
     protected override Expression VisitSqlConstant(SqlConstantExpression sqlConstantExpression)
@@ -195,18 +199,19 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
     {
         //Not ideal but we need to reformat the table (really the bucket+scope+collection) to N1QL
         //format of `bucket`.`scope`.`collection`. TableExpression is sealed and not injectable AFAIK.
-        var contextId = tableExpression.Name.Split('.');
-        var contextBuilder = new StringBuilder();
-        for (var i = 0; i < contextId.Length; i++)
+        var scopeAndCollection = tableExpression.Name.Split('.');
+        var keyspaceBuilder = new StringBuilder();
+        keyspaceBuilder.Append(_namedBucketProvider.BucketName.EscapeIfRequired()).Append('.');
+        for (var i = 0; i < scopeAndCollection.Length; i++)
         {
-            contextBuilder.Append(contextId[i].EscapeIfRequired());
-            if (i < contextId.Length-1)
+            keyspaceBuilder.Append(scopeAndCollection[i].EscapeIfRequired());
+            if (i < scopeAndCollection.Length-1)
             {
-                contextBuilder.Append('.');
+                keyspaceBuilder.Append('.');
             }
         }
 
-        Sql.Append(contextBuilder.ToString())
+        Sql.Append(keyspaceBuilder.ToString())
             .Append(AliasSeparator)
             .Append(Dependencies.SqlGenerationHelper.DelimitIdentifier(tableExpression.Alias));
 
@@ -336,13 +341,7 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
                 Visit(sqlFunctionExpression.Instance);
                 Sql.Append(".");
             }
-
-            //make the response scalar with no extra JSON
-/*if (sqlFunctionExpression.Name == "COUNT")
-            {
-                Sql.Append(" RAW ");
-            }*/
-
+            
             Sql.Append(sqlFunctionExpression.Name);
         }
         else

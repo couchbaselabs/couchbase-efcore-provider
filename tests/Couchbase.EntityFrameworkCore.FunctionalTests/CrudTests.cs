@@ -93,22 +93,15 @@ public class CrudTests
             Iata = "Q5",
             Name = "40-Mile Air"
         };
-        try
-        {
-            context.Add(airline);
-            await context.SaveChangesAsync();
-            
-            context.Remove(airline);
-            await context.SaveChangesAsync();
-            
-            var airline1 = await context.Airlines.FindAsync("airline", 11);
-            Assert.Null(airline1);
-        }
-        finally
-        {
-            context.Remove(airline);
-            await context.SaveChangesAsync();
-        }
+        
+        context.Add(airline);
+        await context.SaveChangesAsync();
+        
+        context.Remove(airline);
+        await context.SaveChangesAsync();
+        
+        var airline1 = await context.Airlines.FindAsync("airline", 11);
+        Assert.Null(airline1);
     }
     
     [Fact]
