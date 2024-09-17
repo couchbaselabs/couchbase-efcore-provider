@@ -80,7 +80,7 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>
         var cluster = await _clusterProvider.GetClusterAsync().ConfigureAwait(false);
         var result = await cluster.QueryAsync<T>(command.CommandText, queryOptions).ConfigureAwait(false);
         
-        _relationalQueryContext.InitializeStateManager(false);
+        _relationalQueryContext.InitializeStateManager(_standAloneStateManager);
 
         var model = _dbContext.Model;
         var entityType = model.FindEntityType(typeof(T));
@@ -91,7 +91,7 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>
             {
                 //If the returned type is an entity add start change tracking
                 //Scalar values for functions like COUNT are not tracked.
-                if (entityType != null)
+                if (entityType != null && _dbContext.Entry(doc).State != EntityState.Detached)
                 {
                     _relationalQueryContext.StartTracking(entityType, doc, new ValueBuffer());
                 }
@@ -102,7 +102,6 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>
             }
 
             yield return doc;
-        
         }
     }
 
