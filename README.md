@@ -33,5 +33,6 @@
  * Include/ThenInclude (Instucters page in the Contoso app)
  * Most all SQL++ functions
  * Value generation
+ * Lots...it's a WIP
 
    
