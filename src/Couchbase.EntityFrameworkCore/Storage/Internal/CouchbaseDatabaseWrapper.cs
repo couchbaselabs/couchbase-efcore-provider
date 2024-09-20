@@ -74,30 +74,6 @@ public class CouchbaseDatabaseWrapper(DatabaseDependencies dependencies, ICouchb
 
         return updateCount;
     }
-
-    private static string GetPrimaryKey(object entity, IEntityType entityType)
-    {
-        var keys = entityType.FindPrimaryKey().Properties
-            .ToArray(); //TODO If no primary key found we should fail hard
-
-        var compositeKey = new StringBuilder();
-        foreach (var property in entity.GetType().GetProperties().Reverse())
-        {
-            foreach (var key in keys)
-            {
-                if (key.Name != property.Name) continue;
-                if (compositeKey.Length > 0)
-                {
-                    compositeKey.Append("_"); //TODO delimiter should be optional and customizable
-                }
-
-                var keyValue = property.GetValue(entity);
-                compositeKey.Append(keyValue);
-            }
-        }
-
-        return compositeKey.ToString();
-    }
     
     
     private byte[] GenerateRootJson(IUpdateEntry updateEntry)
@@ -113,21 +89,23 @@ public class CouchbaseDatabaseWrapper(DatabaseDependencies dependencies, ICouchb
 
             foreach (var property in entityType.GetProperties())
             {
+                var jsonPropertyName = property.FindAnnotation("Relational:JsonPropertyName");
+                var fieldName = jsonPropertyName?.Value?.ToString() ?? property.Name;
                 var value = updateEntry.GetCurrentValue(property);
                 var propertyType = GetUnderlyingType(property.ClrType);
                 switch (propertyType.Name)
                 {
                     case "String":
-                        writer.WriteString(property.Name, (string)value);
+                        writer.WriteString(fieldName, (string)value);
                         break;
                     case "Int32":
-                        writer.WriteNumber(property.Name, (int)value);
+                        writer.WriteNumber(fieldName, (int)value);
                         break;
                     case "DateTime":
-                        writer.WriteString(property.Name, (DateTime)value);
+                        writer.WriteString(fieldName, (DateTime)value);
                         break;
                     case "Decimal":
-                        writer.WriteNumber(property.Name, (decimal)value);
+                        writer.WriteNumber(fieldName, (decimal)value);
                         break;
                     case "Byte[]":
                         writer.WriteBase64String(property.Name, new ReadOnlyMemory<byte>((byte[])value).Span);
