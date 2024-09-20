@@ -1,5 +1,6 @@
 using Couchbase.EntityFrameworkCore.FunctionalTests.Fixtures;
 using Couchbase.EntityFrameworkCore.FunctionalTests.Models;
+using Microsoft.EntityFrameworkCore;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -17,10 +18,106 @@ public class CrudTests
         _outputHelper = outputHelper;
     }
 
-    public async Task Test_()
+    [Fact]
+    public async Task Test_ExecuteUpdate()
     {
         var context = _couchbaseFixture.GetDbContext;
-      
+        var airline1 = new Airline
+        {
+            Type = "airline",
+            Id = 666,
+            Callsign = "MILE-AIR",
+            Country = "United States",
+            Icao = "MLA",
+            Iata = "Q5",
+            Name = "40-Mile Air"
+        };
+        
+        var airline2 = new Airline
+        {
+            Type = "airline",
+            Id = 667,
+            Callsign = "MILE-AIR",
+            Country = "United States",
+            Icao = "MLA",
+            Iata = "Q5",
+            Name = "40-Mile Air"
+        };
+        
+        try
+        {
+            context.Add(airline1);
+            context.Add(airline2);
+
+            var inserted = await context.SaveChangesAsync();
+            Assert.Equal(2, inserted);
+            
+            var count = context.Airlines.Count(a => a.Id > 665 && a.Id < 668);
+            Assert.Equal(2, count);
+
+            await context.Airlines
+                .Where(a => a.Id > 665 && a.Id < 668)
+                .ExecuteUpdateAsync(setters => setters.SetProperty(a => a.Country, "Banana Republic"));
+
+            var count2 = context.Airlines.Count(a => a.Country == "Banana Republic");
+            Assert.Equal(2, count2);
+        }
+        finally
+        {
+            context.Remove(airline1);
+            context.Remove(airline2);
+            await context.SaveChangesAsync();
+        }
+    }
+    
+    [Fact]
+    public async Task Test_ExecuteDelete()
+    {
+        var context = _couchbaseFixture.GetDbContext;
+        var airline1 = new Airline
+        {
+            Type = "airline",
+            Id = 777,
+            Callsign = "MILE-AIR",
+            Country = "United States",
+            Icao = "MLA",
+            Iata = "Q5",
+            Name = "40-Mile Air"
+        };
+        
+        var airline2 = new Airline
+        {
+            Type = "airline",
+            Id = 778,
+            Callsign = "MILE-AIR",
+            Country = "United States",
+            Icao = "MLA",
+            Iata = "Q5",
+            Name = "40-Mile Air"
+        };
+        
+        try
+        {
+            context.Add(airline1);
+            context.Add(airline2);
+
+            await context.SaveChangesAsync();
+            var count = context.Airlines.Count(a => a.Id > 776 && a.Id < 779);
+            Assert.Equal(2, count);
+
+            await context.Airlines
+                .Where(a => a.Id > 776 && a.Id < 779)
+                .ExecuteDeleteAsync();
+
+            var count2 = context.Airlines.Count(a => a.Id > 776 && a.Id < 779);
+            Assert.Equal(0, count2);
+        }
+        finally
+        {
+            context.Remove(airline1);
+            context.Remove(airline2);
+            await context.SaveChangesAsync();
+        }
     }
 
     [Fact]

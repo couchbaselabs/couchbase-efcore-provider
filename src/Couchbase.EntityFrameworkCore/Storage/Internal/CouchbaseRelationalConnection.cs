@@ -16,6 +16,7 @@ public class CouchbaseRelationalConnection : RelationalConnection, ICouchbaseCon
     private IDbContextTransaction? _currentTransaction1;
     private IRelationalCommand _relationalCommand;
     private readonly IRelationalCommandBuilder _relationalCommandBuilder;
+    private readonly IClusterProvider _clusterProvider;
     private readonly RelationalConnectionDependencies _dependencies;
     private IDiagnosticsLogger<DbLoggerCategory.Infrastructure> _logger;
     private string _connectionString;
@@ -52,11 +53,12 @@ public class CouchbaseRelationalConnection : RelationalConnection, ICouchbaseCon
              }
      */
 
-    public CouchbaseRelationalConnection(RelationalConnectionDependencies dependencies, IDiagnosticsLogger<DbLoggerCategory.Infrastructure> logger, IRelationalCommandBuilder relationalCommandBuilder) : base(dependencies)
+    public CouchbaseRelationalConnection(RelationalConnectionDependencies dependencies, IDiagnosticsLogger<DbLoggerCategory.Infrastructure> logger, IRelationalCommandBuilder relationalCommandBuilder, IClusterProvider clusterProvider) : base(dependencies)
     {
         _dependencies = dependencies;
         _logger = logger;
         _relationalCommandBuilder = relationalCommandBuilder;
+        _clusterProvider = clusterProvider;
 
         var optionsExtension = dependencies.ContextOptions.Extensions.OfType<CouchbaseOptionsExtension<INamedBucketProvider>>().FirstOrDefault();
         if (optionsExtension != null)
@@ -74,6 +76,6 @@ public class CouchbaseRelationalConnection : RelationalConnection, ICouchbaseCon
 
     protected override DbConnection CreateDbConnection()
     {
-        return new CouchbaseConnection(_connectionString, _clusterOptions);
+        return new CouchbaseConnection(ConnectionString, _clusterOptions, _clusterProvider);
     }
 }

@@ -5,6 +5,12 @@ namespace Couchbase.EntityFrameworkCore.Storage.Internal;
 
 public class CouchbaseCommand : DbCommand
 {
+    private CouchbaseParameterCollection? _parameters;
+    public new virtual CouchbaseParameterCollection Parameters
+        => _parameters ??= new CouchbaseParameterCollection();
+
+    internal ICluster Cluster { get; set; }
+
     public override void Cancel()
     {
         throw new NotImplementedException();
@@ -12,7 +18,8 @@ public class CouchbaseCommand : DbCommand
 
     public override int ExecuteNonQuery()
     {
-        throw new NotImplementedException();
+        var result = Cluster.QueryAsync<int>(CommandText).GetAwaiter().GetResult();
+        return result.Rows.CountAsync().GetAwaiter().GetResult();
     }
 
     public override object? ExecuteScalar()
@@ -30,7 +37,7 @@ public class CouchbaseCommand : DbCommand
     public override CommandType CommandType { get; set; }
     public override UpdateRowSource UpdatedRowSource { get; set; }
     protected override DbConnection? DbConnection { get; set; }
-    protected override DbParameterCollection DbParameterCollection { get; }
+    protected override DbParameterCollection DbParameterCollection => Parameters;
     protected override DbTransaction? DbTransaction { get; set; }
     public override bool DesignTimeVisible { get; set; }
 
