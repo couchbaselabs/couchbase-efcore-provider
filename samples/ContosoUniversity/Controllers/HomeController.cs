@@ -29,7 +29,9 @@ namespace ContosoUniversity.Controllers
 
         public async Task<ActionResult> About()
         {
-          //  List<EnrollmentDateGroup> groups = new List<EnrollmentDateGroup>();
+            /*ADO.NET is not currently supported by EFCore.Couchbase*/
+            
+            //List<EnrollmentDateGroup> groups = new List<EnrollmentDateGroup>();
             //var conn = _context.Database.GetDbConnection();
 
             var query = from s in _context.Students
