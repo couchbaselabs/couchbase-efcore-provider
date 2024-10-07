@@ -29,11 +29,6 @@ namespace ContosoUniversity.Controllers
 
         public async Task<ActionResult> About()
         {
-            /*ADO.NET is not currently supported by EFCore.Couchbase*/
-            
-            //List<EnrollmentDateGroup> groups = new List<EnrollmentDateGroup>();
-            //var conn = _context.Database.GetDbConnection();
-
             var query = from s in _context.Students
                 group s by s.EnrollmentDate
                 into grp
@@ -41,7 +36,12 @@ namespace ContosoUniversity.Controllers
 
             var groups = await query.ToListAsync().ConfigureAwait(false);
             
-           /* try
+            /*ADO.NET is not currently supported by EFCore.Couchbase*/
+           /*
+            List<EnrollmentDateGroup> groups = new List<EnrollmentDateGroup>();
+            var conn = _context.Database.GetDbConnection();
+
+            try
             {
                 await conn.OpenAsync();
                 using (var command = conn.CreateCommand())

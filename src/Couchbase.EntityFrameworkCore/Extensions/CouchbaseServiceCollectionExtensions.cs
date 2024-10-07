@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Couchbase.EntityFrameworkCore.Diagnostics.Internal;
 using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.EntityFrameworkCore.Infrastructure.Internal;
@@ -29,24 +30,31 @@ public static class CouchbaseServiceCollectionExtensions
         this IServiceCollection serviceCollection,
         ClusterOptions clusterOptions,
         Action<ICouchbaseDbContextOptionsBuilder>? couchbaseOptionsAction = null,
-        Action<DbContextOptionsBuilder>? optionsAction = null)
+        Action<DbContextOptionsBuilder>? optionsAction = null) where TNamedBucketProvider : class, INamedBucketProvider
         where TContext : DbContext
         => serviceCollection.AddDbContext<TContext>((_, options) =>
         {
             optionsAction?.Invoke(options);
-            options.UseCouchbase(clusterOptions, couchbaseOptionsAction);
+            options.UseCouchbase<TNamedBucketProvider>(clusterOptions, couchbaseOptionsAction);
         });
 
     public static IServiceCollection AddEntityFrameworkCouchbaseProvider<TNamedBucketProvider>(this IServiceCollection serviceCollection,
-        CouchbaseOptionsExtension<TNamedBucketProvider> optionsExtension, string bucketName) where TNamedBucketProvider : class, INamedBucketProvider
+        CouchbaseOptionsExtension<TNamedBucketProvider> optionsExtension) where TNamedBucketProvider : class, INamedBucketProvider
     {
-        serviceCollection.AddCouchbase(options =>
+       serviceCollection.AddCouchbase(options =>
         {
             options.WithConnectionString(optionsExtension.ClusterOptions.ConnectionString);
             options.WithCredentials(optionsExtension.ClusterOptions.UserName, optionsExtension.ClusterOptions.Password);
         });
-        
-        serviceCollection.AddCouchbaseBucket<TNamedBucketProvider>(bucketName);
+
+        serviceCollection.AddCouchbaseBucket<TNamedBucketProvider>(optionsExtension.DbContextOptionsBuilder.Bucket,
+            builder =>
+            {
+                builder
+                    .AddScope(optionsExtension.DbContextOptionsBuilder.Scope)
+                    .AddCollection<INamedCollectionProvider>("_default");
+            });
+
         serviceCollection.AddLogging(); //this should be injectable from the app side
         
         var builder = new EntityFrameworkRelationalServicesBuilder(serviceCollection)

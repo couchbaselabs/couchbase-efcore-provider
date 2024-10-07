@@ -12,10 +12,14 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllersWithViews();
 
 builder.Services.AddDbContext<SchoolContext>(options=>
-    options.UseCouchbase(new ClusterOptions()
+    options.UseCouchbase<INamedBucketProvider>(new ClusterOptions()
     .WithCredentials("Administrator", "password")
-    .WithConnectionString("couchbase://localhost")
-    .WithBuckets("contoso")));
+    .WithConnectionString("couchbase://localhost"),
+        couchbaseDbContextOptions =>
+        {
+            couchbaseDbContextOptions.Bucket = "universities";
+            couchbaseDbContextOptions.Scope = "contoso";
+        }));
 
 builder.Logging.AddFile("Logs/myapp-{Date}.txt");
 

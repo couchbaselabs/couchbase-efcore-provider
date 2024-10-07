@@ -65,35 +65,31 @@ public class QueryTests
         var airline = new Airline
         {
             Type = "airline",
-            Id = 11,
+            Id = 1100000,
             Callsign = "MILE-AIR",
             Country = "United States",
             Icao = "MLA",
             Iata = "Q5",
             Name = "40-Mile Air"
         };
-            
+
         context.Add(airline);
         airline.Name = "foo";
-        //context.Update(airline);
-        
-      //  var found = context.Find<Airline>("airline", 11);
-      
-      var ab = await context.Airlines.FindAsync("airline", 11);
-      var airlines1 = await context.Airlines
-          .OrderBy(x => x.Id).ToListAsync<Airline>();
 
-      foreach (var a in airlines1)
-      {
-          _outputHelper.WriteLine(a.ToString());
-      }
+        var airlines1 = await context.Airlines
+              .OrderBy(x => x.Id).ToListAsync<Airline>(); 
 
-      var airlines = await context.Airlines
-          .OrderBy(x => x.Id)
-          .FirstAsync();
+        foreach (var a in airlines1)
+        {
+              _outputHelper.WriteLine(a.ToString());
+        }
 
-      _outputHelper.WriteLine(airlines.ToString());
-        
+        var airlines = await context.Airlines
+              .OrderBy(x => x.Id)
+              .FirstAsync();
+
+        _outputHelper.WriteLine(airlines.ToString());
+            
        // context.Remove(airline);
         await context.SaveChangesAsync();
     }

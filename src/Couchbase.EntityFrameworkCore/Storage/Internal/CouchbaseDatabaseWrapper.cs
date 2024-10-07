@@ -1,22 +1,8 @@
-using System.Linq.Expressions;
-using System.Reflection;
-using System.Reflection.Emit;
-using System.Text;
 using System.Text.Json;
-using System.Text.Json.Nodes;
-using System.Text.Json.Serialization;
-using Couchbase.Core.Exceptions;
 using Couchbase.EntityFrameworkCore.Extensions;
-using Couchbase.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.ChangeTracking.Internal;
-using Microsoft.EntityFrameworkCore.Metadata;
-using Microsoft.EntityFrameworkCore.Metadata.Internal;
-using Microsoft.EntityFrameworkCore.Query;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.EntityFrameworkCore.Update;
-using Microsoft.EntityFrameworkCore.Utilities;
-using Newtonsoft.Json.Serialization;
 using Database = Microsoft.EntityFrameworkCore.Storage.Database;
 
 namespace Couchbase.EntityFrameworkCore.Storage.Internal;
@@ -29,17 +15,21 @@ public class CouchbaseDatabaseWrapper(DatabaseDependencies dependencies, ICouchb
        return Task.Run(async () => await SaveChangesAsync(entries).ConfigureAwait(false)).Result;
     }
     
-    public override async Task<int> SaveChangesAsync(IList<IUpdateEntry> entries, CancellationToken cancellationToken = new CancellationToken())
+    public override async Task<int> SaveChangesAsync(IList<IUpdateEntry> entries, CancellationToken cancellationToken = new())
     {
         var updateCount = 0;
         foreach (var updateEntry in entries)
         {
+            //entity info
             var entityEntry = updateEntry.ToEntityEntry();
             var entity = entityEntry.Entity;
             var entityType = updateEntry.EntityType;
+
+            //document info
             var primaryKey = entityType.GetPrimaryKey(entity);
-            var scopeAndCollection = entityType.GetScopeAndCollection();
+            var collectionName = entityType.GetCollectionName();
             var document= GenerateRootJson(updateEntry);
+
             switch (updateEntry.EntityState)
             {
                 case EntityState.Detached:
@@ -47,20 +37,20 @@ public class CouchbaseDatabaseWrapper(DatabaseDependencies dependencies, ICouchb
                 case EntityState.Unchanged:
                     break;
                 case EntityState.Deleted:
-                    if (await couchbaseClient.DeleteDocument(primaryKey, scopeAndCollection).ConfigureAwait(false))
+                    if (await couchbaseClient.DeleteDocument(primaryKey, collectionName).ConfigureAwait(false))
                     {
                         updateCount++;
                     }
                     break;
                 case EntityState.Modified:
-                    if (await couchbaseClient.UpdateDocument(primaryKey, scopeAndCollection, document).ConfigureAwait(false))
+                    if (await couchbaseClient.UpdateDocument(primaryKey, collectionName, document).ConfigureAwait(false))
                     {
                         updateCount++;
                     }
                     break;
                 case EntityState.Added:
                 {
-                    if (await couchbaseClient.CreateDocument(primaryKey, scopeAndCollection, document).ConfigureAwait(false))
+                    if (await couchbaseClient.CreateDocument(primaryKey, collectionName, document).ConfigureAwait(false))
                     {
                         updateCount++;
                     }

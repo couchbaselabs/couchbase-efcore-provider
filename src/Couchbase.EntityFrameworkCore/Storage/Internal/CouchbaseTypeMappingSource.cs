@@ -1,5 +1,4 @@
 using Microsoft.EntityFrameworkCore.Storage;
-using System.Text.Json;
 using System.Text.Json.Nodes;
 
 namespace Couchbase.EntityFrameworkCore.Storage.Internal;

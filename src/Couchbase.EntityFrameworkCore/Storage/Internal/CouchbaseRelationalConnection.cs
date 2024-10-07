@@ -1,6 +1,4 @@
-using System.Data;
 using System.Data.Common;
-using System.Runtime.InteropServices.ComTypes;
 using Couchbase.EntityFrameworkCore.Infrastructure.Internal;
 using Couchbase.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;

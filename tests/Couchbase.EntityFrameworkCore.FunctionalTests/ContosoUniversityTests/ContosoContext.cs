@@ -1,4 +1,5 @@
 using ContosoUniversity.Data;
+using Couchbase.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -27,25 +28,13 @@ public class ContosoContext : SchoolContext
 
         base.OnConfiguring(optionsBuilder);
         optionsBuilder.UseLoggerFactory(loggerFactory);
-        optionsBuilder.UseCouchbase(_clusterOptions);
+        optionsBuilder.UseCouchbase<INamedBucketProvider>(_clusterOptions, 
+            couchbaseDbContextOptions =>
+        {
+            couchbaseDbContextOptions.Bucket = "universities";
+            couchbaseDbContextOptions.Scope = "contoso";
+        });
         optionsBuilder.EnableSensitiveDataLogging();
         optionsBuilder.EnableDetailedErrors();
-        //optionsBuilder.UseSqlite("Data Source=Context.db");
-        //SQLitePCL.raw.SetProvider(new SQLitePCL.SQLite3Provider_sqlite3());
     }
-    
-   /*protected override void OnModelCreating(ModelBuilder modelBuilder)
-    {
-        modelBuilder.Entity<Course>().ToTable("Course");
-        modelBuilder.Entity<Enrollment>().ToTable("Enrollment");
-        modelBuilder.Entity<Student>().ToTable("Person");
-        modelBuilder.Entity<Department>().ToTable("Department");
-        modelBuilder.Entity<Instructor>().ToTable("Person");
-        modelBuilder.Entity<OfficeAssignment>().ToTable("OfficeAssignment");
-        modelBuilder.Entity<CourseAssignment>().ToTable("CourseAssignment");
-        modelBuilder.Entity<Person>().ToTable("Person");
-
-        modelBuilder.Entity<CourseAssignment>()
-            .HasKey(c => new { c.CourseID, c.InstructorID });
-    }*/
 }

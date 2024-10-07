@@ -1,8 +1,6 @@
 using System.Collections;
 using System.Data.Common;
-using System.Text.Json;
 using Couchbase.Core.IO.Serializers;
-using Microsoft.EntityFrameworkCore.Storage;
 
 namespace Couchbase.EntityFrameworkCore.Storage.Internal;
 

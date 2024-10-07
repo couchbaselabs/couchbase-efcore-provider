@@ -8,19 +8,21 @@ using Couchbase.Extensions.DependencyInjection;
 
 namespace Couchbase.EntityFrameworkCore.Infrastructure.Internal;
 
+//TODO potentially implement IDbContextOptionsExtension instead of deriving from RelationalOptionsExtension
 public class CouchbaseOptionsExtension<TNamedBucketProvider> : RelationalOptionsExtension where TNamedBucketProvider : class, INamedBucketProvider
 {
     private readonly ClusterOptions _clusterOptions;
+    private readonly CouchbaseDbContextOptionsBuilder _couchbaseDbContextOptionsBuilder;
     private CouchbaseOptionsExtensionInfo? _info;
 
-    public CouchbaseOptionsExtension(ClusterOptions clusterOptions)
+    public CouchbaseOptionsExtension(ClusterOptions clusterOptions, CouchbaseDbContextOptionsBuilder couchbaseDbContextOptionsBuilder)
     {
         _clusterOptions = clusterOptions;
+        _couchbaseDbContextOptionsBuilder = couchbaseDbContextOptionsBuilder;
     }
     protected internal CouchbaseOptionsExtension(CouchbaseOptionsExtension<TNamedBucketProvider> copyFrom)
         : base(copyFrom)
     {
-
     }
 
     public ClusterOptions ClusterOptions => _clusterOptions;
@@ -29,15 +31,11 @@ public class CouchbaseOptionsExtension<TNamedBucketProvider> : RelationalOptions
 
     public override DbContextOptionsExtensionInfo Info => _info ??= new CouchbaseOptionsExtensionInfo(this);
 
+    public CouchbaseDbContextOptionsBuilder DbContextOptionsBuilder => _couchbaseDbContextOptionsBuilder;
+
     public override void ApplyServices(IServiceCollection services)
     {
-        if (_clusterOptions.Buckets.Count != 1)
-        {
-            throw new ArgumentOutOfRangeException(nameof(services),
-                @"Only a single Couchbase Bucket can be configured per DbContext");
-        }
-        
-        services.AddEntityFrameworkCouchbaseProvider(this, _clusterOptions.Buckets.First());
+        services.AddEntityFrameworkCouchbaseProvider(this);
     }
 
     private TNamedBucketProvider BucketProvider;

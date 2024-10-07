@@ -11,8 +11,12 @@ public class CouchbaseDbContextOptionsBuilder : ICouchbaseDbContextOptionsBuilde
     }
 
     private DbContextOptionsBuilder OptionsBuilder { get; }
-    
+
     public ClusterOptions ClusterOptions { get; }
+
+    public string Bucket { get; set; }
+
+    public string Scope { get; set; }
 
     DbContextOptionsBuilder ICouchbaseDbContextOptionsBuilder.OptionsBuilder => OptionsBuilder;
 }
@@ -20,6 +24,10 @@ public class CouchbaseDbContextOptionsBuilder : ICouchbaseDbContextOptionsBuilde
 public interface ICouchbaseDbContextOptionsBuilder
 {
     DbContextOptionsBuilder OptionsBuilder { get; }
-    
+
     ClusterOptions ClusterOptions { get; }
+
+    public string Bucket { get; }
+
+    public string Scope { get; }
 }

@@ -1,4 +1,3 @@
-using System.Text;
 using Microsoft.EntityFrameworkCore.Update;
 
 namespace Couchbase.EntityFrameworkCore.Storage.Internal;

@@ -12,14 +12,15 @@ public class CouchbaseKeyspaceAttribute : Attribute
 {
     private string _keyspace;
     
-    public CouchbaseKeyspaceAttribute(string scope)
+    public CouchbaseKeyspaceAttribute(string collection)
     {
-        Scope = scope?? throw new NullReferenceException(nameof(scope));
+        Collection = collection ?? throw new ArgumentNullException(nameof(collection));
     }
     
-    public CouchbaseKeyspaceAttribute(string scope, string collection) : this(scope)
+    public CouchbaseKeyspaceAttribute(string scope, string collection)
     {
-        Collection = collection ?? throw new NullReferenceException(nameof(collection));
+        Scope = scope ?? throw new ArgumentNullException(nameof(scope));
+        Collection = collection ?? throw new ArgumentNullException(nameof(collection));
     }
     
     public string Scope { get; } = "_default";
@@ -31,8 +32,6 @@ public class CouchbaseKeyspaceAttribute : Attribute
         if (_keyspace == null)
         {
             var keyspaceBuilder = new StringBuilder();
-            keyspaceBuilder.Append(Scope);
-            keyspaceBuilder.Append('.');
             keyspaceBuilder.Append(Collection);
             _keyspace = keyspaceBuilder.ToString();
         }

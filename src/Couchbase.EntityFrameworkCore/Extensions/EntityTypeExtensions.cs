@@ -6,7 +6,7 @@ namespace Couchbase.EntityFrameworkCore.Extensions;
 
 public static class EntityTypeExtensions
 {
-    public static string GetScopeAndCollection(this IEntityType entityType)
+    public static string GetCollectionName(this IEntityType entityType)
     {
         return entityType.GetTableName();
     }

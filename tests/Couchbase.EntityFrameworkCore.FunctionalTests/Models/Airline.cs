@@ -1,10 +1,11 @@
+using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
 using Couchbase.EntityFrameworkCore.Metadata;
 using Newtonsoft.Json;
 
 namespace Couchbase.EntityFrameworkCore.FunctionalTests.Models;
 
-[CouchbaseKeyspace("inventory", "airline")]
+[CouchbaseKeyspace("airline")]
 public class Airline
 {
     [JsonProperty("callsign", NullValueHandling = NullValueHandling.Ignore)]
@@ -25,6 +26,7 @@ public class Airline
 
     [JsonProperty("id", NullValueHandling = NullValueHandling.Ignore)]
     [JsonPropertyName("id")]
+    [Key]
     public int Id { get; set; }
 
     [JsonProperty("name", NullValueHandling = NullValueHandling.Ignore)]
