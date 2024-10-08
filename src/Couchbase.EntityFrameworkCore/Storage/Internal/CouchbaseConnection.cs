@@ -2,7 +2,6 @@ using System.Collections.Concurrent;
 using System.Data;
 using System.Data.Common;
 using Couchbase.Extensions.DependencyInjection;
-using Microsoft.EntityFrameworkCore;
 
 namespace Couchbase.EntityFrameworkCore.Storage.Internal;
 

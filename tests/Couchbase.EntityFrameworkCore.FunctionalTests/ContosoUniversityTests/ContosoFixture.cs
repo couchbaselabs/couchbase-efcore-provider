@@ -35,19 +35,6 @@ public class ContosoFixture : IAsyncLifetime
             {
                 PreserveReferencesHandling = PreserveReferencesHandling.Objects
             });
-        /*clusterOptions.WithTranscoder(
-            new JsonTranscoder(
-                new DefaultSerializer(
-                    new JsonSerializerSettings
-                    {
-                       // PreserveReferencesHandling = PreserveReferencesHandling.Objects
-                       ReferenceLoopHandling  = ReferenceLoopHandling.Ignore
-                    }, 
-                    new JsonSerializerSettings
-                    {
-                        PreserveReferencesHandling = PreserveReferencesHandling.Objects
-                    })));*/
-       
 
         var contextOptions = new DbContextOptions<SchoolContext>();
         DbContext = new ContosoContext(contextOptions, clusterOptions);

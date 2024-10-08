@@ -51,7 +51,12 @@ public class CouchbaseFixture : IAsyncLifetime
 
             base.OnConfiguring(optionsBuilder);
             optionsBuilder.UseLoggerFactory(loggerFactory);
-            optionsBuilder.UseCouchbase(_clusterOptions);
+            optionsBuilder.UseCouchbase<INamedBucketProvider>(_clusterOptions,
+                couchbaseDbContextOptions =>
+            {
+                couchbaseDbContextOptions.Bucket = "travel-sample";
+                couchbaseDbContextOptions.Scope = "inventory";
+            });
             optionsBuilder.UseCamelCaseNamingConvention();
         }
         
@@ -59,7 +64,7 @@ public class CouchbaseFixture : IAsyncLifetime
         {
             base.OnModelCreating(modelBuilder);
             modelBuilder.Entity<Airline>().HasKey(x=>new {x.Type, x.Id});//composite key mapping
-            modelBuilder.Entity<User>().ToCouchbaseCollection("users", "users");
+            modelBuilder.Entity<User>().ToCouchbaseCollection("users");
         }
 
         private interface ITravelSampleBucketProvider : INamedBucketProvider;
