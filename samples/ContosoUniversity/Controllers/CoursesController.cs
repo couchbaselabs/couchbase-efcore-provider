@@ -23,8 +23,14 @@ namespace ContosoUniversity.Controllers
         public async Task<IActionResult> Index()
         {
             var courses = _context.Courses
-                .Include(c => c.Department)
+               // .Include(c => c.Department)
                 .AsNoTracking();
+
+            foreach (var course in courses)
+            {
+                course.Department = await _context.Departments.AsNoTracking()
+                    .FirstOrDefaultAsync(x => x.DepartmentID == course.DepartmentID);
+            }
             return View(await courses.ToListAsync());
         }
 
@@ -37,13 +43,16 @@ namespace ContosoUniversity.Controllers
             }
 
             var course = await _context.Courses
-                .Include(c => c.Department)
+                //.Include(c => c.Department)
                 .AsNoTracking()
                 .FirstOrDefaultAsync(m => m.CourseID == id);
             if (course == null)
             {
                 return NotFound();
             }
+
+            course.Department = await _context.Departments.AsNoTracking()
+                    .FirstOrDefaultAsync(x => x.DepartmentID == course.DepartmentID);
 
             return View(course);
         }
@@ -144,13 +153,17 @@ namespace ContosoUniversity.Controllers
             }
 
             var course = await _context.Courses
-                .Include(c => c.Department)
+                //.Include(c => c.Department)
                 .AsNoTracking()
                 .FirstOrDefaultAsync(m => m.CourseID == id);
+
             if (course == null)
             {
                 return NotFound();
             }
+
+            course.Department = await _context.Departments.AsNoTracking()
+                .FirstOrDefaultAsync(x => x.DepartmentID == course.DepartmentID);
 
             return View(course);
         }

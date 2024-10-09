@@ -22,8 +22,17 @@ namespace ContosoUniversity.Controllers
         // GET: Departments
         public async Task<IActionResult> Index()
         {
-            var schoolContext = _context.Departments.Include(d => d.Administrator);
-            return View(await schoolContext.ToListAsync());
+            //var schoolContext = _context.Departments.Include(d => d.Administrator);
+
+            var schoolContext = await _context.Departments.ToListAsync();
+            foreach (var department in schoolContext)
+            {
+                department.Administrator =
+                    await _context.Instructors.FirstOrDefaultAsync(x => x.ID == department.DepartmentID);
+            }
+
+            return View(schoolContext);
+            //return View(await schoolContext.ToListAsync());
         }
 
         // GET: Departments/Details/5
@@ -37,7 +46,7 @@ namespace ContosoUniversity.Controllers
             string query = "SELECT * FROM `contoso`.`department`.`department` WHERE DepartmentID = {0}";
             var department = await _context.Departments
                 .FromSqlRaw(query, id)
-                .Include(d => d.Administrator)
+               // .Include(d => d.Administrator)
                 .AsNoTracking()
                 .FirstOrDefaultAsync();
 
@@ -45,6 +54,9 @@ namespace ContosoUniversity.Controllers
             {
                 return NotFound();
             }
+
+            department.Administrator =
+                await _context.Instructors.FirstOrDefaultAsync(x => x.ID == department.DepartmentID);
 
             return View(department);
         }
@@ -82,7 +94,7 @@ namespace ContosoUniversity.Controllers
             }
 
             var department = await _context.Departments
-                .Include(i => i.Administrator)
+                //.Include(i => i.Administrator)
                 .AsNoTracking()
                 .FirstOrDefaultAsync(m => m.DepartmentID == id);
 
@@ -90,6 +102,10 @@ namespace ContosoUniversity.Controllers
             {
                 return NotFound();
             }
+
+            department.Administrator =
+                await _context.Instructors.FirstOrDefaultAsync(x => x.ID == department.DepartmentID);
+
             ViewData["InstructorID"] = new SelectList(_context.Instructors, "ID", "FullName", department.InstructorID);
             return View(department);
         }
@@ -185,9 +201,10 @@ namespace ContosoUniversity.Controllers
             }
 
             var department = await _context.Departments
-                .Include(d => d.Administrator)
+                //.Include(d => d.Administrator)
                 .AsNoTracking()
                 .FirstOrDefaultAsync(m => m.DepartmentID == id);
+
             if (department == null)
             {
                 if (concurrencyError.GetValueOrDefault())
@@ -196,6 +213,9 @@ namespace ContosoUniversity.Controllers
                 }
                 return NotFound();
             }
+
+            department.Administrator =
+                await _context.Instructors.FirstOrDefaultAsync(x => x.ID == department.DepartmentID);
 
             if (concurrencyError.GetValueOrDefault())
             {
