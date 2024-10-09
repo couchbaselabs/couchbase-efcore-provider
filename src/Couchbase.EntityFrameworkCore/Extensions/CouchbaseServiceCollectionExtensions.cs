@@ -50,6 +50,7 @@ public static class CouchbaseServiceCollectionExtensions
         serviceCollection.AddCouchbaseBucket<TNamedBucketProvider>(optionsExtension.DbContextOptionsBuilder.Bucket,
             builder =>
             {
+                //The default scope is replaced with the mapped entity name
                 builder
                     .AddScope(optionsExtension.DbContextOptionsBuilder.Scope)
                     .AddCollection<INamedCollectionProvider>("_default");
