@@ -57,7 +57,7 @@ public static class CouchbaseServiceCollectionExtensions
             });
 
         serviceCollection.AddLogging(); //this should be injectable from the app side
-        
+
         var builder = new EntityFrameworkRelationalServicesBuilder(serviceCollection)
             .TryAdd<IRelationalTypeMappingSource, CouchbaseTypeMappingSource>()
             .TryAdd<IDatabase, CouchbaseDatabaseWrapper>()
@@ -72,7 +72,7 @@ public static class CouchbaseServiceCollectionExtensions
             .TryAdd<IHistoryRepository, CouchbaseHistoryRepository>()//not used but required by ASP.NET
             .TryAdd<IModificationCommandBatchFactory, CouchbaseModificationCommandBatchFactory>()
             .TryAdd<IMethodCallTranslatorProvider, CouchbaseMethodCallTranslatorProvider>()
-            
+
             //Found that this was necessary, because the default convention of determining a
             //Model's primary key automatically based off of properties that have 'Id' in their
             //name was getting ignored.
@@ -82,15 +82,15 @@ public static class CouchbaseServiceCollectionExtensions
                 //.TryAddScoped<IRelationalConnection, CouchbaseConnection>()
                 //.TryAddScoped<IQueryProvider, CouchbaseQueryProvider>()
                 .TryAddScoped<IRelationalCommand, CouchbaseRelationalCommand>()
-                .TryAddScoped<QueryContext, RelationalQueryContext>()
+                //.TryAddScoped<QueryContext, RelationalQueryContext>()
                 .TryAddScoped<ICouchbaseClientWrapper, CouchbaseClientWrapper>()
                 .TryAddScoped<IRelationalCommandBuilder, RelationalCommandBuilder>()
             );
-        
 
         builder.TryAddCoreServices();
 
         serviceCollection
+            //.AddScoped<IQueryContextFactory, CouchbaseQueryContextFactory>()
             .AddScoped<IRelationalConnection, CouchbaseRelationalConnection>()
             .AddScoped<IQueryCompiler, CouchbaseQueryCompiler>()
             .AddSingleton<ISqlGenerationHelper, CouchbaseSqlGenerationHelper>()

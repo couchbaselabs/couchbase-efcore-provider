@@ -25,16 +25,6 @@ public class ContosoFixture : IAsyncLifetime
             .WithCredentials("Administrator", "password")
             .WithLogging(loggerFactory)
             .WithBuckets("contoso");
-        clusterOptions.Serializer = new DefaultSerializer(
-            new JsonSerializerSettings
-            {
-                // PreserveReferencesHandling = PreserveReferencesHandling.Objects
-                ReferenceLoopHandling  = ReferenceLoopHandling.Ignore
-            }, 
-            new JsonSerializerSettings
-            {
-                PreserveReferencesHandling = PreserveReferencesHandling.Objects
-            });
 
         var contextOptions = new DbContextOptions<SchoolContext>();
         DbContext = new ContosoContext(contextOptions, clusterOptions);

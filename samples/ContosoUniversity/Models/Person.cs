@@ -1,6 +1,7 @@
 ﻿using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Text.Json.Serialization;
+using Microsoft.EntityFrameworkCore.Metadata.Internal;
 using Newtonsoft.Json;
 
 namespace ContosoUniversity.Models
@@ -16,16 +17,12 @@ namespace ContosoUniversity.Models
         [Required]
         [StringLength(50, ErrorMessage = "First name cannot be longer than 50 characters.")]
         [JsonProperty("FirstName")]
+        [JsonPropertyName("FirstName")]
         [Display(Name = "First Name")]
+        [Column("FirstName")]
         public string FirstMidName { get; set; }
 
         [Display(Name = "Full Name")]
-        public string FullName
-        {
-            get
-            {
-                return LastName + ", " + FirstMidName;
-            }
-        }
+        public string FullName => LastName + ", " + FirstMidName;
     }
 }
