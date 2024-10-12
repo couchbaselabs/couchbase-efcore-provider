@@ -28,7 +28,7 @@ namespace ContosoUniversity.Controllers
             foreach (var department in schoolContext)
             {
                 department.Administrator =
-                    await _context.Instructors.FirstOrDefaultAsync(x => x.ID == department.DepartmentID);
+                    await _context.Instructors.FirstOrDefaultAsync(x => x.ID == department.InstructorID);
             }
 
             return View(schoolContext);
@@ -43,7 +43,7 @@ namespace ContosoUniversity.Controllers
                 return NotFound();
             }
 
-            string query = "SELECT * FROM `contoso`.`department`.`department` WHERE DepartmentID = {0}";
+            string query = "SELECT * FROM `universities`.`contoso`.`department` WHERE DepartmentID = {0}";
             var department = await _context.Departments
                 .FromSqlRaw(query, id)
                // .Include(d => d.Administrator)
