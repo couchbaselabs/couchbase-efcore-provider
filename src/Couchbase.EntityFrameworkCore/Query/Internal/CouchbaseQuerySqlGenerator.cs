@@ -363,6 +363,39 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
         return sqlFunctionExpression;
     }
 
+    /// <summary>
+    ///     Generates SQL for the IN expression.
+    /// </summary>
+    /// <param name="inExpression">The expression to visit.</param>
+    /// <param name="negated">Whether the given <paramref name="inExpression" /> is negated.</param>
+    protected override void GenerateIn(InExpression inExpression, bool negated)
+    {
+        /*Check.DebugAssert(
+            inExpression.ValuesParameter is null,
+            "InExpression.ValuesParameter must have been expanded to constants before SQL generation (i.e. in SqlNullabilityProcessor)");*/
+
+        Visit(inExpression.Item);
+        Sql.Append(negated ? " NOT IN [" : " IN [");
+
+        if (inExpression.Values is not null)
+        {
+            GenerateList(inExpression.Values, e => Visit(e));
+        }
+        else
+        {
+            Sql.AppendLine();
+
+            using (Sql.Indent())
+            {
+                Visit(inExpression.Subquery);
+            }
+
+            Sql.AppendLine();
+        }
+
+        Sql.Append("]");
+    }
+
     private void GenerateList<T>(
         IReadOnlyList<T> items,
         Action<T> generationAction,
