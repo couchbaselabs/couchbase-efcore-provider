@@ -1,28 +1,91 @@
-# EFCore.Couchbase
+# EF Core Couchbase DB Provider
 
-## Getting started:
-* Requires [.NET 8 SDK](https://dotnet.microsoft.com/en-us/download/dotnet/8.0) to build
-* The sample app, Contoso University, requires a Couchbase instance installed on localhost:8091
-* You need to create a bucket called "contoso" on the Couchbase instance
-* The following scopes and collections must be created:
-   * courseAssignment.courseAssignment
-   * department.department
-   * enrollment.enrollment
-   * officeAssignment.officeAssignment
-   * person.person
-   * course.course
- * The following indexes need to be created (if CB 7.6.0 or later you may not need to create the indexes):
-   * CREATE INDEX `idxcourses` ON `contoso`.`course`.`course`(self,`courseid`)
-   * CREATE PRIMARY INDEX `#primary` ON `contoso`.`course`.`course`
-   * CREATE PRIMARY INDEX `#primary` ON `contoso`.`courseAssignment`.`courseAssignment`
-   * CREATE PRIMARY INDEX `#primary` ON `contoso`.`department`.`department`
-   * CREATE INDEX `idxFoo` ON `contoso`.`department`.`department`(`DepartmentID`)
-   * CREATE PRIMARY INDEX `#primary` ON `contoso`.`enrollment`.`enrollment`
-   * CREATE INDEX `idxOfficeAssignment` ON `contoso`.`officeAssignment`.`officeAssignment`(`InstructorID`)
-   * CREATE PRIMARY INDEX `#primary` ON `contoso`.`person`.`person`
-   * Any others that I missed ;)
- * Assuming you have the bucket, scopes/collections, and the indexes setup, it should just work...except for the Instructers page (NullReferenceException) because it uses Include/ThenInclude which currently isn't supported.
- * If you want to step through EFCore or EFCore.Relational projects your will need to pull the EFCore repo (git@github.com:dotnet/efcore.git) into an adjacent directory and then add the Couchbase.EFCore and ContosoUniversity projects to the EFCore solution.
+This database provider allows Entity Framework Core to be used with Couchbase Database. The provider is maintained as part of the [Couchbase EFCore Project](https://github.com/couchbaselabs/couchbase-efcore-provider).
+
+It is strongly recommended to familiarize yourself with the [Couchbase Database documentation](https://docs.couchbase.com/home/index.html) before reading this section. The EF Core Couchbase Db Provider, works
+with [Couchbase Server](https://docs.couchbase.com/home/server.html) and [Couchbase Capella DBaaS](https://docs.couchbase.com/home/cloud.html).
+
+> [!NOTE]
+> The EF Core Couchbase DB Provider is currently in developer preview and not all code paths work as of the writing of this document.
+
+## Install
+
+Install the Couchbase.EntityFrameworkCore NuGet package.
+
+### .NET Core CLI or Jet Brains Rider IDE
+```dotnet add package Couchbase.EntityFrameworkCore```
+### Visual Studio
+```Install-Package Couchbase.EntityFrameworkCore```
+
+## Get Started
+
+> [!TIP]
+> You can view this article's [sample on GitHub](https://github.com/couchbaselabs/couchbase-efcore-provider/tree/main/samples/ContosoUniversity)
+
+As for other providers the first step is to call UseCouchbase:
+
+```
+protected override void OnConfiguring(DbContextOptionsBuilder options)
+        => options.UseCouchbase<INamedBucketProvider>(new ClusterOptions()
+                .WithCredentials("Administrator", "password")
+                .WithConnectionString("couchbase://localhost"),
+            couchbaseDbContextOptions =>
+            {
+                couchbaseDbContextOptions.Bucket = "OrdersDB";
+                couchbaseDbContextOptions.Scope = "_default";
+            });
+```
+
+In this example Order is a simple entity with a reference to the [owned type](https://learn.microsoft.com/en-us/ef/core/modeling/owned-entities) StreetAddress.
+
+```
+public class Order
+{
+    public int Id { get; set; }
+    public int? TrackingNumber { get; set; }
+    public string PartitionKey { get; set; }
+    public StreetAddress ShippingAddress { get; set; }
+}
+```
+```
+public class StreetAddress
+{
+    public string Street { get; set; }
+    public string City { get; set; }
+}
+```
+
+Saving and querying data follows the normal EF pattern:
+
+```
+using (var context = new OrderContext())
+{
+    await context.Database.EnsureDeletedAsync();
+    await context.Database.EnsureCreatedAsync();
+
+    context.Add(
+        new Order
+        {
+            Id = 1, ShippingAddress = new StreetAddress { City = "London", Street = "221 B Baker St" }, PartitionKey = "1"
+        });
+
+    await context.SaveChangesAsync();
+}
+
+using (var context = new OrderContext())
+{
+    var order = await context.Orders.FirstAsync();
+    Console.WriteLine($"First order will ship to: {order.ShippingAddress.Street}, {order.ShippingAddress.City}");
+    Console.WriteLine();
+}
+```
+
+You can follow something more in-depth checkout the Blog Example the [Contoso University web app](https://github.com/couchbaselabs/couchbase-efcore-provider/tree/main/samples/ContosoUniversity).
+
+## Couchbase DB options
+There exists options for both the [Couchbase SDK](https://docs.couchbase.com/dotnet-sdk/current/hello-world/start-using-sdk.html) which the Couchbase EF Core DB Provider uses and for the provider itself.
+* [ClusterOptions](https://docs.couchbase.com/dotnet-sdk/current/ref/client-settings.html) settings
+* Couchbase EF Core DB Provider settings
 
  # What works:
  * Basic projections/queries
@@ -30,9 +93,15 @@
  * Basic CRUD and change tracking
 
  # What doesn't work
- * Include/ThenInclude (Instucters page in the Contoso app)
+ * Eager Loading
  * Most all SQL++ functions
  * Value generation
+ * META, RYOW, etc
  * Lots...it's a WIP
 
-   
+# Documentation
+* Modeling
+* Querying
+* Expressions
+* Work with unstructured data
+* Couchbase EF Core limitations
