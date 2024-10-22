@@ -43,14 +43,14 @@ namespace ContosoUniversity.Controllers
                 return NotFound();
             }
 
-            string query = "SELECT * FROM `universities`.`contoso`.`department` WHERE DepartmentID = {0}";
+            string query = "SELECT d.* FROM `universities`.`contoso`.`department` as d WHERE DepartmentID = {0}";
             var department = await _context.Departments
                 .FromSqlRaw(query, id)
                // .Include(d => d.Administrator)
                 .AsNoTracking()
                 .FirstOrDefaultAsync();
 
-            if (department == null)
+                if (department == null)
             {
                 return NotFound();
             }

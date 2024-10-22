@@ -26,10 +26,14 @@ namespace ContosoUniversity.Controllers
                // .Include(c => c.Department)
                 .AsNoTracking().ToListAsync();
 
+            var departmentIds = courses.Select(x => x.DepartmentID).ToList();
+            var departments = (from d in _context.Departments
+                where departmentIds.Contains(d.DepartmentID)
+                select d).ToList();
+
             foreach (var course in courses)
             {
-                course.Department = await _context.Departments.AsNoTracking()
-                    .FirstOrDefaultAsync(x => x.DepartmentID == course.DepartmentID);
+                course.Department = departments.SingleOrDefault(x => x.DepartmentID == course.DepartmentID);
             }
             return View(courses);
         }
