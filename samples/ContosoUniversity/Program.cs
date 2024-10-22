@@ -21,6 +21,7 @@ builder.Services.AddDbContext<SchoolContext>(options=>
             couchbaseDbContextOptions.Scope = "contoso";
         }));
 
+
 builder.Logging.AddFile("Logs/myapp-{Date}.txt");
 
 var app = builder.Build();

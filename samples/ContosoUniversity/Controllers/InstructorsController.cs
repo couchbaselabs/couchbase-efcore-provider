@@ -70,6 +70,7 @@ namespace ContosoUniversity.Controllers
                 foreach (Enrollment enrollment in selectedCourse.Enrollments)
                 {
                     await _context.Entry(enrollment).Reference(x => x.Student).LoadAsync();
+                    await _context.Entry(enrollment).Reference(x => x.Student).LoadAsync();
                 }
                 viewModel.Enrollments = selectedCourse.Enrollments;
             }
