@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Conventions;
 using Microsoft.EntityFrameworkCore.Metadata.Conventions.Infrastructure;
 
@@ -13,7 +14,7 @@ public class CouchbaseConventionSetBuilder : RelationalConventionSetBuilder
     public override ConventionSet CreateConventionSet()
     {
         var conventionSet = base.CreateConventionSet();
-        conventionSet.Add(new CouchbaseContextConvention(Dependencies));
+        conventionSet.Add(new CouchbaseKeyspaceConvention(Dependencies));
         conventionSet.Add(new JsonPropertyNameConvention(Dependencies));
         conventionSet.Add(new JsonPropertyConvention(Dependencies));
         return conventionSet;
