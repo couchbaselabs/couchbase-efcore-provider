@@ -204,7 +204,13 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
 
         var keyspaceBuilder = new StringBuilder();
         keyspaceBuilder.Append(_namedBucketProvider.BucketName.EscapeIfRequired()).Append('.');
-        keyspaceBuilder.Append(_namedCollectionProvider.ScopeName.EscapeIfRequired()).Append('.');
+
+        //Add the Scope name if the table name does not have one
+        if (!tableExpression.Name.Contains('.') && !string.IsNullOrEmpty(_namedCollectionProvider.ScopeName))
+        {
+            keyspaceBuilder.Append(_namedCollectionProvider.ScopeName.EscapeIfRequired()).Append('.');
+        }
+
         keyspaceBuilder.Append(tableExpression.Name.EscapeIfRequired());
 
         Sql.Append(keyspaceBuilder.ToString())
@@ -370,10 +376,6 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
     /// <param name="negated">Whether the given <paramref name="inExpression" /> is negated.</param>
     protected override void GenerateIn(InExpression inExpression, bool negated)
     {
-        /*Check.DebugAssert(
-            inExpression.ValuesParameter is null,
-            "InExpression.ValuesParameter must have been expanded to constants before SQL generation (i.e. in SqlNullabilityProcessor)");*/
-
         Visit(inExpression.Item);
         Sql.Append(negated ? " NOT IN [" : " IN [");
 

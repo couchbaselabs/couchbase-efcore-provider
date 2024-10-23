@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Couchbase.Core.IO.Transcoders;
 using Couchbase.Extensions.DependencyInjection;
 using Couchbase.KeyValue;
@@ -6,7 +7,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Couchbase.EntityFrameworkCore.Storage.Internal;
 
-public class CouchbaseClientWrapper(INamedBucketProvider namedBucketProvider, INamedCollectionProvider namedCollectionProvider, ILogger<CouchbaseClientWrapper> logger)
+public class CouchbaseClientWrapper(INamedBucketProvider namedBucketProvider, ILogger<CouchbaseClientWrapper> logger)
     : ICouchbaseClientWrapper
 {
     private readonly  ITypeTranscoder _transcoder = new RawJsonTranscoder();
@@ -14,66 +15,64 @@ public class CouchbaseClientWrapper(INamedBucketProvider namedBucketProvider, IN
 
     public string BucketName => namedBucketProvider.BucketName;
 
-    public string ScopeName => namedCollectionProvider.ScopeName;
-
-    public async Task<bool> DeleteDocument(string id, string? collectionName)
+    public async Task<bool> DeleteDocument(string id, (string? scope, string? collection) keyspace)
     {
         bool success;
         try
         {
-            var collection = await GetCollection(collectionName).ConfigureAwait(false);
+            var collection = await GetCollection(keyspace).ConfigureAwait(false);
             await collection.RemoveAsync(id).ConfigureAwait(false);
             success = true;
         }
         catch (Exception e)
         {
             success = false;
-            logger.LogError(e, "Delete failed for key {Id} in keyspace {ScopeAndCollection}", 
-                id, collectionName);
+            logger.LogError(e, "Delete failed for key {Id} in keyspace {keyspace}",
+                id, keyspace);
         }
 
         return success;
     }
 
-    public async Task<bool> CreateDocument<TEntity>(string id, string collectionName, TEntity entity)
+    public async Task<bool> CreateDocument<TEntity>(string id, (string? scope, string? collection) keyspace, TEntity entity)
     {
         bool success;
         try
         {
-            var collection = await GetCollection(collectionName).ConfigureAwait(false);
+            var collection = await GetCollection(keyspace).ConfigureAwait(false);
             await collection.InsertAsync(id, entity, new InsertOptions().Transcoder(_transcoder)).ConfigureAwait(false);
             success = true;
         }
         catch (Exception e)
         {
             success = false;
-            logger.LogError(e, "Insert failed for key {Id} in keyspace {ScopeAndCollection}", 
-                id, collectionName);
+            logger.LogError(e, "Insert failed for key {Id} in keyspace {keyspace}",
+                id, keyspace);
         }
 
         return success;
     }
 
-    public async Task<bool> UpdateDocument<TEntity>(string id, string? collectionName, TEntity entity)
+    public async Task<bool> UpdateDocument<TEntity>(string id, (string? scope, string? collection) keyspace, TEntity entity)
     {
         bool success;
         try
         {
-            var collection = await GetCollection(collectionName).ConfigureAwait(false);
+            var collection = await GetCollection(keyspace).ConfigureAwait(false);
             await collection.UpsertAsync(id, entity, new UpsertOptions().Transcoder(_transcoder)).ConfigureAwait(false);
             success = true;
         }
         catch (Exception e)
         {
             success = false;
-            logger.LogError(e, "Update failed for key {Id} in keyspace {ScopeAndCollection}", 
-                id, collectionName);
+            logger.LogError(e, "Update failed for key {Id} in keyspace {keyspace}",
+                id, keyspace);
         }
 
         return success;
     }
 
-    private async Task<ICouchbaseCollection> GetCollection(string collectionName)
+    private async Task<ICouchbaseCollection> GetCollection((string? scope, string? collection) keyspace)
     {
         try
         {
@@ -85,6 +84,6 @@ public class CouchbaseClientWrapper(INamedBucketProvider namedBucketProvider, IN
         }
 
         // ReSharper disable once MethodHasAsyncOverload
-        return _bucket.Scope(ScopeName).Collection(collectionName);
+        return _bucket.Scope(keyspace.scope).Collection(keyspace.collection);
     }
 }

@@ -12,20 +12,20 @@ public class CouchbaseKeyspaceAttribute : Attribute
 {
     private string _keyspace;
     
-    public CouchbaseKeyspaceAttribute(string collection)
+    public CouchbaseKeyspaceAttribute(string? collection)
     {
         Collection = collection ?? throw new ArgumentNullException(nameof(collection));
     }
     
-    public CouchbaseKeyspaceAttribute(string scope, string collection)
+    public CouchbaseKeyspaceAttribute(string? scope, string? collection)
     {
         Scope = scope ?? throw new ArgumentNullException(nameof(scope));
         Collection = collection ?? throw new ArgumentNullException(nameof(collection));
     }
     
-    public string Scope { get; } = "_default";
+    public string? Scope { get; } = "_default";
 
-    public string Collection { get; } = "_default";
+    public string? Collection { get; } = "_default";
 
     public string GetKeySpace()
     {

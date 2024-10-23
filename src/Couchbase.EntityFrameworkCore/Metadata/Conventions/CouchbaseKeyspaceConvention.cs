@@ -6,9 +6,9 @@ using Microsoft.EntityFrameworkCore.Metadata.Conventions.Infrastructure;
 
 namespace Couchbase.EntityFrameworkCore.Metadata.Conventions;
 
-public class CouchbaseContextConvention : TypeAttributeConventionBase<CouchbaseKeyspaceAttribute>
+public class CouchbaseKeyspaceConvention : TypeAttributeConventionBase<CouchbaseKeyspaceAttribute>
 {
-    public CouchbaseContextConvention(ProviderConventionSetBuilderDependencies dependencies) : base(dependencies)
+    public CouchbaseKeyspaceConvention(ProviderConventionSetBuilderDependencies dependencies) : base(dependencies)
     {
     }
 
