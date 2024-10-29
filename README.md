@@ -80,7 +80,9 @@ using (var context = new OrderContext())
 }
 ```
 
-You can follow something more in-depth checkout the Blog Example the [Contoso University web app](https://github.com/couchbaselabs/couchbase-efcore-provider/tree/main/samples/ContosoUniversity).
+* [The Contoso University web app code](https://github.com/couchbaselabs/couchbase-efcore-provider/tree/main/samples/ContosoUniversity)
+* [Contoso University sample documentation](https://github.com/couchbaselabs/couchbase-efcore-provider/blob/main/docs/contoso-sample.md)
+* [Getting started - _in more detail_](https://github.com/couchbaselabs/couchbase-efcore-provider/blob/main/docs/getting-started.md)
 
 ## Couchbase DB options
 There exists options for both the [Couchbase SDK](https://docs.couchbase.com/dotnet-sdk/current/hello-world/start-using-sdk.html) which the Couchbase EF Core DB Provider uses and for the provider itself.
@@ -100,8 +102,11 @@ There exists options for both the [Couchbase SDK](https://docs.couchbase.com/dot
  * Lots...it's a WIP
 
 # Documentation
-* Modeling
-* Querying
-* Expressions
-* Work with unstructured data
+* [Configuration](https://github.com/couchbaselabs/couchbase-efcore-provider/blob/main/docs/configuration.md)
+* [Modeling](https://github.com/couchbaselabs/couchbase-efcore-provider/blob/main/docs/modeling.md)
+* [Querying](https://github.com/couchbaselabs/couchbase-efcore-provider/blob/main/docs/Queries.md)
+* [Getting started - In Depth](https://github.com/couchbaselabs/couchbase-efcore-provider/blob/main/docs/getting-started.md)
+* [Contoso University - Sample](https://github.com/couchbaselabs/couchbase-efcore-provider/blob/main/docs/contoso-sample.md)
 * Couchbase EF Core limitations
+
+
