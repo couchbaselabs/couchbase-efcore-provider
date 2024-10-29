@@ -2,6 +2,7 @@
 using ContosoUniversity.Models;
 using Couchbase.EntityFrameworkCore.Extensions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ValueGeneration;
 
 namespace ContosoUniversity.Data
 {

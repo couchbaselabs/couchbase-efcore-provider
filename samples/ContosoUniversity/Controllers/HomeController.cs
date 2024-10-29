@@ -37,7 +37,7 @@ namespace ContosoUniversity.Controllers
             var groups = await query.ToListAsync().ConfigureAwait(false);
             
             /*ADO.NET is not currently supported by EFCore.Couchbase*/
-           /*
+            /*
             List<EnrollmentDateGroup> groups = new List<EnrollmentDateGroup>();
             var conn = _context.Database.GetDbConnection();
 
