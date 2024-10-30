@@ -30,7 +30,13 @@ var query = from photo in context.Set<PersonPhoto>()
         on photo.PersonPhotoId equals person.PhotoId
     select new { person, photo };
 ```
+The SQL++ generated looks like this:
 
+```
+SELECT `p0`.`PersonId`, `p0`.`Name`, `p0`.`PhotoId`, `p`.`PersonPhotoId`, `p`.`Caption`, `p`.`Photo`
+FROM `Blogging`.`MyBlog`.`PersonPhoto` AS `p`
+INNER JOIN `Blogging`.`MyBlog`.`Person` AS `p0` ON `p`.`PersonPhotoId` = `p0`.`PhotoId`
+```
 
 ## FirstAsync
 
@@ -78,16 +84,25 @@ var mySession = await context.FindAsync(pkey);
 
 
 ## Group By
-
+EF Core also translates queries where an aggregate operator on the grouping appears in a Where or OrderBy (or other ordering) LINQ operator. It uses HAVING clause in SQL for the where clause. The part of the query before applying the GroupBy operator can be any complex query as long as it can be translated to server. Furthermore, once you apply aggregate operators on a grouping query to remove groupings from the resulting source, you can compose on top of it like any other query.
 ```
 var query = from s in _context.Students
     group s by s.EnrollmentDate
     into grp
     select new EnrollmentDateGroup { EnrollmentDate = grp.Key, StudentCount = grp.Count() };
 ```
+Which is translated into the following SQL++ statement:
+
+```
+SELECT `p`.`AuthorId` AS `Key`, COUNT(*) AS `Count`
+FROM `Blogging`.`MyBlog`.`Posts` AS `p`
+GROUP BY `p`.`AuthorId`
+HAVING COUNT(*) > 0
+ORDER BY `p`.`AuthorId`
+```
 
 ### Supported Aggregate operators
-| .NET                         | SQL               |
+| .NET                         | SQL++             |
 |------------------------------|-------------------|
 | ~~Average(x => x.Property)~~ | ~~AVG(Property)~~ |
 | Count()                      | COUNT(*)          |
@@ -100,6 +115,16 @@ var query = from s in _context.Students
 
 ## SQL queries
 
+### SqlRaw
+SqlRaw is not implemented as of the EF Core Couchbase DB Provider Developer Preview because it depends on ADO.NET parameters which are minimally supported in the preview.
 
-> [NOTE] DbContext.FromSql and DbContext.FromSqlRaw will through a NotImplementedException in EF Core Couchbase DB Provider Developer Preview 1.
+> [NOTE] DbContext.FromSql  will throw a NotImplementedException in EF Core Couchbase DB Provider Developer Preview 1.
 
+### FromSqlRaw
+If you've decided you do want to dynamically construct your SQL, you'll have to use FromSqlRaw, which allows interpolating variable data directly into the SQL string, instead of using a database parameter:
+```
+string query = "SELECT p.* FROM `Blogging`.`MyBlog`.`Person` as p WHERE PersonId={0}";
+var person = await context.Set<Person>()
+    .FromSqlRaw(query, 1)
+    .FirstOrDefaultAsync();
+```
