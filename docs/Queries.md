@@ -80,7 +80,7 @@ public class Session
 var mySession = await context.FindAsync(pkey);
 ```
 
-> [NOTE] Use FindAsync only when the entity might already be tracked by your context, and you want to avoid the database roundtrip. Otherwise, simply use SingleAsync - there is no performance difference between the two when the entity needs to be loaded from the database.
+> [!NOTE] Use FindAsync only when the entity might already be tracked by your context, and you want to avoid the database roundtrip. Otherwise, simply use SingleAsync - there is no performance difference between the two when the entity needs to be loaded from the database.
 
 
 ## Group By
@@ -102,6 +102,7 @@ ORDER BY `p`.`AuthorId`
 ```
 
 ### Supported Aggregate operators
+The following aggregate operators are supported by the developer preview:
 | .NET                         | SQL++             |
 |------------------------------|-------------------|
 | ~~Average(x => x.Property)~~ | ~~AVG(Property)~~ |
@@ -111,14 +112,14 @@ ORDER BY `p`.`AuthorId`
 | Min(x => x.Property)         | MIN(Property)     |
 | Sum(x => x.Property)         | SUM(Property)     |
 
-[^1]: Average is not supported in the Developer Preview. See https://jira.issues.couchbase.com/browse/NCBC-3891
+Average is not supported in the Developer Preview. See https://jira.issues.couchbase.com/browse/NCBC-3891
 
 ## SQL queries
 
 ### SqlRaw
 SqlRaw is not implemented as of the EF Core Couchbase DB Provider Developer Preview because it depends on ADO.NET parameters which are minimally supported in the preview.
 
-> [NOTE] DbContext.FromSql  will throw a NotImplementedException in EF Core Couchbase DB Provider Developer Preview 1.
+> [!NOTE] DbContext.FromSql  will throw a NotImplementedException in EF Core Couchbase DB Provider Developer Preview 1.
 
 ### FromSqlRaw
 If you've decided you do want to dynamically construct your SQL, you'll have to use FromSqlRaw, which allows interpolating variable data directly into the SQL string, instead of using a database parameter:
