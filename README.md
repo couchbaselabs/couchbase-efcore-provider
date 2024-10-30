@@ -105,6 +105,7 @@ There exists options for both the [Couchbase SDK](https://docs.couchbase.com/dot
 * [Configuration](https://github.com/couchbaselabs/couchbase-efcore-provider/blob/main/docs/configuration.md)
 * [Modeling](https://github.com/couchbaselabs/couchbase-efcore-provider/blob/main/docs/modeling.md)
 * [Querying](https://github.com/couchbaselabs/couchbase-efcore-provider/blob/main/docs/Queries.md)
+* [Saving Data](https://github.com/couchbaselabs/couchbase-efcore-provider/blob/main/docs/crud.md)
 * [Getting started - In Depth](https://github.com/couchbaselabs/couchbase-efcore-provider/blob/main/docs/getting-started.md)
 * [Contoso University - Sample](https://github.com/couchbaselabs/couchbase-efcore-provider/blob/main/docs/contoso-sample.md)
 * [Couchbase EF Core limitations](https://github.com/couchbaselabs/couchbase-efcore-provider/blob/main/docs/limitations.md)
