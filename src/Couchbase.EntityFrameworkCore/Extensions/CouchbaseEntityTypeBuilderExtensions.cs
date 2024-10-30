@@ -16,7 +16,7 @@ public static class CouchbaseEntityTypeBuilderExtensions
     public static EntityTypeBuilder<TEntity> ToCouchbaseCollection<TEntity>(
         this EntityTypeBuilder<TEntity> entityTypeBuilder, string collection) where TEntity : class
     {
-        return  entityTypeBuilder.ToTable(collection);
+        return entityTypeBuilder.ToTable(collection);
     }
 
     public static EntityTypeBuilder<TEntity> ToCouchbaseCollection<TEntity>(

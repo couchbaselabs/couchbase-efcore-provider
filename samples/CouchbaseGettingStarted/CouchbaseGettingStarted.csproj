@@ -10,6 +10,7 @@
 
     <ItemGroup>
       <PackageReference Include="Couchbase.EntityFrameworkCore" Version="1.0.0-pre1" />
+      <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="8.0.1" />
     </ItemGroup>
 
 </Project>

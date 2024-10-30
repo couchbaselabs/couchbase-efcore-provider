@@ -11,8 +11,8 @@ var builder = WebApplication.CreateBuilder(args);
 // Add services to the container.
 builder.Services.AddControllersWithViews();
 
-builder.Services.AddDbContext<SchoolContext>(options=>
-    options.UseCouchbase<INamedBucketProvider>(new ClusterOptions()
+builder.Services.AddDbContext<SchoolContext>(options=> options
+    .UseCouchbase<INamedBucketProvider>(new ClusterOptions()
     .WithCredentials("Administrator", "password")
     .WithConnectionString("couchbase://localhost"),
         couchbaseDbContextOptions =>

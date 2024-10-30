@@ -27,12 +27,12 @@ public class CouchbaseDatabaseWrapper(DatabaseDependencies dependencies, ICouchb
         var updateCount = 0;
         foreach (var updateEntry in entries)
         {
-            //entity info
+            // entity info
             var entityEntry = updateEntry.ToEntityEntry();
             var entity = entityEntry.Entity;
             var entityType = updateEntry.EntityType;
 
-            //document info
+            // document info
             var primaryKey = entityType.GetPrimaryKey(entity);
             var keyspace = GetKeySpace(updateEntry);
             var document= GenerateRootJson(updateEntry);
@@ -106,6 +106,9 @@ public class CouchbaseDatabaseWrapper(DatabaseDependencies dependencies, ICouchb
                         break;
                     case "Byte[]":
                         writer.WriteBase64String(property.Name, new ReadOnlyMemory<byte>((byte[])value).Span);
+                        break;
+                    case "Guid":
+                        writer.WriteString(property.Name, value.ToString());
                         break;
                     default:
                     {

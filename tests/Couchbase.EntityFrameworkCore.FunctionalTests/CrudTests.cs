@@ -1,3 +1,6 @@
+using ContosoUniversity.Models;
+using Couchbase.Core.IO.Operations;
+using Couchbase.Core.IO.Transcoders;
 using Couchbase.EntityFrameworkCore.FunctionalTests.Fixtures;
 using Couchbase.EntityFrameworkCore.FunctionalTests.Models;
 using Microsoft.EntityFrameworkCore;
@@ -124,9 +127,9 @@ public class CrudTests
     public async Task Test_ComplexObject()
     {
         var context = _couchbaseFixture.GetDbContext;
+
         var user = new User
         {
-            ID = 1,
             Name = "Jeff Morris",
             DrivingLicence = "A^&*GUIOO",
             PreferredEmail = "jefry@job.com",
@@ -262,33 +265,5 @@ public class CrudTests
             context.Remove(airline);
             await context.SaveChangesAsync();
         }
-    }
-
-    [Fact]
-    public async Task Test_AddRange()
-    {
-        var airlines = new List<Airline>
-        {
-            new Airline
-            {
-                Type = "airline",
-                Id = 11,
-                Callsign = "MILE-AIR",
-                Country = "United States",
-                Icao = "MLA",
-                Iata = "Q5",
-                Name = "40-Mile Air"
-            },
-            new Airline
-            {
-                Type = "airline",
-                Id = 11,
-                Callsign = "MILE-AIR",
-                Country = "United States",
-                Icao = "MLA",
-                Iata = "Q5",
-                Name = "40-Mile Air"
-            }
-        };
     }
 }

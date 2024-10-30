@@ -1,4 +1,5 @@
-﻿using Couchbase.EntityFrameworkCore.FunctionalTests.Fixtures;
+﻿using Couchbase.Core.Exceptions;
+using Couchbase.EntityFrameworkCore.FunctionalTests.Fixtures;
 using Couchbase.EntityFrameworkCore.FunctionalTests.Models;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
@@ -92,5 +93,163 @@ public class QueryTests
             
        // context.Remove(airline);
         await context.SaveChangesAsync();
+    }
+
+    [Fact]
+    public async Task Test_Pagination()
+    {
+        var context = new SessionContext(new ClusterOptions()
+            .WithConnectionString("couchbase://localhost")
+            .WithCredentials("Administrator", "password"));
+
+        context.Add(new Session
+        {
+            Category = "disabled",
+            SessionId = 1,
+            TenantId = "1"
+        });
+        context.Add(new Session
+        {
+            Category = "xydisabled",
+            SessionId = 2,
+            TenantId = "2"
+        });
+
+        var count = await context.SaveChangesAsync();
+
+        var position = 20;
+        var nextPage = context.Sessions
+            .OrderBy(s => s.Id)
+            .Skip(position)
+            .Take(10)
+            .ToList();
+        _outputHelper.WriteLine(nextPage.First().Category);
+    }
+
+    [Fact]
+    public async Task Test_FindAsync()
+    {
+        var context = new SessionContext(new ClusterOptions()
+            .WithConnectionString("couchbase://localhost")
+            .WithCredentials("Administrator", "password"));
+
+        var pkey = Guid.NewGuid();
+        var session = new Session
+        {
+            Id = pkey,
+            Category = "disabled",
+            SessionId = 1,
+            TenantId = "1"
+        };
+
+        try
+        {
+            context.Add(session);
+            var found = await context.FindAsync<Session>(pkey);
+            Assert.Equal(found.Id, pkey);
+        }
+        finally
+        {
+            context.Remove(session);
+        }
+    }
+
+    [Fact]
+    public async Task Test_SqlQueries_Throws_NotImplementedException()
+    {
+        var context = new BloggingContext();
+        var rating = 3;
+
+        await Assert.ThrowsAsync<NotImplementedException>(async () => await context.Blogs
+            .FromSqlRaw($"SELECT VALUE c FROM root c WHERE c.Rating > {rating}")
+            .ToListAsync());
+    }
+    
+    [Fact]
+    public async Task Test_Simple_Joins()
+    {
+        var context = new BloggingContext();
+        var query = from photo in context.Set<PersonPhoto>()
+            join person in context.Set<Person>()
+                on photo.PersonPhotoId equals person.PhotoId
+            select new { person, photo };
+
+        var results = await query.ToListAsync();
+        Assert.True(query.Any());
+    }
+
+    [Fact]
+    public async Task Test_Count_Group_OrderBy()
+    {
+        var context = new BloggingContext();
+        var query = from p in context.Set<Post>()
+            group p by p.AuthorId
+            into g
+            where g.Count() > 0
+            orderby g.Key
+            select new { g.Key, Count = g.Count() };
+
+        var result = await query.ToListAsync();
+    }
+
+    [Fact]
+    public async Task Test_LongCount()
+    {
+        var context = new BloggingContext();
+        var query = from p in context.Set<Post>()
+            group p by p.AuthorId
+            into g
+            select new { g.Key, Count = g.LongCount() };
+
+        var result = await query.ToListAsync();
+    }
+
+    [Fact]
+    public async Task Test_Max()
+    {
+        var context = new BloggingContext();
+        var query = from p in context.Set<Post>()
+            group p by p.AuthorId
+            into g
+            select new { g.Key, Max=g.Max(x=>x.Rating) };
+
+        var result = await query.ToListAsync();
+    }
+
+    [Fact]
+    public async Task Test_Min()
+    {
+        var context = new BloggingContext();
+        var query = from p in context.Set<Post>()
+            group p by p.AuthorId
+            into g
+            select new { g.Key, Min=g.Min(x=>x.Rating) };
+
+        var result = await query.ToListAsync();
+    }
+
+    [Fact]
+    public async Task Test_Sum()
+    {
+        var context = new BloggingContext();
+        var query = from p in context.Set<Post>()
+            group p by p.AuthorId
+            into g
+            select new { g.Key, Sum=g.Sum(x=>x.Rating) };
+
+        var result = await query.ToListAsync();
+    }
+
+    [Fact]
+    public async Task Test_Average_Throws_CouchbaseParsingException()
+    {
+        var context = new BloggingContext();
+        var query = from p in context.Set<Post>()
+            group p by p.AuthorId
+            into g
+            select new { g.Key, Avg=g.Average(x=>x.Rating) };
+
+         //Ticket for fixing: https://jira.issues.couchbase.com/browse/NCBC-3891
+         await Assert.ThrowsAsync<ParsingFailureException>(async ()=> await query.ToListAsync());
     }
 }

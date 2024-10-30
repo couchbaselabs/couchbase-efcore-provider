@@ -4,6 +4,7 @@ using Couchbase.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using EFCore.NamingConventions;
+using Microsoft.EntityFrameworkCore.ValueGeneration;
 using Xunit;
 
 namespace Couchbase.EntityFrameworkCore.FunctionalTests.Fixtures;
@@ -24,7 +25,7 @@ public class CouchbaseFixture : IAsyncLifetime
             .WithConnectionString("http://127.0.0.1")
             .WithCredentials("Administrator", "password")
             .WithLogging(loggerFactory)
-            .WithBuckets("travel-sample");
+            .WithBuckets("default");
 
         GetDbContext = new TravelSampleDbContext(options);
         return Task.CompletedTask;
@@ -40,6 +41,8 @@ public class CouchbaseFixture : IAsyncLifetime
         }
 
         public DbSet<Airline> Airlines { get; set; }
+
+        public DbSet<User> Users { get; set; }
 
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
         {
@@ -64,7 +67,7 @@ public class CouchbaseFixture : IAsyncLifetime
         {
             base.OnModelCreating(modelBuilder);
             modelBuilder.Entity<Airline>().HasKey(x=>new {x.Type, x.Id});//composite key mapping
-            modelBuilder.Entity<User>().ToCouchbaseCollection("users");
+            //modelBuilder.Entity<User>().Property(x=>x.ID).HasValueGenerator<GuidValueGenerator>();
         }
 
         private interface ITravelSampleBucketProvider : INamedBucketProvider;
