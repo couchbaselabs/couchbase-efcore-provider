@@ -45,3 +45,24 @@ Configuring the SDK is largely the same for EF Core Couchbase DB Provider. The S
 
 ## EF Core Couchbase DN Provider options
 The [CouchbaseDbContextOptionsBuilder](https://github.com/couchbaselabs/couchbase-efcore-provider/blob/main/src/Couchbase.EntityFrameworkCore/Infrastructure/CouchbaseDbContextOptionsBuilder.cs) handles configuration options specific to the provider.
+
+## Controlling Querying Casing
+SQL++ is based off JSON, thus is case sensitive both from the Query perspective and the query output. What this means is that your Keyspaces (Bucket, Scopes and Collections), the SQL++ query casing and your entities must have consistent casing.
+
+You can control the casing of your entities using standard `NewtonSoft.JsonProperty` and or `System.Text.Json.JsonPropertyName` attributes, by the property or field names themselves and by using the `Column` attribute.
+
+The generated SQL++ casing can be controlled via the [EFCore.NamingConventions](https://www.nuget.org/packages/EFCore.NamingConventions) library:
+```
+dotnet add package EFCore.NamingConventions --version 8.0.3
+```
+Which is added as part of configuration of the EF Core Couchbase DB Provider:
+```
+optionsBuilder.UseCouchbase<INamedBucketProvider>(_clusterOptions, couchbaseDbContextOptions =>
+{
+    couchbaseDbContextOptions.Bucket = "travel-sample";
+    couchbaseDbContextOptions.Scope = "inventory";
+});
+optionsBuilder.UseCamelCaseNamingConvention();
+```
+
+[Documentation](https://github.com/efcore/EFCore.NamingConventions) for EFCore.Naming Conventions is located on the Github repo. Of interest is the section on [supported naming conventions](https://github.com/efcore/EFCore.NamingConventions?tab=readme-ov-file#supported-naming-conventions).
