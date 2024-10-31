@@ -209,9 +209,18 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
         if (!tableExpression.Name.Contains('.') && !string.IsNullOrEmpty(_namedCollectionProvider.ScopeName))
         {
             keyspaceBuilder.Append(_namedCollectionProvider.ScopeName.EscapeIfRequired()).Append('.');
+            keyspaceBuilder.Append(tableExpression.Name.EscapeIfRequired());
         }
-
-        keyspaceBuilder.Append(tableExpression.Name.EscapeIfRequired());
+        else
+        {
+            //its possible that both scope and collection were provided in ToCouchbaseCollection
+            var splitName = tableExpression.Name.Split('.');
+            if (splitName.Length == 2)
+            {
+                keyspaceBuilder.Append(splitName[0].EscapeIfRequired()).Append('.');
+                keyspaceBuilder.Append(splitName[1].EscapeIfRequired());
+            }
+        }
 
         Sql.Append(keyspaceBuilder.ToString())
             .Append(AliasSeparator)
