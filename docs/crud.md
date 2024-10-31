@@ -5,7 +5,8 @@ While querying allows you to read data from the database, saving data means addi
 
 ## Approach 1: change tracking and SaveChanges
 In many scenarios, your program needs to query some data from the database, perform some modification on it, and save those modifications back; this is sometimes referred to as a "unit of work". For example, let's assume that you have a set of Blogs, and you'd like to change the Url property of one of them.
-> [NOTE] The reasons for calling DbContext.Dispose in this manner are not the same in a RDBMS backed EFCore Provider as they are with the EFCore Couchbase DB Provider. The Couchbase Provider caches and reuses socket connections the entirety of the applications lifetime, so calling Dispose is effectively a NOOP.
+> [NOTE] 
+> The reasons for calling DbContext.Dispose in this manner are not the same in a RDBMS backed EFCore Provider as they are with the EFCore Couchbase DB Provider. The Couchbase Provider caches and reuses socket connections the entirety of the applications lifetime, so calling Dispose is effectively a NOOP.
 
 In EF, this is typically done as follows:
 ```
@@ -24,7 +25,8 @@ The code above performs the following steps:
 
 ## Approach 2: Bulk update with ExecuteUpdate and ExecuteDelete
 
-> [!NOTE] ExecuteUpdate and ExecuteDelete are only minimally supported in the developer preview for experimental usage only.
+> [!NOTE] 
+> ExecuteUpdate and ExecuteDelete are only minimally supported in the developer preview for experimental usage only.
 
 SaveChanges is a powerful model for persisting changes to the database, but has some limitations. The main limitation is that each entity must be tracked and when SaveChanges is called, each modified or added entity will be persisted to the database. This can be inefficient; a more efficient way of doing this is via an UPDATE or DELETE command.
 
@@ -107,7 +109,8 @@ using (var context = new BloggingContext())
 }
 ```
 
->[!NOTE] EF Core Couchbase DB Provider developer preview 1 uses the [Couchbase Key/Value store](https://docs.couchbase.com/dotnet-sdk/current/howtos/kv-operations.html) and not SQL++ for CRUD operations. This may change in later releases.
+> [!NOTE] 
+> EF Core Couchbase DB Provider developer preview 1 uses the [Couchbase Key/Value store](https://docs.couchbase.com/dotnet-sdk/current/howtos/kv-operations.html) and not SQL++ for CRUD operations. This may change in later releases.
 
 ## Saving Related Data
 In addition to isolated entities, you can also make use of the relationships defined in your model.
@@ -135,7 +138,8 @@ using (var context = new BloggingContext())
 }
 ```
 
-> [!TIP] If you attempt to delete the Blog after creating it, you will get a foriegn key constraint when you call SaveChanges again, unless you provide DeleteBehavior.Cascade to the entity during modeling.
+> [!TIP] 
+> If you attempt to delete the Blog after creating it, you will get a foriegn key constraint when you call SaveChanges again, unless you provide DeleteBehavior.Cascade to the entity during modeling.
 
 ## Adding a related entity
 If you reference a new entity from the navigation property of an entity that is already tracked by the context, the entity will be discovered and inserted into the database.
@@ -151,7 +155,8 @@ using (var context = new BloggingContext())
 }
 ```
 
->[!NOTE] Eager fetching via Include and/or ThenInclude is not supported in EF Core Couchbase DB Provider developer preview 1.
+> [!NOTE] 
+> Eager fetching via Include and/or ThenInclude is not supported in EF Core Couchbase DB Provider developer preview 1.
 
 ## Changing relationships
 If you change the navigation property of an entity, the corresponding changes will be made to the foreign key column in the database.
