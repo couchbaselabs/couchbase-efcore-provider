@@ -3,9 +3,11 @@ using System.Text.Json;
 using Couchbase.EntityFrameworkCore.Extensions;
 using Couchbase.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking.Internal;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.EntityFrameworkCore.Update;
+using Microsoft.VisualBasic;
 using Database = Microsoft.EntityFrameworkCore.Storage.Database;
 
 namespace Couchbase.EntityFrameworkCore.Storage.Internal;
@@ -93,22 +95,46 @@ public class CouchbaseDatabaseWrapper(DatabaseDependencies dependencies, ICouchb
                 switch (propertyType.Name)
                 {
                     case "String":
-                        writer.WriteString(fieldName, (string)value);
+                        if (value != null)
+                        {
+                            writer.WriteString(fieldName, (string)value);
+                        }
+
                         break;
                     case "Int32":
-                        writer.WriteNumber(fieldName, (int)value);
+                        if (value != null)
+                        {
+                            writer.WriteNumber(fieldName, (int)value);
+                        }
+
                         break;
                     case "DateTime":
-                        writer.WriteString(fieldName, (DateTime)value);
+                        if (value != null)
+                        {
+                            writer.WriteString(fieldName, (DateTime)value);
+                        }
+
                         break;
                     case "Decimal":
-                        writer.WriteNumber(fieldName, (decimal)value);
+                        if (value != null)
+                        {
+                            writer.WriteNumber(fieldName, (decimal)value);
+                        }
+
                         break;
                     case "Byte[]":
-                        writer.WriteBase64String(property.Name, new ReadOnlyMemory<byte>((byte[])value).Span);
+                        if (value != null)
+                        {
+                            writer.WriteBase64String(property.Name, new ReadOnlyMemory<byte>((byte[])value).Span);
+                        }
+
                         break;
                     case "Guid":
-                        writer.WriteString(property.Name, value.ToString());
+                        if (value != null)
+                        {
+                            writer.WriteString(property.Name, value.ToString());
+                        }
+
                         break;
                     default:
                     {
