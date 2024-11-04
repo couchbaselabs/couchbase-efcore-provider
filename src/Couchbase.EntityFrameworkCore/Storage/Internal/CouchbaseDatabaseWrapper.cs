@@ -163,15 +163,8 @@ public class CouchbaseDatabaseWrapper(DatabaseDependencies dependencies, ICouchb
         return null;
     }
 
-    private Type? GetUnderlyingType(Type type)
-    {
-        if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Nullable<>))
-        {
-            return Nullable.GetUnderlyingType(type);
-        }
-
-        return type;
-    }
+    private Type GetUnderlyingType(Type type) =>
+        Nullable.GetUnderlyingType(type) ?? type;
 
     private bool TryGetKeyspaceFromModel(string scopeAndCollection, out string? scope, out string? collection)
     {
