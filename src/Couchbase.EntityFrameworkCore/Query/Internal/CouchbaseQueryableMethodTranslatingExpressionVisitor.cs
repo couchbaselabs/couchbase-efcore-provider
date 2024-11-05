@@ -9,7 +9,6 @@ namespace Couchbase.EntityFrameworkCore.Query.Internal;
 public class CouchbaseQueryableMethodTranslatingExpressionVisitor : QueryableMethodTranslatingExpressionVisitor
 {
     private readonly RelationalSqlTranslatingExpressionVisitor _sqlTranslator;
-    //private readonly RelationalQueryableMethodTranslatingExpressionVisitor.SharedTypeEntityExpandingExpressionVisitor _sharedTypeEntityExpandingExpressionVisitor;
     public CouchbaseQueryableMethodTranslatingExpressionVisitor(QueryableMethodTranslatingExpressionVisitorDependencies dependencies, QueryCompilationContext queryCompilationContext, bool subquery) 
         : base(dependencies, queryCompilationContext, subquery)
     {
@@ -19,7 +18,7 @@ public class CouchbaseQueryableMethodTranslatingExpressionVisitor : QueryableMet
     {
         throw new NotImplementedException();
     }
-    
+
     protected override ShapedQueryExpression CreateShapedQueryExpression(IEntityType entityType)
     {
         var queryExpression = new CouchbaseQueryExpression(entityType);
