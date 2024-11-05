@@ -60,7 +60,8 @@ public class CrudTests
 
             await context.Airlines
                 .Where(a => a.Id > 665 && a.Id < 668)
-                .ExecuteUpdateAsync(setters => setters.SetProperty(a => a.Country, "Banana Republic"));
+                .ExecuteUpdateAsync(setters =>
+                    setters.SetProperty(a => a.Country, "Banana Republic"));
 
             var count2 = context.Airlines.Count(a => a.Country == "Banana Republic");
             Assert.Equal(2, count2);
@@ -263,6 +264,90 @@ public class CrudTests
         finally
         {
             context.Remove(airline);
+            await context.SaveChangesAsync();
+        }
+    }
+
+    [Fact]
+    public async Task Test_SaveChanges()
+    {
+        using (var context = new BloggingContext())
+        {
+            context.Blogs.Add(new Blog
+            {
+                BlogId = 1, Url = "http://example.com"
+            });
+            context.SaveChanges();
+            var blog = context.Blogs.Single(b => b.Url == "http://example.com");
+            blog.Url = "http://example.com/blog";
+            await context.SaveChangesAsync();
+            context.Remove(blog);
+            await context.SaveChangesAsync();
+        }
+    }
+
+    [Fact]
+    public async Task Test_Saving_Related_Data()
+    {
+        using (var context = new BloggingContext())
+        {
+            var blog = new Blog
+            {
+                BlogId = 1,
+                Url = "http://blogs.msdn.com/dotnet",
+                Posts =
+                [
+                    new() { Title = "Intro to C#", PostId = 1 },
+                    new() { Title = "Intro to VB.NET", PostId = 2 },
+                    new() { Title = "Intro to F#", PostId = 3 }
+                ]
+            };
+
+            await context.Blogs.AddAsync(blog);
+            var count = await context.SaveChangesAsync();
+            Assert.Equal(4, count);
+            context.Remove(blog);
+            await context.SaveChangesAsync();
+        }
+    }
+
+    [Fact]
+    public async Task Test_Adding_Related_Entity()
+    {
+        using (var context = new BloggingContext())
+        {
+            var blog = context.Blogs.First();
+            blog.Posts = context.Posts.Where(x => x.BlogId == blog.BlogId).ToList();
+            var post = new Post { Title = "Intro to EF Core", PostId = 4};
+
+            blog.Posts.Add(post);
+            context.SaveChanges();
+        }
+    }
+
+    [Fact]
+    public async Task Test_Changing_Relationships()
+    {
+        using (var context = new BloggingContext())
+        {
+            var blog = new Blog { Url = "http://blogs.msdn.com/visualstudio", BlogId = 2};
+            var post = context.Posts.First();
+
+            post.Blog = blog;
+            await context.SaveChangesAsync();
+        }
+    }
+
+    [Fact]
+    public async Task Removing_Relationships()
+    {
+        using (var context = new BloggingContext())
+        {
+            var blog = context.Blogs.First();
+            blog.Posts = context.Posts.Where(x => x.BlogId == blog.BlogId).ToList();
+            var post = blog.Posts.First();
+
+            blog.Posts.Remove(post);
             await context.SaveChangesAsync();
         }
     }

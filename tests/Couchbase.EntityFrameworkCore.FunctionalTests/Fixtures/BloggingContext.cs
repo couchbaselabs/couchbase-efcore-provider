@@ -1,3 +1,5 @@
+using Couchbase.EntityFrameworkCore.Extensions;
+
 namespace Couchbase.EntityFrameworkCore.FunctionalTests.Fixtures;
 
 using Microsoft.EntityFrameworkCore;
@@ -13,10 +15,11 @@ public class BloggingContext : DbContext
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<Blog>().ToCouchbaseCollection("Blogs", "MyBlog");
         modelBuilder.Entity<Blog>()
             .HasMany(b => b.Posts)
             .WithOne(p => p.Blog)
-            .OnDelete(DeleteBehavior.NoAction);
+            .OnDelete(DeleteBehavior.Cascade);
 
         modelBuilder.Entity<PostTag>()
             .HasOne(pt => pt.Post)
