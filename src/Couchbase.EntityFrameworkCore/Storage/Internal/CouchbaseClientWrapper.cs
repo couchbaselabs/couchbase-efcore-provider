@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using Couchbase.Core.IO.Transcoders;
 using Couchbase.Extensions.DependencyInjection;
 using Couchbase.KeyValue;

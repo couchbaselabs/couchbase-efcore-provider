@@ -252,4 +252,24 @@ public class QueryTests
          //Ticket for fixing: https://jira.issues.couchbase.com/browse/NCBC-3891
          await Assert.ThrowsAsync<ParsingFailureException>(async ()=> await query.ToListAsync());
     }
+
+    [Fact]
+    public async Task Test_FromSqlRaw()
+    {
+        var context = new BloggingContext();
+        string query = "SELECT p.* FROM `Blogging`.`MyBlog`.`Person` as p WHERE PersonId={0}";
+        var person = await context.Set<Person>()
+            .FromSqlRaw(query, 1)
+            .FirstOrDefaultAsync();
+    }
+
+    [Fact]
+    public async Task Test_FromRaw_Throws_NotImplementedException()
+    {
+        var context = new BloggingContext();
+        string query = "SELECT p.* FROM `Blogging`.`MyBlog`.`Person` as p WHERE PersonId={0}";
+        Assert.Throws<NotImplementedException>(()=>context.Blogs
+            .FromSql($"SELECT * FROM `Blogging`.`MyBlog`.`Blog`")
+            .ToList());
+    }
 }
