@@ -8,8 +8,18 @@ public class CouchbaseHistoryRepository : HistoryRepository
     {
     }
 
-    protected override string ExistsSql { get; }
+
     protected override bool InterpretExistsResult(object? value)
+    {
+        throw new NotImplementedException();
+    }
+
+    public override IMigrationsDatabaseLock AcquireDatabaseLock()
+    {
+        throw new NotImplementedException();
+    }
+
+    public override Task<IMigrationsDatabaseLock> AcquireDatabaseLockAsync(CancellationToken cancellationToken = new CancellationToken())
     {
         throw new NotImplementedException();
     }
@@ -33,4 +43,7 @@ public class CouchbaseHistoryRepository : HistoryRepository
     {
         throw new NotImplementedException();
     }
+
+    public override LockReleaseBehavior LockReleaseBehavior { get; }
+    protected override string ExistsSql { get; }
 }

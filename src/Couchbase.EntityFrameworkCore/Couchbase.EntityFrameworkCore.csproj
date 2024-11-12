@@ -23,8 +23,9 @@
     <ItemGroup>
       <PackageReference Include="Couchbase.Extensions.DependencyInjection" Version="3.6.3" />
       <PackageReference Include="CouchbaseNetClient" Version="3.6.3" />
-      <PackageReference Include="Microsoft.EntityFrameworkCore" Version="8.0.8" />
-      <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="8.0.8" />
+      <PackageReference Include="Microsoft.EntityFrameworkCore" Version="9.0.0-rc.2.24474.1" />
+      <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="9.0.0-rc.2.24474.1" />
+      <PackageReference Include="Microsoft.Extensions.Configuration" Version="9.0.0-rc.2.24473.5" />
     </ItemGroup>
 
     <!--<ItemGroup>
