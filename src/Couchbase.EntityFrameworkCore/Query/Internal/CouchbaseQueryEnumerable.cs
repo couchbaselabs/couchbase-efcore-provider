@@ -2,6 +2,7 @@ using System.Collections;
 using Couchbase.Extensions.DependencyInjection;
 using Couchbase.Query;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking.Internal;
 using Microsoft.EntityFrameworkCore.Internal;
 using Microsoft.EntityFrameworkCore.Query;
 using Microsoft.EntityFrameworkCore.Query.Internal;
@@ -39,9 +40,11 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>
         {
             queryOptions.Parameter(parameter.Key, parameter.Value);
         }
-        var command = _relationalCommandCache.RentAndPopulateRelationalCommand(_relationalQueryContext);
+
+        var commandTemplate = _relationalCommandCache.GetRelationalCommandTemplate(_relationalQueryContext.ParameterValues);
+        //var command = _relationalCommandCache.RentAndPopulateRelationalCommand(_relationalQueryContext);
         var cluster = _clusterProvider.GetClusterAsync().GetAwaiter().GetResult();
-        var result = cluster.QueryAsync<T>(command.CommandText, queryOptions).GetAwaiter().GetResult();
+        var result = cluster.QueryAsync<T>(commandTemplate.CommandText, queryOptions).GetAwaiter().GetResult();
 
         _relationalQueryContext.InitializeStateManager(_standAloneStateManager);
 
@@ -56,7 +59,8 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>
                 //Scalar values for functions like COUNT are not tracked.
                 if (entityType != null)
                 {
-                    _relationalQueryContext.StartTracking(entityType, doc, new ValueBuffer());
+                    //_relationalQueryContext.StartTracking(entityType, doc, new ValueBuffer());
+                    _relationalQueryContext.StartTracking(entityType, doc, Snapshot.Empty);
                 }
             }
             catch (Exception e)
@@ -75,10 +79,11 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>
 
     public async IAsyncEnumerator<T> GetAsyncEnumerator(CancellationToken cancellationToken = new CancellationToken())
     {
-        var command = _relationalCommandCache.RentAndPopulateRelationalCommand(_relationalQueryContext);
-        var queryOptions = GetParameters(command);
+        var commandTemplate = _relationalCommandCache.GetRelationalCommandTemplate(_relationalQueryContext.ParameterValues);
+        //var command = _relationalCommandCache.RentAndPopulateRelationalCommand(_relationalQueryContext);
+        var queryOptions = GetParameters(commandTemplate);
         var cluster = await _clusterProvider.GetClusterAsync().ConfigureAwait(false);
-        var result = await cluster.QueryAsync<T>(command.CommandText, queryOptions).ConfigureAwait(false);
+        var result = await cluster.QueryAsync<T>(commandTemplate.CommandText, queryOptions).ConfigureAwait(false);
         
         _relationalQueryContext.InitializeStateManager(_standAloneStateManager);
 
@@ -105,7 +110,7 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>
         }
     }
 
-    private QueryOptions GetParameters(IRelationalCommand command)
+    private QueryOptions GetParameters(IRelationalCommandTemplate command)
     {
         var queryOptions = new QueryOptions();
         foreach (var parameter in _relationalQueryContext.ParameterValues)

@@ -89,7 +89,7 @@ public partial class CouchbaseShapedQueryCompilingExpressionVisitor : ShapedQuer
             RelationalDependencies.QuerySqlGeneratorFactory,
             RelationalDependencies.RelationalParameterBasedSqlProcessorFactory,
             innerExpression,
-            _useRelationalNulls);
+            _useRelationalNulls, null);
 
         return Call(
             QueryCompilationContext.IsAsync ? NonQueryAsyncMethodInfo : NonQueryMethodInfo,
