@@ -1,5 +1,8 @@
 # EF Core Couchbase DB Provider
 
+> [!CAUTION]
+> This branch is currently not building and will likely not be for some time. Use the main branch which targets EF Core 8 instead.
+
 This database provider allows Entity Framework Core to be used with Couchbase Database. The provider is maintained as part of the [Couchbase EFCore Project](https://github.com/couchbaselabs/couchbase-efcore-provider).
 
 It is strongly recommended to familiarize yourself with the [Couchbase Database documentation](https://docs.couchbase.com/home/index.html) before reading this section. The EF Core Couchbase Db Provider, works
