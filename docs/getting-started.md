@@ -75,6 +75,10 @@ Create the following Collections for _"Blogs"_ and _"Posts"_:
 
 ![img_5.png](img_5.png)
 
+> [!NOTE]
+> You will also need to create a primary index on the Blogging bucket:
+> CREATE PRIMARY INDEX ON `Blogging`
+
 ## Create, read, update & delete
 * Open _Program.cs_ and replace the contents with the following code
 ```
