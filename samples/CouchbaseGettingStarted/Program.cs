@@ -10,7 +10,11 @@ using var db = new BloggingContext();
 
 // Create
 Console.WriteLine("Inserting a new blog");
-var blog = new Blog { Url = "http://blogs.msdn.com/adonet", BlogId = Guid.NewGuid().ToString() };
+var blog = new Blog
+{
+    Url = "http://blogs.msdn.com/adonet", 
+    BlogId = Guid.NewGuid().ToString()
+};
 db.Add(blog);
 db.SaveChanges();
 
@@ -24,7 +28,12 @@ blog = db.Blogs
 Console.WriteLine("Updating the blog and adding a post");
 blog.Url = "https://devblogs.microsoft.com/dotnet";
 blog.Posts.Add(
-    new Post { Title = "Hello World", Content = "I wrote an app using EF Core!", PostId = Guid.NewGuid().ToString()});
+    new Post
+    {
+        Title = "Hello World", 
+        Content = "I wrote an app using EF Core!", 
+        PostId = Guid.NewGuid().ToString()
+    });
 db.SaveChanges();
 
 // Delete
