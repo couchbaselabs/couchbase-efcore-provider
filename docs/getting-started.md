@@ -13,7 +13,7 @@ The following are detailed steps for getting up and running with Couchbase.Entit
 >[NOTE]
 > Checkout this [blog](https://jeffrymorris.net/2024/12/07/getting-started-with-ef-core-couchbase-db-provider/) for a more details on how to set up the Couchbase Capella database for this example.
 
-After you have created your [Couchbase Capella](https://docs.couchbase.com/cloud/get-started/create-account.html) free tier, you must create a [Cluster](https://docs.couchbase.com/server/current/learn/clusters-and-availability/clusters-and-availability.html#clusters), a [Bucket](https://docs.couchbase.com/server/current/learn/buckets-memory-and-storage/buckets.html) name "Content", a [Scope](https://docs.couchbase.com/server/current/learn/data/scopes-and-collections.html) named "Blogs" and then [Collections](https://docs.couchbase.com/server/current/learn/data/scopes-and-collections.html) called "Blog" and "Post" for storing the documents.
+After you have created your [Couchbase Capella](https://docs.couchbase.com/cloud/get-started/create-account.html) free tier, you must create a [Cluster](https://docs.couchbase.com/server/current/learn/clusters-and-availability/clusters-and-availability.html#clusters), a [Bucket](https://docs.couchbase.com/server/current/learn/buckets-memory-and-storage/buckets.html) name "Content", a [Scope](https://docs.couchbase.com/server/current/learn/data/scopes-and-collections.html) named "Blogs" and then [Collections](https://docs.couchbase.com/server/current/learn/data/scopes-and-collections.html) called "Blog" and "Post" for storing the documents. Note that names are *case-sensitive*!
 
 ## Create a Console application
 * Create the .NET Console Application using [this tutorial](https://learn.microsoft.com/en-us/dotnet/core/tutorials/with-visual-studio-code?pivots=dotnet-8-0) or [Visual Studio](https://learn.microsoft.com/en-us/dotnet/core/tutorials/with-visual-studio?pivots=dotnet-8-0) or via the [Command Line](https://learn.microsoft.com/en-us/dotnet/core/tools/dotnet-new)
@@ -31,80 +31,92 @@ dotnet install Couchbase.EntityFrameworkCore --version 1.0.0-dp1
 using Microsoft.EntityFrameworkCore;
 using Couchbase;
 using Couchbase.EntityFrameworkCore;
+using Couchbase.EntityFrameworkCore.Extensions;
 using Couchbase.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 public class BloggingContext : DbContext
 {
     public DbSet<Blog> Blogs { get; set; }
     public DbSet<Post> Posts { get; set; }
     
-    //The following configures the application to use a Couchbase cluster
-    //on localhost with a Bucket named "universities" and a Scope named "contoso"
     protected override void OnConfiguring(DbContextOptionsBuilder options)
-        => options.UseCouchbase<INamedBucketProvider>(new ClusterOptions()
-                .WithCredentials("Administrator", "password")
-                .WithConnectionString("couchbase://localhost"),
+    {
+        using var loggingFactory = LoggerFactory.Create(builder => builder.AddConsole());
+        options.UseCouchbase<INamedBucketProvider>(
+            new ClusterOptions()
+                .WithCredentials("USERNAME", "PASSWORD")
+                .WithConnectionString("couchbases://cb.xxxxxxxx.cloud.couchbase.com")
+                .WithLogging(loggingFactory), 
             couchbaseDbContextOptions =>
             {
-                couchbaseDbContextOptions.Bucket = "universities";
-                couchbaseDbContextOptions.Scope = "contoso";
+                couchbaseDbContextOptions.Bucket = "Content";
+                couchbaseDbContextOptions.Scope = "Blogs";
             });
+    }
+    
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<Blog>().ToCouchbaseCollection("Blog");
+        modelBuilder.Entity<Post>().ToCouchbaseCollection("Post");
+    }
 }
 
 public class Blog
 {
-    public int BlogId { get; set; }
+    public string BlogId { get; set; }
     public string Url { get; set; }
-
     public List<Post> Posts { get; } = new();
 }
 
 public class Post
 {
-    public int PostId { get; set; }
+    public string PostId { get; set; }
     public string Title { get; set; }
     public string Content { get; set; }
-
     public int BlogId { get; set; }
     public Blog Blog { get; set; }
 }
 ```
 ## Create the database
-Login into your Couchbase server and add the following Bucket _"Blogging"_:
+Login into your Couchbase server and add the following Bucket _"Content"_:
 
 ![img_3.png](img_3.png)
 
-Create the following Scope _"MyBlog"_:
+Create the following Scope _"Blogs"_:
 
 ![img_4.png](img_4.png)
 
-Create the following Collections for _"Blogs"_ and _"Posts"_:
+Create the following Collections for _"Blog"_ and _"Post"_:
 
 ![img_5.png](img_5.png)
 
 > [!NOTE]
-> You will also need to create a primary index on the Blogging bucket:
-> CREATE PRIMARY INDEX ON `Blogging`
+> You may also need to create a primary index on the Blogging bucket:
+> CREATE PRIMARY INDEX ON `Content`
 
 ## Create, read, update & delete
 * Open _Program.cs_ and replace the contents with the following code
 ```
-using System;
-using System.Linq;
-
 using var db = new BloggingContext();
 
-// Note: This sample requires the database to be created before running.
-Console.WriteLine($"Database path: {db.DbPath}.");
+// Note: This sample requires the Couchbase database to be created before running.
+// The Bucket name is "Content", the scope is "Blogs" and the collections are "Post and "Blog"
+// Buckets, Scopes and Collections are case sensitive!
 
 // Create
 Console.WriteLine("Inserting a new blog");
-db.Add(new Blog { Url = "http://blogs.msdn.com/adonet" });
+var blog = new Blog
+{
+    Url = "http://blogs.msdn.com/adonet", 
+    BlogId = Guid.NewGuid().ToString()
+};
+db.Add(blog);
 db.SaveChanges();
 
 // Read
 Console.WriteLine("Querying for a blog");
-var blog = db.Blogs
+blog = db.Blogs
     .OrderBy(b => b.BlogId)
     .First();
 
@@ -112,7 +124,12 @@ var blog = db.Blogs
 Console.WriteLine("Updating the blog and adding a post");
 blog.Url = "https://devblogs.microsoft.com/dotnet";
 blog.Posts.Add(
-    new Post { Title = "Hello World", Content = "I wrote an app using EF Core!" });
+    new Post
+    {
+        Title = "Hello World", 
+        Content = "I wrote an app using EF Core!", 
+        PostId = Guid.NewGuid().ToString()
+    });
 db.SaveChanges();
 
 // Delete
