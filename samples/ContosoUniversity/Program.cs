@@ -13,12 +13,12 @@ builder.Services.AddControllersWithViews();
 
 builder.Services.AddDbContext<SchoolContext>(options=> options
     .UseCouchbase<INamedBucketProvider>(new ClusterOptions()
-    .WithCredentials("Administrator", "password")
-    .WithConnectionString("couchbase://localhost"),
+        .WithCredentials("Ajax", "GE9jk9i28L2Psg@")
+        .WithConnectionString("couchbases://cb.umolxgoqkdzpvdvo.cloud.couchbase.com"),
         couchbaseDbContextOptions =>
         {
-            couchbaseDbContextOptions.Bucket = "universities";
-            couchbaseDbContextOptions.Scope = "contoso";
+            couchbaseDbContextOptions.Bucket = "Universities";
+            couchbaseDbContextOptions.Scope = "Contoso";
         }));
 
 

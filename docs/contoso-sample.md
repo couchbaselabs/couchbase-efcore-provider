@@ -5,23 +5,21 @@ This the sample app that is included in the [Tutorial: Get started with EF Core 
 ## Prerequisites
 * Requires [.NET 8 SDK](https://dotnet.microsoft.com/en-us/download/dotnet/8.0) to build
 * Setup Couchbase Server:
-  * Works best with [Couchbase Server 7.6.0](https://www.couchbase.com/downloads/?family=couchbase-server#) or better. If you chose to use an earlier Couchbase version you will manually need to add the indexes, which can be quite time consuming - OR-
-  * [Couchbase Capella ](https://www.couchbase.com/downloads/?family=capella) Cloud also works and has a free-tier that makes it easy to get up and running. Refer to the [documentation](https://docs.couchbase.com/home/cloud.html) for getting up and running with Capella -OR-
-  * A Couchbase [docker image](https://docs.couchbase.com/server/current/install/getting-started-docker.html) may also be used.
+  * [Couchbase Capella ](https://www.couchbase.com/downloads/?family=capella) Cloud has a [free-tier](https://docs.couchbase.com/cloud/get-started/create-account.html#sign-up-free-tier) that makes it easy to get up and running. 
+  * Refer to the [documentation](https://docs.couchbase.com/home/cloud.html) for getting up and running with Capella
 
 ## Create the Couchbase Server Bucket
 
-Couchbase Server uses Buckets in place of RDBMS database instances. For the Contoso University app, we will create a Bucket named "universities":
+Couchbase Server uses Buckets in place of RDBMS database instances. For the Contoso University app, we will create a Bucket named "Universities" with a Scope named "Contoso" and a Collection named "Course":
 
-![img_6.png](img_6.png)
+![img_14.png](img_14.png)
 
-In Couchbase, a Scope is an example of a tenant. For the Contoso University application, we will create a Scope named "contoso":
+Finally, we will create Collections for each entity in the Contoso model under the "Contoso" Scope (Course, CourseAssignment, Department, Enrollment, OfficeAssignment and Person):
 
-![img_7.png](img_7.png)
+![img_15.png](img_15.png)
 
-Finally, we will create Collections for each entity in the Contoso model:
-
-![img_8.png](img_8.png)
+> [!NOTE]
+> All names are **case-sensitive** from the Bucket to the Scope and Collection names.
 
 When the application loads, it will generate the documents for the model and store them in the Bucket.
 
