@@ -11,7 +11,7 @@ The following are detailed steps for getting up and running with Couchbase.Entit
 ## Create the Couchbase Capella database
 
 >[NOTE]
-> Checkout this [blog](https://jeffrymorris.net/2024/12/07/getting-started-with-ef-core-couchbase-db-provider/) for a more details on how to set up the Couchbase Capella database for this example.
+> Checkout this [blog](https://jeffrymorris.net/2024/12/07/getting-started-with-ef-core-couchbase-db-provider/) for details on how to set up the Couchbase Capella database for this example.
 
 After you have created your [Couchbase Capella](https://docs.couchbase.com/cloud/get-started/create-account.html) free tier, you must create a [Cluster](https://docs.couchbase.com/server/current/learn/clusters-and-availability/clusters-and-availability.html#clusters), a [Bucket](https://docs.couchbase.com/server/current/learn/buckets-memory-and-storage/buckets.html) name "Content", a [Scope](https://docs.couchbase.com/server/current/learn/data/scopes-and-collections.html) named "Blogs" and then [Collections](https://docs.couchbase.com/server/current/learn/data/scopes-and-collections.html) called "Blog" and "Post" for storing the documents. Note that names are *case-sensitive*!
 
