@@ -6,7 +6,14 @@ The following are detailed steps for getting up and running with Couchbase.Entit
 
 ## Prerequisites
 * Download and Install [.NET 8](https://dotnet.microsoft.com/en-us/download/dotnet/8.0)
-* Download and install [Couchbase server 7.6.0](https://docs.couchbase.com/server/current/install/install-intro.html) or greater. You can also do this using [docker](https://docs.couchbase.com/server/current/install/getting-started-docker.html) and providing the version. Another option is to use [Couchbase Capella](https://www.couchbase.com/products/capella/), which now as a free tier.
+* Create a [Couchbase Capella](https://docs.couchbase.com/cloud/get-started/create-account.html) free  tier account.
+
+## Create the Couchbase Capella database
+
+>[NOTE]
+> Checkout this [blog](https://jeffrymorris.net/2024/12/07/getting-started-with-ef-core-couchbase-db-provider/) for a more details on how to set up the Couchbase Capella database for this example.
+
+After you have created your [Couchbase Capella](https://docs.couchbase.com/cloud/get-started/create-account.html) free tier, you must create a [Cluster](https://docs.couchbase.com/server/current/learn/clusters-and-availability/clusters-and-availability.html#clusters), a [Bucket](https://docs.couchbase.com/server/current/learn/buckets-memory-and-storage/buckets.html) name "Content", a [Scope](https://docs.couchbase.com/server/current/learn/data/scopes-and-collections.html) named "Blogs" and then [Collections](https://docs.couchbase.com/server/current/learn/data/scopes-and-collections.html) called "Blog" and "Post" for storing the documents.
 
 ## Create a Console application
 * Create the .NET Console Application using [this tutorial](https://learn.microsoft.com/en-us/dotnet/core/tutorials/with-visual-studio-code?pivots=dotnet-8-0) or [Visual Studio](https://learn.microsoft.com/en-us/dotnet/core/tutorials/with-visual-studio?pivots=dotnet-8-0) or via the [Command Line](https://learn.microsoft.com/en-us/dotnet/core/tools/dotnet-new)
