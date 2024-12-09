@@ -78,22 +78,6 @@ public class Post
     public Blog Blog { get; set; }
 }
 ```
-## Create the database
-Login into your Couchbase server and add the following Bucket _"Content"_:
-
-![img_3.png](img_3.png)
-
-Create the following Scope _"Blogs"_:
-
-![img_4.png](img_4.png)
-
-Create the following Collections for _"Blog"_ and _"Post"_:
-
-![img_5.png](img_5.png)
-
-> [!NOTE]
-> You may also need to create a primary index on the Blogging bucket:
-> CREATE PRIMARY INDEX ON `Content`
 
 ## Create, read, update & delete
 * Open _Program.cs_ and replace the contents with the following code
