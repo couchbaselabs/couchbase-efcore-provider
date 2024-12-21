@@ -1,24 +1,26 @@
+using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.Extensions.DependencyInjection;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Query;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Couchbase.EntityFrameworkCore.Query.Internal;
 
 public class CouchbaseQuerySqlGeneratorFactory : IQuerySqlGeneratorFactory
 {
     private readonly QuerySqlGeneratorDependencies _dependencies;
-    private readonly INamedBucketProvider _namedBucketProvider;
-    private readonly INamedCollectionProvider _namedCollectionProvider;
+    private readonly ICouchbaseDbContextOptionsBuilder _couchbaseDbContextOptionsBuilder;
 
-    public CouchbaseQuerySqlGeneratorFactory(QuerySqlGeneratorDependencies dependencies, INamedBucketProvider namedBucketProvider, INamedCollectionProvider namedCollectionProvider)
+    public CouchbaseQuerySqlGeneratorFactory(QuerySqlGeneratorDependencies dependencies, ICouchbaseDbContextOptionsBuilder couchbaseDbContextOptionsBuilder)
     {
         _dependencies = dependencies;
-        _namedBucketProvider = namedBucketProvider;
-        _namedCollectionProvider = namedCollectionProvider;
+        _couchbaseDbContextOptionsBuilder = couchbaseDbContextOptionsBuilder;
     }
     
     public QuerySqlGenerator Create()
     {
-        return new CouchbaseQuerySqlGenerator(_dependencies, _namedBucketProvider, _namedCollectionProvider);
+        return new CouchbaseQuerySqlGenerator(_dependencies, _couchbaseDbContextOptionsBuilder);
     }
 }

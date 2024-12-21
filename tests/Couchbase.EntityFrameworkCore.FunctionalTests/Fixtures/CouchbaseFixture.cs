@@ -51,9 +51,13 @@ public class CouchbaseFixture : IAsyncLifetime
                 builder.AddFilter(level => level >= LogLevel.Debug);
                 builder.AddFile("Logs/myapp-{Date}.txt", LogLevel.Debug);
             });
+            
+            _clusterOptions.WithLogging(loggerFactory);
+            optionsBuilder.UseLoggerFactory(loggerFactory);
+            optionsBuilder.EnableSensitiveDataLogging();
+            optionsBuilder.LogTo(Console.WriteLine);
 
             base.OnConfiguring(optionsBuilder);
-            optionsBuilder.UseLoggerFactory(loggerFactory);
             optionsBuilder.UseCouchbase<INamedBucketProvider>(_clusterOptions,
                 couchbaseDbContextOptions =>
             {

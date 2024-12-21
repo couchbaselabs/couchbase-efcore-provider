@@ -10,12 +10,12 @@ using Microsoft.Extensions.Logging;
 
 public class BloggingContext : DbContext
 {
-   public DbSet<Blog> Blogs { get; set; }
+    public DbSet<Blog> Blogs { get; set; }
     public DbSet<Post> Posts { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.Entity<Blog>().ToCouchbaseCollection("Blogs", "MyBlog");
+        modelBuilder.Entity<Blog>().ToCouchbaseCollection("Blog");
         modelBuilder.Entity<Blog>()
             .HasMany(b => b.Posts)
             .WithOne(p => p.Blog)
@@ -39,6 +39,7 @@ public class BloggingContext : DbContext
                 },
                 new Blog { BlogId = 2, Url = @"https://mytravelblog.com/", Rating = 4, OwnerId = 3 });
 
+        modelBuilder.Entity<Post>().ToCouchbaseCollection("Post");
         modelBuilder.Entity<Post>()
             .HasData(
                 new Post
@@ -119,8 +120,8 @@ public class BloggingContext : DbContext
                 .WithLogging(loggingFactory),
             couchbaseDbContextOptions =>
             {
-                couchbaseDbContextOptions.Bucket = "Blogging";
-                couchbaseDbContextOptions.Scope = "MyBlog";
+                couchbaseDbContextOptions.Bucket = "Content";
+                couchbaseDbContextOptions.Scope = "Blogs";
             });
     }
 }

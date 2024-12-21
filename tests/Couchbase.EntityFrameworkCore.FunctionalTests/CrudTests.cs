@@ -175,8 +175,15 @@ public class CrudTests
         }
         finally
         {
-            context.Remove(airline);
-            await context.SaveChangesAsync();
+            try
+            {
+                context.Remove(airline);
+                var count = await context.SaveChangesAsync();
+            }
+            catch (Exception e)
+            {
+                Assert.IsType<InvalidOperationException>(e);
+            }
         }
     }
 

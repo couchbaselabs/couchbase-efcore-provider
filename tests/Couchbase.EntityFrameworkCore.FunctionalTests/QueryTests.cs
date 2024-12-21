@@ -1,7 +1,9 @@
 ﻿using Couchbase.Core.Exceptions;
 using Couchbase.EntityFrameworkCore.FunctionalTests.Fixtures;
 using Couchbase.EntityFrameworkCore.FunctionalTests.Models;
+using Couchbase.EntityFrameworkCore.Infrastructure.Internal;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 using Xunit.Abstractions;
 

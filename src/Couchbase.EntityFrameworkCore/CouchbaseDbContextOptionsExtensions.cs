@@ -11,6 +11,21 @@ namespace Couchbase.EntityFrameworkCore;
 
 public static class CouchbaseDbContextOptionsExtensions
 {
+ /* public static DbContextOptionsBuilder UseCouchbase<TNamedBucketProvider>(
+    this DbContextOptionsBuilder optionsBuilder,
+    string? connectionString,
+    Action<CouchbaseDbContextOptionsBuilder>? sqliteOptionsAction = null)
+  {
+    var extension = (CouchbaseOptionsExtension)GetOrCreateExtension<TNamedBucketProvider>(optionsBuilder).WithConnectionString(connectionString);
+    ((IDbContextOptionsBuilderInfrastructure)optionsBuilder).AddOrUpdateExtension(extension);
+
+    ConfigureWarnings(optionsBuilder);
+
+    sqliteOptionsAction?.Invoke(new CouchbasebContextOptionsBuilder(optionsBuilder, connectionString));
+
+    return optionsBuilder;
+  }*/
+  
   public static DbContextOptionsBuilder UseCouchbase<TNamedBucketProvider>(
       this DbContextOptionsBuilder optionsBuilder, 
       ClusterOptions clusterOptions,
