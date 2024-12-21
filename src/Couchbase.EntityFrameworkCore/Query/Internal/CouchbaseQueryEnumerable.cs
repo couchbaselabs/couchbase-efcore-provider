@@ -1,4 +1,5 @@
 using System.Collections;
+using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.Extensions.DependencyInjection;
 using Couchbase.Query;
 using Microsoft.EntityFrameworkCore;
@@ -7,6 +8,7 @@ using Microsoft.EntityFrameworkCore.Query;
 using Microsoft.EntityFrameworkCore.Query.Internal;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.EntityFrameworkCore.Storage.Internal;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Couchbase.EntityFrameworkCore.Query.Internal;
 
@@ -15,19 +17,19 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>
     private readonly RelationalQueryContext _relationalQueryContext;
     private readonly RelationalCommandCache _relationalCommandCache;
     private readonly DbContext _dbContext;
-    private readonly IClusterProvider _clusterProvider;
     private readonly bool _standAloneStateManager;
-   
+    private readonly IClusterProvider _clusterProvider;
+
     public CouchbaseQueryEnumerable(
         RelationalQueryContext relationalQueryContext, 
         RelationalCommandCache relationalCommandCache,
         bool standAloneStateManager,
-        IClusterProvider clusterProvider)
+        IClusterProvider _clusterProvider)
     {
 
         _dbContext = relationalQueryContext.Context;
-        _clusterProvider = clusterProvider;
         _standAloneStateManager = standAloneStateManager;
+        this._clusterProvider = _clusterProvider;
         _relationalQueryContext = relationalQueryContext;
         _relationalCommandCache = relationalCommandCache;
     }
@@ -39,8 +41,9 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>
         {
             queryOptions.Parameter(parameter.Key, parameter.Value);
         }
-        var command = _relationalCommandCache.RentAndPopulateRelationalCommand(_relationalQueryContext);
+        
         var cluster = _clusterProvider.GetClusterAsync().GetAwaiter().GetResult();
+        var command = _relationalCommandCache.RentAndPopulateRelationalCommand(_relationalQueryContext);
         var result = cluster.QueryAsync<T>(command.CommandText, queryOptions).GetAwaiter().GetResult();
 
         _relationalQueryContext.InitializeStateManager(_standAloneStateManager);
@@ -77,6 +80,7 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>
     {
         var command = _relationalCommandCache.RentAndPopulateRelationalCommand(_relationalQueryContext);
         var queryOptions = GetParameters(command);
+        
         var cluster = await _clusterProvider.GetClusterAsync().ConfigureAwait(false);
         var result = await cluster.QueryAsync<T>(command.CommandText, queryOptions).ConfigureAwait(false);
         

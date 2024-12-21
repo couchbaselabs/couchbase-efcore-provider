@@ -24,4 +24,10 @@ public static class CouchbaseEntityTypeBuilderExtensions
     {
         return  entityTypeBuilder.ToTable($"{collection}.{scope}");
     }
+    
+    public static EntityTypeBuilder<TEntity> ToCouchbaseCollection<TEntity>(
+        this EntityTypeBuilder<TEntity> entityTypeBuilder, string bucket, string scope, string collection) where TEntity : class
+    {
+        return  entityTypeBuilder.ToTable($"{bucket}.{collection}.{scope}");
+    }
 }

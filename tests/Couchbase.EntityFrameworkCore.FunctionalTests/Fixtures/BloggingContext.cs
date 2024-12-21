@@ -15,7 +15,7 @@ public class BloggingContext : DbContext
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.Entity<Blog>().ToCouchbaseCollection("Blogs", "MyBlog");
+        //modelBuilder.Entity<Blog>().ToCouchbaseCollection("Content","Blogs", "MyBlog");
         modelBuilder.Entity<Blog>()
             .HasMany(b => b.Posts)
             .WithOne(p => p.Blog)

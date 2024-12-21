@@ -35,6 +35,8 @@ public class CouchbaseOptionsExtension<TNamedBucketProvider> : RelationalOptions
 
     public override void ApplyServices(IServiceCollection services)
     {
+        var keyspace= new Keyspace(DbContextOptionsBuilder.Bucket, DbContextOptionsBuilder.Scope);
+        
         services.AddEntityFrameworkCouchbaseProvider(this);
     }
 
@@ -59,7 +61,7 @@ public class CouchbaseOptionsExtension<TNamedBucketProvider> : RelationalOptions
 
         public override bool IsDatabaseProvider => true;
 
-        public override string LogFragment => $"Using Custom SQLite Provider - ConnectionString: {ConnectionString}";
+        public override string LogFragment => $"Using Custom Couchbase Provider - ConnectionString: {ConnectionString}";
 
         public override int GetServiceProviderHashCode() => ConnectionString.GetHashCode();
 

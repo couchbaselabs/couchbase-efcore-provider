@@ -3,6 +3,7 @@
 
 using System.Linq.Expressions;
 using System.Reflection;
+using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
@@ -13,6 +14,7 @@ using Microsoft.EntityFrameworkCore.Query;
 using Microsoft.EntityFrameworkCore.Query.Internal;
 using Microsoft.EntityFrameworkCore.Query.SqlExpressions;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.DependencyInjection;
 using static System.Linq.Expressions.Expression;
 
 namespace Couchbase.EntityFrameworkCore.Query.Internal;
@@ -21,12 +23,14 @@ namespace Couchbase.EntityFrameworkCore.Query.Internal;
 public partial class CouchbaseShapedQueryCompilingExpressionVisitor : ShapedQueryCompilingExpressionVisitor
 {
     private readonly QuerySqlGenerator _querySqlGenerator;
-    private readonly IClusterProvider _clusterProvider;
+    private readonly IServiceProvider _serviceProvider;
+    private readonly ICouchbaseDbContextOptionsBuilder _couchbaseDbContextOptionsBuilder;
     private readonly Type _contextType;
     private readonly ISet<string> _tags;
     private readonly bool _threadSafetyChecksEnabled;
     private readonly bool _detailedErrorsEnabled;
     private readonly bool _useRelationalNulls;
+    private readonly IClusterProvider _clusterProvider;
 
     /// <summary>
     ///     Creates a new instance of the <see cref="ShapedQueryCompilingExpressionVisitor" /> class.
@@ -39,17 +43,20 @@ public partial class CouchbaseShapedQueryCompilingExpressionVisitor : ShapedQuer
         RelationalShapedQueryCompilingExpressionVisitorDependencies relationalDependencies,
         QueryCompilationContext queryCompilationContext,
         QuerySqlGenerator querySqlGenerator, 
-        IClusterProvider clusterProvider)
+        IServiceProvider serviceProvider,
+        ICouchbaseDbContextOptionsBuilder couchbaseDbContextOptionsBuilder)
         : base(dependencies, queryCompilationContext)
     {
         _querySqlGenerator = querySqlGenerator;
-        _clusterProvider = clusterProvider;
+        _serviceProvider = serviceProvider;
+        _couchbaseDbContextOptionsBuilder = couchbaseDbContextOptionsBuilder;
         RelationalDependencies = relationalDependencies;
         _contextType = queryCompilationContext.ContextType;
         _tags = queryCompilationContext.Tags;
         _threadSafetyChecksEnabled = dependencies.CoreSingletonOptions.AreThreadSafetyChecksEnabled;
         _detailedErrorsEnabled = dependencies.CoreSingletonOptions.AreDetailedErrorsEnabled;
         _useRelationalNulls = RelationalOptionsExtension.Extract(queryCompilationContext.ContextOptions).UseRelationalNulls;
+        _clusterProvider = serviceProvider.GetRequiredKeyedService<IClusterProvider>(_couchbaseDbContextOptionsBuilder.ConnectionString);
     }
 
     /// <summary>
@@ -384,6 +391,7 @@ public partial class CouchbaseShapedQueryCompilingExpressionVisitor : ShapedQuer
                     Constant(_detailedErrorsEnabled),
                     Constant(_threadSafetyChecksEnabled));
             }
+            
 
             var shaperC = shaper.Compile();
             return New(typeof(CouchbaseQueryEnumerable<>).MakeGenericType(shaper.ReturnType).GetConstructors()[0],
@@ -391,6 +399,7 @@ public partial class CouchbaseShapedQueryCompilingExpressionVisitor : ShapedQuer
                 Constant(relationalCommandCache),
                 Constant(
                     QueryCompilationContext.QueryTrackingBehavior == QueryTrackingBehavior.NoTrackingWithIdentityResolution),
-                Constant(_clusterProvider));        }
+                Constant(_clusterProvider));
+        }
     }
 }

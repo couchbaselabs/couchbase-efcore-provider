@@ -1,18 +1,21 @@
 using Couchbase.Core.IO.Transcoders;
+using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.Extensions.DependencyInjection;
 using Couchbase.KeyValue;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 // ReSharper disable MethodHasAsyncOverload
 
 namespace Couchbase.EntityFrameworkCore.Storage.Internal;
 
-public class CouchbaseClientWrapper(INamedBucketProvider namedBucketProvider, ILogger<CouchbaseClientWrapper> logger)
+public class CouchbaseClientWrapper(IServiceProvider serviceProvider,
+    ICouchbaseDbContextOptionsBuilder couchbaseDbContextOptionsBuilder, ILogger<CouchbaseClientWrapper> logger)
     : ICouchbaseClientWrapper
 {
     private readonly  ITypeTranscoder _transcoder = new RawJsonTranscoder();
     private IBucket? _bucket;
 
-    public string BucketName => namedBucketProvider.BucketName;
+    public string BucketName => couchbaseDbContextOptionsBuilder.Bucket;
 
     public async Task<bool> DeleteDocument(string id, (string? scope, string? collection) keyspace)
     {
@@ -75,13 +78,16 @@ public class CouchbaseClientWrapper(INamedBucketProvider namedBucketProvider, IL
     {
         try
         {
+            var namedBucketProvider = serviceProvider.GetRequiredKeyedService<INamedBucketProvider>(couchbaseDbContextOptionsBuilder
+                    .Bucket);
             _bucket ??= await namedBucketProvider.GetBucketAsync().ConfigureAwait(false);
         }
         catch (Exception e)
         {
-           logger.LogError(e, "Bucket {BucketName} not found!", namedBucketProvider.BucketName);
+           logger.LogError(e, "Bucket {BucketName} not found!", couchbaseDbContextOptionsBuilder.Bucket);
         }
 
+        //possibly switch to INamedCollectionProvider
         // ReSharper disable once MethodHasAsyncOverload
         return _bucket.Scope(keyspace.scope).Collection(keyspace.collection);
     }
