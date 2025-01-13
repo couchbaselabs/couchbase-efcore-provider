@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
 using Couchbase.EntityFrameworkCore.Extensions;
+using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking.Internal;
@@ -12,12 +13,12 @@ using Database = Microsoft.EntityFrameworkCore.Storage.Database;
 
 namespace Couchbase.EntityFrameworkCore.Storage.Internal;
 
-public class CouchbaseDatabaseWrapper(DatabaseDependencies dependencies, ICouchbaseClientWrapper couchbaseClient, INamedCollectionProvider namedCollectionProvider)
+public class CouchbaseDatabaseWrapper(DatabaseDependencies dependencies, ICouchbaseClientWrapper couchbaseClient, ICouchbaseDbContextOptionsBuilder couchbaseDbContextOptionsBuilder)
     : Database(dependencies)
 {
     private readonly ConcurrentDictionary<IEntityType, (string scope, string collection)> _keyspaceCache = new ();
 
-    public string? ScopeName => namedCollectionProvider.ScopeName;
+    public string? ScopeName => couchbaseDbContextOptionsBuilder.Scope;
 
     public override int SaveChanges(IList<IUpdateEntry> entries)
     {

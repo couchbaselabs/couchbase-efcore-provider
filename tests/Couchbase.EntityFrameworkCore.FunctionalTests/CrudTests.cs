@@ -35,7 +35,7 @@ public class CrudTests
             Iata = "Q5",
             Name = "40-Mile Air"
         };
-        
+
         var airline2 = new Airline
         {
             Type = "airline",
@@ -46,7 +46,7 @@ public class CrudTests
             Iata = "Q5",
             Name = "40-Mile Air"
         };
-        
+
         try
         {
             context.Add(airline1);
@@ -54,7 +54,7 @@ public class CrudTests
 
             var inserted = await context.SaveChangesAsync();
             Assert.Equal(2, inserted);
-            
+
             var count = context.Airlines.Count(a => a.Id > 665 && a.Id < 668);
             Assert.Equal(2, count);
 
@@ -73,7 +73,7 @@ public class CrudTests
             await context.SaveChangesAsync();
         }
     }
-    
+
     [Fact]
     public async Task Test_ExecuteDelete()
     {
@@ -88,7 +88,7 @@ public class CrudTests
             Iata = "Q5",
             Name = "40-Mile Air"
         };
-        
+
         var airline2 = new Airline
         {
             Type = "airline",
@@ -99,7 +99,7 @@ public class CrudTests
             Iata = "Q5",
             Name = "40-Mile Air"
         };
-        
+
         try
         {
             context.Add(airline1);
@@ -194,17 +194,17 @@ public class CrudTests
             Iata = "Q5",
             Name = "40-Mile Air"
         };
-        
+
         context.Add(airline);
         await context.SaveChangesAsync();
-        
+
         context.Remove(airline);
         await context.SaveChangesAsync();
-        
+
         var airline1 = await context.Airlines.FindAsync("airline", 11);
         Assert.Null(airline1);
     }
-    
+
     [Fact]
     public async Task Test_UpdateAsync()
     {
@@ -223,11 +223,11 @@ public class CrudTests
         {
             context.Add(airline);
             await context.SaveChangesAsync();
-            
+
             var airline1 = await context.Airlines.FindAsync("airline", 11);
             airline1.Name = "bob";
             context.Update(airline1);
-            
+
             await context.SaveChangesAsync();
             var airlineChanged = await context.Airlines.FindAsync("airline", 11);
             Assert.Equal("bob", airlineChanged.Name);
@@ -238,7 +238,7 @@ public class CrudTests
             await context.SaveChangesAsync();
         }
     }
-    
+
     [Fact]
     public async Task Test_AddAsyncAsync()
     {
@@ -257,7 +257,7 @@ public class CrudTests
         {
             await context.AddAsync(airline);
             await context.SaveChangesAsync();
-            
+
             var airline1 = await context.Airlines.FindAsync("airline", 11);
             Assert.Equal(airline, airline1);
         }
@@ -318,9 +318,12 @@ public class CrudTests
         {
             var blog = context.Blogs.First();
             blog.Posts = context.Posts.Where(x => x.BlogId == blog.BlogId).ToList();
-            var post = new Post { Title = "Intro to EF Core", PostId = 4};
+            var post = new Post { Title = "Intro to EF Core", PostId = 104};
 
             blog.Posts.Add(post);
+            context.SaveChanges();
+
+            blog.Posts.Remove(post);
             context.SaveChanges();
         }
     }
@@ -330,6 +333,9 @@ public class CrudTests
     {
         using (var context = new BloggingContext())
         {
+            context.Add(new Post { Title = "Intro to EF Core", PostId = 4, BlogId = 2 });
+            await context.SaveChangesAsync();
+
             var blog = new Blog { Url = "http://blogs.msdn.com/visualstudio", BlogId = 2};
             var post = context.Posts.First();
 
@@ -343,7 +349,14 @@ public class CrudTests
     {
         using (var context = new BloggingContext())
         {
+            context.Add(new Blog { Url = "http://blogs.msdn.com/visualstudio", BlogId = 2 });
+            await context.SaveChangesAsync();
+
+            context.Add(new Post { Title = "Intro to EF Core", PostId = 4, BlogId = 2 });
+            await context.SaveChangesAsync();
+
             var blog = context.Blogs.First();
+            var posts = context.Posts.ToList();
             blog.Posts = context.Posts.Where(x => x.BlogId == blog.BlogId).ToList();
             var post = blog.Posts.First();
 

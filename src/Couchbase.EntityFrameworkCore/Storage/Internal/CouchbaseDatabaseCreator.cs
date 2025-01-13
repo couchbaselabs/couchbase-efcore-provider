@@ -11,18 +11,16 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
     public override bool Exists()
     {
         return true;
-        // throw new NotImplementedException();
     }
 
     public override bool HasTables()
     {
         return true;
-        //throw new NotImplementedException();
     }
 
     public override void Create()
     {
-        throw new NotImplementedException();
+        base.Dependencies.CurrentContext.Context.SaveChanges();
     }
 
     public override void Delete()

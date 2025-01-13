@@ -17,7 +17,7 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>
     private readonly DbContext _dbContext;
     private readonly IClusterProvider _clusterProvider;
     private readonly bool _standAloneStateManager;
-   
+
     public CouchbaseQueryEnumerable(
         RelationalQueryContext relationalQueryContext, 
         RelationalCommandCache relationalCommandCache,
@@ -31,7 +31,7 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>
         _relationalQueryContext = relationalQueryContext;
         _relationalCommandCache = relationalCommandCache;
     }
-    
+
     public IEnumerator<T> GetEnumerator()
     {
         var queryOptions = new QueryOptions();
@@ -79,7 +79,7 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>
         var queryOptions = GetParameters(command);
         var cluster = await _clusterProvider.GetClusterAsync().ConfigureAwait(false);
         var result = await cluster.QueryAsync<T>(command.CommandText, queryOptions).ConfigureAwait(false);
-        
+
         _relationalQueryContext.InitializeStateManager(_standAloneStateManager);
 
         var model = _dbContext.Model;
@@ -112,7 +112,7 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>
         {
             var key = parameter.Key;
             var value = parameter.Value;
-            
+
             foreach (var compositeParameter in command.Parameters)
             {
                 if (compositeParameter is CompositeRelationalParameter actualParameter)

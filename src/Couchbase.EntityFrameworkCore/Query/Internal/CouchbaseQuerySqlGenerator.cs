@@ -3,6 +3,7 @@ using System.Reflection;
 using System.Reflection.Emit;
 using System.Text;
 using Couchbase.Core.Utils;
+using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Query;
@@ -15,13 +16,11 @@ namespace Couchbase.EntityFrameworkCore.Query.Internal;
 
 public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
 {
-    private readonly INamedBucketProvider _namedBucketProvider;
-    protected readonly INamedCollectionProvider _namedCollectionProvider;
+    private readonly ICouchbaseDbContextOptionsBuilder _couchbaseDbContextOptionsBuilder;
 
-    public CouchbaseQuerySqlGenerator(QuerySqlGeneratorDependencies dependencies, INamedBucketProvider namedBucketProvider, INamedCollectionProvider namedCollectionProvider) : base(dependencies)
+    public CouchbaseQuerySqlGenerator(QuerySqlGeneratorDependencies dependencies, ICouchbaseDbContextOptionsBuilder couchbaseDbContextOptionsBuilder) : base(dependencies)
     {
-        _namedBucketProvider = namedBucketProvider;
-        _namedCollectionProvider = namedCollectionProvider;
+        _couchbaseDbContextOptionsBuilder = couchbaseDbContextOptionsBuilder;
     }
 
     protected override Expression VisitSqlConstant(SqlConstantExpression sqlConstantExpression)
@@ -120,8 +119,6 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
 
                     GenerateList(dedupedProjections.Values.ToList(), e => Visit(e));
                 }
-
-
                 // GenerateList(selectExpression.Projection, e => Visit(e));
             }
             else
@@ -203,12 +200,12 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
         //format of `bucket`.`scope`.`collection`. TableExpression is sealed and not injectable AFAIK.
 
         var keyspaceBuilder = new StringBuilder();
-        keyspaceBuilder.Append(_namedBucketProvider.BucketName.EscapeIfRequired()).Append('.');
+        keyspaceBuilder.Append(_couchbaseDbContextOptionsBuilder.Bucket.EscapeIfRequired()).Append('.');
 
         //Add the Scope name if the table name does not have one
-        if (!tableExpression.Name.Contains('.') && !string.IsNullOrEmpty(_namedCollectionProvider.ScopeName))
+        if (!tableExpression.Name.Contains('.') && !string.IsNullOrEmpty(_couchbaseDbContextOptionsBuilder.Scope))
         {
-            keyspaceBuilder.Append(_namedCollectionProvider.ScopeName.EscapeIfRequired()).Append('.');
+            keyspaceBuilder.Append(_couchbaseDbContextOptionsBuilder.Scope.EscapeIfRequired()).Append('.');
             keyspaceBuilder.Append(tableExpression.Name.EscapeIfRequired());
         }
         else

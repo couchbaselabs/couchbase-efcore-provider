@@ -14,9 +14,9 @@ public class SessionContext : DbContext
     {
         _options = options;
     }
-    
+
     public DbSet<Session> Sessions { get; set; }
-    
+
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
         var loggerFactory = LoggerFactory.Create(builder =>
@@ -35,7 +35,7 @@ public class SessionContext : DbContext
             });
         //optionsBuilder.UseCamelCaseNamingConvention();
     }
-    
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);

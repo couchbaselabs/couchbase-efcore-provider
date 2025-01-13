@@ -257,7 +257,7 @@ public class QueryTests
     public async Task Test_FromSqlRaw()
     {
         var context = new BloggingContext();
-        string query = "SELECT p.* FROM `Blogging`.`MyBlog`.`Person` as p WHERE PersonId={0}";
+        string query = "SELECT p.* FROM `Content`.`Blogs`.`Person` as p WHERE PersonId={0}";
         var person = await context.Set<Person>()
             .FromSqlRaw(query, 1)
             .FirstOrDefaultAsync();

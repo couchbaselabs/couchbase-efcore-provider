@@ -26,7 +26,7 @@ namespace Couchbase.EntityFrameworkCore.Extensions;
 
 public static class CouchbaseServiceCollectionExtensions
 {
-    public static IServiceCollection AddCouchbase<TContext, TNamedBucketProvider>(
+    /*public static IServiceCollection AddCouchbase<TContext, TNamedBucketProvider>(
         this IServiceCollection serviceCollection,
         ClusterOptions clusterOptions,
         Action<ICouchbaseDbContextOptionsBuilder>? couchbaseOptionsAction = null,
@@ -36,7 +36,7 @@ public static class CouchbaseServiceCollectionExtensions
         {
             optionsAction?.Invoke(options);
             options.UseCouchbase<TNamedBucketProvider>(clusterOptions, couchbaseOptionsAction);
-        });
+        });*/
 
     public static IServiceCollection AddEntityFrameworkCouchbaseProvider<TNamedBucketProvider>(this IServiceCollection serviceCollection,
         CouchbaseOptionsExtension<TNamedBucketProvider> optionsExtension) where TNamedBucketProvider : class, INamedBucketProvider
@@ -47,14 +47,12 @@ public static class CouchbaseServiceCollectionExtensions
             options.WithCredentials(optionsExtension.ClusterOptions.UserName, optionsExtension.ClusterOptions.Password);
         });
 
-        serviceCollection.AddCouchbaseBucket<TNamedBucketProvider>(optionsExtension.DbContextOptionsBuilder.Bucket,
-            builder =>
-            {
-                //The default scope is replaced with the mapped entity name
-                builder
-                    .AddScope(optionsExtension.DbContextOptionsBuilder.Scope)
-                    .AddCollection<INamedCollectionProvider>("_default");
-            });
+        serviceCollection.AddKeyedCouchbase(optionsExtension.DbContextOptionsBuilder.ConnectionString, options =>
+        {
+            options.WithLogging(optionsExtension.DbContextOptionsBuilder.ClusterOptions.Logging);
+            options.WithConnectionString(optionsExtension.DbContextOptionsBuilder.ConnectionString);
+            options.WithCredentials(optionsExtension.ClusterOptions.UserName, optionsExtension.ClusterOptions.Password);
+        });
 
         serviceCollection.AddLogging(); //this should be injectable from the app side
 
@@ -85,6 +83,8 @@ public static class CouchbaseServiceCollectionExtensions
                 //.TryAddScoped<QueryContext, RelationalQueryContext>()
                 .TryAddScoped<ICouchbaseClientWrapper, CouchbaseClientWrapper>()
                 .TryAddScoped<IRelationalCommandBuilder, RelationalCommandBuilder>()
+                .TryAddScoped<ICouchbaseDbContextOptionsBuilder,
+                    CouchbaseDbContextOptionsBuilder>(b=>optionsExtension.DbContextOptionsBuilder)
             );
 
         builder.TryAddCoreServices();
