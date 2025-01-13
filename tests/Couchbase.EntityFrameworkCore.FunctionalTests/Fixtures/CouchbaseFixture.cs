@@ -15,7 +15,7 @@ public class CouchbaseFixture : IAsyncLifetime
     private bool _created;
 
     public TravelSampleDbContext? TravelSampleContext { get; private set; }
-
+    
     public BloggingContext BloggingContext { get; private set; }
 
     public Task InitializeAsync()
@@ -31,7 +31,7 @@ public class CouchbaseFixture : IAsyncLifetime
             .WithCredentials("Administrator", "password")
             .WithLogging(loggerFactory)
             .WithBuckets("default");
-
+        
         TravelSampleContext = new TravelSampleDbContext(options);
         BloggingContext = new BloggingContext();
         return Task.CompletedTask;
@@ -171,11 +171,12 @@ public class CouchbaseFixture : IAsyncLifetime
                 new PostTag { PostTagId = 5, PostId = 4, TagId = "opinion" },
                 new PostTag { PostTagId = 6, PostId = 4, TagId = "informative" }
             };
-
+            
             var context = TravelSampleContext;
             await context.AddRangeAsync(blogs);
             await context.AddRangeAsync(posts);
             await context.AddRangeAsync(persons);
+
             await context.AddRangeAsync(personPhotos);
             await context.AddRangeAsync(tags);
             await context.AddRangeAsync(postTags);

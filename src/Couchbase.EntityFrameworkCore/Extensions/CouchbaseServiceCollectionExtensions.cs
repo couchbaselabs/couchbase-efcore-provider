@@ -84,6 +84,5 @@ public static class CouchbaseServiceCollectionExtensions
             .AddScoped<IRelationalDatabaseCreator, CouchbaseDatabaseCreator>();
 
         return serviceCollection;
-
     }
 }

@@ -322,8 +322,8 @@ public class CrudTests
 
             var blog = context.Blogs.First();
             blog.Posts = context.Posts.Where(x => x.BlogId == blog.BlogId).ToList();
-            var post = new Post { Title = "Intro to EF Core", PostId = 11};
 
+            var post = new Post { Title = "Intro to EF Core", PostId = 11};
             blog.Posts.Add(post);
             context.SaveChanges();
 
