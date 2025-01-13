@@ -33,7 +33,6 @@ public class ContosoFixture : IAsyncLifetime
 
     public Task DisposeAsync()
     {
-       // throw new NotImplementedException();
        return Task.CompletedTask;
     }
 }

@@ -14,9 +14,9 @@ public class SessionContext : DbContext
     {
         _options = options;
     }
-    
+
     public DbSet<Session> Sessions { get; set; }
-    
+
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
         var loggerFactory = LoggerFactory.Create(builder =>
@@ -27,7 +27,7 @@ public class SessionContext : DbContext
 
         base.OnConfiguring(optionsBuilder);
         optionsBuilder.UseLoggerFactory(loggerFactory);
-        optionsBuilder.UseCouchbase<INamedBucketProvider>(_options,
+        optionsBuilder.UseCouchbase(_options,
             couchbaseDbContextOptions =>
             {
                 couchbaseDbContextOptions.Bucket = "default";
@@ -35,11 +35,10 @@ public class SessionContext : DbContext
             });
         //optionsBuilder.UseCamelCaseNamingConvention();
     }
-    
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
         modelBuilder.Entity<Session>().ToCouchbaseCollection("session");
     }
 }
-public interface IDefaultNamedBucketProvider : INamedBucketProvider;

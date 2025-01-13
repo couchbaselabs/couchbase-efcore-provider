@@ -8,26 +8,24 @@ using Couchbase.Extensions.DependencyInjection;
 
 namespace Couchbase.EntityFrameworkCore.Infrastructure.Internal;
 
-//TODO potentially implement IDbContextOptionsExtension instead of deriving from RelationalOptionsExtension
-public class CouchbaseOptionsExtension<TNamedBucketProvider> : RelationalOptionsExtension where TNamedBucketProvider : class, INamedBucketProvider
+public class CouchbaseOptionsExtension: RelationalOptionsExtension
 {
-    private readonly ClusterOptions _clusterOptions;
     private readonly CouchbaseDbContextOptionsBuilder _couchbaseDbContextOptionsBuilder;
     private CouchbaseOptionsExtensionInfo? _info;
 
-    public CouchbaseOptionsExtension(ClusterOptions clusterOptions, CouchbaseDbContextOptionsBuilder couchbaseDbContextOptionsBuilder)
+    public CouchbaseOptionsExtension(CouchbaseDbContextOptionsBuilder couchbaseDbContextOptionsBuilder)
     {
-        _clusterOptions = clusterOptions;
         _couchbaseDbContextOptionsBuilder = couchbaseDbContextOptionsBuilder;
     }
-    protected internal CouchbaseOptionsExtension(CouchbaseOptionsExtension<TNamedBucketProvider> copyFrom)
+    protected internal CouchbaseOptionsExtension(CouchbaseOptionsExtension copyFrom)
         : base(copyFrom)
     {
+        _couchbaseDbContextOptionsBuilder = copyFrom.CouchbaseDbContextOptionsBuilder;
     }
 
-    public ClusterOptions ClusterOptions => _clusterOptions;
+    public CouchbaseDbContextOptionsBuilder? CouchbaseDbContextOptionsBuilder => _couchbaseDbContextOptionsBuilder;
 
-    public override string? ConnectionString => _clusterOptions.ConnectionString;
+    public override string? ConnectionString => _couchbaseDbContextOptionsBuilder.ConnectionString;
 
     public override DbContextOptionsExtensionInfo Info => _info ??= new CouchbaseOptionsExtensionInfo(this);
 
@@ -35,24 +33,33 @@ public class CouchbaseOptionsExtension<TNamedBucketProvider> : RelationalOptions
 
     public override void ApplyServices(IServiceCollection services)
     {
+        services.AddCouchbase(options =>
+        {
+            options.WithConnectionString(_couchbaseDbContextOptionsBuilder.ClusterOptions.ConnectionString);
+            options.WithCredentials(_couchbaseDbContextOptionsBuilder.ClusterOptions.UserName, _couchbaseDbContextOptionsBuilder.ClusterOptions.Password);
+        });
+
+        services.AddKeyedCouchbase(_couchbaseDbContextOptionsBuilder.ConnectionString, options =>
+        {
+            options.WithLogging(_couchbaseDbContextOptionsBuilder.ClusterOptions.Logging);
+            options.WithConnectionString(_couchbaseDbContextOptionsBuilder.ClusterOptions.ConnectionString);
+            options.WithCredentials(_couchbaseDbContextOptionsBuilder.ClusterOptions.UserName, _couchbaseDbContextOptionsBuilder.ClusterOptions.Password);
+        });
+
         services.AddEntityFrameworkCouchbaseProvider(this);
     }
-
-    private TNamedBucketProvider BucketProvider;
     
     public override void Validate(IDbContextOptions options)
     {
         // You can add any validation logic here, if necessary.
     }
 
-    protected override RelationalOptionsExtension Clone() => new CouchbaseOptionsExtension<TNamedBucketProvider>(this);
+    protected override RelationalOptionsExtension Clone() => new CouchbaseOptionsExtension(this);
 
 
     public class CouchbaseOptionsExtensionInfo : DbContextOptionsExtensionInfo
     {
-        private readonly ClusterOptions _clusterOptions;
-
-        public CouchbaseOptionsExtensionInfo(CouchbaseOptionsExtension<TNamedBucketProvider> extension)
+        public CouchbaseOptionsExtensionInfo(CouchbaseOptionsExtension extension)
             : base(extension)
         {
         }
@@ -70,7 +77,7 @@ public class CouchbaseOptionsExtension<TNamedBucketProvider> : RelationalOptions
             debugInfo["Couchbase:ConnectionString"] = ConnectionString;
         }
 
-        public override CouchbaseOptionsExtension<TNamedBucketProvider> Extension => (CouchbaseOptionsExtension<TNamedBucketProvider>)base.Extension;
+        public override CouchbaseOptionsExtension Extension => (CouchbaseOptionsExtension)base.Extension;
         private string? ConnectionString => Extension.Connection == null ?
             Extension.ConnectionString :
             Extension.Connection.ConnectionString;

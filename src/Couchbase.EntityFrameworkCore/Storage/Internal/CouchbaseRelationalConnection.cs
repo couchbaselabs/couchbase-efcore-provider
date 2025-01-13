@@ -1,4 +1,5 @@
 using System.Data.Common;
+using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.EntityFrameworkCore.Infrastructure.Internal;
 using Couchbase.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
@@ -14,7 +15,8 @@ public class CouchbaseRelationalConnection : RelationalConnection, ICouchbaseCon
     private IDbContextTransaction? _currentTransaction1;
     private IRelationalCommand _relationalCommand;
     private readonly IRelationalCommandBuilder _relationalCommandBuilder;
-    private readonly IClusterProvider _clusterProvider;
+    private readonly IServiceProvider _serviceProvider;
+    private readonly ICouchbaseDbContextOptionsBuilder _couchbaseDbContextOptionsBuilder;
     private readonly RelationalConnectionDependencies _dependencies;
     private IDiagnosticsLogger<DbLoggerCategory.Infrastructure> _logger;
     private string _connectionString;
@@ -51,18 +53,23 @@ public class CouchbaseRelationalConnection : RelationalConnection, ICouchbaseCon
              }
      */
 
-    public CouchbaseRelationalConnection(RelationalConnectionDependencies dependencies, IDiagnosticsLogger<DbLoggerCategory.Infrastructure> logger, IRelationalCommandBuilder relationalCommandBuilder, IClusterProvider clusterProvider) : base(dependencies)
+    public CouchbaseRelationalConnection(RelationalConnectionDependencies dependencies,
+        IDiagnosticsLogger<DbLoggerCategory.Infrastructure> logger,
+        IRelationalCommandBuilder relationalCommandBuilder,
+        IServiceProvider serviceProvider,
+        ICouchbaseDbContextOptionsBuilder couchbaseDbContextOptionsBuilder) : base(dependencies)
     {
         _dependencies = dependencies;
         _logger = logger;
         _relationalCommandBuilder = relationalCommandBuilder;
-        _clusterProvider = clusterProvider;
+        _serviceProvider = serviceProvider;
+        _couchbaseDbContextOptionsBuilder = couchbaseDbContextOptionsBuilder;
 
-        var optionsExtension = dependencies.ContextOptions.Extensions.OfType<CouchbaseOptionsExtension<INamedBucketProvider>>().FirstOrDefault();
+        var optionsExtension = dependencies.ContextOptions.Extensions.OfType<CouchbaseOptionsExtension>().FirstOrDefault();
         if (optionsExtension != null)
         {
             _connectionString = optionsExtension.ConnectionString;
-            _clusterOptions = optionsExtension.ClusterOptions;
+            _clusterOptions = optionsExtension.DbContextOptionsBuilder.ClusterOptions;
 
             var relationalOptions = RelationalOptionsExtension.Extract(dependencies.ContextOptions);
             if (relationalOptions.Connection != null)
@@ -74,6 +81,6 @@ public class CouchbaseRelationalConnection : RelationalConnection, ICouchbaseCon
 
     protected override DbConnection CreateDbConnection()
     {
-        return new CouchbaseConnection(ConnectionString, _clusterOptions, _clusterProvider);
+        return new CouchbaseConnection(_serviceProvider, _couchbaseDbContextOptionsBuilder);
     }
 }

@@ -1,22 +1,22 @@
 using System.Collections.Concurrent;
 using System.Data;
 using System.Data.Common;
+using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Couchbase.EntityFrameworkCore.Storage.Internal;
 
 public class CouchbaseConnection :  DbConnection
 {
-    private readonly IClusterProvider _clusterProvider;
+    private readonly IServiceProvider _serviceProvider;
+    private readonly ICouchbaseDbContextOptionsBuilder _couchbaseDbContextOptionsBuilder;
     private static ConcurrentDictionary<string, ICluster> _clusters = new();
-    private string _connectionString;
-    private readonly ClusterOptions _clusterOptions;
 
-    public CouchbaseConnection(string connectionString, ClusterOptions clusterOptions, IClusterProvider clusterProvider)
+    public CouchbaseConnection(IServiceProvider serviceProvider, ICouchbaseDbContextOptionsBuilder couchbaseDbContextOptionsBuilder)
     {
-        _connectionString = connectionString;
-        _clusterOptions = clusterOptions;
-        _clusterProvider = clusterProvider;
+        _serviceProvider = serviceProvider;
+        _couchbaseDbContextOptionsBuilder = couchbaseDbContextOptionsBuilder;
     }
     
     protected override DbTransaction BeginDbTransaction(IsolationLevel isolationLevel)
@@ -40,14 +40,16 @@ public class CouchbaseConnection :  DbConnection
             return;
         }
 
-        var cluster = _clusterProvider.GetClusterAsync().GetAwaiter().GetResult();
+        var bucketProvider = _serviceProvider.GetRequiredKeyedService<IBucketProvider>(_couchbaseDbContextOptionsBuilder.ConnectionString);
+        var bucket = bucketProvider.GetBucketAsync(_couchbaseDbContextOptionsBuilder.Bucket).GetAwaiter().GetResult();
+        var cluster = bucket.Cluster;
         _clusters.TryAdd(ConnectionString, cluster);
     }
 
     public override string ConnectionString
     {
-        get => _connectionString;
-        set => _connectionString = value;
+        get => _couchbaseDbContextOptionsBuilder.ConnectionString;
+        set => throw new NotSupportedException();
     }
 
     public override string Database { get; }
@@ -57,7 +59,13 @@ public class CouchbaseConnection :  DbConnection
 
     protected override DbCommand CreateDbCommand()
     {
-        var cluster = _clusters.GetOrAdd(ConnectionString, s => _clusterProvider.GetClusterAsync().GetAwaiter().GetResult());
+        var cluster = _clusters.GetOrAdd(ConnectionString, s =>
+        {
+            var bucketProvider = _serviceProvider.GetRequiredKeyedService<IBucketProvider>(_couchbaseDbContextOptionsBuilder.ConnectionString);
+            var bucket = bucketProvider.GetBucketAsync(_couchbaseDbContextOptionsBuilder.Bucket).GetAwaiter().GetResult();
+            return bucket.Cluster;
+        });
+
         return new CouchbaseCommand
         {
             Connection = this,

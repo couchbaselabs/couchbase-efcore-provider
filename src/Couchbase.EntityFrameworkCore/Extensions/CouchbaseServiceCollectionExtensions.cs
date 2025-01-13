@@ -26,42 +26,27 @@ namespace Couchbase.EntityFrameworkCore.Extensions;
 
 public static class CouchbaseServiceCollectionExtensions
 {
-    public static IServiceCollection AddCouchbase<TContext, TNamedBucketProvider>(
+    public static IServiceCollection AddCouchbase<TContext>(
         this IServiceCollection serviceCollection,
         ClusterOptions clusterOptions,
         Action<ICouchbaseDbContextOptionsBuilder>? couchbaseOptionsAction = null,
-        Action<DbContextOptionsBuilder>? optionsAction = null) where TNamedBucketProvider : class, INamedBucketProvider
+        Action<DbContextOptionsBuilder>? optionsAction = null)
         where TContext : DbContext
         => serviceCollection.AddDbContext<TContext>((_, options) =>
         {
             optionsAction?.Invoke(options);
-            options.UseCouchbase<TNamedBucketProvider>(clusterOptions, couchbaseOptionsAction);
+            options.UseCouchbase(clusterOptions, couchbaseOptionsAction);
         });
 
-    public static IServiceCollection AddEntityFrameworkCouchbaseProvider<TNamedBucketProvider>(this IServiceCollection serviceCollection,
-        CouchbaseOptionsExtension<TNamedBucketProvider> optionsExtension) where TNamedBucketProvider : class, INamedBucketProvider
+    public static IServiceCollection AddEntityFrameworkCouchbaseProvider(this IServiceCollection serviceCollection,
+        CouchbaseOptionsExtension optionsExtension)
     {
-       serviceCollection.AddCouchbase(options =>
-        {
-            options.WithConnectionString(optionsExtension.ClusterOptions.ConnectionString);
-            options.WithCredentials(optionsExtension.ClusterOptions.UserName, optionsExtension.ClusterOptions.Password);
-        });
-
-        serviceCollection.AddCouchbaseBucket<TNamedBucketProvider>(optionsExtension.DbContextOptionsBuilder.Bucket,
-            builder =>
-            {
-                //The default scope is replaced with the mapped entity name
-                builder
-                    .AddScope(optionsExtension.DbContextOptionsBuilder.Scope)
-                    .AddCollection<INamedCollectionProvider>("_default");
-            });
-
         serviceCollection.AddLogging(); //this should be injectable from the app side
 
         var builder = new EntityFrameworkRelationalServicesBuilder(serviceCollection)
             .TryAdd<IRelationalTypeMappingSource, CouchbaseTypeMappingSource>()
             .TryAdd<IDatabase, CouchbaseDatabaseWrapper>()
-            .TryAdd<IDatabaseProvider, DatabaseProvider<CouchbaseOptionsExtension<TNamedBucketProvider>>>()
+            .TryAdd<IDatabaseProvider, DatabaseProvider<CouchbaseOptionsExtension>>()
             .TryAdd<LoggingDefinitions, CouchbaseLoggingDefinitions>()
             .TryAdd<IModificationCommandBatchFactory, CouchbaseModificationCommandBatchFactory>()
             .TryAdd<IUpdateSqlGenerator, CouchbaseUpdateSqlGenerator>()
@@ -85,6 +70,8 @@ public static class CouchbaseServiceCollectionExtensions
                 //.TryAddScoped<QueryContext, RelationalQueryContext>()
                 .TryAddScoped<ICouchbaseClientWrapper, CouchbaseClientWrapper>()
                 .TryAddScoped<IRelationalCommandBuilder, RelationalCommandBuilder>()
+                .TryAddScoped<ICouchbaseDbContextOptionsBuilder,
+                    CouchbaseDbContextOptionsBuilder>(b=>optionsExtension.DbContextOptionsBuilder)
             );
 
         builder.TryAddCoreServices();

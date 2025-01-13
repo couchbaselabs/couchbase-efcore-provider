@@ -1,3 +1,4 @@
+using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Query;
@@ -11,18 +12,21 @@ public class CouchbaseShapedQueryCompilingExpressionVisitorFactory : IShapedQuer
     private readonly ShapedQueryCompilingExpressionVisitorDependencies _dependencies;
     private readonly RelationalShapedQueryCompilingExpressionVisitorDependencies _relationalDependencies;
     private readonly IQuerySqlGeneratorFactory _querySqlGeneratorFactory;
-    private readonly IClusterProvider _clusterProvider;
+    private readonly IServiceProvider _serviceProvider;
+    private readonly ICouchbaseDbContextOptionsBuilder _couchbaseDbContextOptionsBuilder;
 
     public CouchbaseShapedQueryCompilingExpressionVisitorFactory(
         ShapedQueryCompilingExpressionVisitorDependencies dependencies, 
         RelationalShapedQueryCompilingExpressionVisitorDependencies relationalDependencies,
         IQuerySqlGeneratorFactory querySqlGeneratorFactory,
-        IClusterProvider clusterProvider)
+        IServiceProvider clusterProvider, 
+        ICouchbaseDbContextOptionsBuilder couchbaseDbContextOptionsBuilder)
     {
         _dependencies = dependencies;
         _relationalDependencies = relationalDependencies;
         _querySqlGeneratorFactory = querySqlGeneratorFactory;
-        _clusterProvider = clusterProvider;
+        _serviceProvider = clusterProvider;
+        _couchbaseDbContextOptionsBuilder = couchbaseDbContextOptionsBuilder;
     }
     
     public ShapedQueryCompilingExpressionVisitor Create(QueryCompilationContext queryCompilationContext)
@@ -33,6 +37,7 @@ public class CouchbaseShapedQueryCompilingExpressionVisitorFactory : IShapedQuer
             _relationalDependencies, 
             queryCompilationContext, 
             _querySqlGeneratorFactory.Create(),
-            _clusterProvider);
+            _serviceProvider,
+            _couchbaseDbContextOptionsBuilder);
     }
 }
