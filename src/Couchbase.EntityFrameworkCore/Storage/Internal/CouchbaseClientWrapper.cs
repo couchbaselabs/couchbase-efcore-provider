@@ -89,7 +89,7 @@ public class CouchbaseClientWrapper : ICouchbaseClientWrapper
         {
             var bucketProvider = _serviceProvider.GetRequiredKeyedService<IBucketProvider>(_couchbaseDbContextOptionsBuilder
                 .ConnectionString);
-
+            
             _bucket ??= await bucketProvider.GetBucketAsync(_couchbaseDbContextOptionsBuilder.Bucket).ConfigureAwait(false);
         }
         catch (Exception e)

@@ -26,22 +26,12 @@ namespace Couchbase.EntityFrameworkCore.Extensions;
 
 public static class CouchbaseServiceCollectionExtensions
 {
-    /*public static IServiceCollection AddCouchbase<TContext, TNamedBucketProvider>(
-        this IServiceCollection serviceCollection,
-        ClusterOptions clusterOptions,
-        Action<ICouchbaseDbContextOptionsBuilder>? couchbaseOptionsAction = null,
-        Action<DbContextOptionsBuilder>? optionsAction = null) where TNamedBucketProvider : class, INamedBucketProvider
-        where TContext : DbContext
-        => serviceCollection.AddDbContext<TContext>((_, options) =>
-        {
-            optionsAction?.Invoke(options);
-            options.UseCouchbase<TNamedBucketProvider>(clusterOptions, couchbaseOptionsAction);
-        });*/
-
     public static IServiceCollection AddEntityFrameworkCouchbaseProvider<TNamedBucketProvider>(this IServiceCollection serviceCollection,
         CouchbaseOptionsExtension<TNamedBucketProvider> optionsExtension) where TNamedBucketProvider : class, INamedBucketProvider
     {
-       serviceCollection.AddCouchbase(options =>
+        //TODO use optionsExtension.ClusterOptions or optionsExtensions.DbContextOptionsBuilder not both. Why are we using both?
+        //https://jira.issues.couchbase.com/browse/NCBC-3925
+        serviceCollection.AddCouchbase(options =>
         {
             options.WithConnectionString(optionsExtension.ClusterOptions.ConnectionString);
             options.WithCredentials(optionsExtension.ClusterOptions.UserName, optionsExtension.ClusterOptions.Password);

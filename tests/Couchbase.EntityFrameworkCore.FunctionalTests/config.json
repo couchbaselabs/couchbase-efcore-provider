@@ -1,0 +1,11 @@
+{
+  "Test": {
+    "Cosmos": {
+      "DefaultConnection": "couchbase://localhost:8091",
+      "Password": "password",
+      "Username" : "Administrator",
+      "BucketName" : "default",
+      "Scope" : "Northwind"
+    }
+  }
+}
