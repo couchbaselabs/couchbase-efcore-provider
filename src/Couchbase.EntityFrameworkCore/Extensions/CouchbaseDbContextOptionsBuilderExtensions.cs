@@ -9,10 +9,28 @@ namespace Couchbase.EntityFrameworkCore.Extensions;
 
 public static class CouchbaseDbContextOptionsBuilderExtensions
 {
-    public static DbContextOptionsBuilder UseCouchbaseProvider<TNamedBucketProvider>(
+    public static DbContextOptionsBuilder UseCouchbaseProvider(
+        this CouchbaseDbContextOptionsBuilder couchbaseDbContextOptions,
+        ClusterOptions clusterOptions,
+        Action<CouchbaseDbContextOptionsBuilder>? couchbaseOptionsAction = null)
+    {
+        ArgumentNullException.ThrowIfNull(couchbaseDbContextOptions);
+
+        var couchbaseDbContextOptionsBuilder = new CouchbaseDbContextOptionsBuilder(couchbaseDbContextOptions.OptionsBuilder, clusterOptions);
+        couchbaseOptionsAction?.Invoke(couchbaseDbContextOptionsBuilder);
+
+        var extension = GetOrCreateExtension(couchbaseDbContextOptions.OptionsBuilder, clusterOptions, couchbaseDbContextOptionsBuilder);
+
+        ((IDbContextOptionsBuilderInfrastructure)couchbaseDbContextOptions).AddOrUpdateExtension(extension);
+        ConfigureWarnings(couchbaseDbContextOptions.OptionsBuilder);
+
+        return couchbaseDbContextOptions.OptionsBuilder;
+    }
+
+    public static DbContextOptionsBuilder UseCouchbaseProvider(
         this DbContextOptionsBuilder optionsBuilder,
         ClusterOptions clusterOptions,
-        Action<CouchbaseDbContextOptionsBuilder>? couchbaseOptionsAction = null) where TNamedBucketProvider : class, INamedBucketProvider
+        Action<CouchbaseDbContextOptionsBuilder>? couchbaseOptionsAction = null)
     {
         ArgumentNullException.ThrowIfNull(optionsBuilder);
 

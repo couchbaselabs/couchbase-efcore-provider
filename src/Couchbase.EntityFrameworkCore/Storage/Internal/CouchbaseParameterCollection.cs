@@ -6,7 +6,17 @@ namespace Couchbase.EntityFrameworkCore.Storage.Internal;
 public class CouchbaseParameterCollection : DbParameterCollection
 {
     private readonly List<CouchbaseParameter> _parameters = new();
-    
+
+    public virtual CouchbaseParameter AddWithValue(string? parameterName, object? value)
+        => Add(new CouchbaseParameter(parameterName, value));
+
+    public virtual CouchbaseParameter Add(CouchbaseParameter value)
+    {
+        _parameters.Add(value);
+
+        return value;
+    }
+
     public override int Add(object value)
     {
         throw new NotImplementedException();

@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+using Couchbase.Core.Exceptions;
 using Couchbase.Core.IO.Transcoders;
 using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.Extensions.DependencyInjection;
@@ -15,6 +17,8 @@ public class CouchbaseClientWrapper : ICouchbaseClientWrapper
     private readonly IServiceProvider _serviceProvider;
     private readonly ICouchbaseDbContextOptionsBuilder _couchbaseDbContextOptionsBuilder;
     private readonly ILogger<CouchbaseClientWrapper> _logger;
+    private readonly ConcurrentDictionary<string, ICouchbaseCollection> _collectionCache = new();
+    private readonly SemaphoreSlim _semaphore = new(1);
 
     public CouchbaseClientWrapper(IServiceProvider serviceProvider,
         ICouchbaseDbContextOptionsBuilder couchbaseDbContextOptionsBuilder, ILogger<CouchbaseClientWrapper> logger)
@@ -26,7 +30,7 @@ public class CouchbaseClientWrapper : ICouchbaseClientWrapper
 
     public string BucketName => _couchbaseDbContextOptionsBuilder.Bucket;
 
-    public async Task<bool> DeleteDocument(string id, (string? scope, string? collection) keyspace)
+    public async Task<bool> DeleteDocument(string id, string keyspace)
     {
         bool success;
         try
@@ -45,7 +49,7 @@ public class CouchbaseClientWrapper : ICouchbaseClientWrapper
         return success;
     }
 
-    public async Task<bool> CreateDocument<TEntity>(string id, (string? scope, string? collection) keyspace, TEntity entity)
+    public async Task<bool> CreateDocument<TEntity>(string id, string keyspace, TEntity entity)
     {
         bool success;
         try
@@ -64,7 +68,7 @@ public class CouchbaseClientWrapper : ICouchbaseClientWrapper
         return success;
     }
 
-    public async Task<bool> UpdateDocument<TEntity>(string id, (string? scope, string? collection) keyspace, TEntity entity)
+    public async Task<bool> UpdateDocument<TEntity>(string id, string keyspace, TEntity entity)
     {
         bool success;
         try
@@ -83,20 +87,33 @@ public class CouchbaseClientWrapper : ICouchbaseClientWrapper
         return success;
     }
 
-    private async Task<ICouchbaseCollection> GetCollection((string? scope, string? collection) keyspace)
+    private async Task<ICouchbaseCollection> GetCollection(string keyspace)
     {
+        if(_collectionCache.TryGetValue(keyspace, out var collection)) return collection;
+        
+        await _semaphore.WaitAsync().ConfigureAwait(false);
         try
         {
-            var clusterProvider = _serviceProvider.GetRequiredKeyedService<IClusterProvider>(_couchbaseDbContextOptionsBuilder.ClusterOptions.ConnectionString);
+            var clusterProvider =
+                _serviceProvider.GetRequiredKeyedService<IClusterProvider>(_couchbaseDbContextOptionsBuilder
+                    .ClusterOptions.ConnectionString);
             var cluster = await clusterProvider.GetClusterAsync().ConfigureAwait(false);
             _bucket = await cluster.BucketAsync(_couchbaseDbContextOptionsBuilder.Bucket);
+
+            var splitKeyspace = keyspace.Split('.');
+            collection = _bucket.Scope(splitKeyspace[1]).Collection(splitKeyspace[2]);
+            
+            _collectionCache.TryAdd(keyspace, collection);
+            return collection;
         }
         catch (Exception e)
         {
-           _logger.LogError(e, "Bucket {BucketName} not found!", _couchbaseDbContextOptionsBuilder.Bucket);
+            _logger.LogError(e, $"Could not find collection for keypace {keyspace}");
+            throw new CollectionNotFoundException($"Could not find collection for keypace {keyspace}", e);
         }
-
-        // ReSharper disable once MethodHasAsyncOverload
-        return _bucket.Scope(keyspace.scope).Collection(keyspace.collection);
+        finally
+        {
+            _semaphore.Release();
+        }
     }
 }

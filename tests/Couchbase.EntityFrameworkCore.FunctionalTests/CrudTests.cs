@@ -1,6 +1,7 @@
 using ContosoUniversity.Models;
 using Couchbase.Core.IO.Operations;
 using Couchbase.Core.IO.Transcoders;
+using Couchbase.EntityFrameworkCore.Extensions;
 using Couchbase.EntityFrameworkCore.FunctionalTests.Fixtures;
 using Couchbase.EntityFrameworkCore.FunctionalTests.Models;
 using Microsoft.EntityFrameworkCore;

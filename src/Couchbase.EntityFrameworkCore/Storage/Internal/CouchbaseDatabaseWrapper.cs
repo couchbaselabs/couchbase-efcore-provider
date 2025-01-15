@@ -13,13 +13,9 @@ using Database = Microsoft.EntityFrameworkCore.Storage.Database;
 
 namespace Couchbase.EntityFrameworkCore.Storage.Internal;
 
-public class CouchbaseDatabaseWrapper(DatabaseDependencies dependencies, ICouchbaseClientWrapper couchbaseClient, ICouchbaseDbContextOptionsBuilder couchbaseDbContextOptionsBuilder)
+public class CouchbaseDatabaseWrapper(DatabaseDependencies dependencies, ICouchbaseClientWrapper couchbaseClient)
     : Database(dependencies)
 {
-    private readonly ConcurrentDictionary<IEntityType, (string scope, string collection)> _keyspaceCache = new ();
-
-    public string? ScopeName => couchbaseDbContextOptionsBuilder.Scope;
-
     public override int SaveChanges(IList<IUpdateEntry> entries)
     {
        return Task.Run(async () => await SaveChangesAsync(entries).ConfigureAwait(false)).Result;
@@ -37,7 +33,6 @@ public class CouchbaseDatabaseWrapper(DatabaseDependencies dependencies, ICouchb
 
             // document info
             var primaryKey = entityType.GetPrimaryKey(entity);
-            var keyspace = GetKeySpace(updateEntry);
             var document= GenerateRootJson(updateEntry);
 
             switch (updateEntry.EntityState)
@@ -47,20 +42,20 @@ public class CouchbaseDatabaseWrapper(DatabaseDependencies dependencies, ICouchb
                 case EntityState.Unchanged:
                     break;
                 case EntityState.Deleted:
-                    if (await couchbaseClient.DeleteDocument(primaryKey, keyspace).ConfigureAwait(false))
+                    if (await couchbaseClient.DeleteDocument(primaryKey, entityType.GetCollectionName()).ConfigureAwait(false))
                     {
                         updateCount++;
                     }
                     break;
                 case EntityState.Modified:
-                    if (await couchbaseClient.UpdateDocument(primaryKey, keyspace, document).ConfigureAwait(false))
+                    if (await couchbaseClient.UpdateDocument(primaryKey,  entityType.GetCollectionName(), document).ConfigureAwait(false))
                     {
                         updateCount++;
                     }
                     break;
                 case EntityState.Added:
                 {
-                    if (await couchbaseClient.CreateDocument(primaryKey, keyspace, document).ConfigureAwait(false))
+                    if (await couchbaseClient.CreateDocument(primaryKey,  entityType.GetCollectionName(), document).ConfigureAwait(false))
                     {
                         updateCount++;
                     }
@@ -164,49 +159,5 @@ public class CouchbaseDatabaseWrapper(DatabaseDependencies dependencies, ICouchb
         return null;
     }
 
-    private Type GetUnderlyingType(Type type) =>
-        Nullable.GetUnderlyingType(type) ?? type;
-
-    private bool TryGetKeyspaceFromModel(string scopeAndCollection, out string? scope, out string? collection)
-    {
-        var delimitedScopeAndCollection = scopeAndCollection.Split(".");
-        if (delimitedScopeAndCollection.Length == 2)
-        {
-            scope = delimitedScopeAndCollection[0];
-            collection = delimitedScopeAndCollection[1];
-            return true;
-        }
-
-        if (ScopeName == null || delimitedScopeAndCollection.Length == 0)
-        {
-            scope = null;
-            collection = null;
-            return false;
-        }
-        scope = ScopeName;
-        collection = delimitedScopeAndCollection[0];
-        return true;
-    }
-
-    private (string? scope, string? collection) GetKeySpace(IUpdateEntry updateEntry)
-    {
-        var entityEntry = updateEntry.ToEntityEntry();
-        var entity = entityEntry.Entity;
-        var entityType = updateEntry.EntityType;
-
-        //Check if keyspace is cached
-        if (_keyspaceCache.TryGetValue(entityType, out var keyspace))
-        {
-            return keyspace;
-        }
-
-        //Finally check the model mapping
-        if (TryGetKeyspaceFromModel(entityType.GetCollectionName(), out var scope, out var collection))
-        {
-            _keyspaceCache.TryAdd(entityType, (scope, collection));
-            return (scope, collection);
-        }
-
-        throw new KeyspaceNotFoundException(entityType.Name);
-    }
+    private Type GetUnderlyingType(Type type) => Nullable.GetUnderlyingType(type) ?? type;
 }

@@ -1,3 +1,4 @@
+using Couchbase.EntityFrameworkCore.Extensions;
 using Microsoft.EntityFrameworkCore;
 
 namespace Couchbase.EntityFrameworkCore.Infrastructure;
@@ -22,7 +23,7 @@ public class CouchbaseDbContextOptionsBuilder : ICouchbaseDbContextOptionsBuilde
     //TODO temp
     public string ConnectionString => ClusterOptions.ConnectionString! + $"?bucket={Bucket}";
 
-    private DbContextOptionsBuilder OptionsBuilder { get; }
+    public DbContextOptionsBuilder OptionsBuilder { get; }
 
     public ClusterOptions ClusterOptions { get; }
 

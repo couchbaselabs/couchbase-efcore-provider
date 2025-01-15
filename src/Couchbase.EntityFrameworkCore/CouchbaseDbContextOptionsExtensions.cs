@@ -1,4 +1,5 @@
-﻿using System.Data.Common;
+﻿using System.ComponentModel.DataAnnotations;
+using System.Data.Common;
 using Couchbase.EntityFrameworkCore.Extensions;
 using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.EntityFrameworkCore.Infrastructure.Internal;
@@ -30,6 +31,22 @@ public static class CouchbaseDbContextOptionsExtensions
     this DbContextOptionsBuilder optionsBuilder,
     string connectionString,
     Action<CouchbaseDbContextOptionsBuilder>? couchbaseActionOptions = null)
+  {
+    var clusterOptions = new ClusterOptions().WithConnectionString(connectionString);
+    var couchbaseDbContextOptionsBuilder = new CouchbaseDbContextOptionsBuilder(optionsBuilder, clusterOptions);
+    couchbaseActionOptions?.Invoke(couchbaseDbContextOptionsBuilder);
+
+    var extension = CouchbaseDbContextOptionsBuilderExtensions.GetOrCreateExtension(optionsBuilder, clusterOptions, couchbaseDbContextOptionsBuilder);
+    ((IDbContextOptionsBuilderInfrastructure) optionsBuilder).AddOrUpdateExtension(extension);
+    CouchbaseDbContextOptionsBuilderExtensions.ConfigureWarnings(optionsBuilder);
+
+    return optionsBuilder;
+  }
+  
+  public static DbContextOptionsBuilder UseCouchbase<TNamedBucketProvider>(
+    this DbContextOptionsBuilder optionsBuilder, 
+    string connectionString,
+    Action<CouchbaseDbContextOptionsBuilder>? couchbaseActionOptions = null) where TNamedBucketProvider : class, INamedBucketProvider
   {
     var clusterOptions = new ClusterOptions().WithConnectionString(connectionString);
     var couchbaseDbContextOptionsBuilder = new CouchbaseDbContextOptionsBuilder(optionsBuilder, clusterOptions);

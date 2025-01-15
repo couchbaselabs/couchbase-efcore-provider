@@ -1,9 +1,20 @@
 using Microsoft.EntityFrameworkCore.Diagnostics;
 
-namespace Couchbase.EntityFrameworkCore.Diagnostics.Internal;
+namespace ç;
 
 public class CouchbaseLoggingDefinitions : RelationalLoggingDefinitions
 {
-    //TODO implement
-    
+    public EventDefinitionBase? LogExecutingSqlQuery;
+
+    public EventDefinitionBase? LogExecutingReadItem;
+
+    public EventDefinitionBase? LogExecutedReadNext;
+
+    public EventDefinitionBase? LogExecutedReadItem;
+
+    public EventDefinitionBase? LogExecutedCreateItem;
+
+    public EventDefinitionBase? LogExecutedReplaceItem;
+
+    public EventDefinitionBase? LogExecutedDeleteItem;
 }

@@ -31,7 +31,7 @@ public class CouchbaseFixture : IAsyncLifetime
             .WithCredentials("Administrator", "password")
             .WithLogging(loggerFactory)
             .WithBuckets("default");
-        
+
         TravelSampleContext = new TravelSampleDbContext(options);
         BloggingContext = new BloggingContext();
         return Task.CompletedTask;
@@ -78,6 +78,7 @@ public class CouchbaseFixture : IAsyncLifetime
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
+            modelBuilder.ConfigureToCouchbase(this);
             modelBuilder.Entity<Airline>().HasKey(x=>new {x.Type, x.Id});//composite key mapping
         }
     }

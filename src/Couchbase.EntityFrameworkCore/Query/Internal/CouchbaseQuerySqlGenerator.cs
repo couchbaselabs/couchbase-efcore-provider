@@ -1,6 +1,9 @@
+using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Reflection.Emit;
+using System.Reflection.Metadata;
 using System.Text;
 using Couchbase.Core.Utils;
 using Couchbase.EntityFrameworkCore.Infrastructure;
@@ -16,11 +19,10 @@ namespace Couchbase.EntityFrameworkCore.Query.Internal;
 
 public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
 {
-    private readonly ICouchbaseDbContextOptionsBuilder _couchbaseDbContextOptionsBuilder;
+    private readonly ConcurrentDictionary<string, Keyspace> _tableNameCache = new();
 
-    public CouchbaseQuerySqlGenerator(QuerySqlGeneratorDependencies dependencies, ICouchbaseDbContextOptionsBuilder couchbaseDbContextOptionsBuilder) : base(dependencies)
+    public CouchbaseQuerySqlGenerator(QuerySqlGeneratorDependencies dependencies) : base(dependencies)
     {
-        _couchbaseDbContextOptionsBuilder = couchbaseDbContextOptionsBuilder;
     }
 
     protected override Expression VisitSqlConstant(SqlConstantExpression sqlConstantExpression)
@@ -37,7 +39,7 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
             Sql
                 .Append(sqlConstantExpression.TypeMapping!.GenerateSqlLiteral(sqlConstantExpression.Value)); 
         }
-        
+
         return sqlConstantExpression;
     }
 
@@ -74,7 +76,7 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
                 break;
         }
     }
-    
+
         /// <inheritdoc />
     protected override Expression VisitSelect(SelectExpression selectExpression)
     {
@@ -175,7 +177,6 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
         return selectExpression;
     }
 
-
     protected override void GenerateExists(ExistsExpression existsExpression, bool negated)
     {
         Sql.Append(" RAW ");
@@ -194,41 +195,84 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
         Sql.Append(")");
     }
 
+    private class Keyspace
+    {
+        private readonly string _originalName;
+        private readonly string _originalAlias;
+        private readonly string _alias;
+        private readonly string _name;
+
+        public Keyspace(string originalName, string originalAlias)
+        {
+            _originalName = originalName;
+            _originalAlias = originalAlias;
+
+            //first split apart the keyspace and extract the alias from the collection
+            var splitName = originalName.Split('.');
+            if(splitName.Length != 3) throw new InvalidOperationException();
+            _alias = splitName[2].FirstOrDefault().ToString();
+
+            //if the original alias has an ordinal index add it to the index
+            var splitAlias = _originalAlias.ToArray();
+            if(splitAlias.Length == 2)
+            {
+               _alias += splitAlias[1];
+            }
+
+            //next apply the delimiters into a new string: `bucket`.`scope`.`collection`
+            var keyspaceBuilder = new StringBuilder();
+            keyspaceBuilder.Append(splitName[0].EscapeIfRequired());
+            keyspaceBuilder.Append('.');
+            keyspaceBuilder.Append(splitName[1].EscapeIfRequired());
+            keyspaceBuilder.Append('.');
+            keyspaceBuilder.Append(splitName[2].EscapeIfRequired());
+            _name = keyspaceBuilder.ToString();
+        }
+
+        public string Name
+        {
+            [DebuggerStepThrough] get => _name;
+        }
+
+        public string Alias
+        {
+            [DebuggerStepThrough] get => _alias;
+        }
+    }
+
     protected override Expression VisitTable(TableExpression tableExpression)
     {
-        //Not ideal but we need to reformat the table (really the bucket+scope+collection) to a N1QL keyspace
-        //format of `bucket`.`scope`.`collection`. TableExpression is sealed and not injectable AFAIK.
+        //NOTE: TableExpression is a sealed class so cannot be overridden without
+        //bring it inside this assembly which then requires the TableExpressionBase to
+        //be moved into this assembly as Alias field is internal.
+        var keyspace = _tableNameCache.GetOrAdd(
+            tableExpression.Name, key => new Keyspace(key, tableExpression.Alias));
 
-        var keyspaceBuilder = new StringBuilder();
-        keyspaceBuilder.Append(_couchbaseDbContextOptionsBuilder.Bucket.EscapeIfRequired()).Append('.');
-
-        //Add the Scope name if the table name does not have one
-        if (!tableExpression.Name.Contains('.') && !string.IsNullOrEmpty(_couchbaseDbContextOptionsBuilder.Scope))
-        {
-            keyspaceBuilder.Append(_couchbaseDbContextOptionsBuilder.Scope.EscapeIfRequired()).Append('.');
-            keyspaceBuilder.Append(tableExpression.Name.EscapeIfRequired());
-        }
-        else
-        {
-            //its possible that both scope and collection were provided in ToCouchbaseCollection
-            var splitName = tableExpression.Name.Split('.');
-            if (splitName.Length == 2)
-            {
-                keyspaceBuilder.Append(splitName[0].EscapeIfRequired()).Append('.');
-                keyspaceBuilder.Append(splitName[1].EscapeIfRequired());
-            }
-        }
-
-        Sql.Append(keyspaceBuilder.ToString())
+        Sql.Append(keyspace.Name)
             .Append(AliasSeparator)
+            //.Append(Dependencies.SqlGenerationHelper.DelimitIdentifier(keyspace.Alias));
             .Append(Dependencies.SqlGenerationHelper.DelimitIdentifier(tableExpression.Alias));
 
         return tableExpression;
     }
+
     protected override Expression VisitColumn(ColumnExpression columnExpression)
     {
+        //NOTE: TableExpression is a sealed class so cannot be overridden without
+        //bring it inside this assembly which then requires the TableExpressionBase to
+        //be moved into this assembly as Alias field is internal.
+
+        string alias = columnExpression.TableAlias;
+       /* if (columnExpression.Table is TableExpression tableExpression)
+        {
+            tableExpression = (TableExpression)columnExpression.Table;
+            var keyspace = _tableNameCache.GetOrAdd(
+                tableExpression.Name, key => new Keyspace(key, tableExpression.Alias));
+            alias = keyspace.Alias;
+        }*/
+        
         var helper = Dependencies.SqlGenerationHelper;
-        Sql.Append(helper.DelimitIdentifier(columnExpression.TableAlias))
+        Sql.Append(helper.DelimitIdentifier(alias))
             .Append(".")
             .Append(helper.DelimitIdentifier(columnExpression.Name));
 

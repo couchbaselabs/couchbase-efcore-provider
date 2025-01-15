@@ -10,14 +10,14 @@ public class CouchbaseQuerySqlGeneratorFactory : IQuerySqlGeneratorFactory
     private readonly QuerySqlGeneratorDependencies _dependencies;
     private readonly ICouchbaseDbContextOptionsBuilder _couchbaseDbContextOptionsBuilder;
 
-    public CouchbaseQuerySqlGeneratorFactory(QuerySqlGeneratorDependencies dependencies, ICouchbaseDbContextOptionsBuilder couchbaseDbContextOptionsBuilder)
+    public CouchbaseQuerySqlGeneratorFactory(QuerySqlGeneratorDependencies dependencies/*, ICouchbaseDbContextOptionsBuilder couchbaseDbContextOptionsBuilder*/)
     {
         _dependencies = dependencies;
-        _couchbaseDbContextOptionsBuilder = couchbaseDbContextOptionsBuilder;
+        //_couchbaseDbContextOptionsBuilder = couchbaseDbContextOptionsBuilder;
     }
     
     public QuerySqlGenerator Create()
     {
-        return new CouchbaseQuerySqlGenerator(_dependencies, _couchbaseDbContextOptionsBuilder);
+        return new CouchbaseQuerySqlGenerator(_dependencies/*, _couchbaseDbContextOptionsBuilder*/);
     }
 }
