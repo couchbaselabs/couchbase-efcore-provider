@@ -3,6 +3,7 @@
 
 using System.Linq.Expressions;
 using System.Reflection;
+using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
@@ -21,12 +22,13 @@ namespace Couchbase.EntityFrameworkCore.Query.Internal;
 public partial class CouchbaseShapedQueryCompilingExpressionVisitor : ShapedQueryCompilingExpressionVisitor
 {
     private readonly QuerySqlGenerator _querySqlGenerator;
-    private readonly IClusterProvider _clusterProvider;
     private readonly Type _contextType;
     private readonly ISet<string> _tags;
     private readonly bool _threadSafetyChecksEnabled;
     private readonly bool _detailedErrorsEnabled;
     private readonly bool _useRelationalNulls;
+    private readonly IServiceProvider _serviceProvider;
+    private readonly ICouchbaseDbContextOptionsBuilder _couchbaseDbContextOptionsBuilder;
 
     /// <summary>
     ///     Creates a new instance of the <see cref="ShapedQueryCompilingExpressionVisitor" /> class.
@@ -38,12 +40,14 @@ public partial class CouchbaseShapedQueryCompilingExpressionVisitor : ShapedQuer
         ShapedQueryCompilingExpressionVisitorDependencies dependencies,
         RelationalShapedQueryCompilingExpressionVisitorDependencies relationalDependencies,
         QueryCompilationContext queryCompilationContext,
-        QuerySqlGenerator querySqlGenerator, 
-        IClusterProvider clusterProvider)
+        QuerySqlGenerator querySqlGenerator,
+        IServiceProvider serviceProvider,
+        ICouchbaseDbContextOptionsBuilder couchbaseDbContextOptionsBuilder)
         : base(dependencies, queryCompilationContext)
     {
         _querySqlGenerator = querySqlGenerator;
-        _clusterProvider = clusterProvider;
+        _serviceProvider = serviceProvider;
+        _couchbaseDbContextOptionsBuilder = couchbaseDbContextOptionsBuilder;
         RelationalDependencies = relationalDependencies;
         _contextType = queryCompilationContext.ContextType;
         _tags = queryCompilationContext.Tags;
@@ -391,6 +395,8 @@ public partial class CouchbaseShapedQueryCompilingExpressionVisitor : ShapedQuer
                 Constant(relationalCommandCache),
                 Constant(
                     QueryCompilationContext.QueryTrackingBehavior == QueryTrackingBehavior.NoTrackingWithIdentityResolution),
-                Constant(_clusterProvider));        }
+                Constant(_serviceProvider),
+                Constant(_couchbaseDbContextOptionsBuilder));
+        }
     }
 }

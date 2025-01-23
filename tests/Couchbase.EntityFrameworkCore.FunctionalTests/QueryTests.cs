@@ -22,7 +22,7 @@ public class QueryTests
     [Fact]
     public async Task Test_Select_Limit()
     {
-        var context = _couchbaseFixture.GetDbContext;
+        var context = _couchbaseFixture.TravelSampleContext;
         var results = context.Airlines.OrderBy(x => x.Id).Take(10);
         foreach (var airline in results)
         {
@@ -33,7 +33,7 @@ public class QueryTests
     [Fact]
     public void Test_Skip_And_Take()
     {
-        var context = _couchbaseFixture.GetDbContext;
+        var context = _couchbaseFixture.TravelSampleContext;
 
         var pageIndex = 0;
         var pageSize = 10;
@@ -44,14 +44,14 @@ public class QueryTests
     [Fact]
     public void Test_Count()
     {
-        var context = _couchbaseFixture.GetDbContext;
+        var context = _couchbaseFixture.TravelSampleContext;
         var count = context.Airlines.Count();
     }
 
     [Fact]
     public async Task Test_Select_Linq()
     {
-        var context = _couchbaseFixture.GetDbContext;
+        var context = _couchbaseFixture.TravelSampleContext;
         var airlines = from a in context.Airlines
             select a;
 
@@ -62,7 +62,7 @@ public class QueryTests
     [Fact]
     public async Task Test()
     {
-        var context = _couchbaseFixture.GetDbContext;
+        var context = _couchbaseFixture.TravelSampleContext;
         var airline = new Airline
         {
             Type = "airline",
@@ -90,8 +90,7 @@ public class QueryTests
               .FirstAsync();
 
         _outputHelper.WriteLine(airlines.ToString());
-            
-       // context.Remove(airline);
+        
         await context.SaveChangesAsync();
     }
 
@@ -117,7 +116,7 @@ public class QueryTests
 
         var count = await context.SaveChangesAsync();
 
-        var position = 20;
+        var position = 2;
         var nextPage = context.Sessions
             .OrderBy(s => s.Id)
             .Skip(position)
@@ -257,7 +256,7 @@ public class QueryTests
     public async Task Test_FromSqlRaw()
     {
         var context = new BloggingContext();
-        string query = "SELECT p.* FROM `Blogging`.`MyBlog`.`Person` as p WHERE PersonId={0}";
+        string query = "SELECT p.* FROM `Content`.`Blogs`.`Person` as p WHERE PersonId={0}";
         var person = await context.Set<Person>()
             .FromSqlRaw(query, 1)
             .FirstOrDefaultAsync();
@@ -267,9 +266,9 @@ public class QueryTests
     public async Task Test_FromRaw_Throws_NotImplementedException()
     {
         var context = new BloggingContext();
-        string query = "SELECT p.* FROM `Blogging`.`MyBlog`.`Person` as p WHERE PersonId={0}";
+        string query = "SELECT p.* FROM `Content`.`Blogs`.`Person` as p WHERE PersonId={0}";
         Assert.Throws<NotImplementedException>(()=>context.Blogs
-            .FromSql($"SELECT * FROM `Blogging`.`MyBlog`.`Blog`")
+            .FromSql($"SELECT * FROM `Content`.`Blogs`.`Blog`")
             .ToList());
     }
 }

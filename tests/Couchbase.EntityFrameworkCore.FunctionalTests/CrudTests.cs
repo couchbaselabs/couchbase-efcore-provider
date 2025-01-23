@@ -24,7 +24,7 @@ public class CrudTests
     [Fact]
     public async Task Test_ExecuteUpdate()
     {
-        var context = _couchbaseFixture.GetDbContext;
+        var context = _couchbaseFixture.TravelSampleContext;
         var airline1 = new Airline
         {
             Type = "airline",
@@ -35,7 +35,7 @@ public class CrudTests
             Iata = "Q5",
             Name = "40-Mile Air"
         };
-        
+
         var airline2 = new Airline
         {
             Type = "airline",
@@ -46,7 +46,7 @@ public class CrudTests
             Iata = "Q5",
             Name = "40-Mile Air"
         };
-        
+
         try
         {
             context.Add(airline1);
@@ -54,7 +54,7 @@ public class CrudTests
 
             var inserted = await context.SaveChangesAsync();
             Assert.Equal(2, inserted);
-            
+
             var count = context.Airlines.Count(a => a.Id > 665 && a.Id < 668);
             Assert.Equal(2, count);
 
@@ -73,11 +73,11 @@ public class CrudTests
             await context.SaveChangesAsync();
         }
     }
-    
+
     [Fact]
     public async Task Test_ExecuteDelete()
     {
-        var context = _couchbaseFixture.GetDbContext;
+        var context = _couchbaseFixture.TravelSampleContext;
         var airline1 = new Airline
         {
             Type = "airline",
@@ -88,7 +88,7 @@ public class CrudTests
             Iata = "Q5",
             Name = "40-Mile Air"
         };
-        
+
         var airline2 = new Airline
         {
             Type = "airline",
@@ -99,7 +99,7 @@ public class CrudTests
             Iata = "Q5",
             Name = "40-Mile Air"
         };
-        
+
         try
         {
             context.Add(airline1);
@@ -127,7 +127,7 @@ public class CrudTests
     [Fact]
     public async Task Test_ComplexObject()
     {
-        var context = _couchbaseFixture.GetDbContext;
+        var context = _couchbaseFixture.TravelSampleContext;
 
         var user = new User
         {
@@ -154,7 +154,7 @@ public class CrudTests
     [Fact]
     public async Task Test_AddAsync()
     {
-        var context = _couchbaseFixture.GetDbContext;
+        var context = _couchbaseFixture.TravelSampleContext;
         var airline = new Airline
         {
             Type = "airline",
@@ -183,7 +183,7 @@ public class CrudTests
     [Fact]
     public async Task Test_RemoveAsync()
     {
-        var context = _couchbaseFixture.GetDbContext;
+        var context = _couchbaseFixture.TravelSampleContext;
         var airline = new Airline
         {
             Type = "airline",
@@ -194,21 +194,21 @@ public class CrudTests
             Iata = "Q5",
             Name = "40-Mile Air"
         };
-        
+
         context.Add(airline);
         await context.SaveChangesAsync();
-        
+
         context.Remove(airline);
         await context.SaveChangesAsync();
-        
+
         var airline1 = await context.Airlines.FindAsync("airline", 11);
         Assert.Null(airline1);
     }
-    
+
     [Fact]
     public async Task Test_UpdateAsync()
     {
-        var context = _couchbaseFixture.GetDbContext;
+        var context = _couchbaseFixture.TravelSampleContext;
         var airline = new Airline
         {
             Type = "airline",
@@ -223,11 +223,11 @@ public class CrudTests
         {
             context.Add(airline);
             await context.SaveChangesAsync();
-            
+
             var airline1 = await context.Airlines.FindAsync("airline", 11);
             airline1.Name = "bob";
             context.Update(airline1);
-            
+
             await context.SaveChangesAsync();
             var airlineChanged = await context.Airlines.FindAsync("airline", 11);
             Assert.Equal("bob", airlineChanged.Name);
@@ -238,11 +238,11 @@ public class CrudTests
             await context.SaveChangesAsync();
         }
     }
-    
+
     [Fact]
     public async Task Test_AddAsyncAsync()
     {
-        var context = _couchbaseFixture.GetDbContext;
+        var context = _couchbaseFixture.TravelSampleContext;
         var airline = new Airline
         {
             Type = "airline",
@@ -257,7 +257,7 @@ public class CrudTests
         {
             await context.AddAsync(airline);
             await context.SaveChangesAsync();
-            
+
             var airline1 = await context.Airlines.FindAsync("airline", 11);
             Assert.Equal(airline, airline1);
         }
@@ -275,10 +275,10 @@ public class CrudTests
         {
             context.Blogs.Add(new Blog
             {
-                BlogId = 1, Url = "http://example.com"
+                BlogId = Guid.NewGuid().GetHashCode(), Url = "http://example.com"
             });
-            context.SaveChanges();
-            var blog = context.Blogs.Single(b => b.Url == "http://example.com");
+            await context.SaveChangesAsync();
+            var blog = await context.Blogs.FirstAsync(b => b.Url == "http://example.com");
             blog.Url = "http://example.com/blog";
             await context.SaveChangesAsync();
             context.Remove(blog);
@@ -293,13 +293,13 @@ public class CrudTests
         {
             var blog = new Blog
             {
-                BlogId = 1,
+                BlogId = Guid.NewGuid().GetHashCode(),
                 Url = "http://blogs.msdn.com/dotnet",
                 Posts =
                 [
-                    new() { Title = "Intro to C#", PostId = 1 },
-                    new() { Title = "Intro to VB.NET", PostId = 2 },
-                    new() { Title = "Intro to F#", PostId = 3 }
+                    new() { Title = "Intro to C#", PostId = Guid.NewGuid().GetHashCode() },
+                    new() { Title = "Intro to VB.NET", PostId = Guid.NewGuid().GetHashCode() },
+                    new() { Title = "Intro to F#", PostId = Guid.NewGuid().GetHashCode() }
                 ]
             };
 
@@ -316,11 +316,18 @@ public class CrudTests
     {
         using (var context = new BloggingContext())
         {
+            context.AddAsync(new Blog{ BlogId = 10, Url = "http://example.com" });
+            context.AddAsync(new Post { BlogId = 10, PostId = 10 });
+            await context.SaveChangesAsync();
+
             var blog = context.Blogs.First();
             blog.Posts = context.Posts.Where(x => x.BlogId == blog.BlogId).ToList();
-            var post = new Post { Title = "Intro to EF Core", PostId = 4};
+            var post = new Post { Title = "Intro to EF Core", PostId = 11};
 
             blog.Posts.Add(post);
+            context.SaveChanges();
+
+            blog.Posts.Remove(post);
             context.SaveChanges();
         }
     }
@@ -330,6 +337,9 @@ public class CrudTests
     {
         using (var context = new BloggingContext())
         {
+            context.Add(new Post { Title = "Intro to EF Core", PostId = 4, BlogId = 2 });
+            await context.SaveChangesAsync();
+
             var blog = new Blog { Url = "http://blogs.msdn.com/visualstudio", BlogId = 2};
             var post = context.Posts.First();
 
@@ -343,12 +353,27 @@ public class CrudTests
     {
         using (var context = new BloggingContext())
         {
-            var blog = context.Blogs.First();
-            blog.Posts = context.Posts.Where(x => x.BlogId == blog.BlogId).ToList();
-            var post = blog.Posts.First();
+            var blog = new Blog { Url = "http://blogs.msdn.com/visualstudio", BlogId = 2 };
+            var post = new Post { Title = "Intro to EF Core", PostId = 4, BlogId = 2 };
+            try
+            {
+                context.Add(blog);
+                await context.SaveChangesAsync();
 
-            blog.Posts.Remove(post);
-            await context.SaveChangesAsync();
+                context.Add(post);
+                await context.SaveChangesAsync();
+
+                blog = context.Blogs.First();
+                var posts = context.Posts.ToList();
+                blog.Posts = context.Posts.Where(x => x.BlogId == blog.BlogId).ToList();
+                post = blog.Posts.First();
+            }
+            finally
+            {
+
+                blog.Posts.Remove(post);
+                await context.SaveChangesAsync();
+            }
         }
     }
 }

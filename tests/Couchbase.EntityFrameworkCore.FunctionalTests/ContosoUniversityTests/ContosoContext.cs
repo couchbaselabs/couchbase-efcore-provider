@@ -28,7 +28,7 @@ public class ContosoContext : SchoolContext
 
         base.OnConfiguring(optionsBuilder);
         optionsBuilder.UseLoggerFactory(loggerFactory);
-        optionsBuilder.UseCouchbase<INamedBucketProvider>(_clusterOptions, 
+        optionsBuilder.UseCouchbase(_clusterOptions,
             couchbaseDbContextOptions =>
         {
             couchbaseDbContextOptions.Bucket = "universities";

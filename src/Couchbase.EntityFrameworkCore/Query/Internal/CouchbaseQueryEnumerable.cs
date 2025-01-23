@@ -1,4 +1,5 @@
 using System.Collections;
+using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.Extensions.DependencyInjection;
 using Couchbase.Query;
 using Microsoft.EntityFrameworkCore;
@@ -7,6 +8,7 @@ using Microsoft.EntityFrameworkCore.Query;
 using Microsoft.EntityFrameworkCore.Query.Internal;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.EntityFrameworkCore.Storage.Internal;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Couchbase.EntityFrameworkCore.Query.Internal;
 
@@ -15,23 +17,26 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>
     private readonly RelationalQueryContext _relationalQueryContext;
     private readonly RelationalCommandCache _relationalCommandCache;
     private readonly DbContext _dbContext;
-    private readonly IClusterProvider _clusterProvider;
     private readonly bool _standAloneStateManager;
-   
+    private readonly IServiceProvider _serviceProvider;
+    private readonly ICouchbaseDbContextOptionsBuilder _couchbaseDbContextOptionsBuilder;
+
     public CouchbaseQueryEnumerable(
         RelationalQueryContext relationalQueryContext, 
         RelationalCommandCache relationalCommandCache,
         bool standAloneStateManager,
-        IClusterProvider clusterProvider)
+        IServiceProvider serviceProvider,
+        ICouchbaseDbContextOptionsBuilder couchbaseDbContextOptionsBuilder)
     {
 
         _dbContext = relationalQueryContext.Context;
-        _clusterProvider = clusterProvider;
         _standAloneStateManager = standAloneStateManager;
+        _serviceProvider = serviceProvider;
+        _couchbaseDbContextOptionsBuilder = couchbaseDbContextOptionsBuilder;
         _relationalQueryContext = relationalQueryContext;
         _relationalCommandCache = relationalCommandCache;
     }
-    
+
     public IEnumerator<T> GetEnumerator()
     {
         var queryOptions = new QueryOptions();
@@ -40,8 +45,9 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>
             queryOptions.Parameter(parameter.Key, parameter.Value);
         }
         var command = _relationalCommandCache.RentAndPopulateRelationalCommand(_relationalQueryContext);
-        var cluster = _clusterProvider.GetClusterAsync().GetAwaiter().GetResult();
-        var result = cluster.QueryAsync<T>(command.CommandText, queryOptions).GetAwaiter().GetResult();
+        var bucketProvider = _serviceProvider.GetKeyedService<IBucketProvider>(_couchbaseDbContextOptionsBuilder.ConnectionString);
+        var bucket = bucketProvider.GetBucketAsync(_couchbaseDbContextOptionsBuilder.Bucket).GetAwaiter().GetResult();
+        var result = bucket.Cluster.QueryAsync<T>(command.CommandText, queryOptions).GetAwaiter().GetResult();
 
         _relationalQueryContext.InitializeStateManager(_standAloneStateManager);
 
@@ -77,9 +83,10 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>
     {
         var command = _relationalCommandCache.RentAndPopulateRelationalCommand(_relationalQueryContext);
         var queryOptions = GetParameters(command);
-        var cluster = await _clusterProvider.GetClusterAsync().ConfigureAwait(false);
-        var result = await cluster.QueryAsync<T>(command.CommandText, queryOptions).ConfigureAwait(false);
-        
+        var bucketProvider = _serviceProvider.GetKeyedService<IBucketProvider>(_couchbaseDbContextOptionsBuilder.ConnectionString);
+        var bucket = await bucketProvider.GetBucketAsync(_couchbaseDbContextOptionsBuilder.Bucket);
+        var result = await bucket.Cluster.QueryAsync<T>(command.CommandText, queryOptions).ConfigureAwait(false);
+
         _relationalQueryContext.InitializeStateManager(_standAloneStateManager);
 
         var model = _dbContext.Model;
@@ -112,7 +119,7 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>
         {
             var key = parameter.Key;
             var value = parameter.Value;
-            
+
             foreach (var compositeParameter in command.Parameters)
             {
                 if (compositeParameter is CompositeRelationalParameter actualParameter)

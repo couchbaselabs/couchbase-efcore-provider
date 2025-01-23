@@ -10,12 +10,14 @@ using Microsoft.Extensions.Logging;
 
 public class BloggingContext : DbContext
 {
-   public DbSet<Blog> Blogs { get; set; }
+    public BloggingContext() { }
+    public BloggingContext(DbContextOptions<BloggingContext> options) : base(options) { }
+    public DbSet<Blog> Blogs { get; set; }
     public DbSet<Post> Posts { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.Entity<Blog>().ToCouchbaseCollection("Blogs", "MyBlog");
+        modelBuilder.Entity<Blog>().ToCouchbaseCollection("Blog");
         modelBuilder.Entity<Blog>()
             .HasMany(b => b.Posts)
             .WithOne(p => p.Blog)
@@ -39,6 +41,7 @@ public class BloggingContext : DbContext
                 },
                 new Blog { BlogId = 2, Url = @"https://mytravelblog.com/", Rating = 4, OwnerId = 3 });
 
+        modelBuilder.Entity<Post>().ToCouchbaseCollection("Post");
         modelBuilder.Entity<Post>()
             .HasData(
                 new Post
@@ -106,21 +109,20 @@ public class BloggingContext : DbContext
                 new PostTag { PostTagId = 5, PostId = 4, TagId = "opinion" },
                 new PostTag { PostTagId = 6, PostId = 4, TagId = "informative" });
     }
-    
 
     //The following configures the application to use a Couchbase cluster
     //on localhost with a Bucket named "universities" and a Scope named "contoso"
     protected override void OnConfiguring(DbContextOptionsBuilder options)
     {
-        using var loggingFactory = LoggerFactory.Create(builder => builder.AddConsole());
-        options.UseCouchbase<INamedBucketProvider>(new ClusterOptions()
+        var loggingFactory = LoggerFactory.Create(builder => builder.AddConsole());
+        options.UseCouchbase(new ClusterOptions()
                 .WithCredentials("Administrator", "password")
                 .WithConnectionString("couchbase://localhost")
                 .WithLogging(loggingFactory),
             couchbaseDbContextOptions =>
             {
-                couchbaseDbContextOptions.Bucket = "Blogging";
-                couchbaseDbContextOptions.Scope = "MyBlog";
+                couchbaseDbContextOptions.Bucket = "Content";
+                couchbaseDbContextOptions.Scope = "Blogs";
             });
     }
 }

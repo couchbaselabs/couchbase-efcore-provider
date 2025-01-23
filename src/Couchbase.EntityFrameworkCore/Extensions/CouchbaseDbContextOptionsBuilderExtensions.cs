@@ -19,19 +19,19 @@ public static class CouchbaseDbContextOptionsBuilderExtensions
         var couchbaseDbContextOptionsBuilder = new CouchbaseDbContextOptionsBuilder(optionsBuilder, clusterOptions);
         couchbaseOptionsAction?.Invoke(couchbaseDbContextOptionsBuilder);
 
-        var extension = GetOrCreateExtension<TNamedBucketProvider>(optionsBuilder, clusterOptions, couchbaseDbContextOptionsBuilder);
+        var extension = GetOrCreateExtension(optionsBuilder, clusterOptions, couchbaseDbContextOptionsBuilder);
         ((IDbContextOptionsBuilderInfrastructure)optionsBuilder).AddOrUpdateExtension(extension);
         ConfigureWarnings(optionsBuilder);
 
         return optionsBuilder;
     }
 
-    internal static CouchbaseOptionsExtension<TNamedBucketProvider> GetOrCreateExtension<TNamedBucketProvider>(DbContextOptionsBuilder optionsBuilder,
-        ClusterOptions clusterOptions, CouchbaseDbContextOptionsBuilder couchbaseDbContextOptionsBuilder) where TNamedBucketProvider : class, INamedBucketProvider
-        => optionsBuilder.Options.FindExtension<CouchbaseOptionsExtension<TNamedBucketProvider>>()
-            is CouchbaseOptionsExtension<TNamedBucketProvider> existing
-            ? new CouchbaseOptionsExtension<TNamedBucketProvider>(existing)
-            : new CouchbaseOptionsExtension<TNamedBucketProvider>(clusterOptions, couchbaseDbContextOptionsBuilder);
+    internal static CouchbaseOptionsExtension GetOrCreateExtension(DbContextOptionsBuilder optionsBuilder,
+        ClusterOptions clusterOptions, CouchbaseDbContextOptionsBuilder couchbaseDbContextOptionsBuilder)
+        => optionsBuilder.Options.FindExtension<CouchbaseOptionsExtension>()
+            is CouchbaseOptionsExtension existing
+            ? new CouchbaseOptionsExtension(existing)
+            : new CouchbaseOptionsExtension(couchbaseDbContextOptionsBuilder);
 
     internal static void ConfigureWarnings(DbContextOptionsBuilder optionsBuilder)
     {
