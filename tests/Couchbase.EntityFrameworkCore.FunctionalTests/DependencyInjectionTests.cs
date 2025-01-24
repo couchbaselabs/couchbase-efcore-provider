@@ -66,9 +66,9 @@ public class DependencyInjectionTests
             });
 
         services.AddCouchbase<CouchbaseFixture.TravelSampleDbContext>(new ClusterOptions()
-            .WithConnectionString("couchbases://cb.bw2lk0wtuykovocq.cloud.couchbase.com")
-            .WithCredentials("Pfftpfft", "!Fannykat2")
-            .ApplyProfile("wan-development"),
+                .WithConnectionString("couchbase://localhost")
+                .WithCredentials("Administrator", "password")
+                .WithLogging(_loggerFactory),
             configuration =>
             {
                 configuration.Bucket = "travel-sample";
@@ -101,17 +101,5 @@ public class DependencyInjectionTests
         var blog = await blogs.FirstAsync();
         Assert.Single(blogs);
         Assert.Single(airlines);
-    }
-
-    [Fact]
-    public async Task RealityCheck()
-    {
-        var options = new ClusterOptions()
-            .WithConnectionString("couchbase://localhost")
-            .WithCredentials("Administrator", "password")
-            .WithLogging(_loggerFactory);
-
-        var cluster = await Cluster.ConnectAsync(options);
-        var result = await cluster.QueryAsync<dynamic>("SELECT 1;");
     }
 }
