@@ -40,9 +40,8 @@ public class CouchbaseConnection :  DbConnection
             return;
         }
 
-        var bucketProvider = _serviceProvider.GetRequiredKeyedService<IBucketProvider>(_couchbaseDbContextOptionsBuilder.ConnectionString);
-        var bucket = bucketProvider.GetBucketAsync(_couchbaseDbContextOptionsBuilder.Bucket).GetAwaiter().GetResult();
-        var cluster = bucket.Cluster;
+        var clusterProvider = _serviceProvider.GetRequiredKeyedService<IClusterProvider>(_couchbaseDbContextOptionsBuilder.ClusterOptions.ConnectionString);
+        var cluster = clusterProvider.GetClusterAsync().GetAwaiter().GetResult();
         _clusters.TryAdd(ConnectionString, cluster);
     }
 
@@ -61,9 +60,8 @@ public class CouchbaseConnection :  DbConnection
     {
         var cluster = _clusters.GetOrAdd(ConnectionString, s =>
         {
-            var bucketProvider = _serviceProvider.GetRequiredKeyedService<IBucketProvider>(_couchbaseDbContextOptionsBuilder.ConnectionString);
-            var bucket = bucketProvider.GetBucketAsync(_couchbaseDbContextOptionsBuilder.Bucket).GetAwaiter().GetResult();
-            return bucket.Cluster;
+            var clusterProvider = _serviceProvider.GetRequiredKeyedService<IClusterProvider>(_couchbaseDbContextOptionsBuilder.ClusterOptions.ConnectionString);
+            return clusterProvider.GetClusterAsync().GetAwaiter().GetResult();
         });
 
         return new CouchbaseCommand

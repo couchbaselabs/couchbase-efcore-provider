@@ -45,9 +45,10 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>
             queryOptions.Parameter(parameter.Key, parameter.Value);
         }
         var command = _relationalCommandCache.RentAndPopulateRelationalCommand(_relationalQueryContext);
-        var bucketProvider = _serviceProvider.GetKeyedService<IBucketProvider>(_couchbaseDbContextOptionsBuilder.ConnectionString);
-        var bucket = bucketProvider.GetBucketAsync(_couchbaseDbContextOptionsBuilder.Bucket).GetAwaiter().GetResult();
-        var result = bucket.Cluster.QueryAsync<T>(command.CommandText, queryOptions).GetAwaiter().GetResult();
+        
+        var clusterProvider = _serviceProvider.GetKeyedService<IClusterProvider>(_couchbaseDbContextOptionsBuilder.ClusterOptions.ConnectionString);
+        var cluster = clusterProvider.GetClusterAsync().GetAwaiter().GetResult();
+        var result = cluster.QueryAsync<T>(command.CommandText, queryOptions).GetAwaiter().GetResult();
 
         _relationalQueryContext.InitializeStateManager(_standAloneStateManager);
 
@@ -83,9 +84,10 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>
     {
         var command = _relationalCommandCache.RentAndPopulateRelationalCommand(_relationalQueryContext);
         var queryOptions = GetParameters(command);
-        var bucketProvider = _serviceProvider.GetKeyedService<IBucketProvider>(_couchbaseDbContextOptionsBuilder.ConnectionString);
-        var bucket = await bucketProvider.GetBucketAsync(_couchbaseDbContextOptionsBuilder.Bucket);
-        var result = await bucket.Cluster.QueryAsync<T>(command.CommandText, queryOptions).ConfigureAwait(false);
+
+        var clusterProvider = _serviceProvider.GetKeyedService<IClusterProvider>(_couchbaseDbContextOptionsBuilder.ClusterOptions.ConnectionString);
+        var cluster = await clusterProvider.GetClusterAsync();
+        var result = await cluster.QueryAsync<T>(command.CommandText, queryOptions).ConfigureAwait(false);
 
         _relationalQueryContext.InitializeStateManager(_standAloneStateManager);
 

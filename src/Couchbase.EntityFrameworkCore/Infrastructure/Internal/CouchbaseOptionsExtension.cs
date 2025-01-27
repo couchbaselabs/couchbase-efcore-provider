@@ -33,13 +33,7 @@ public class CouchbaseOptionsExtension: RelationalOptionsExtension
 
     public override void ApplyServices(IServiceCollection services)
     {
-        services.AddCouchbase(options =>
-        {
-            options.WithConnectionString(_couchbaseDbContextOptionsBuilder.ClusterOptions.ConnectionString);
-            options.WithCredentials(_couchbaseDbContextOptionsBuilder.ClusterOptions.UserName, _couchbaseDbContextOptionsBuilder.ClusterOptions.Password);
-        });
-
-        services.AddKeyedCouchbase(_couchbaseDbContextOptionsBuilder.ConnectionString, options =>
+        services.AddKeyedCouchbase(_couchbaseDbContextOptionsBuilder.ClusterOptions.ConnectionString, options =>
         {
             options.WithLogging(_couchbaseDbContextOptionsBuilder.ClusterOptions.Logging);
             options.WithConnectionString(_couchbaseDbContextOptionsBuilder.ClusterOptions.ConnectionString);
@@ -66,7 +60,7 @@ public class CouchbaseOptionsExtension: RelationalOptionsExtension
 
         public override bool IsDatabaseProvider => true;
 
-        public override string LogFragment => $"Using Custom SQLite Provider - ConnectionString: {ConnectionString}";
+        public override string LogFragment => $"Using Custom Couchbase Provider - ConnectionString: {ConnectionString}";
 
         public override int GetServiceProviderHashCode() => ConnectionString.GetHashCode();
 

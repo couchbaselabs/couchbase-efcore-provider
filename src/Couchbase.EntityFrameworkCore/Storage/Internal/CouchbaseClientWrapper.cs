@@ -87,10 +87,9 @@ public class CouchbaseClientWrapper : ICouchbaseClientWrapper
     {
         try
         {
-            var bucketProvider = _serviceProvider.GetRequiredKeyedService<IBucketProvider>(_couchbaseDbContextOptionsBuilder
-                .ConnectionString);
-
-            _bucket ??= await bucketProvider.GetBucketAsync(_couchbaseDbContextOptionsBuilder.Bucket).ConfigureAwait(false);
+            var clusterProvider = _serviceProvider.GetRequiredKeyedService<IClusterProvider>(_couchbaseDbContextOptionsBuilder.ClusterOptions.ConnectionString);
+            var cluster = await clusterProvider.GetClusterAsync().ConfigureAwait(false);
+            _bucket = await cluster.BucketAsync(_couchbaseDbContextOptionsBuilder.Bucket);
         }
         catch (Exception e)
         {
