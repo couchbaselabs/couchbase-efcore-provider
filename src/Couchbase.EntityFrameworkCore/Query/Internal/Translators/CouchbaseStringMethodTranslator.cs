@@ -91,9 +91,8 @@ public class CouchbaseStringMethodTranslator : IMethodCallTranslator
                 var argument = arguments[0];
                 var stringTypeMapping = ExpressionExtensions.InferTypeMapping(instance, argument);
 
-                return _sqlExpressionFactory.Subtract(
-                    _sqlExpressionFactory.Function(
-                        "instr",
+                return _sqlExpressionFactory.Function(
+                        "contains",
                         new[]
                         {
                             _sqlExpressionFactory.ApplyTypeMapping(instance, stringTypeMapping),
@@ -101,8 +100,7 @@ public class CouchbaseStringMethodTranslator : IMethodCallTranslator
                         },
                         nullable: true,
                         argumentsPropagateNullability: new[] { true, true },
-                        method.ReturnType),
-                    _sqlExpressionFactory.Constant(1));
+                        method.ReturnType);
             }
 
             if (ReplaceMethodInfo.Equals(method))
