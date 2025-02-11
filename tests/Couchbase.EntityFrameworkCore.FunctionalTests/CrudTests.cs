@@ -1,6 +1,7 @@
 using ContosoUniversity.Models;
 using Couchbase.Core.IO.Operations;
 using Couchbase.Core.IO.Transcoders;
+using Couchbase.EntityFrameworkCore.Extensions;
 using Couchbase.EntityFrameworkCore.FunctionalTests.Fixtures;
 using Couchbase.EntityFrameworkCore.FunctionalTests.Models;
 using Microsoft.EntityFrameworkCore;
@@ -322,8 +323,8 @@ public class CrudTests
 
             var blog = context.Blogs.First();
             blog.Posts = context.Posts.Where(x => x.BlogId == blog.BlogId).ToList();
-            var post = new Post { Title = "Intro to EF Core", PostId = 11};
 
+            var post = new Post { Title = "Intro to EF Core", PostId = 11};
             blog.Posts.Add(post);
             context.SaveChanges();
 

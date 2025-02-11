@@ -1,0 +1,11 @@
+{
+  "Test": {
+    "Couchbase": {
+      "DefaultConnection": "couchbase://localhost",
+      "Password": "password",
+      "Username" : "Administrator",
+      "BucketName" : "Content",
+      "Scope" : "Northwind"
+    }
+  }
+}

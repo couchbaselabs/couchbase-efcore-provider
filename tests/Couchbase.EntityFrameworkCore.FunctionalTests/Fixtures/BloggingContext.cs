@@ -17,7 +17,7 @@ public class BloggingContext : DbContext
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.Entity<Blog>().ToCouchbaseCollection("Blog");
+        modelBuilder.Entity<Blog>().ToCouchbaseCollection(this,"Blog");
         modelBuilder.Entity<Blog>()
             .HasMany(b => b.Posts)
             .WithOne(p => p.Blog)
@@ -108,6 +108,7 @@ public class BloggingContext : DbContext
                 new PostTag { PostTagId = 4, PostId = 3, TagId = "opinion" },
                 new PostTag { PostTagId = 5, PostId = 4, TagId = "opinion" },
                 new PostTag { PostTagId = 6, PostId = 4, TagId = "informative" });
+        modelBuilder.ConfigureToCouchbase(this);
     }
 
     //The following configures the application to use a Couchbase cluster

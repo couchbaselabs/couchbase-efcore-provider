@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using ç;
 using Couchbase.EntityFrameworkCore.Diagnostics.Internal;
 using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.EntityFrameworkCore.Infrastructure.Internal;
@@ -38,7 +39,7 @@ public static class CouchbaseServiceCollectionExtensions
             options.UseCouchbase(clusterOptions, couchbaseOptionsAction);
         });
 
-    public static IServiceCollection AddEntityFrameworkCouchbaseProvider(this IServiceCollection serviceCollection,
+    public static IServiceCollection AddEntityFrameworkCouchbase(this IServiceCollection serviceCollection,
         CouchbaseOptionsExtension optionsExtension)
     {
         serviceCollection.AddLogging(); //this should be injectable from the app side
@@ -59,7 +60,7 @@ public static class CouchbaseServiceCollectionExtensions
             .TryAdd<IMethodCallTranslatorProvider, CouchbaseMethodCallTranslatorProvider>()
 
             //Found that this was necessary, because the default convention of determining a
-            //Model's primary key automatically based off of properties that have 'Id' in their
+            //Model's primary key automatically based off of properties that have 'Id' in their`
             //name was getting ignored.
             .TryAdd<IProviderConventionSetBuilder, CouchbaseConventionSetBuilder>()
             .TryAddProviderSpecificServices(m => m
@@ -84,6 +85,5 @@ public static class CouchbaseServiceCollectionExtensions
             .AddScoped<IRelationalDatabaseCreator, CouchbaseDatabaseCreator>();
 
         return serviceCollection;
-
     }
 }

@@ -18,7 +18,7 @@ public class CouchbaseConnection :  DbConnection
         _serviceProvider = serviceProvider;
         _couchbaseDbContextOptionsBuilder = couchbaseDbContextOptionsBuilder;
     }
-    
+
     protected override DbTransaction BeginDbTransaction(IsolationLevel isolationLevel)
     {
         throw new NotImplementedException();

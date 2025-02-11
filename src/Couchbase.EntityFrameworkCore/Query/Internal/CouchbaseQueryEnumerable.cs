@@ -45,8 +45,8 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>
             queryOptions.Parameter(parameter.Key, parameter.Value);
         }
         var command = _relationalCommandCache.RentAndPopulateRelationalCommand(_relationalQueryContext);
-        
-        var clusterProvider = _serviceProvider.GetKeyedService<IClusterProvider>(_couchbaseDbContextOptionsBuilder.ClusterOptions.ConnectionString);
+
+        var clusterProvider = _serviceProvider.GetRequiredKeyedService<IClusterProvider>(_couchbaseDbContextOptionsBuilder.ClusterOptions.ConnectionString);
         var cluster = clusterProvider.GetClusterAsync().GetAwaiter().GetResult();
         var result = cluster.QueryAsync<T>(command.CommandText, queryOptions).GetAwaiter().GetResult();
 
@@ -85,7 +85,7 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>
         var command = _relationalCommandCache.RentAndPopulateRelationalCommand(_relationalQueryContext);
         var queryOptions = GetParameters(command);
 
-        var clusterProvider = _serviceProvider.GetKeyedService<IClusterProvider>(_couchbaseDbContextOptionsBuilder.ClusterOptions.ConnectionString);
+        var clusterProvider = _serviceProvider.GetRequiredKeyedService<IClusterProvider>(_couchbaseDbContextOptionsBuilder.ClusterOptions.ConnectionString);
         var cluster = await clusterProvider.GetClusterAsync();
         var result = await cluster.QueryAsync<T>(command.CommandText, queryOptions).ConfigureAwait(false);
 

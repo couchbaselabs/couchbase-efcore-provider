@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Couchbase;
 using Couchbase.EntityFrameworkCore.Extensions;
 using Couchbase.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Couchbase.EntityFrameworkCore.Infrastructure.Internal;
 
@@ -40,9 +41,9 @@ public class CouchbaseOptionsExtension: RelationalOptionsExtension
             options.WithCredentials(_couchbaseDbContextOptionsBuilder.ClusterOptions.UserName, _couchbaseDbContextOptionsBuilder.ClusterOptions.Password);
         });
 
-        services.AddEntityFrameworkCouchbaseProvider(this);
+        services.AddEntityFrameworkCouchbase(this);
     }
-    
+
     public override void Validate(IDbContextOptions options)
     {
         // You can add any validation logic here, if necessary.

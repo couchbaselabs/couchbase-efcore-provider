@@ -5,6 +5,16 @@ namespace Couchbase.EntityFrameworkCore.Storage.Internal;
 
 public class CouchbaseParameter : DbParameter
 {
+    public CouchbaseParameter()
+    {
+    }
+
+    public CouchbaseParameter(string name, object value)
+    {
+        Value = value;
+        ParameterName = name;
+    }
+
     public override void ResetDbType()
     {
         throw new NotImplementedException();

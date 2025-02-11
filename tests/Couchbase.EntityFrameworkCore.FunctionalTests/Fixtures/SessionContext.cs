@@ -39,6 +39,6 @@ public class SessionContext : DbContext
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
-        modelBuilder.Entity<Session>().ToCouchbaseCollection("session");
+        modelBuilder.Entity<Session>().ToCouchbaseCollection(this,"session");
     }
 }
