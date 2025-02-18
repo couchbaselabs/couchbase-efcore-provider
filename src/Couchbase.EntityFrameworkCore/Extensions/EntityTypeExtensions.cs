@@ -10,7 +10,7 @@ public static class EntityTypeExtensions
     {
         return entityType.GetTableName();
     }
-    
+
     public static string GetPrimaryKey(this IEntityType entityType, object entity)
     {
         var keys = entityType.FindPrimaryKey().Properties

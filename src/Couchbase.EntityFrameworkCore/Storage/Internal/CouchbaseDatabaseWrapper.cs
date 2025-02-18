@@ -20,7 +20,7 @@ public class CouchbaseDatabaseWrapper(DatabaseDependencies dependencies, ICouchb
     {
        return Task.Run(async () => await SaveChangesAsync(entries).ConfigureAwait(false)).Result;
     }
-    
+
     public override async Task<int> SaveChangesAsync(IList<IUpdateEntry> entries, CancellationToken cancellationToken = new())
     {
         var updateCount = 0;
@@ -69,8 +69,7 @@ public class CouchbaseDatabaseWrapper(DatabaseDependencies dependencies, ICouchb
 
         return updateCount;
     }
-    
-    
+
     private byte[] GenerateRootJson(IUpdateEntry updateEntry)
     {
         try
@@ -95,12 +94,64 @@ public class CouchbaseDatabaseWrapper(DatabaseDependencies dependencies, ICouchb
                         {
                             writer.WriteString(fieldName, (string)value);
                         }
+                        else
+                        {
+                            writer.WriteNull(property.Name);
+                        }
+
+                        break;
+                    case "Single":
+                        if (value != null)
+                        {
+                            writer.WriteNumber(fieldName, (float)value);
+                        }
+                        else
+                        {
+                            writer.WriteNull(property.Name);
+                        }
+
+                        break;
+                    case "Int16":
+                        if (value != null)
+                        {
+                            writer.WriteNumber(fieldName, (short)value);
+                        }
+                        else
+                        {
+                            writer.WriteNull(property.Name);
+                        }
+
+                        break;
+                    case "UInt16":
+                        if (value != null)
+                        {
+                            writer.WriteNumber(fieldName, (ushort)value);
+                        }
+                        else
+                        {
+                            writer.WriteNull(property.Name);
+                        }
 
                         break;
                     case "Int32":
                         if (value != null)
                         {
                             writer.WriteNumber(fieldName, (int)value);
+                        }
+                        else
+                        {
+                            writer.WriteNull(property.Name);
+                        }
+
+                        break;
+                    case "UInt32":
+                        if (value != null)
+                        {
+                            writer.WriteNumber(fieldName, (uint)value);
+                        }
+                        else
+                        {
+                            writer.WriteNull(property.Name);
                         }
 
                         break;
@@ -109,12 +160,20 @@ public class CouchbaseDatabaseWrapper(DatabaseDependencies dependencies, ICouchb
                         {
                             writer.WriteString(fieldName, (DateTime)value);
                         }
+                        else
+                        {
+                            writer.WriteNull(property.Name);
+                        }
 
                         break;
                     case "Decimal":
                         if (value != null)
                         {
                             writer.WriteNumber(fieldName, (decimal)value);
+                        }
+                        else
+                        {
+                            writer.WriteNull(property.Name);
                         }
 
                         break;
@@ -130,7 +189,21 @@ public class CouchbaseDatabaseWrapper(DatabaseDependencies dependencies, ICouchb
                         {
                             writer.WriteString(property.Name, value.ToString());
                         }
+                        else
+                        {
+                            writer.WriteNull(property.Name);
+                        }
 
+                        break;
+                    case "Boolean":
+                        if (value != null)
+                        {
+                            writer.WriteBoolean(property.Name, (bool)value);
+                        }
+                        else
+                        {
+                            writer.WriteNull(property.Name);
+                        }
                         break;
                     default:
                     {

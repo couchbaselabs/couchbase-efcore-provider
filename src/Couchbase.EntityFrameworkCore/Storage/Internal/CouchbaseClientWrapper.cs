@@ -90,19 +90,20 @@ public class CouchbaseClientWrapper : ICouchbaseClientWrapper
     private async Task<ICouchbaseCollection> GetCollection(string keyspace)
     {
         if(_collectionCache.TryGetValue(keyspace, out var collection)) return collection;
-        
+
         await _semaphore.WaitAsync().ConfigureAwait(false);
         try
         {
             var clusterProvider =
                 _serviceProvider.GetRequiredKeyedService<IClusterProvider>(_couchbaseDbContextOptionsBuilder
                     .ClusterOptions.ConnectionString);
+
             var cluster = await clusterProvider.GetClusterAsync().ConfigureAwait(false);
             _bucket = await cluster.BucketAsync(_couchbaseDbContextOptionsBuilder.Bucket);
 
             var splitKeyspace = keyspace.Split('.');
-            collection = _bucket.Scope(splitKeyspace[1]).Collection(splitKeyspace[2]);
-            
+            collection = _bucket.Scope(splitKeyspace[1].TrimEnd('`').TrimStart('`')).Collection(splitKeyspace[2].TrimEnd('`').TrimStart('`'));
+
             _collectionCache.TryAdd(keyspace, collection);
             return collection;
         }

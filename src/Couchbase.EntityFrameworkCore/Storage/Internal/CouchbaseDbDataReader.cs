@@ -1,18 +1,22 @@
 using System.Collections;
 using System.Data.Common;
 using Couchbase.Core.IO.Serializers;
+using Couchbase.Query;
+using System.Threading.Tasks;
 
 namespace Couchbase.EntityFrameworkCore.Storage.Internal;
 
-public class CouchbaseDbDataReader : DbDataReader
+public class CouchbaseDbDataReader<T> : DbDataReader
 {
-    private readonly IJsonStreamReader _jsonStreamReader;
+    private readonly IQueryResult<T> _queryResult;
+    private readonly IAsyncEnumerator<T> _enumerator;
 
-    public CouchbaseDbDataReader(IJsonStreamReader jsonStreamReader)
+    public CouchbaseDbDataReader(IQueryResult<T> queryResult)
     {
-        _jsonStreamReader = jsonStreamReader;
+        _queryResult = queryResult;
+        _enumerator = _queryResult.GetAsyncEnumerator(CancellationToken.None);
     }
-    
+
     public override bool GetBoolean(int ordinal)
     {
         throw new NotImplementedException();
@@ -125,7 +129,10 @@ public class CouchbaseDbDataReader : DbDataReader
     public override object this[string name] => throw new NotImplementedException();
 
     public override int RecordsAffected { get; }
-    public override bool HasRows { get; }
+
+    public override bool HasRows
+        => _queryResult.MetaData.Status == QueryStatus.Success; //temporary
+
     public override bool IsClosed { get; }
 
     public override bool NextResult()
@@ -135,7 +142,7 @@ public class CouchbaseDbDataReader : DbDataReader
 
     public override bool Read()
     {
-        throw new NotImplementedException();
+       return  _enumerator.MoveNextAsync().GetAwaiter().GetResult();
     }
 
     public override int Depth { get; }

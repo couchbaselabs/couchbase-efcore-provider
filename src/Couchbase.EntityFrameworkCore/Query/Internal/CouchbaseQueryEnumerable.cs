@@ -1,8 +1,10 @@
 using System.Collections;
+using System.Data.Common;
 using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.Extensions.DependencyInjection;
 using Couchbase.Query;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Internal;
 using Microsoft.EntityFrameworkCore.Query;
 using Microsoft.EntityFrameworkCore.Query.Internal;
@@ -12,7 +14,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Couchbase.EntityFrameworkCore.Query.Internal;
 
-public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>
+public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, IRelationalQueryingEnumerable
 {
     private readonly RelationalQueryContext _relationalQueryContext;
     private readonly RelationalCommandCache _relationalCommandCache;
@@ -158,4 +160,36 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>
 
         return value;
     }
+
+    /// <summary>
+    ///     <para>
+    ///         A string representation of the query used.
+    ///     </para>
+    ///     <para>
+    ///         Warning: this string may not be suitable for direct execution is intended only for use in debugging.
+    ///     </para>
+    /// </summary>
+    /// <returns>The query string.</returns>
+    public string ToQueryString()
+    {
+        throw new NotImplementedException();
+    }
+
+    /// <summary>
+    ///     This is an internal API that supports the Entity Framework Core infrastructure and not subject to
+    ///     the same compatibility standards as public APIs. It may be changed or removed without notice in
+    ///     any release. You should only use it directly in your code with extreme caution and knowing that
+    ///     doing so can result in application failures when updating to a new Entity Framework Core release.
+    /// </summary>
+    public DbCommand CreateDbCommand()=> _relationalCommandCache
+        .GetRelationalCommandTemplate(_relationalQueryContext.ParameterValues)
+        .CreateDbCommand(
+            new RelationalCommandParameterObject(
+                _relationalQueryContext.Connection,
+                _relationalQueryContext.ParameterValues,
+                null,
+                null,
+                null, CommandSource.LinqQuery),
+            Guid.Empty,
+            (DbCommandMethod)(-1));
 }
