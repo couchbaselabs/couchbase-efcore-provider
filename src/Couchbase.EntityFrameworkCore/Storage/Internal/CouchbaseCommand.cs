@@ -1,10 +1,15 @@
 using System.Data;
 using System.Data.Common;
+using Couchbase.EntityFrameworkCore.Infrastructure;
+using Couchbase.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Couchbase.EntityFrameworkCore.Storage.Internal;
 
 public class CouchbaseCommand : DbCommand
 {
+    public CouchbaseCommand(){}
+
     private CouchbaseParameterCollection? _parameters;
     public new virtual CouchbaseParameterCollection Parameters
         => _parameters ??= new CouchbaseParameterCollection();
@@ -43,11 +48,13 @@ public class CouchbaseCommand : DbCommand
 
     protected override DbParameter CreateDbParameter()
     {
-        throw new NotImplementedException();
+        return new CouchbaseParameter();
     }
 
     protected override DbDataReader ExecuteDbDataReader(CommandBehavior behavior)
     {
-        throw new NotImplementedException();
+       var queryResult = Cluster.QueryAsync<object>(CommandText).GetAwaiter().GetResult();
+        //throw new NotImplementedException();
+        return new CouchbaseDbDataReader<object>(queryResult);
     }
 }

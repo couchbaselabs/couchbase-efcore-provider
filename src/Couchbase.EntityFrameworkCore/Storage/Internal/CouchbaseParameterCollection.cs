@@ -19,7 +19,9 @@ public class CouchbaseParameterCollection : DbParameterCollection
 
     public override int Add(object value)
     {
-        throw new NotImplementedException();
+        var index = _parameters.Count;
+        _parameters.Insert(index, (CouchbaseParameter)value);
+        return index;
     }
 
     public override void Clear()=> _parameters.Clear();

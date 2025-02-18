@@ -8,14 +8,18 @@ using Xunit.Abstractions;
 
 namespace Couchbase.EntityFrameworkCore.FunctionalTests.Query;
 
-public class NorthwindWhereQuerySqliteTest : NorthwindWhereQueryRelationalTestBase<NorthwindQueryCouchbaseFixture<NoopModelCustomizer>>
+public class NorthwindWhereQueryCouchbaseTest : NorthwindWhereQueryRelationalTestBase<NorthwindQueryCouchbaseFixture<NoopModelCustomizer>>
 {
-    public NorthwindWhereQuerySqliteTest(NorthwindQueryCouchbaseFixture<NoopModelCustomizer> fixture, ITestOutputHelper testOutputHelper)
+    public NorthwindWhereQueryCouchbaseTest(NorthwindQueryCouchbaseFixture<NoopModelCustomizer> fixture, ITestOutputHelper testOutputHelper)
         : base(fixture)
     {
         Fixture.TestSqlLoggerFactory.Clear();
         Fixture.TestSqlLoggerFactory.SetTestOutputHelper(testOutputHelper);
     }
+
+    protected override QueryAsserter CreateQueryAsserter(NorthwindQueryCouchbaseFixture<NoopModelCustomizer> fixture)
+        => new RelationalQueryAsserter(
+            fixture, RewriteExpectedQueryExpression, RewriteServerQueryExpression, canExecuteQueryString: CanExecuteQueryString);
 
     public override Task Where_datetimeoffset_now_component(bool async)
         => AssertTranslationFailed(() => base.Where_datetimeoffset_now_component(async));
