@@ -255,11 +255,11 @@ WHERE substr("c"."City", 1 + 1, 2) = 'ea'
     {
         await base.Decimal_cast_to_double_works(async);
 
-        AssertSql(
+            AssertSql(
             """
 SELECT "p"."ProductID", "p"."Discontinued", "p"."ProductName", "p"."SupplierID", "p"."UnitPrice", "p"."UnitsInStock"
 FROM "Products" AS "p"
-WHERE CAST("p"."UnitPrice" AS REAL) > 100.0
+WHERE TONUMBER("p"."UnitPrice") > 100.0
 """);
     }
 
@@ -358,3 +358,4 @@ WHERE CAST("o"."OrderID" AS TEXT) LIKE '%20%'
     private void AssertSql(params string[] expected)
         => Fixture.TestSqlLoggerFactory.AssertBaseline(expected);
 }
+

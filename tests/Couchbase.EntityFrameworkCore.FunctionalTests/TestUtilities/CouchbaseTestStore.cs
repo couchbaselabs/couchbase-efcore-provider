@@ -58,7 +58,7 @@ public class CouchbaseTestStore : RelationalTestStore
 
     private readonly bool _seed = false;
 
-    private CouchbaseTestStore(string name, bool seed = true, bool sharedCache = false, bool shared = true, string dataFilePath = null)
+    private CouchbaseTestStore(string name, bool seed = true, bool sharedCache = false, bool shared = false, string dataFilePath = null)
         : base(name, shared)
     {
         _seed = seed;
@@ -154,7 +154,12 @@ public class CouchbaseTestStore : RelationalTestStore
     }
 
     public override void Clean(DbContext context)
-        => context.Database.EnsureClean();
+    {
+        if (_seed)
+        {
+            context.Database.EnsureClean();
+        }
+    }
 
     public int ExecuteNonQuery(string sql, params object[] parameters)
     {
@@ -185,7 +190,7 @@ public class CouchbaseTestStore : RelationalTestStore
 
     private async Task CreateFromFile(DbContext context)
     {
-        //if (await EnsureCreatedAsync(context))
+        if (_seed)
         {
 
            var path = "Northwind.json";

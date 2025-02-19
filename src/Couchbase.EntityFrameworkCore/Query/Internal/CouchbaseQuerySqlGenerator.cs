@@ -25,11 +25,140 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
     {
     }
 
+     /// <inheritdoc />
+    protected override Expression VisitSqlUnary(SqlUnaryExpression sqlUnaryExpression)
+    {
+        switch (sqlUnaryExpression.OperatorType)
+        {
+            case ExpressionType.Convert when sqlUnaryExpression.Type == typeof(double):
+            {
+                Sql.Append("TONUMBER(");
+                var requiresParentheses = RequiresParentheses(sqlUnaryExpression, sqlUnaryExpression.Operand);
+                if (requiresParentheses)
+                {
+                    Sql.Append("(");
+                }
+
+                Visit(sqlUnaryExpression.Operand);
+                if (requiresParentheses)
+                {
+                    Sql.Append(")");
+                }
+
+                Sql.Append(")");
+                break;
+            }
+
+            case ExpressionType.Not
+                when sqlUnaryExpression.Type == typeof(bool):
+            {
+                switch (sqlUnaryExpression.Operand)
+                {
+                    case InExpression inExpression:
+                        GenerateIn(inExpression, negated: true);
+                        break;
+
+                    case ExistsExpression existsExpression:
+                        GenerateExists(existsExpression, negated: true);
+                        break;
+
+                    case LikeExpression likeExpression:
+                        GenerateLike(likeExpression, negated: true);
+                        break;
+
+                    default:
+                        Sql.Append("NOT (");
+                        Visit(sqlUnaryExpression.Operand);
+                        Sql.Append(")");
+                        break;
+                }
+
+                break;
+            }
+
+            case ExpressionType.Not:
+            {
+                Sql.Append("~");
+
+                var requiresBrackets = RequiresParentheses(sqlUnaryExpression, sqlUnaryExpression.Operand);
+                if (requiresBrackets)
+                {
+                    Sql.Append("(");
+                }
+
+                Visit(sqlUnaryExpression.Operand);
+                if (requiresBrackets)
+                {
+                    Sql.Append(")");
+                }
+
+                break;
+            }
+
+            case ExpressionType.Equal:
+            {
+                var requiresBrackets = RequiresParentheses(sqlUnaryExpression, sqlUnaryExpression.Operand);
+                if (requiresBrackets)
+                {
+                    Sql.Append("(");
+                }
+
+                Visit(sqlUnaryExpression.Operand);
+                if (requiresBrackets)
+                {
+                    Sql.Append(")");
+                }
+
+                Sql.Append(" IS NULL");
+                break;
+            }
+
+            case ExpressionType.NotEqual:
+            {
+                var requiresBrackets = RequiresParentheses(sqlUnaryExpression, sqlUnaryExpression.Operand);
+                if (requiresBrackets)
+                {
+                    Sql.Append("(");
+                }
+
+                Visit(sqlUnaryExpression.Operand);
+                if (requiresBrackets)
+                {
+                    Sql.Append(")");
+                }
+
+                Sql.Append(" IS NOT NULL");
+                break;
+            }
+
+            case ExpressionType.Negate:
+            {
+                Sql.Append("-");
+                var requiresBrackets = RequiresParentheses(sqlUnaryExpression, sqlUnaryExpression.Operand);
+                if (requiresBrackets)
+                {
+                    Sql.Append("(");
+                }
+
+                Visit(sqlUnaryExpression.Operand);
+                if (requiresBrackets)
+                {
+                    Sql.Append(")");
+                }
+
+                break;
+            }
+        }
+
+        return sqlUnaryExpression;
+    }
+
+
     protected override Expression VisitSqlConstant(SqlConstantExpression sqlConstantExpression)
     {
         var value = sqlConstantExpression.Value;
         var type = value.GetType();
-        if (type.Name == "Int32")
+        if (type.Name == "Int32" || type.Name == "Double")
         {
             Sql
                 .Append(sqlConstantExpression.Value.ToString());
