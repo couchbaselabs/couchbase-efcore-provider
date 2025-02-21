@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Data.Common;
 using Couchbase.EntityFrameworkCore.Infrastructure;
+using Couchbase.EntityFrameworkCore.Storage.Internal;
 using Couchbase.Extensions.DependencyInjection;
 using Couchbase.Query;
 using Microsoft.EntityFrameworkCore;
@@ -11,6 +12,7 @@ using Microsoft.EntityFrameworkCore.Query.Internal;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.EntityFrameworkCore.Storage.Internal;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Couchbase.EntityFrameworkCore.Query.Internal;
 
@@ -48,6 +50,13 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
         }
         var command = _relationalCommandCache.RentAndPopulateRelationalCommand(_relationalQueryContext);
 
+#if DEBUG
+        //This likely needs to be refactored and just use the relational command instead
+        var logger = (CouchbaseRelationalDiagnosticsCommandLogger)_relationalQueryContext.CommandLogger;
+        var loggingCommand = CreateDbCommand();
+        logger.LogStatement(loggingCommand, TimeSpan.Zero);
+#endif
+
         var clusterProvider = _serviceProvider.GetRequiredKeyedService<IClusterProvider>(_couchbaseDbContextOptionsBuilder.ClusterOptions.ConnectionString);
         var cluster = clusterProvider.GetClusterAsync().GetAwaiter().GetResult();
         var result = cluster.QueryAsync<T>(command.CommandText, queryOptions).GetAwaiter().GetResult();
@@ -70,7 +79,7 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
             }
             catch (Exception e)
             {
-                //log error
+                logger.Logger.LogError("{E}", e);
             }
 
             yield return doc;
@@ -85,6 +94,12 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
     public async IAsyncEnumerator<T> GetAsyncEnumerator(CancellationToken cancellationToken = new CancellationToken())
     {
         var command = _relationalCommandCache.RentAndPopulateRelationalCommand(_relationalQueryContext);
+        var logger = (CouchbaseRelationalDiagnosticsCommandLogger)_relationalQueryContext.CommandLogger;
+#if DEBUG
+        //This likely needs to be refactored and just use the relational command instead
+        var loggingCommand = CreateDbCommand();
+        logger.LogStatement(loggingCommand, TimeSpan.Zero);
+#endif
         var queryOptions = GetParameters(command);
 
         var clusterProvider = _serviceProvider.GetRequiredKeyedService<IClusterProvider>(_couchbaseDbContextOptionsBuilder.ClusterOptions.ConnectionString);
@@ -109,7 +124,7 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
             }
             catch (Exception e)
             {
-                //log error
+               logger.Logger.LogError("{E}", e);
             }
 
             yield return doc;

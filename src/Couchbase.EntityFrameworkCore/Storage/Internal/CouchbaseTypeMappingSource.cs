@@ -5,13 +5,13 @@ namespace Couchbase.EntityFrameworkCore.Storage.Internal;
 
 public class CouchbaseTypeMappingSource: RelationalTypeMappingSource
 {
-    private readonly Dictionary<Type, CouchbaseTypeMapping> _clrTypeMappings;
+    private readonly Dictionary<Type, RelationalTypeMapping> _clrTypeMappings;
     
     public CouchbaseTypeMappingSource(TypeMappingSourceDependencies dependencies, RelationalTypeMappingSourceDependencies relationalDependencies) 
         : base(dependencies, relationalDependencies)
     {
         _clrTypeMappings
-            = new Dictionary<Type, CouchbaseTypeMapping>
+            = new Dictionary<Type, RelationalTypeMapping>
             {
                 {
                     typeof(JsonObject), new CouchbaseTypeMapping(
@@ -22,8 +22,10 @@ public class CouchbaseTypeMappingSource: RelationalTypeMappingSource
                         typeof(string), jsonValueReaderWriter: dependencies.JsonValueReaderWriterSource.FindReaderWriter(typeof(string)))
                 },
                 {
-                    typeof(int), new CouchbaseTypeMapping(
-                        typeof(int), jsonValueReaderWriter: dependencies.JsonValueReaderWriterSource.FindReaderWriter(typeof(int)))
+                    typeof(int), new IntTypeMapping("NUMBER")
+                },
+                {
+                    typeof(double), new DoubleTypeMapping("NUMBER")
                 }
                 //TODO add the rest of the type mappings
             };
