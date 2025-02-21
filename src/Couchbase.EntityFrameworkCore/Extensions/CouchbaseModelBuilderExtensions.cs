@@ -34,11 +34,11 @@ public static class CouchbaseModelBuilderExtensions
                 if(splitTableName.Length == 3) continue;
 
                 var keyspaceBuilder = new StringBuilder();
+                keyspaceBuilder.Append(tableName);
+                keyspaceBuilder.Append('.');
                 keyspaceBuilder.Append(dbContextOptions.Bucket);
                 keyspaceBuilder.Append('.');
                 keyspaceBuilder.Append(dbContextOptions.Scope);
-                keyspaceBuilder.Append('.');
-                keyspaceBuilder.Append(tableName);
 
                 entityType.SetTableName(keyspaceBuilder.ToString());
             }

@@ -257,9 +257,9 @@ WHERE substr("c"."City", 1 + 1, 2) = 'ea'
 
             AssertSql(
             """
-SELECT "p"."ProductID", "p"."Discontinued", "p"."ProductName", "p"."SupplierID", "p"."UnitPrice", "p"."UnitsInStock"
-FROM "Products" AS "p"
-WHERE TONUMBER("p"."UnitPrice") > 100.0
+SELECT `p`.`ProductID`, `p`.`Discontinued`, `p`.`ProductName`, `p`.`SupplierID`, `p`.`UnitPrice`, `p`.`UnitsInStock`
+FROM `Content`.`Northwind`.`Products` AS `p`
+WHERE TONUMBER(`p`.`UnitPrice`) > 100.0
 """);
     }
 

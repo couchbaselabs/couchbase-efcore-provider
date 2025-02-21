@@ -30,11 +30,11 @@ public static class CouchbaseEntityTypeBuilderExtensions
             Database.GetInfrastructure().GetService(typeof(ICouchbaseDbContextOptionsBuilder))!;
 
         var keyspaceBuilder = new StringBuilder();
+        keyspaceBuilder.Append(collectionName);
+        keyspaceBuilder.Append('.');
         keyspaceBuilder.Append(dbContextOptions.Bucket);
         keyspaceBuilder.Append('.');
         keyspaceBuilder.Append(dbContextOptions.Scope);
-        keyspaceBuilder.Append('.');
-        keyspaceBuilder.Append(collectionName);
 
         return entityTypeBuilder.ToTable(keyspaceBuilder.ToString());
     }

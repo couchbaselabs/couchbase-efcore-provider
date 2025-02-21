@@ -101,15 +101,20 @@ public class CouchbaseClientWrapper : ICouchbaseClientWrapper
             var cluster = await clusterProvider.GetClusterAsync().ConfigureAwait(false);
             _bucket = await cluster.BucketAsync(_couchbaseDbContextOptionsBuilder.Bucket);
 
+            //Note that the keyspace is stored as Collection.Bucket.Scope in the entity
+            //this is done so that the correct alias is chosen as the first letter of the
+            //collection that the entity is mapped to and so that we can reuse the sealed
+            //TableExpression class instead of bringing it into this project and subclassing
+            //it. We may want to take this approach in the future.
             var splitKeyspace = keyspace.Split('.');
-            collection = _bucket.Scope(splitKeyspace[1].TrimEnd('`').TrimStart('`')).Collection(splitKeyspace[2].TrimEnd('`').TrimStart('`'));
+            collection = _bucket.Scope(splitKeyspace[2].TrimEnd('`').TrimStart('`')).Collection(splitKeyspace[0].TrimEnd('`').TrimStart('`'));
 
             _collectionCache.TryAdd(keyspace, collection);
             return collection;
         }
         catch (Exception e)
         {
-            _logger.LogError(e, $"Could not find collection for keypace {keyspace}");
+            _logger.LogError(e, $"Could not find collection for keypace {keyspace}.");
             throw new CollectionNotFoundException($"Could not find collection for keypace {keyspace}", e);
         }
         finally

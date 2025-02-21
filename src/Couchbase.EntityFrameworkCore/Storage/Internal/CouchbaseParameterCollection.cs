@@ -86,7 +86,7 @@ public class CouchbaseParameterCollection : DbParameterCollection
 
     public override IEnumerator GetEnumerator()
     {
-        throw new NotImplementedException();
+        return _parameters.GetEnumerator();
     }
 
     protected override DbParameter GetParameter(int index)

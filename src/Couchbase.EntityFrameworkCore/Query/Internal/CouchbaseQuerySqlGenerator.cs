@@ -153,21 +153,10 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
         return sqlUnaryExpression;
     }
 
-
     protected override Expression VisitSqlConstant(SqlConstantExpression sqlConstantExpression)
     {
-        var value = sqlConstantExpression.Value;
-        var type = value.GetType();
-        if (type.Name == "Int32" || type.Name == "Double")
-        {
-            Sql
-                .Append(sqlConstantExpression.Value.ToString());
-        }
-        else
-        {
-            Sql
-                .Append(sqlConstantExpression.TypeMapping!.GenerateSqlLiteral(sqlConstantExpression.Value)); 
-        }
+        Sql
+            .Append(sqlConstantExpression.TypeMapping!.GenerateSqlLiteral(sqlConstantExpression.Value));
 
         return sqlConstantExpression;
     }
@@ -339,22 +328,25 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
             //first split apart the keyspace and extract the alias from the collection
             var splitName = originalName.Split('.');
             if(splitName.Length != 3) throw new InvalidOperationException();
-            _alias = splitName[2].FirstOrDefault().ToString();
+            _alias = splitName[2].FirstOrDefault().ToString().ToLowerInvariant();
 
             //if the original alias has an ordinal index add it to the index
             var splitAlias = _originalAlias.ToArray();
             if(splitAlias.Length == 2)
             {
-               _alias += splitAlias[1];
+               _alias += splitAlias[1].ToString().ToLowerInvariant();
             }
 
             //next apply the delimiters into a new string: `bucket`.`scope`.`collection`
+            //note that the order was swapped so that the TableExpression will use the
+            //correct character for the alias - the collection name. Sometime in the future
+            //we may want to bring the TableExpression into this project and modify its internals
             var keyspaceBuilder = new StringBuilder();
-            keyspaceBuilder.Append(splitName[0].EscapeIfRequired());
-            keyspaceBuilder.Append('.');
             keyspaceBuilder.Append(splitName[1].EscapeIfRequired());
             keyspaceBuilder.Append('.');
             keyspaceBuilder.Append(splitName[2].EscapeIfRequired());
+            keyspaceBuilder.Append('.');
+            keyspaceBuilder.Append(splitName[0].EscapeIfRequired());
             _name = keyspaceBuilder.ToString();
         }
 
@@ -399,7 +391,7 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
                 tableExpression.Name, key => new Keyspace(key, tableExpression.Alias));
             alias = keyspace.Alias;
         }*/
-        
+
         var helper = Dependencies.SqlGenerationHelper;
         Sql.Append(helper.DelimitIdentifier(alias))
             .Append(".")
