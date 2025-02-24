@@ -105,7 +105,7 @@ public class CouchbaseClientWrapper : ICouchbaseClientWrapper
             //this is done so that the correct alias is chosen as the first letter of the
             //collection that the entity is mapped to and so that we can reuse the sealed
             //TableExpression class instead of bringing it into this project and subclassing
-            //it. We may want to take this approach in the future.
+            //it. We may want to take this approach in the future as this can be confusing.
             var splitKeyspace = keyspace.Split('.');
             collection = _bucket.Scope(splitKeyspace[2].TrimEnd('`').TrimStart('`')).Collection(splitKeyspace[0].TrimEnd('`').TrimStart('`'));
 
