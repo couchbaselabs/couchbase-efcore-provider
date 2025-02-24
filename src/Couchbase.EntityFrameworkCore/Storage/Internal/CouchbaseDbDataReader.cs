@@ -10,6 +10,7 @@ public class CouchbaseDbDataReader<T> : DbDataReader
 {
     private readonly IQueryResult<T> _queryResult;
     private readonly IAsyncEnumerator<T> _enumerator;
+    private bool _read;
 
     public CouchbaseDbDataReader(IQueryResult<T> queryResult)
     {
@@ -142,7 +143,25 @@ public class CouchbaseDbDataReader<T> : DbDataReader
 
     public override bool Read()
     {
-       return  _enumerator.MoveNextAsync().GetAwaiter().GetResult();
+        try
+        {
+            if (_read)
+            {
+                return false;
+            }
+            var moreRows =_enumerator.MoveNextAsync().GetAwaiter().GetResult();
+            if (moreRows == false)
+            {
+                _read = true;
+                return moreRows;
+            }
+
+            return moreRows;
+        }
+        catch (Exception e)
+        {
+            return false;
+        }
     }
 
     public override int Depth { get; }
