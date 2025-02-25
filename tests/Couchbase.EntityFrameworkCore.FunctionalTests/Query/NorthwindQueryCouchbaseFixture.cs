@@ -11,7 +11,7 @@ using TestSqlLoggerFactory = Microsoft.EntityFrameworkCore.TestUtilities.TestSql
 
 namespace Couchbase.EntityFrameworkCore.FunctionalTests.Query;
 
-public class NorthwindQueryCouchbaseFixture<TModelCustomizer> : NorthwindQueryFixtureBase<TModelCustomizer>
+public class NorthwindQueryCouchbaseFixture<TModelCustomizer> : NorthwindQueryRelationalFixture<TModelCustomizer>
     where TModelCustomizer : IModelCustomizer, new()
 {
     public NorthwindQueryCouchbaseFixture()

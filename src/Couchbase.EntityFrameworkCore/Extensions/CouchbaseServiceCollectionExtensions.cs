@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using ç;
 using Couchbase.EntityFrameworkCore.Diagnostics.Internal;
 using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.EntityFrameworkCore.Infrastructure.Internal;

@@ -5,7 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Couchbase;
 using Couchbase.EntityFrameworkCore.Extensions;
 using Couchbase.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
+using Couchbase.EntityFrameworkCore.Utils;
 
 namespace Couchbase.EntityFrameworkCore.Infrastructure.Internal;
 
