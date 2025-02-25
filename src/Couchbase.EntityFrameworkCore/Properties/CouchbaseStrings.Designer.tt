@@ -1,0 +1,6 @@
+<#
+    Session["ResourceFile"] = "CouchbaseStrings.resx";
+    Session["ResourceNamespace"] = "Couchbase.EntityFrameworkCore.Properties";
+    Session["LoggingDefinitionsClass"] = "Diagnostics.Internal.Couchbase.LoggingDefinitions";
+#>
+<#@ include file="..\..\..\tools\Resources.tt" #>

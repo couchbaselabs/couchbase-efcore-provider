@@ -32,7 +32,7 @@ public class CouchbaseTestStore : RelationalTestStore
 
     public static CouchbaseTestStore GetOrCreateInitialized(string name)
     {
-        return new CouchbaseTestStore(name).InitializeSqlite(
+        return new CouchbaseTestStore(name).InitializeCouchbase(
             new ServiceCollection().AddEntityFrameworkCouchbase(
                     new CouchbaseOptionsExtension(
                         new CouchbaseDbContextOptionsBuilder(
@@ -54,11 +54,12 @@ public class CouchbaseTestStore : RelationalTestStore
         => new(name);
 
     public static CouchbaseTestStore Create(string name)
-        => new(name, shared: false);
+        => new(name, shared: true);
+       // => new(name, shared: false);
 
     private readonly bool _seed = false;
 
-    private CouchbaseTestStore(string name, bool seed = true, bool sharedCache = false, bool shared = false, string dataFilePath = null)
+    private CouchbaseTestStore(string name, bool seed = false, bool sharedCache = false, bool shared = false, string dataFilePath = null)
         : base(name, shared)
     {
         _seed = seed;
@@ -126,10 +127,10 @@ public class CouchbaseTestStore : RelationalTestStore
     public override DbContextOptionsBuilder AddProviderOptions(DbContextOptionsBuilder builder)
         => AddProviderOptions(builder, configureSqlite: null);
 
-    public CouchbaseTestStore InitializeSqlite(IServiceProvider serviceProvider, Func<DbContext> createContext, Action<DbContext> seed)
+    public CouchbaseTestStore InitializeCouchbase(IServiceProvider serviceProvider, Func<DbContext> createContext, Action<DbContext> seed)
         => (CouchbaseTestStore)Initialize(serviceProvider, createContext, seed);
 
-    public CouchbaseTestStore InitializeSqlite(
+    public CouchbaseTestStore InitializeCouchbase(
         IServiceProvider serviceProvider,
         Func<CouchbaseTestStore, DbContext> createContext,
         Action<DbContext> seed)

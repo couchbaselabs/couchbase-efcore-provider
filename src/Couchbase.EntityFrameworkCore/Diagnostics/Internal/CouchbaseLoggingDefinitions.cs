@@ -1,20 +1,42 @@
 using Microsoft.EntityFrameworkCore.Diagnostics;
 
-namespace ç;
+namespace Couchbase.EntityFrameworkCore.Diagnostics.Internal;
 
 public class CouchbaseLoggingDefinitions : RelationalLoggingDefinitions
 {
-    public EventDefinitionBase? LogExecutingSqlQuery;
+    public EventDefinitionBase? LogSchemaConfigured;
 
-    public EventDefinitionBase? LogExecutingReadItem;
+    public EventDefinitionBase? LogSequenceConfigured;
 
-    public EventDefinitionBase? LogExecutedReadNext;
+    public EventDefinitionBase? LogUsingSchemaSelectionsWarning;
 
-    public EventDefinitionBase? LogExecutedReadItem;
+    public EventDefinitionBase? LogFoundColumn;
 
-    public EventDefinitionBase? LogExecutedCreateItem;
+    public EventDefinitionBase? LogFoundForeignKey;
 
-    public EventDefinitionBase? LogExecutedReplaceItem;
+    public EventDefinitionBase? LogForeignKeyScaffoldErrorPrincipalTableNotFound;
 
-    public EventDefinitionBase? LogExecutedDeleteItem;
+    public EventDefinitionBase? LogFoundTable;
+
+    public EventDefinitionBase? LogMissingTable;
+
+    public EventDefinitionBase? LogPrincipalColumnNotFound;
+
+    public EventDefinitionBase? LogFoundIndex;
+
+    public EventDefinitionBase? LogFoundPrimaryKey;
+
+    public EventDefinitionBase? LogFoundUniqueConstraint;
+
+    public EventDefinitionBase? LogUnexpectedConnectionType;
+
+    public EventDefinitionBase? LogTableRebuildPendingWarning;
+
+    public EventDefinitionBase? LogCompositeKeyWithValueGeneration;
+
+    public EventDefinitionBase? LogInferringTypes;
+
+    public EventDefinitionBase? LogOutOfRangeWarning;
+
+    public EventDefinitionBase? LogFormatWarning;
 }
