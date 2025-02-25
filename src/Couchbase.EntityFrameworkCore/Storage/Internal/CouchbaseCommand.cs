@@ -2,6 +2,9 @@ using System.Data;
 using System.Data.Common;
 using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.Extensions.DependencyInjection;
+using Couchbase.Query;
+using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.EntityFrameworkCore.Storage.Internal;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Couchbase.EntityFrameworkCore.Storage.Internal;
@@ -53,8 +56,14 @@ public class CouchbaseCommand : DbCommand
 
     protected override DbDataReader ExecuteDbDataReader(CommandBehavior behavior)
     {
-       var queryResult = Cluster.QueryAsync<object>(CommandText).GetAwaiter().GetResult();
-        //throw new NotImplementedException();
+        var options = new QueryOptions();
+        foreach (var dbParameter in Parameters)
+        {
+            var parameter = (CouchbaseParameter)dbParameter;
+            options.Parameter(parameter.ParameterName, parameter.Value);
+        }
+
+        var queryResult = Cluster.QueryAsync<object>(CommandText, options).GetAwaiter().GetResult();
         return new CouchbaseDbDataReader<object>(queryResult);
     }
 }
