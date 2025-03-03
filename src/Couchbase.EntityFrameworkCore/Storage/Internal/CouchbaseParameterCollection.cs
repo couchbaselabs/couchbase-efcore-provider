@@ -24,16 +24,28 @@ public class CouchbaseParameterCollection : DbParameterCollection
         return index;
     }
 
-    public override void Clear()=> _parameters.Clear();
+    public override void Clear()
+    {
+        _parameters.Clear();
+    }
 
     public override bool Contains(object value)
     {
-        throw new NotImplementedException();
+        return IndexOf(value) != -1;
+    }
+
+    /// <summary>Indicates whether a <see cref="T:System.Data.Common.DbParameter" /> with the specified name exists in the collection.</summary>
+    /// <param name="value">The name of the <see cref="T:System.Data.Common.DbParameter" /> to look for in the collection.</param>
+    /// <returns>
+    /// <see langword="true" /> if the <see cref="T:System.Data.Common.DbParameter" /> is in the collection; otherwise <see langword="false" />.</returns>
+    public override bool Contains(string value)
+    {
+       return IndexOf(value) != -1;
     }
 
     public override int IndexOf(object value)
     {
-        throw new NotImplementedException();
+        return _parameters.IndexOf((CouchbaseParameter)value);
     }
 
     public override void Insert(int index, object value)
@@ -71,12 +83,15 @@ public class CouchbaseParameterCollection : DbParameterCollection
 
     public override int IndexOf(string parameterName)
     {
-        throw new NotImplementedException();
-    }
+        for (var index = 0; index < _parameters.Count; index++)
+        {
+            if (_parameters[index].ParameterName == parameterName)
+            {
+                return index;
+            }
+        }
 
-    public override bool Contains(string value)
-    {
-        throw new NotImplementedException();
+        return -1;
     }
 
     public override void CopyTo(Array array, int index)
