@@ -392,7 +392,7 @@ FROM "Orders" AS "o"
     public override async Task Client_code_using_instance_in_anonymous_type(bool async)
         => Assert.Equal(
             CoreStrings.ClientProjectionCapturingConstantInTree(
-                "Microsoft.EntityFrameworkCore.Query.NorthwindMiscellaneousQueryCouchbaseTest"),
+                "Couchbase.EntityFrameworkCore.FunctionalTests.Query.NorthwindMiscellaneousQueryCouchbaseTest"),
             (await Assert.ThrowsAsync<InvalidOperationException>(
                 () => base.Client_code_using_instance_in_anonymous_type(async))).Message);
 
