@@ -43,11 +43,6 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
 
     public IEnumerator<T> GetEnumerator()
     {
-        var queryOptions = new QueryOptions();
-        foreach (var parameter in _relationalQueryContext.ParameterValues)
-        {
-            queryOptions.Parameter(parameter.Key, parameter.Value);
-        }
         var command = _relationalCommandCache.RentAndPopulateRelationalCommand(_relationalQueryContext);
 
 #if DEBUG
@@ -56,6 +51,7 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
         var loggingCommand = CreateDbCommand();
         logger.LogStatement(loggingCommand, TimeSpan.Zero);
 #endif
+        var queryOptions = GetParameters(command);
 
         var clusterProvider = _serviceProvider.GetRequiredKeyedService<IClusterProvider>(_couchbaseDbContextOptionsBuilder.ClusterOptions.ConnectionString);
         var cluster = clusterProvider.GetClusterAsync().GetAwaiter().GetResult();
