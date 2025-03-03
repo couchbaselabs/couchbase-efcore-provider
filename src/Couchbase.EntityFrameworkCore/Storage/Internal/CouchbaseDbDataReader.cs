@@ -149,6 +149,7 @@ public class CouchbaseDbDataReader<T> : DbDataReader
             {
                 return false;
             }
+            //TODO: should be awaited - CA2012 - Use ValueTasks correctly
             var moreRows =_enumerator.MoveNextAsync().GetAwaiter().GetResult();
             if (moreRows == false)
             {

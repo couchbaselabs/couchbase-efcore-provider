@@ -59,7 +59,7 @@ public class CouchbaseTestStore : RelationalTestStore
 
     private readonly bool _seed = false;
 
-    private CouchbaseTestStore(string name, bool seed = false, bool sharedCache = false, bool shared = false, string dataFilePath = null)
+    private CouchbaseTestStore(string name, bool seed = false, bool sharedCache = false, bool shared = true, string dataFilePath = null)
         : base(name, shared)
     {
         _seed = seed;
@@ -257,6 +257,18 @@ public class CouchbaseTestStore : RelationalTestStore
             }
         }
     }
+
+    public override string NormalizeDelimitersInRawString(string sql)
+        => sql.Replace("[", OpenDelimiter).Replace("]", CloseDelimiter);
+
+    public override FormattableString NormalizeDelimitersInInterpolatedString(FormattableString sql)
+        => new TestFormattableString(NormalizeDelimitersInRawString(sql.Format), sql.GetArguments());
+
+    protected override string OpenDelimiter
+        => "`";
+
+    protected override string CloseDelimiter
+        => "`";
 
     private class FakeUpdateEntry : IUpdateEntry
     {
