@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Linq.Expressions;
+using System.Net.WebSockets;
 using System.Reflection;
 using System.Reflection.Emit;
 using System.Reflection.Metadata;
@@ -220,12 +221,17 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
             {
                 if (selectExpression.Projection.Count == 1)
                 {
-                    if (selectExpression.Projection.First().Expression is SqlFunctionExpression sqlFunctionExpression)
+                    var expression = selectExpression.Projection.First().Expression;
+                    if (expression is SqlFunctionExpression sqlFunctionExpression)
                     {
                         if (sqlFunctionExpression.Name == "COUNT")
                         {
-                            Sql.Append(" RAW ");
+                            Sql.Append("RAW ");
                         }
+                    }
+                    else if (expression is ExistsExpression existsExpression)
+                    {
+                        Sql.Append("RAW ");
                     }
                     GenerateList(selectExpression.Projection, e => Visit(e));
                 }
@@ -297,7 +303,6 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
 
     protected override void GenerateExists(ExistsExpression existsExpression, bool negated)
     {
-        Sql.Append(" RAW ");
         if (negated)
         {
             Sql.Append("NOT ");
@@ -504,7 +509,7 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
 
         Sql.AppendLines(sql);
     }
-    
+
     protected override Expression VisitSqlFunction(SqlFunctionExpression sqlFunctionExpression)
     {
         if (sqlFunctionExpression.IsBuiltIn)
@@ -514,7 +519,7 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
                 Visit(sqlFunctionExpression.Instance);
                 Sql.Append(".");
             }
-            
+
             Sql.Append(sqlFunctionExpression.Name);
         }
         else
@@ -548,7 +553,7 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
     protected override void GenerateIn(InExpression inExpression, bool negated)
     {
         Visit(inExpression.Item);
-        Sql.Append(negated ? " NOT IN [" : " IN [");
+        Sql.Append(negated ? " NOT IN (" : " IN (");
 
         if (inExpression.Values is not null)
         {
@@ -566,7 +571,7 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
             Sql.AppendLine();
         }
 
-        Sql.Append("]");
+        Sql.Append(")");
     }
 
     private void GenerateList<T>(
