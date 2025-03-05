@@ -99,6 +99,7 @@ There exists options for both the [Couchbase SDK](https://docs.couchbase.com/dot
  * Most all SQL++ functions
  * Value generation
  * META, RYOW, etc
+ * Sync IO Methods
  * Lots...it's a WIP
 
 # Documentation
