@@ -14,6 +14,8 @@ public class BloggingContext : DbContext
     public BloggingContext(DbContextOptions<BloggingContext> options) : base(options) { }
     public DbSet<Blog> Blogs { get; set; }
     public DbSet<Post> Posts { get; set; }
+    public DbSet<Person> People { get; set; }
+    public DbSet<PersonPhoto> PersonPhotos { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -81,13 +83,13 @@ public class BloggingContext : DbContext
                     AuthorId = 3
                 });
 
-        modelBuilder.Entity<Person>()
+        modelBuilder.Entity<Person>().ToCouchbaseCollection("Person")
             .HasData(
                 new Person { PersonId = 1, Name = "Dotnet Blog Admin", PhotoId = 1 },
                 new Person { PersonId = 2, Name = "Phileas Fogg", PhotoId = 2 },
                 new Person { PersonId = 3, Name = "Jane Doe", PhotoId = 3 });
 
-        modelBuilder.Entity<PersonPhoto>()
+        modelBuilder.Entity<PersonPhoto>().ToCouchbaseCollection("PersonPhoto")
             .HasData(
                 new PersonPhoto { PersonPhotoId = 1, Caption = "SN", Photo = new byte[] { 0x00, 0x01 } },
                 new PersonPhoto { PersonPhotoId = 2, Caption = "PF", Photo = new byte[] { 0x01, 0x02, 0x03 } },
@@ -112,7 +114,7 @@ public class BloggingContext : DbContext
     }
 
     //The following configures the application to use a Couchbase cluster
-    //on localhost with a Bucket named "universities" and a Scope named "contoso"
+    //on localhost with a Bucket named "Content" and a Scope named "Blogs"
     protected override void OnConfiguring(DbContextOptionsBuilder options)
     {
         var loggingFactory = LoggerFactory.Create(builder => builder.AddConsole());
