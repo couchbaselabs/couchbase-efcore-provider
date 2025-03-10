@@ -2,6 +2,7 @@ using System.Collections;
 using System.Data.Common;
 using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.EntityFrameworkCore.Storage.Internal;
+using Couchbase.EntityFrameworkCore.Utils;
 using Couchbase.Extensions.DependencyInjection;
 using Couchbase.Query;
 using Microsoft.EntityFrameworkCore;
@@ -22,20 +23,20 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
     private readonly RelationalCommandCache _relationalCommandCache;
     private readonly DbContext _dbContext;
     private readonly bool _standAloneStateManager;
-    private readonly IServiceProvider _serviceProvider;
+    private readonly IBucketProvider _bucketProvider;
     private readonly ICouchbaseDbContextOptionsBuilder _couchbaseDbContextOptionsBuilder;
 
     public CouchbaseQueryEnumerable(
         RelationalQueryContext relationalQueryContext, 
         RelationalCommandCache relationalCommandCache,
         bool standAloneStateManager,
-        IServiceProvider serviceProvider,
+        IBucketProvider bucketProvider,
         ICouchbaseDbContextOptionsBuilder couchbaseDbContextOptionsBuilder)
     {
 
         _dbContext = relationalQueryContext.Context;
         _standAloneStateManager = standAloneStateManager;
-        _serviceProvider = serviceProvider;
+        _bucketProvider = bucketProvider;
         _couchbaseDbContextOptionsBuilder = couchbaseDbContextOptionsBuilder;
         _relationalQueryContext = relationalQueryContext;
         _relationalCommandCache = relationalCommandCache;
@@ -43,43 +44,7 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
 
     public IEnumerator<T> GetEnumerator()
     {
-        var command = _relationalCommandCache.RentAndPopulateRelationalCommand(_relationalQueryContext);
-
-#if DEBUG
-        //This likely needs to be refactored and just use the relational command instead
-        var logger = (CouchbaseRelationalDiagnosticsCommandLogger)_relationalQueryContext.CommandLogger;
-        var loggingCommand = CreateDbCommand();
-        logger.LogStatement(loggingCommand, TimeSpan.Zero);
-#endif
-        var queryOptions = GetParameters(command);
-
-        var clusterProvider = _serviceProvider.GetRequiredKeyedService<IClusterProvider>(_couchbaseDbContextOptionsBuilder.ClusterOptions.ConnectionString);
-        var cluster = clusterProvider.GetClusterAsync().GetAwaiter().GetResult();
-        var result = cluster.QueryAsync<T>(command.CommandText, queryOptions).GetAwaiter().GetResult();
-
-        _relationalQueryContext.InitializeStateManager(_standAloneStateManager);
-
-        var model = _dbContext.Model;
-        var entityType = model.FindEntityType(typeof(T));
-
-        foreach (var doc in result.ToEnumerable())
-        {
-            try
-            {
-                //If the returned type is an entity add start change tracking
-                //Scalar values for functions like COUNT are not tracked.
-                if (entityType != null)
-                {
-                    _relationalQueryContext.StartTracking(entityType, doc, new ValueBuffer());
-                }
-            }
-            catch (Exception e)
-            {
-                logger.Logger.LogError("{E}", e);
-            }
-
-            yield return doc;
-        }
+        throw new NotSupportedException();
     }
 
     IEnumerator IEnumerable.GetEnumerator()
@@ -98,8 +63,10 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
 #endif
         var queryOptions = GetParameters(command);
 
-        var clusterProvider = _serviceProvider.GetRequiredKeyedService<IClusterProvider>(_couchbaseDbContextOptionsBuilder.ClusterOptions.ConnectionString);
-        var cluster = await clusterProvider.GetClusterAsync();
+        var bucket = await _bucketProvider.
+            GetBucketAsync(_couchbaseDbContextOptionsBuilder.Bucket).
+            ConfigureAwait(false);
+        var cluster = bucket.Cluster;
         var result = await cluster.QueryAsync<T>(command.CommandText, queryOptions).ConfigureAwait(false);
 
         _relationalQueryContext.InitializeStateManager(_standAloneStateManager);
@@ -183,7 +150,7 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
     /// <returns>The query string.</returns>
     public string ToQueryString()
     {
-        throw new NotImplementedException();
+        throw ExceptionHelper.SyncroIONotSupportedException();
     }
 
     /// <summary>

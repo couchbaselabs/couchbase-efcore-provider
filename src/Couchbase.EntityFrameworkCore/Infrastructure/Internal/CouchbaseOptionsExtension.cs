@@ -6,6 +6,7 @@ using Couchbase;
 using Couchbase.EntityFrameworkCore.Extensions;
 using Couchbase.Extensions.DependencyInjection;
 using Couchbase.EntityFrameworkCore.Utils;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Couchbase.EntityFrameworkCore.Infrastructure.Internal;
 
@@ -34,7 +35,7 @@ public class CouchbaseOptionsExtension: RelationalOptionsExtension
 
     public override void ApplyServices(IServiceCollection services)
     {
-        services.AddKeyedCouchbase(_couchbaseDbContextOptionsBuilder.ClusterOptions.ConnectionString, options =>
+        services.AddCouchbase(options =>
         {
             options.WithLogging(_couchbaseDbContextOptionsBuilder.ClusterOptions.Logging);
             options.WithConnectionString(_couchbaseDbContextOptionsBuilder.ClusterOptions.ConnectionString);

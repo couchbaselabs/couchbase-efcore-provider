@@ -22,12 +22,12 @@ namespace Couchbase.EntityFrameworkCore.Query.Internal;
 public partial class CouchbaseShapedQueryCompilingExpressionVisitor : ShapedQueryCompilingExpressionVisitor
 {
     private readonly QuerySqlGenerator _querySqlGenerator;
+    private readonly IBucketProvider _bucketProvider;
     private readonly Type _contextType;
     private readonly ISet<string> _tags;
     private readonly bool _threadSafetyChecksEnabled;
     private readonly bool _detailedErrorsEnabled;
     private readonly bool _useRelationalNulls;
-    private readonly IServiceProvider _serviceProvider;
     private readonly ICouchbaseDbContextOptionsBuilder _couchbaseDbContextOptionsBuilder;
 
     /// <summary>
@@ -36,17 +36,20 @@ public partial class CouchbaseShapedQueryCompilingExpressionVisitor : ShapedQuer
     /// <param name="dependencies">Parameter object containing dependencies for this class.</param>
     /// <param name="relationalDependencies">Parameter object containing relational dependencies for this class.</param>
     /// <param name="queryCompilationContext">The query compilation context object to use.</param>
+    /// <param name="querySqlGenerator"></param>
+    /// <param name="bucketProvider"></param>
+    /// <param name="couchbaseDbContextOptionsBuilder"></param>
     public CouchbaseShapedQueryCompilingExpressionVisitor(
         ShapedQueryCompilingExpressionVisitorDependencies dependencies,
         RelationalShapedQueryCompilingExpressionVisitorDependencies relationalDependencies,
         QueryCompilationContext queryCompilationContext,
         QuerySqlGenerator querySqlGenerator,
-        IServiceProvider serviceProvider,
+        IBucketProvider bucketProvider,
         ICouchbaseDbContextOptionsBuilder couchbaseDbContextOptionsBuilder)
         : base(dependencies, queryCompilationContext)
     {
         _querySqlGenerator = querySqlGenerator;
-        _serviceProvider = serviceProvider;
+        _bucketProvider = bucketProvider;
         _couchbaseDbContextOptionsBuilder = couchbaseDbContextOptionsBuilder;
         RelationalDependencies = relationalDependencies;
         _contextType = queryCompilationContext.ContextType;
@@ -339,7 +342,7 @@ public partial class CouchbaseShapedQueryCompilingExpressionVisitor : ShapedQuer
             var shaper = new ShaperProcessingExpressionVisitor(this, selectExpression, _tags, splitQuery, nonComposedFromSql).ProcessShaper(
                 shapedQueryExpression.ShaperExpression,
                 out var relationalCommandCache, out var readerColumns, out var relatedDataLoaders, ref collectionCount);
-            
+
             if (querySplittingBehavior == null
                 && collectionCount > 1)
             {
@@ -395,7 +398,7 @@ public partial class CouchbaseShapedQueryCompilingExpressionVisitor : ShapedQuer
                 Constant(relationalCommandCache),
                 Constant(
                     QueryCompilationContext.QueryTrackingBehavior == QueryTrackingBehavior.NoTrackingWithIdentityResolution),
-                Constant(_serviceProvider),
+                Constant(_bucketProvider),
                 Constant(_couchbaseDbContextOptionsBuilder));
         }
     }
