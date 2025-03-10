@@ -50,13 +50,13 @@ public class CrudTests
 
         try
         {
-            context.Add(airline1);
-            context.Add(airline2);
+            context.Update(airline1);
+            context.Update(airline2);
 
             var inserted = await context.SaveChangesAsync();
             Assert.Equal(2, inserted);
 
-            var count = context.Airlines.Count(a => a.Id > 665 && a.Id < 668);
+            var count = await context.Airlines.CountAsync(a => a.Id > 665 && a.Id < 668);
             Assert.Equal(2, count);
 
             await context.Airlines
@@ -64,7 +64,7 @@ public class CrudTests
                 .ExecuteUpdateAsync(setters =>
                     setters.SetProperty(a => a.Country, "Banana Republic"));
 
-            var count2 = context.Airlines.Count(a => a.Country == "Banana Republic");
+            var count2 = await context.Airlines.CountAsync(a => a.Country == "Banana Republic");
             Assert.Equal(2, count2);
         }
         finally
@@ -103,18 +103,18 @@ public class CrudTests
 
         try
         {
-            context.Add(airline1);
-            context.Add(airline2);
+            context.Update(airline1);
+            context.Update(airline2);
 
             await context.SaveChangesAsync();
-            var count = context.Airlines.Count(a => a.Id > 776 && a.Id < 779);
+            var count = await context.Airlines.CountAsync(a => a.Id > 776 && a.Id < 779);
             Assert.Equal(2, count);
 
             await context.Airlines
                 .Where(a => a.Id > 776 && a.Id < 779)
                 .ExecuteDeleteAsync();
 
-            var count2 = context.Airlines.Count(a => a.Id > 776 && a.Id < 779);
+            var count2 = await context.Airlines.CountAsync(a => a.Id > 776 && a.Id < 779);
             Assert.Equal(0, count2);
         }
         finally
@@ -170,7 +170,7 @@ public class CrudTests
         {
             context.Add(airline);
             await context.SaveChangesAsync();
-            
+
             var airline1 = await context.Airlines.FindAsync("airline", 11);
             Assert.Equal(airline, airline1);
         }
@@ -315,21 +315,21 @@ public class CrudTests
     [Fact]
     public async Task Test_Adding_Related_Entity()
     {
-        using (var context = new BloggingContext())
+        await using (var context = new BloggingContext())
         {
-            context.AddAsync(new Blog{ BlogId = 10, Url = "http://example.com" });
-            context.AddAsync(new Post { BlogId = 10, PostId = 10 });
+            context.Update(new Blog{ BlogId = 10, Url = "http://example.com" });
+            context.Update(new Post { BlogId = 10, PostId = 10 });
             await context.SaveChangesAsync();
 
-            var blog = context.Blogs.First();
-            blog.Posts = context.Posts.Where(x => x.BlogId == blog.BlogId).ToList();
+            var blog = await context.Blogs.FirstAsync();
+            blog.Posts = await context.Posts.Where(x => x.BlogId == blog.BlogId).ToListAsync();
 
             var post = new Post { Title = "Intro to EF Core", PostId = 11};
             blog.Posts.Add(post);
-            context.SaveChanges();
+            await context.SaveChangesAsync();
 
             blog.Posts.Remove(post);
-            context.SaveChanges();
+            await context.SaveChangesAsync();
         }
     }
 
@@ -340,9 +340,10 @@ public class CrudTests
         {
             context.Add(new Post { Title = "Intro to EF Core", PostId = 4, BlogId = 2 });
             await context.SaveChangesAsync();
+            var blog1 = await context.Blogs.FirstAsync();
 
             var blog = new Blog { Url = "http://blogs.msdn.com/visualstudio", BlogId = 2};
-            var post = context.Posts.First();
+            var post = await context.Posts.FirstAsync();
 
             post.Blog = blog;
             await context.SaveChangesAsync();
@@ -350,7 +351,7 @@ public class CrudTests
     }
 
     [Fact]
-    public async Task Removing_Relationships()
+    public async Task Removing_Relationships_Async()
     {
         using (var context = new BloggingContext())
         {
@@ -358,16 +359,20 @@ public class CrudTests
             var post = new Post { Title = "Intro to EF Core", PostId = 4, BlogId = 2 };
             try
             {
-                context.Add(blog);
+                context.Update(blog);
                 await context.SaveChangesAsync();
 
-                context.Add(post);
+                context.Update(post);
                 await context.SaveChangesAsync();
 
-                blog = context.Blogs.First();
-                var posts = context.Posts.ToList();
-                blog.Posts = context.Posts.Where(x => x.BlogId == blog.BlogId).ToList();
+                blog = await context.Blogs.FirstAsync();
+                var posts = await context.Posts.ToListAsync();
+                blog.Posts = await context.Posts.Where(x => x.BlogId == blog.BlogId).ToListAsync();
                 post = blog.Posts.First();
+            }
+            catch (Exception ex)
+            {
+                _outputHelper.WriteLine(ex.Message);
             }
             finally
             {

@@ -14,16 +14,16 @@ public class CouchbaseClientWrapper : ICouchbaseClientWrapper
 {
     private readonly  ITypeTranscoder _transcoder = new RawJsonTranscoder();
     private IBucket? _bucket;
-    private readonly IServiceProvider _serviceProvider;
+    private readonly IBucketProvider _bucketProvider;
     private readonly ICouchbaseDbContextOptionsBuilder _couchbaseDbContextOptionsBuilder;
     private readonly ILogger<CouchbaseClientWrapper> _logger;
     private readonly ConcurrentDictionary<string, ICouchbaseCollection> _collectionCache = new();
     private readonly SemaphoreSlim _semaphore = new(1);
 
-    public CouchbaseClientWrapper(IServiceProvider serviceProvider,
+    public CouchbaseClientWrapper(IBucketProvider bucketProvider,
         ICouchbaseDbContextOptionsBuilder couchbaseDbContextOptionsBuilder, ILogger<CouchbaseClientWrapper> logger)
     {
-        _serviceProvider = serviceProvider;
+        _bucketProvider = bucketProvider;
         _couchbaseDbContextOptionsBuilder = couchbaseDbContextOptionsBuilder;
         _logger = logger;
     }
@@ -94,12 +94,7 @@ public class CouchbaseClientWrapper : ICouchbaseClientWrapper
         await _semaphore.WaitAsync().ConfigureAwait(false);
         try
         {
-            var clusterProvider =
-                _serviceProvider.GetRequiredKeyedService<IClusterProvider>(_couchbaseDbContextOptionsBuilder
-                    .ClusterOptions.ConnectionString);
-
-            var cluster = await clusterProvider.GetClusterAsync().ConfigureAwait(false);
-            _bucket = await cluster.BucketAsync(_couchbaseDbContextOptionsBuilder.Bucket);
+            _bucket = await _bucketProvider.GetBucketAsync(_couchbaseDbContextOptionsBuilder.Bucket).ConfigureAwait(false);
 
             //Note that the keyspace is stored as Collection.Bucket.Scope in the entity
             //this is done so that the correct alias is chosen as the first letter of the

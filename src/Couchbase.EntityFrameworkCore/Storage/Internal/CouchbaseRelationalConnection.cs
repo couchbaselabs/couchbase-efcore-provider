@@ -15,7 +15,7 @@ public class CouchbaseRelationalConnection : RelationalConnection, ICouchbaseCon
     private IDbContextTransaction? _currentTransaction1;
     private IRelationalCommand _relationalCommand;
     private readonly IRelationalCommandBuilder _relationalCommandBuilder;
-    private readonly IServiceProvider _serviceProvider;
+    private readonly IBucketProvider _bucketProvider;
     private readonly ICouchbaseDbContextOptionsBuilder _couchbaseDbContextOptionsBuilder;
     private readonly RelationalConnectionDependencies _dependencies;
     private IDiagnosticsLogger<DbLoggerCategory.Infrastructure> _logger;
@@ -56,13 +56,13 @@ public class CouchbaseRelationalConnection : RelationalConnection, ICouchbaseCon
     public CouchbaseRelationalConnection(RelationalConnectionDependencies dependencies,
         IDiagnosticsLogger<DbLoggerCategory.Infrastructure> logger,
         IRelationalCommandBuilder relationalCommandBuilder,
-        IServiceProvider serviceProvider,
+        IBucketProvider bucketProvider,
         ICouchbaseDbContextOptionsBuilder couchbaseDbContextOptionsBuilder) : base(dependencies)
     {
         _dependencies = dependencies;
         _logger = logger;
         _relationalCommandBuilder = relationalCommandBuilder;
-        _serviceProvider = serviceProvider;
+        _bucketProvider = bucketProvider;
         _couchbaseDbContextOptionsBuilder = couchbaseDbContextOptionsBuilder;
 
         var optionsExtension = dependencies.ContextOptions.Extensions.OfType<CouchbaseOptionsExtension>().FirstOrDefault();
@@ -81,6 +81,6 @@ public class CouchbaseRelationalConnection : RelationalConnection, ICouchbaseCon
 
     protected override DbConnection CreateDbConnection()
     {
-        return new CouchbaseConnection(_serviceProvider, _couchbaseDbContextOptionsBuilder);
+        return new CouchbaseConnection(_bucketProvider, _couchbaseDbContextOptionsBuilder);
     }
 }

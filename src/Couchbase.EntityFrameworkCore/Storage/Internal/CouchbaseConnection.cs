@@ -9,13 +9,21 @@ namespace Couchbase.EntityFrameworkCore.Storage.Internal;
 
 public class CouchbaseConnection :  DbConnection
 {
-    private readonly IServiceProvider _serviceProvider;
+    private readonly IBucketProvider _bucketProvider;
     private readonly ICouchbaseDbContextOptionsBuilder _couchbaseDbContextOptionsBuilder;
-    private static ConcurrentDictionary<string, ICluster> _clusters = new();
 
-    public CouchbaseConnection(IServiceProvider serviceProvider, ICouchbaseDbContextOptionsBuilder couchbaseDbContextOptionsBuilder)
+    public CouchbaseConnection(IBucketProvider bucketProvider, ICouchbaseDbContextOptionsBuilder couchbaseDbContextOptionsBuilder, string database, string dataSource, string serverVersion)
     {
-        _serviceProvider = serviceProvider;
+        _bucketProvider = bucketProvider;
+        _couchbaseDbContextOptionsBuilder = couchbaseDbContextOptionsBuilder;
+        Database = database;
+        DataSource = dataSource;
+        ServerVersion = serverVersion;
+    }
+
+    public CouchbaseConnection(IBucketProvider bucketProvider, ICouchbaseDbContextOptionsBuilder couchbaseDbContextOptionsBuilder)
+    {
+        _bucketProvider = bucketProvider;
         _couchbaseDbContextOptionsBuilder = couchbaseDbContextOptionsBuilder;
     }
 
@@ -35,14 +43,7 @@ public class CouchbaseConnection :  DbConnection
 
     public override void Open()
     {
-        if (_clusters.ContainsKey(ConnectionString))
-        {
-            return;
-        }
-
-        var clusterProvider = _serviceProvider.GetRequiredKeyedService<IClusterProvider>(_couchbaseDbContextOptionsBuilder.ClusterOptions.ConnectionString);
-        var cluster = clusterProvider.GetClusterAsync().GetAwaiter().GetResult();
-        _clusters.TryAdd(ConnectionString, cluster);
+      //noop
     }
 
     public override string ConnectionString
@@ -58,16 +59,13 @@ public class CouchbaseConnection :  DbConnection
 
     protected override DbCommand CreateDbCommand()
     {
-        var cluster = _clusters.GetOrAdd(ConnectionString, s =>
-        {
-            var clusterProvider = _serviceProvider.GetRequiredKeyedService<IClusterProvider>(_couchbaseDbContextOptionsBuilder.ClusterOptions.ConnectionString);
-            return clusterProvider.GetClusterAsync().GetAwaiter().GetResult();
-        });
-
+        //This sync over async needs to be fixed
+        var bucket = _bucketProvider.
+            GetBucketAsync(_couchbaseDbContextOptionsBuilder.Bucket).GetAwaiter().GetResult();
         return new CouchbaseCommand
         {
             Connection = this,
-            Cluster = cluster
+            Cluster = bucket.Cluster
         };
     }
 }

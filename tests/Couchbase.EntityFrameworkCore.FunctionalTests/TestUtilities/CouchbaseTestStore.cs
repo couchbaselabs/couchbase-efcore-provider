@@ -6,6 +6,7 @@ using Couchbase.EntityFrameworkCore.Extensions;
 using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.EntityFrameworkCore.Infrastructure.Internal;
 using Couchbase.EntityFrameworkCore.Storage.Internal;
+using Couchbase.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -85,7 +86,7 @@ public class CouchbaseTestStore : RelationalTestStore
         services.AddEntityFrameworkCouchbase(new CouchbaseOptionsExtension(dbConnectionOptions));
 
         ServiceProvider = services.BuildServiceProvider();
-        var connection = new CouchbaseConnection( this.ServiceProvider, dbConnectionOptions);
+        var connection = new CouchbaseConnection(ServiceProvider.GetRequiredService<IBucketProvider>(), dbConnectionOptions);
         Connection = connection;
 
         var path = System.IO.Path.GetDirectoryName(

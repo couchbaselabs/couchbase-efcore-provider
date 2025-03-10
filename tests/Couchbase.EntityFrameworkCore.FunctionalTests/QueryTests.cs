@@ -23,7 +23,7 @@ public class QueryTests
     public async Task Test_Select_Limit()
     {
         var context = _couchbaseFixture.TravelSampleContext;
-        var results = context.Airlines.OrderBy(x => x.Id).Take(10);
+        var results = await context.Airlines.OrderBy(x => x.Id).Take(10).ToListAsync();
         foreach (var airline in results)
         {
             _outputHelper.WriteLine(airline.ToString());
@@ -42,10 +42,11 @@ public class QueryTests
     }
 
     [Fact]
-    public void Test_Count()
+    public async Task Test_Count()
     {
         var context = _couchbaseFixture.TravelSampleContext;
-        var count = context.Airlines.Count();
+        var count = await context.Airlines.CountAsync().ConfigureAwait(false);
+        Assert.True(count != 0);
     }
 
     [Fact]
@@ -117,11 +118,11 @@ public class QueryTests
         var count = await context.SaveChangesAsync();
 
         var position = 2;
-        var nextPage = context.Sessions
+        var nextPage = await context.Sessions
             .OrderBy(s => s.Id)
             .Skip(position)
             .Take(10)
-            .ToList();
+            .ToListAsync();
         _outputHelper.WriteLine(nextPage.First().Category);
     }
 
@@ -154,27 +155,45 @@ public class QueryTests
     }
 
     [Fact]
-    public async Task Test_SqlQueries_Throws_NotImplementedException()
+    public async Task Test_FromSqlRaw_Throws_InvalidOperationException()
     {
         var context = new BloggingContext();
-        var rating = 3;
+        var rating = 5;
 
-        await Assert.ThrowsAsync<NotImplementedException>(async () => await context.Blogs
-            .FromSqlRaw($"SELECT VALUE c FROM root c WHERE c.Rating > {rating}")
+        //InvalidOperationException is thrown because CouchbaseDbDataReader implementation is incomplete
+        await Assert.ThrowsAsync<InvalidOperationException>(async () => await context.Blogs
+            .FromSqlRaw($"SELECT VALUE p FROM Content.Blogs.Post p WHERE p.Rating > {rating}")
             .ToListAsync());
     }
-    
+
     [Fact]
     public async Task Test_Simple_Joins()
     {
         var context = new BloggingContext();
+
+        context.Update(
+            new Person
+            {
+                PersonId = 1,
+                PhotoId = 1,
+                Name = "John Doe"
+            });
+        context.Update(
+            new PersonPhoto
+            {
+                Caption = "This is a photo.",
+                Person = await context.People.FindAsync(1),
+                PersonPhotoId = 1
+            });
+
+        await context.SaveChangesAsync();
         var query = from photo in context.Set<PersonPhoto>()
             join person in context.Set<Person>()
                 on photo.PersonPhotoId equals person.PhotoId
             select new { person, photo };
 
         var results = await query.ToListAsync();
-        Assert.True(query.Any());
+        Assert.True(await query.AnyAsync());
     }
 
     [Fact]
@@ -240,7 +259,7 @@ public class QueryTests
     }
 
     [Fact]
-    public async Task Test_Average_Throws_CouchbaseParsingException()
+    public async Task Test_Average_Does_Not_Throw_CouchbaseParsingException()
     {
         var context = new BloggingContext();
         var query = from p in context.Set<Post>()
@@ -248,12 +267,12 @@ public class QueryTests
             into g
             select new { g.Key, Avg=g.Average(x=>x.Rating) };
 
-         //Ticket for fixing: https://jira.issues.couchbase.com/browse/NCBC-3891
-         await Assert.ThrowsAsync<ParsingFailureException>(async ()=> await query.ToListAsync());
+        var result = await query.ToListAsync();
+        Assert.NotEmpty(result);
     }
 
     [Fact]
-    public async Task Test_FromSqlRaw()
+    public async Task Test_FromSqlRaw_With_Parameters()
     {
         var context = new BloggingContext();
         string query = "SELECT p.* FROM `Content`.`Blogs`.`Person` as p WHERE PersonId={0}";
@@ -263,11 +282,12 @@ public class QueryTests
     }
 
     [Fact]
-    public async Task Test_FromRaw_Throws_NotImplementedException()
+    public async Task Test_FromRaw_Throws_InvalidOperationException()
     {
         var context = new BloggingContext();
-        string query = "SELECT p.* FROM `Content`.`Blogs`.`Person` as p WHERE PersonId={0}";
-        Assert.Throws<NotImplementedException>(()=>context.Blogs
+
+        //Exception is because of an incomplete implementation of CouchbaseDbDataReader
+        Assert.Throws<InvalidOperationException>(()=>context.Blogs
             .FromSql($"SELECT * FROM `Content`.`Blogs`.`Blog`")
             .ToList());
     }

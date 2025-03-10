@@ -33,11 +33,10 @@ public class DependencyInjectionTests
         var bloggingContext = _fixture.BloggingContext;
         var travelSampleContext = _fixture.TravelSampleContext;
 
-        var blogs = bloggingContext.Blogs.Take(1);
-        var airlines = travelSampleContext.Airlines.Take(1);
-        
-        var blog = await blogs.FirstAsync();
-        
+        var blogs = await bloggingContext.Blogs.Take(1).ToListAsync();
+        var airlines = await travelSampleContext.Airlines.Take(1).ToListAsync();
+
+
         Assert.Single(blogs);
         Assert.Single(airlines);
     }
@@ -74,7 +73,7 @@ public class DependencyInjectionTests
                 configuration.Bucket = "travel-sample";
                 configuration.Scope = "inventory";
             });
-        
+
         services.AddKeyedCouchbase("mine", options =>
         {
             options.ConnectionString = "couchbase://localhost";
@@ -90,15 +89,13 @@ public class DependencyInjectionTests
         var cluster = await boo.GetClusterAsync();
         var result = cluster.QueryAsync<dynamic>("SELECT 1;");
         Assert.NotNull(result);
-        
+
         bloggingContext.Update(new Blog{BlogId = 1, Url = "http://localhost/blogs"});
         await bloggingContext.SaveChangesAsync();
-        
-        var blogs = bloggingContext.Blogs.Take(1);
-        var airlines = travelSampleContext.Airlines.Take(1);
 
-        var airline = await airlines.FirstAsync();
-        var blog = await blogs.FirstAsync();
+        var blogs = await bloggingContext.Blogs.Take(1).ToListAsync();
+        var airlines = await travelSampleContext.Airlines.Take(1).ToListAsync();
+
         Assert.Single(blogs);
         Assert.Single(airlines);
     }

@@ -2,6 +2,7 @@ using System.Diagnostics;
 using Couchbase.Diagnostics;
 using Couchbase.EntityFrameworkCore.Extensions;
 using Couchbase.EntityFrameworkCore.Infrastructure;
+using Couchbase.EntityFrameworkCore.Utils;
 using Couchbase.Extensions.DependencyInjection;
 using Couchbase.Management.Buckets;
 using Couchbase.Management.Collections;
@@ -42,23 +43,6 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
         _cluster = await clusterProvider.GetClusterAsync();
     }
 
-    public override bool Exists()
-    {
-        InitializeAsync().ConfigureAwait(false).GetAwaiter().GetResult();
-
-        var bucketManager = _cluster.Buckets;
-        try
-        {
-            bucketManager.GetBucketAsync(_couchbaseDbContextOptionsBuilder.Bucket).GetAwaiter().GetResult();
-        }
-        catch (Exception)
-        {
-            return false;
-        }
-
-        return true;
-    }
-
     private async Task<IBucket> GetBucketAsync(TimeSpan? timeout = null, CancellationToken cancellationToken = default)
     {
         IBucket bucket = null;
@@ -80,25 +64,6 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
         return bucket;
     }
 
-    private bool ScopeExists()
-    {
-        var exists = false;
-        var manager = GetBucketAsync().GetAwaiter().GetResult().Collections;
-        try
-        {
-            var scopes = manager.GetAllScopesAsync().GetAwaiter().GetResult();
-            if (scopes.Contains(new ScopeSpec(_couchbaseDbContextOptionsBuilder.Scope)))
-            {
-                exists = true;
-            }
-        }
-        catch (Exception e)
-        {
-            Console.WriteLine(e);
-        }
-        return exists;
-    }
-
     private async Task<bool> ScopeExistsAsync()
     {
         var exists = false;
@@ -116,31 +81,6 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
             Console.WriteLine(e);
         }
         return exists;
-    }
-
-    private bool CollectionsExists()
-    {
-        var manager = GetBucketAsync().GetAwaiter().GetResult().Collections;
-        var scopes = manager.GetAllScopesAsync().GetAwaiter().GetResult();
-
-        try
-        {
-            var scope = scopes.FirstOrDefault(x => x.Name == _couchbaseDbContextOptionsBuilder.Scope);
-            var entityTypes = _designTimeModel.Model.GetEntityTypes();
-            foreach (var entityType in entityTypes)
-            {
-                if (scope!.Collections.Contains(new CollectionSpec(scope.Name, entityType.Name)))
-                {
-                    return true;
-                }
-            }
-        }
-        catch (Exception)
-        {
-            _logger.LogWarning("Couchbase collection could not be retrieved.");
-        }
-
-        return false;
     }
 
     private async Task<bool> CollectionsExistsAsync()
@@ -173,40 +113,6 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
         return true;
     }
 
-    public override void Create()
-    {
-        InitializeAsync().ConfigureAwait(false).GetAwaiter().GetResult();
-
-        var manager = _cluster.Buckets;
-        manager.CreateBucketAsync(new BucketSettings
-        {
-            Name = _couchbaseDbContextOptionsBuilder.Bucket,
-            BucketType = BucketType.Couchbase
-        }).GetAwaiter().GetResult();
-
-        do
-        {
-            Thread.Sleep(1000);
-        }while(!Exists());
-    }
-
-    private void CreateScope()
-    {
-        var manager = GetBucketAsync().GetAwaiter().GetResult().Collections;
-        var scopes = manager.GetAllScopesAsync().GetAwaiter().GetResult();
-        if(!scopes.Contains(new ScopeSpec(_couchbaseDbContextOptionsBuilder.Bucket)))
-        {
-            try
-            {
-                manager.CreateScopeAsync(_couchbaseDbContextOptionsBuilder.Scope).GetAwaiter().GetResult();
-            }
-            catch (ScopeExistsException)
-            {
-                _logger.LogWarning("Couchbase scope already exists.");
-            }
-        }
-    }
-
     private async Task CreateScopeAsync()
     {
         var manager = (await GetBucketAsync()).Collections;
@@ -220,24 +126,6 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
             catch (ScopeExistsException)
             {
                 _logger.LogWarning("Couchbase scope already exists.");
-            }
-        }
-    }
-
-    private void CreateCollections()
-    {
-        var manager = GetBucketAsync().GetAwaiter().GetResult().Collections;
-        foreach (var entityType in _designTimeModel.Model.GetEntityTypes())
-        {
-            try
-            {
-                manager.CreateCollectionAsync(_couchbaseDbContextOptionsBuilder.Scope, 
-                    entityType.Name, new CreateCollectionSettings())
-                    .GetAwaiter().GetResult();
-            }
-            catch (CollectionExistsException)
-            {
-               _logger.LogWarning("Couchbase collection already exists.");
             }
         }
     }
@@ -259,19 +147,12 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
         }
     }
 
-    public override void Delete()
+    /// <summary>
+    ///     Creates the physical database. Does not attempt to populate it with any schema.
+    /// </summary>
+    public override void Create()
     {
-        InitializeAsync().ConfigureAwait(false).GetAwaiter().GetResult();
-
-        var manager = _cluster.Buckets;
-        try
-        {
-            manager.DropBucketAsync(_couchbaseDbContextOptionsBuilder.Bucket).GetAwaiter().GetResult();
-        }
-        catch (BucketNotFoundException)
-        {
-            _logger.LogWarning("Couchbase bucket was not found.");
-        }
+        throw ExceptionHelper.SyncroIONotSupportedException();
     }
 
     public override async Task CreateAsync(CancellationToken cancellationToken = new CancellationToken())
@@ -293,6 +174,26 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
         {
             _logger.LogWarning("Couchbase bucket already exists.");
         }
+    }
+
+    /// <summary>
+    ///     Deletes the physical database.
+    /// </summary>
+    public override void Delete()
+    {
+        throw ExceptionHelper.SyncroIONotSupportedException();
+    }
+
+    /// <summary>
+    ///     Determines whether the physical database exists. No attempt is made to determine if the database
+    ///     contains the schema for the current model.
+    /// </summary>
+    /// <returns>
+    ///     <see langword="true" /> if the database exists; otherwise <see langword="false" />.
+    /// </returns>
+    public override bool Exists()
+    {
+        throw ExceptionHelper.SyncroIONotSupportedException();
     }
 
     public override async Task<bool> ExistsAsync(CancellationToken cancellationToken = new CancellationToken())
