@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Text.Json;
 using Couchbase.EntityFrameworkCore.Extensions;
 using Couchbase.EntityFrameworkCore.Infrastructure;
+using Couchbase.EntityFrameworkCore.Utils;
 using Couchbase.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking.Internal;
@@ -18,7 +19,7 @@ public class CouchbaseDatabaseWrapper(DatabaseDependencies dependencies, ICouchb
 {
     public override int SaveChanges(IList<IUpdateEntry> entries)
     {
-       return Task.Run(async () => await SaveChangesAsync(entries).ConfigureAwait(false)).Result;
+        throw ExceptionHelper.SyncroIONotSupportedException();
     }
 
     public override async Task<int> SaveChangesAsync(IList<IUpdateEntry> entries, CancellationToken cancellationToken = new())
@@ -72,164 +73,155 @@ public class CouchbaseDatabaseWrapper(DatabaseDependencies dependencies, ICouchb
 
     private byte[] GenerateRootJson(IUpdateEntry updateEntry)
     {
-        try
+        var entityType = updateEntry.EntityType;
+        JsonWriterOptions writerOptions = new() { Indented = true };
+
+        using MemoryStream stream = new();
+        using Utf8JsonWriter writer = new(stream, writerOptions);
+        writer.WriteStartObject();
+
+        foreach (var property in entityType.GetProperties())
         {
-            var entityType = updateEntry.EntityType;
-            JsonWriterOptions writerOptions = new() { Indented = true };
-
-            using MemoryStream stream = new();
-            using Utf8JsonWriter writer = new(stream, writerOptions);
-            writer.WriteStartObject();
-
-            foreach (var property in entityType.GetProperties())
+            var jsonPropertyName = property.FindAnnotation("Relational:JsonPropertyName");
+            var fieldName = jsonPropertyName?.Value?.ToString() ?? property.Name;
+            var value = updateEntry.GetCurrentValue(property);
+            var propertyType = GetUnderlyingType(property.ClrType);
+            switch (propertyType.Name)
             {
-                var jsonPropertyName = property.FindAnnotation("Relational:JsonPropertyName");
-                var fieldName = jsonPropertyName?.Value?.ToString() ?? property.Name;
-                var value = updateEntry.GetCurrentValue(property);
-                var propertyType = GetUnderlyingType(property.ClrType);
-                switch (propertyType.Name)
-                {
-                    case "String":
-                        if (value != null)
-                        {
-                            writer.WriteString(fieldName, (string)value);
-                        }
-                        else
-                        {
-                            writer.WriteNull(property.Name);
-                        }
-
-                        break;
-                    case "Single":
-                        if (value != null)
-                        {
-                            writer.WriteNumber(fieldName, (float)value);
-                        }
-                        else
-                        {
-                            writer.WriteNull(property.Name);
-                        }
-
-                        break;
-                    case "Int16":
-                        if (value != null)
-                        {
-                            writer.WriteNumber(fieldName, (short)value);
-                        }
-                        else
-                        {
-                            writer.WriteNull(property.Name);
-                        }
-
-                        break;
-                    case "UInt16":
-                        if (value != null)
-                        {
-                            writer.WriteNumber(fieldName, (ushort)value);
-                        }
-                        else
-                        {
-                            writer.WriteNull(property.Name);
-                        }
-
-                        break;
-                    case "Int32":
-                        if (value != null)
-                        {
-                            writer.WriteNumber(fieldName, (int)value);
-                        }
-                        else
-                        {
-                            writer.WriteNull(property.Name);
-                        }
-
-                        break;
-                    case "UInt32":
-                        if (value != null)
-                        {
-                            writer.WriteNumber(fieldName, (uint)value);
-                        }
-                        else
-                        {
-                            writer.WriteNull(property.Name);
-                        }
-
-                        break;
-                    case "DateTime":
-                        if (value != null)
-                        {
-                            writer.WriteString(fieldName, (DateTime)value);
-                        }
-                        else
-                        {
-                            writer.WriteNull(property.Name);
-                        }
-
-                        break;
-                    case "Decimal":
-                        if (value != null)
-                        {
-                            writer.WriteNumber(fieldName, (decimal)value);
-                        }
-                        else
-                        {
-                            writer.WriteNull(property.Name);
-                        }
-
-                        break;
-                    case "Byte[]":
-                        if (value != null)
-                        {
-                            writer.WriteBase64String(property.Name, new ReadOnlyMemory<byte>((byte[])value).Span);
-                        }
-
-                        break;
-                    case "Guid":
-                        if (value != null)
-                        {
-                            writer.WriteString(property.Name, value.ToString());
-                        }
-                        else
-                        {
-                            writer.WriteNull(property.Name);
-                        }
-
-                        break;
-                    case "Boolean":
-                        if (value != null)
-                        {
-                            writer.WriteBoolean(property.Name, (bool)value);
-                        }
-                        else
-                        {
-                            writer.WriteNull(property.Name);
-                        }
-                        break;
-                    default:
+                case "String":
+                    if (value != null)
                     {
-                        if (propertyType.IsEnum)
-                        {
-                            writer.WriteString(property.Name, value != null ? value.ToString() : string.Empty);
-                        }
-                        else
-                        {
-                            throw new JsonException();
-                        }
-                        break;
+                        writer.WriteString(fieldName, (string)value);
                     }
+                    else
+                    {
+                        writer.WriteNull(property.Name);
+                    }
+
+                    break;
+                case "Single":
+                    if (value != null)
+                    {
+                        writer.WriteNumber(fieldName, (float)value);
+                    }
+                    else
+                    {
+                        writer.WriteNull(property.Name);
+                    }
+
+                    break;
+                case "Int16":
+                    if (value != null)
+                    {
+                        writer.WriteNumber(fieldName, (short)value);
+                    }
+                    else
+                    {
+                        writer.WriteNull(property.Name);
+                    }
+
+                    break;
+                case "UInt16":
+                    if (value != null)
+                    {
+                        writer.WriteNumber(fieldName, (ushort)value);
+                    }
+                    else
+                    {
+                        writer.WriteNull(property.Name);
+                    }
+
+                    break;
+                case "Int32":
+                    if (value != null)
+                    {
+                        writer.WriteNumber(fieldName, (int)value);
+                    }
+                    else
+                    {
+                        writer.WriteNull(property.Name);
+                    }
+
+                    break;
+                case "UInt32":
+                    if (value != null)
+                    {
+                        writer.WriteNumber(fieldName, (uint)value);
+                    }
+                    else
+                    {
+                        writer.WriteNull(property.Name);
+                    }
+
+                    break;
+                case "DateTime":
+                    if (value != null)
+                    {
+                        writer.WriteString(fieldName, (DateTime)value);
+                    }
+                    else
+                    {
+                        writer.WriteNull(property.Name);
+                    }
+
+                    break;
+                case "Decimal":
+                    if (value != null)
+                    {
+                        writer.WriteNumber(fieldName, (decimal)value);
+                    }
+                    else
+                    {
+                        writer.WriteNull(property.Name);
+                    }
+
+                    break;
+                case "Byte[]":
+                    if (value != null)
+                    {
+                        writer.WriteBase64String(property.Name, new ReadOnlyMemory<byte>((byte[])value).Span);
+                    }
+
+                    break;
+                case "Guid":
+                    if (value != null)
+                    {
+                        writer.WriteString(property.Name, value.ToString());
+                    }
+                    else
+                    {
+                        writer.WriteNull(property.Name);
+                    }
+
+                    break;
+                case "Boolean":
+                    if (value != null)
+                    {
+                        writer.WriteBoolean(property.Name, (bool)value);
+                    }
+                    else
+                    {
+                        writer.WriteNull(property.Name);
+                    }
+                    break;
+                default:
+                {
+                    if (propertyType.IsEnum)
+                    {
+                        writer.WriteString(property.Name, value != null ? value.ToString() : string.Empty);
+                    }
+                    else
+                    {
+                        throw new JsonException();
+                    }
+                    break;
                 }
             }
-
-            writer.WriteEndObject();
-            writer.Flush();
-            return stream.ToArray();
-        }
-        catch (Exception e)
-        {
-            
         }
 
-        return null;
+        writer.WriteEndObject();
+        writer.Flush();
+        return stream.ToArray();
     }
 
     private Type GetUnderlyingType(Type type) => Nullable.GetUnderlyingType(type) ?? type;
