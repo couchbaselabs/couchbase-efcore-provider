@@ -44,7 +44,7 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
 
     public IEnumerator<T> GetEnumerator()
     {
-        throw new NotSupportedException();
+        throw ExceptionHelper.SyncroIONotSupportedException();
     }
 
     IEnumerator IEnumerable.GetEnumerator()
