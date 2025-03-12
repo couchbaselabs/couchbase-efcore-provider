@@ -8,6 +8,7 @@ using System.Reflection.Metadata;
 using System.Text;
 using Couchbase.Core.Utils;
 using Couchbase.EntityFrameworkCore.Infrastructure;
+using Couchbase.EntityFrameworkCore.Utils;
 using Couchbase.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Query;
@@ -332,7 +333,7 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
 
             //first split apart the keyspace and extract the alias from the collection
             var splitName = originalName.Split('.');
-            if(splitName.Length != 3) throw new InvalidOperationException();
+            if(splitName.Length != 3) throw ExceptionHelper.InvalidKeyspaceFormatOrMissingCollection(splitName.FirstOrDefault());
             _alias = splitName[2].FirstOrDefault().ToString().ToLowerInvariant();
 
             //if the original alias has an ordinal index add it to the index
