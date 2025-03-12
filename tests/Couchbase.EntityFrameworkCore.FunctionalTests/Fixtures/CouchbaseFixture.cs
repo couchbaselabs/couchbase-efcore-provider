@@ -23,7 +23,7 @@ public class CouchbaseFixture : IAsyncLifetime
         var loggerFactory = LoggerFactory.Create(builder =>
         {
             builder.AddFilter(level => level >= LogLevel.Debug);
-            builder.AddFile("Logs/myapp-{Date}.txt", LogLevel.Debug);
+            builder.AddFile("Logs/myapp-{Date}-5.txt", LogLevel.Debug);
         });
 
         var options = new ClusterOptions()
@@ -47,7 +47,7 @@ public class CouchbaseFixture : IAsyncLifetime
         {
         }
 
-        public TravelSampleDbContext(ClusterOptions clusterOptions)
+        public  TravelSampleDbContext(ClusterOptions clusterOptions)
         {
             _clusterOptions = clusterOptions;
         }
@@ -58,14 +58,7 @@ public class CouchbaseFixture : IAsyncLifetime
 
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
         {
-            var loggerFactory = LoggerFactory.Create(builder =>
-            {
-                builder.AddFilter(level => level >= LogLevel.Debug);
-                builder.AddFile("Logs/myapp-{Date}.txt", LogLevel.Debug);
-            });
-
             base.OnConfiguring(optionsBuilder);
-            optionsBuilder.UseLoggerFactory(loggerFactory);
             optionsBuilder.UseCouchbase(_clusterOptions,
                 couchbaseDbContextOptions =>
             {
