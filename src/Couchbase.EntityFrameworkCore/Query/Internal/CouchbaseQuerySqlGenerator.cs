@@ -553,7 +553,7 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
     protected override void GenerateIn(InExpression inExpression, bool negated)
     {
         Visit(inExpression.Item);
-        Sql.Append(negated ? " NOT IN (" : " IN (");
+        Sql.Append(negated ? " NOT IN [" : " IN [");
 
         if (inExpression.Values is not null)
         {
@@ -571,7 +571,7 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
             Sql.AppendLine();
         }
 
-        Sql.Append(")");
+        Sql.Append("]");
     }
 
     private void GenerateList<T>(

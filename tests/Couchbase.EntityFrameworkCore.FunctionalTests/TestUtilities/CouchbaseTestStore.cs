@@ -42,7 +42,7 @@ public class CouchbaseTestStore : RelationalTestStore
                                 .WithLogging(LoggerFactory.Create(builder =>
                                         {
                                             builder.AddFilter(level => level >= LogLevel.Debug);
-                                            builder.AddFile("Logs/myapp-{Date}.txt", LogLevel.Debug);
+                                            builder.AddFile("Logs/myapp-{Date}-1.txt", LogLevel.Debug);
                                         }))
                                 .WithConnectionString(TestEnvironment.ConnectionString)
                                 .WithCredentials(TestEnvironment.Username, TestEnvironment.Password))))
@@ -70,7 +70,7 @@ public class CouchbaseTestStore : RelationalTestStore
         var loggerFactory = LoggerFactory.Create(builder =>
             {
                 builder.AddFilter(level => level >= LogLevel.Debug);
-                builder.AddFile("Logs/myapp-{Date}.txt", LogLevel.Debug);
+                builder.AddFile("Logs/myapp-{Date}-2.txt", LogLevel.Debug);
             });
 
         var dbConnectionOptions = new CouchbaseDbContextOptionsBuilder(
@@ -116,7 +116,7 @@ public class CouchbaseTestStore : RelationalTestStore
                         builder =>
                             {
                                 builder.AddFilter(level => level >= LogLevel.Debug);
-                                builder.AddFile("Logs/myapp-{Date}.txt", LogLevel.Debug);
+                                builder.AddFile("Logs/myapp-{Date}-3.txt", LogLevel.Debug);
                             })),
             couchbaseDbContextOptions =>
                 {

@@ -165,6 +165,17 @@ public class CouchbaseDatabaseWrapper(DatabaseDependencies dependencies, ICouchb
                     }
 
                     break;
+                case "DateTimeOffset":
+                    if (value != null)
+                    {
+                        writer.WriteString(fieldName, (DateTimeOffset)value);
+                    }
+                    else
+                    {
+                        writer.WriteNull(property.Name);
+                    }
+
+                    break;
                 case "Decimal":
                     if (value != null)
                     {
