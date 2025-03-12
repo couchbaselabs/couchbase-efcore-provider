@@ -5,10 +5,10 @@
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
         <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
-        <Version>1.0.0-pre.1</Version>
+        <Version>1.0.0-pre.2</Version>
         <Title>EF Core Couchbase DB Provider</Title>
         <Authors>Couchbase, Inc.</Authors>
-        <Copyright>Couchbase, Inc. (c) 2024</Copyright>
+        <Copyright>Couchbase, Inc. (c) 2025</Copyright>
         <PackageProjectUrl>https://github.com/couchbaselabs/couchbase-efcore-provider</PackageProjectUrl>
         <PackageLicenseUrl>https://github.com/couchbaselabs/couchbase-efcore-provider/blob/main/README.md</PackageLicenseUrl>
         <RepositoryUrl>https://github.com/couchbaselabs/couchbase-efcore-provider</RepositoryUrl>
@@ -21,10 +21,10 @@
     </PropertyGroup>
 
     <ItemGroup>
-      <PackageReference Include="Couchbase.Extensions.DependencyInjection" Version="3.6.3" />
-      <PackageReference Include="CouchbaseNetClient" Version="3.6.3" />
-      <PackageReference Include="Microsoft.EntityFrameworkCore" Version="8.0.8" />
-      <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="8.0.8" />
+      <PackageReference Include="Couchbase.Extensions.DependencyInjection" Version="3.6.6" />
+      <PackageReference Include="CouchbaseNetClient" Version="3.6.6" />
+      <PackageReference Include="Microsoft.EntityFrameworkCore" Version="8.0.13" />
+      <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="8.0.13" />
     </ItemGroup>
 
     <ItemGroup>

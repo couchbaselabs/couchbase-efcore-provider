@@ -7,7 +7,7 @@ For most applications dependencies are injected into the .NET Service Container 
 
 ```
 builder.Services.AddDbContext<SchoolContext>(options=> options
-    .UseCouchbase<INamedBucketProvider>(new ClusterOptions()
+    .UseCouchbase(new ClusterOptions()
     .WithCredentials("Administrator", "password")
     .WithConnectionString("couchbase://localhost"),
         couchbaseDbContextOptions =>
@@ -26,7 +26,7 @@ The EF Core Couchbase DB Provider can also be configured on a per DbContext leve
 protected override void OnConfiguring(DbContextOptionsBuilder options)
     {
         using var loggingFactory = LoggerFactory.Create(builder => builder.AddConsole());
-        options.UseCouchbase<INamedBucketProvider>(new ClusterOptions()
+        options.UseCouchbase(new ClusterOptions()
                 .WithCredentials("Administrator", "password")
                 .WithConnectionString("couchbase://localhost")
                 .WithLogging(loggingFactory),
@@ -57,7 +57,7 @@ dotnet add package EFCore.NamingConventions --version 8.0.3
 ```
 Which is added as part of configuration of the EF Core Couchbase DB Provider:
 ```
-optionsBuilder.UseCouchbase<INamedBucketProvider>(_clusterOptions, couchbaseDbContextOptions =>
+optionsBuilder.UseCouchbase(_clusterOptions, couchbaseDbContextOptions =>
 {
     couchbaseDbContextOptions.Bucket = "travel-sample";
     couchbaseDbContextOptions.Scope = "inventory";

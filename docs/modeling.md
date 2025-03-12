@@ -12,7 +12,7 @@ Assuming we have configured a DbContext for an application such as the Contoso U
 
 ```
 builder.Services.AddDbContext<SchoolContext>(options=>
-    options.UseCouchbase<INamedBucketProvider>(new ClusterOptions()
+    options.UseCouchbase(new ClusterOptions()
     .WithCredentials("Administrator", "password")
     .WithConnectionString("couchbase://localhost"),
         couchbaseDbContextOptions =>
@@ -25,7 +25,7 @@ builder.Services.AddDbContext<SchoolContext>(options=>
 If the Scope has been defined in the initial configuration of the Provider, then only the Collection name is required when modeling:
 
 ```
-modelBuilder.Entity<Course>().ToCouchbaseCollection("course");
+modelBuilder.Entity<Course>().ToCouchbaseCollection(this, "course");
 ```
 
 In this case "course" is a Collection that has been created on the Couchbase Server. This will map the Course entity to the following Keyspace:
@@ -44,7 +44,7 @@ Alternatively, the Scope and Collection can be defined when modeling which will 
 
 ```
 builder.Services.AddDbContext<SchoolContext>(options=>
-    options.UseCouchbase<INamedBucketProvider>(new ClusterOptions()
+    options.UseCouchbase(new ClusterOptions()
     .WithCredentials("Administrator", "password")
     .WithConnectionString("couchbase://localhost"),
         couchbaseDbContextOptions =>
@@ -54,7 +54,7 @@ builder.Services.AddDbContext<SchoolContext>(options=>
 ```
 
 ```
-modelBuilder.Entity<Course>().ToCouchbaseCollection("oxbridge", "course");
+modelBuilder.Entity<Course>().ToCouchbaseCollection(this, "oxbridge", "course");
 ```
 
 This will create a Keyspace that looks like this:
@@ -115,9 +115,9 @@ public class SchoolContext : DbContext
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ...
-        modelBuilder.Entity<Student>().ToCouchbaseCollection("person");
-        modelBuilder.Entity<Instructor>().ToCouchbaseCollection("person");
-        modelBuilder.Entity<Person>().ToCouchbaseCollection("person");
+        modelBuilder.Entity<Student>().ToCouchbaseCollection(this, "person");
+        modelBuilder.Entity<Instructor>().ToCouchbaseCollection(this, "person");
+        modelBuilder.Entity<Person>().ToCouchbaseCollection(this, "person");
         ...
     }
 }
