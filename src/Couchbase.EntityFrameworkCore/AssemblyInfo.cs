@@ -1,5 +1,5 @@
 using System.Runtime.CompilerServices;
 
-#if !SIGNING
-[assembly: InternalsVisibleTo("Couchbase.EntityFrameworkCore.Tests")]
+#if DEBUG
+[assembly: InternalsVisibleTo("Couchbase.EntityFrameworkCore.FunctionalTests")]
 #endif

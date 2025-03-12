@@ -26,7 +26,7 @@ As for other providers the first step is to call UseCouchbase:
 
 ```
 protected override void OnConfiguring(DbContextOptionsBuilder options)
-        => options.UseCouchbase<INamedBucketProvider>(new ClusterOptions()
+        => options.UseCouchbase(new ClusterOptions()
                 .WithCredentials("Administrator", "password")
                 .WithConnectionString("couchbase://localhost"),
             couchbaseDbContextOptions =>
