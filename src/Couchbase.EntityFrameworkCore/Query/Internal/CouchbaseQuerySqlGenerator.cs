@@ -51,6 +51,25 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
                 break;
             }
 
+            case ExpressionType.Convert when sqlUnaryExpression.Type == typeof(string):
+            {
+                Sql.Append("TOSTRING(");
+                var requiresParentheses = RequiresParentheses(sqlUnaryExpression, sqlUnaryExpression.Operand);
+                if (requiresParentheses)
+                {
+                    Sql.Append("(");
+                }
+
+                Visit(sqlUnaryExpression.Operand);
+                if (requiresParentheses)
+                {
+                    Sql.Append(")");
+                }
+
+                Sql.Append(")");
+                break;
+            }
+
             case ExpressionType.Not
                 when sqlUnaryExpression.Type == typeof(bool):
             {
