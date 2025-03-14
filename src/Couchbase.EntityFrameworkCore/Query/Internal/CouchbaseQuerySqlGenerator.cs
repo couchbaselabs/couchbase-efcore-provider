@@ -253,6 +253,7 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
                     {
                         Sql.Append("RAW ");
                     }
+                    Sql.Append("RAW ");
                     GenerateList(selectExpression.Projection, e => Visit(e));
                 }
                 else
