@@ -26,6 +26,9 @@ public class CouchbaseTypeMappingSource: RelationalTypeMappingSource
                 },
                 {
                     typeof(double), new DoubleTypeMapping("NUMBER")
+                },
+                {
+                    typeof(bool), new BoolTypeMapping("BOOLEAN")
                 }
                 //TODO add the rest of the type mappings
             };

@@ -8,7 +8,7 @@ using Xunit.Abstractions;
 
 namespace Couchbase.EntityFrameworkCore.FunctionalTests.Query;
 
-public class NorthwindWhereQueryCouchbaseTest : NorthwindWhereQueryRelationalTestBase<NorthwindQueryCouchbaseFixture<NoopModelCustomizer>>
+public class NorthwindWhereQueryCouchbaseTest : CouchbaseNorthwindWhereQueryRelationalTestBase<NorthwindQueryCouchbaseFixture<NoopModelCustomizer>>
 {
     public NorthwindWhereQueryCouchbaseTest(NorthwindQueryCouchbaseFixture<NoopModelCustomizer> fixture, ITestOutputHelper testOutputHelper)
         : base(fixture)

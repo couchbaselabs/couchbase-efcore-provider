@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using Couchbase.Core.Exceptions;
 using Couchbase.Core.IO.Transcoders;
 using Couchbase.EntityFrameworkCore.Infrastructure;
+using Couchbase.EntityFrameworkCore.Utils;
 using Couchbase.Extensions.DependencyInjection;
 using Couchbase.KeyValue;
 using Microsoft.Extensions.DependencyInjection;
@@ -79,6 +80,7 @@ public class CouchbaseClientWrapper : ICouchbaseClientWrapper
         }
         catch (Exception e)
         {
+            //TODO error should be propagated
             success = false;
             _logger.LogError(e, "Update failed for key {Id} in keyspace {keyspace}",
                 id, keyspace);
@@ -109,8 +111,8 @@ public class CouchbaseClientWrapper : ICouchbaseClientWrapper
         }
         catch (Exception e)
         {
-            _logger.LogError(e, $"Could not find collection for keypace {keyspace}.");
-            throw new CollectionNotFoundException($"Could not find collection for keypace {keyspace}", e);
+            _logger.LogError(e, "Could not find collection for keypace {Keyspace}", keyspace);
+            throw ExceptionHelper.InvalidKeyspaceFormatOrMissingCollection(keyspace);
         }
         finally
         {
