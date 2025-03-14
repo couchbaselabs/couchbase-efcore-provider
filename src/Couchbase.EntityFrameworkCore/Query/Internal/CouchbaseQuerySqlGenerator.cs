@@ -241,18 +241,6 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
             {
                 if (selectExpression.Projection.Count == 1)
                 {
-                    var expression = selectExpression.Projection.First().Expression;
-                    if (expression is SqlFunctionExpression sqlFunctionExpression)
-                    {
-                        if (sqlFunctionExpression.Name == "COUNT")
-                        {
-                            Sql.Append("RAW ");
-                        }
-                    }
-                    else if (expression is ExistsExpression existsExpression)
-                    {
-                        Sql.Append("RAW ");
-                    }
                     Sql.Append("RAW ");
                     GenerateList(selectExpression.Projection, e => Visit(e));
                 }
