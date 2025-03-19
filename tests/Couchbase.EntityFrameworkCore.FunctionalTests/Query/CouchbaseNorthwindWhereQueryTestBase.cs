@@ -1589,7 +1589,7 @@ public abstract class CouchbaseNorthwindWhereQueryTestBase<TFixture> : QueryTest
     public virtual async Task Where_navigation_contains(bool async)
     {
         using var context = CreateContext();
-        var customer = context.Customers.Include(c => c.Orders).Single(c => c.CustomerID == "ALFKI");
+        var customer = await context.Customers.Include(c => c.Orders).SingleAsync(c => c.CustomerID == "ALFKI");
         var orderDetails = context.OrderDetails.Where(od => customer.Orders.Contains(od.Order));
 
         var result = async ? await orderDetails.ToListAsync() : orderDetails.ToList();
