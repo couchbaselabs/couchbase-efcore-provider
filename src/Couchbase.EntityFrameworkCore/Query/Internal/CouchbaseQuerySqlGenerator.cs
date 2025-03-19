@@ -27,11 +27,26 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
     {
     }
 
-     /// <inheritdoc />
+    /// <inheritdoc />
+    protected override Expression VisitCrossJoin(CrossJoinExpression crossJoinExpression)
+    {
+        return base.VisitCrossJoin(crossJoinExpression);
+    }
+
+    /// <inheritdoc />
     protected override Expression VisitSqlUnary(SqlUnaryExpression sqlUnaryExpression)
     {
         switch (sqlUnaryExpression.OperatorType)
         {
+            case ExpressionType.Convert when sqlUnaryExpression.Type == typeof(decimal):
+            case ExpressionType.Convert when sqlUnaryExpression.Type == typeof(float):
+            case ExpressionType.Convert when sqlUnaryExpression.Type == typeof(float):
+            case ExpressionType.Convert when sqlUnaryExpression.Type == typeof(uint):
+            case ExpressionType.Convert when sqlUnaryExpression.Type == typeof(int):
+            case ExpressionType.Convert when sqlUnaryExpression.Type == typeof(short):
+            case ExpressionType.Convert when sqlUnaryExpression.Type == typeof(ushort):
+            case ExpressionType.Convert when sqlUnaryExpression.Type == typeof(ulong):
+            case ExpressionType.Convert when sqlUnaryExpression.Type == typeof(long):
             case ExpressionType.Convert when sqlUnaryExpression.Type == typeof(double):
             {
                 Sql.Append("TONUMBER(");
@@ -54,6 +69,26 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
             case ExpressionType.Convert when sqlUnaryExpression.Type == typeof(string):
             {
                 Sql.Append("TOSTRING(");
+                var requiresParentheses = RequiresParentheses(sqlUnaryExpression, sqlUnaryExpression.Operand);
+                if (requiresParentheses)
+                {
+                    Sql.Append("(");
+                }
+
+                Visit(sqlUnaryExpression.Operand);
+                if (requiresParentheses)
+                {
+                    Sql.Append(")");
+                }
+
+                Sql.Append(")");
+                break;
+            }
+
+            case ExpressionType.Convert
+                when sqlUnaryExpression.Type == typeof(bool):
+            {
+                Sql.Append("TOBOOLEAN(");
                 var requiresParentheses = RequiresParentheses(sqlUnaryExpression, sqlUnaryExpression.Operand);
                 if (requiresParentheses)
                 {
@@ -241,7 +276,18 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
             {
                 if (selectExpression.Projection.Count == 1)
                 {
-                    Sql.Append("RAW ");
+                    var expression = selectExpression.Projection.First().Expression;
+                    if (expression is SqlFunctionExpression sqlFunctionExpression)
+                    {
+                        if (sqlFunctionExpression.Name == "COUNT")
+                        {
+                            Sql.Append("RAW ");
+                        }
+                    }
+                    else if (expression is ExistsExpression existsExpression)
+                    {
+                        Sql.Append("RAW ");
+                    }
                     GenerateList(selectExpression.Projection, e => Visit(e));
                 }
                 else
@@ -425,9 +471,9 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
         ArgumentNullException.ThrowIfNull(binaryExpression);
 
         return binaryExpression.OperatorType == ExpressionType.Add
-               && binaryExpression.Type == typeof(string)
-            ? " || "
-            : base.GetOperator(binaryExpression);
+            && binaryExpression.Type == typeof(string)
+                ? " || "
+                : base.GetOperator(binaryExpression);
     }
 
     protected override void GenerateLimitOffset(SelectExpression selectExpression)
