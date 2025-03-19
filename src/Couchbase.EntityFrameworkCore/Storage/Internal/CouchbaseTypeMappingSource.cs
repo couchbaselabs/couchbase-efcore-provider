@@ -1,3 +1,4 @@
+using System.Data;
 using Microsoft.EntityFrameworkCore.Storage;
 using System.Text.Json.Nodes;
 
@@ -25,11 +26,21 @@ public class CouchbaseTypeMappingSource: RelationalTypeMappingSource
                     typeof(int), new IntTypeMapping("NUMBER")
                 },
                 {
+                    typeof(uint), new UIntTypeMapping("NUMBER")
+                },
+                {
                     typeof(double), new DoubleTypeMapping("NUMBER")
+                },
+                {
+                    typeof(long), new LongTypeMapping("NUMBER")
                 },
                 {
                     typeof(bool), new BoolTypeMapping("BOOLEAN")
                 }
+                /*,
+                {
+                    typeof(string), new StringTypeMapping("STRING", DbType.String)
+                }*/
                 //TODO add the rest of the type mappings
             };
     }
