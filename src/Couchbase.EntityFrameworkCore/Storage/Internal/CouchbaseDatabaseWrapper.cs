@@ -1,5 +1,7 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
+using Couchbase.Core.IO.Serializers;
+using Couchbase.Core.IO.Transcoders;
 using Couchbase.EntityFrameworkCore.Extensions;
 using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.EntityFrameworkCore.Utils;
@@ -19,7 +21,12 @@ public class CouchbaseDatabaseWrapper(DatabaseDependencies dependencies, ICouchb
 {
     public override int SaveChanges(IList<IUpdateEntry> entries)
     {
-        throw ExceptionHelper.SyncroIONotSupportedException();
+#if DEBUG
+        //Required for test infrastructure database creation and seeding
+        return SaveChangesAsync(entries).ConfigureAwait(false).GetAwaiter().GetResult();
+#else
+        ExceptionHelper.SyncroIONotSupportedException();
+#endif
     }
 
     public override async Task<int> SaveChangesAsync(IList<IUpdateEntry> entries, CancellationToken cancellationToken = new())
@@ -34,7 +41,6 @@ public class CouchbaseDatabaseWrapper(DatabaseDependencies dependencies, ICouchb
 
             // document info
             var primaryKey = entityType.GetPrimaryKey(entity);
-            var document= GenerateRootJson(updateEntry);
 
             switch (updateEntry.EntityState)
             {
@@ -49,14 +55,16 @@ public class CouchbaseDatabaseWrapper(DatabaseDependencies dependencies, ICouchb
                     }
                     break;
                 case EntityState.Modified:
-                    if (await couchbaseClient.UpdateDocument(primaryKey,  entityType.GetCollectionName(), document).ConfigureAwait(false))
+                    var modifiedDocument = HydrateObjectFromEntity(updateEntry);
+                    if (await couchbaseClient.UpdateDocument(primaryKey,  entityType.GetCollectionName(), modifiedDocument).ConfigureAwait(false))
                     {
                         updateCount++;
                     }
                     break;
                 case EntityState.Added:
                 {
-                    if (await couchbaseClient.CreateDocument(primaryKey,  entityType.GetCollectionName(), document).ConfigureAwait(false))
+                    var newDocument = HydrateObjectFromEntity(updateEntry);
+                    if (await couchbaseClient.CreateDocument(primaryKey,  entityType.GetCollectionName(), newDocument).ConfigureAwait(false))
                     {
                         updateCount++;
                     }
@@ -71,169 +79,30 @@ public class CouchbaseDatabaseWrapper(DatabaseDependencies dependencies, ICouchb
         return updateCount;
     }
 
-    private byte[] GenerateRootJson(IUpdateEntry updateEntry)
+    private readonly ITypeTranscoder _transcoder = new JsonTranscoder(new DefaultSerializer());
+
+    private static object HydrateObjectFromEntity(IUpdateEntry updateEntry)
     {
         var entityType = updateEntry.EntityType;
-        JsonWriterOptions writerOptions = new() { Indented = true };
-
-        using MemoryStream stream = new();
-        using Utf8JsonWriter writer = new(stream, writerOptions);
-        writer.WriteStartObject();
+        var type = entityType.ClrType;
+        var obj = Activator.CreateInstance(type);
 
         foreach (var property in entityType.GetProperties())
         {
-            var jsonPropertyName = property.FindAnnotation("Relational:JsonPropertyName");
-            var fieldName = jsonPropertyName?.Value?.ToString() ?? property.Name;
-            var value = updateEntry.GetCurrentValue(property);
-            var propertyType = GetUnderlyingType(property.ClrType);
-            switch (propertyType.Name)
+            //Shadow properties are properties that aren't defined in your .NET entity
+            //class but are defined for that entity type in the EF Core model. The
+            //value and state of these properties are maintained purely in the Change
+            //Tracker. Shadow properties are useful when there's data in the database
+            //that shouldn't be exposed on the mapped entity types.
+            //https://learn.microsoft.com/en-us/ef/core/modeling/shadow-properties
+            if (!property.IsShadowProperty())
             {
-                case "String":
-                    if (value != null)
-                    {
-                        writer.WriteString(fieldName, (string)value);
-                    }
-                    else
-                    {
-                        writer.WriteNull(property.Name);
-                    }
-
-                    break;
-                case "Single":
-                    if (value != null)
-                    {
-                        writer.WriteNumber(fieldName, (float)value);
-                    }
-                    else
-                    {
-                        writer.WriteNull(property.Name);
-                    }
-
-                    break;
-                case "Int16":
-                    if (value != null)
-                    {
-                        writer.WriteNumber(fieldName, (short)value);
-                    }
-                    else
-                    {
-                        writer.WriteNull(property.Name);
-                    }
-
-                    break;
-                case "UInt16":
-                    if (value != null)
-                    {
-                        writer.WriteNumber(fieldName, (ushort)value);
-                    }
-                    else
-                    {
-                        writer.WriteNull(property.Name);
-                    }
-
-                    break;
-                case "Int32":
-                    if (value != null)
-                    {
-                        writer.WriteNumber(fieldName, (int)value);
-                    }
-                    else
-                    {
-                        writer.WriteNull(property.Name);
-                    }
-
-                    break;
-                case "UInt32":
-                    if (value != null)
-                    {
-                        writer.WriteNumber(fieldName, (uint)value);
-                    }
-                    else
-                    {
-                        writer.WriteNull(property.Name);
-                    }
-
-                    break;
-                case "DateTime":
-                    if (value != null)
-                    {
-                        writer.WriteString(fieldName, (DateTime)value);
-                    }
-                    else
-                    {
-                        writer.WriteNull(property.Name);
-                    }
-
-                    break;
-                case "DateTimeOffset":
-                    if (value != null)
-                    {
-                        writer.WriteString(fieldName, (DateTimeOffset)value);
-                    }
-                    else
-                    {
-                        writer.WriteNull(property.Name);
-                    }
-
-                    break;
-                case "Decimal":
-                    if (value != null)
-                    {
-                        writer.WriteNumber(fieldName, (decimal)value);
-                    }
-                    else
-                    {
-                        writer.WriteNull(property.Name);
-                    }
-
-                    break;
-                case "Byte[]":
-                    if (value != null)
-                    {
-                        writer.WriteBase64String(property.Name, new ReadOnlyMemory<byte>((byte[])value).Span);
-                    }
-
-                    break;
-                case "Guid":
-                    if (value != null)
-                    {
-                        writer.WriteString(property.Name, value.ToString());
-                    }
-                    else
-                    {
-                        writer.WriteNull(property.Name);
-                    }
-
-                    break;
-                case "Boolean":
-                    if (value != null)
-                    {
-                        writer.WriteBoolean(property.Name, (bool)value);
-                    }
-                    else
-                    {
-                        writer.WriteNull(property.Name);
-                    }
-                    break;
-                default:
-                {
-                    if (propertyType.IsEnum)
-                    {
-                        writer.WriteString(property.Name, value != null ? value.ToString() : string.Empty);
-                    }
-                    else
-                    {
-                        throw new JsonException();
-                    }
-                    break;
-                }
+                var propertyInfo = type.GetProperty(property.Name);
+                propertyInfo.SetValue(
+                    obj, updateEntry.GetCurrentValue(property));
             }
         }
 
-        writer.WriteEndObject();
-        writer.Flush();
-        return stream.ToArray();
+        return obj;
     }
-
-    private Type GetUnderlyingType(Type type) => Nullable.GetUnderlyingType(type) ?? type;
 }
