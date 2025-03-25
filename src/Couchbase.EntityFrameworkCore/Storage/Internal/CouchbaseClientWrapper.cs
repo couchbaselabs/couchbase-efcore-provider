@@ -16,15 +16,6 @@ namespace Couchbase.EntityFrameworkCore.Storage.Internal;
 
 public class CouchbaseClientWrapper : ICouchbaseClientWrapper
 {
-    private readonly  ITypeTranscoder _transcoder = new JsonTranscoder(new DefaultSerializer(
-        new JsonSerializerSettings
-        {
-            ReferenceLoopHandling = ReferenceLoopHandling.Ignore
-        },
-        new JsonSerializerSettings
-        {
-            ReferenceLoopHandling = ReferenceLoopHandling.Ignore
-        }));
     private IBucket? _bucket;
     private readonly IBucketProvider _bucketProvider;
     private readonly ICouchbaseDbContextOptionsBuilder _couchbaseDbContextOptionsBuilder;
@@ -67,7 +58,7 @@ public class CouchbaseClientWrapper : ICouchbaseClientWrapper
         try
         {
             var collection = await GetCollection(keyspace).ConfigureAwait(false);
-            await collection.InsertAsync(id, entity,new InsertOptions().Transcoder(_transcoder)).ConfigureAwait(false);
+            await collection.InsertAsync(id, entity).ConfigureAwait(false);
             success = true;
         }
         catch (Exception e)
@@ -86,7 +77,7 @@ public class CouchbaseClientWrapper : ICouchbaseClientWrapper
         try
         {
             var collection = await GetCollection(keyspace).ConfigureAwait(false);
-            await collection.UpsertAsync(id, entity, new UpsertOptions().Transcoder(_transcoder)).ConfigureAwait(false);
+            await collection.UpsertAsync(id, entity).ConfigureAwait(false);
             success = true;
         }
         catch (Exception e)
