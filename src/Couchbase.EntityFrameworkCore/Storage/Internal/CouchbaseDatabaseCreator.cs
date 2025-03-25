@@ -39,8 +39,9 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
 
     private async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
-        var clusterProvider = _serviceProvider.GetRequiredKeyedService<IClusterProvider>(_couchbaseDbContextOptionsBuilder.ClusterOptions.ConnectionString);
-        _cluster = await clusterProvider.GetClusterAsync();
+        var bucketProvider = _serviceProvider.GetRequiredService<IBucketProvider>();
+        var bucket = await bucketProvider.GetBucketAsync(_couchbaseDbContextOptionsBuilder.Bucket);
+        _cluster = bucket.Cluster;
     }
 
     private async Task<IBucket> GetBucketAsync(TimeSpan? timeout = null, CancellationToken cancellationToken = default)
@@ -152,7 +153,7 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
     /// </summary>
     public override void Create()
     {
-        throw ExceptionHelper.SyncroIONotSupportedException();
+        CreateAsync().GetAwaiter().GetResult();
     }
 
     public override async Task CreateAsync(CancellationToken cancellationToken = new CancellationToken())
@@ -181,7 +182,7 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
     /// </summary>
     public override void Delete()
     {
-        throw ExceptionHelper.SyncroIONotSupportedException();
+        DeleteAsync(CancellationToken.None).GetAwaiter().GetResult();
     }
 
     /// <summary>
@@ -193,7 +194,7 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
     /// </returns>
     public override bool Exists()
     {
-        throw ExceptionHelper.SyncroIONotSupportedException();
+        return ExistsAsync(CancellationToken.None).Result;
     }
 
     public override async Task<bool> ExistsAsync(CancellationToken cancellationToken = new CancellationToken())
