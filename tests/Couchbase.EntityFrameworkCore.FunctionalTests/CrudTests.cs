@@ -304,11 +304,17 @@ public class CrudTests
                 ]
             };
 
-            await context.Blogs.AddAsync(blog);
-            var count = await context.SaveChangesAsync();
-            Assert.Equal(4, count);
-            context.Remove(blog);
-            await context.SaveChangesAsync();
+            try
+            {
+                await context.Blogs.AddAsync(blog);
+                var count = await context.SaveChangesAsync();
+                Assert.Equal(4, count);
+            }
+            finally
+            {
+                context.Remove(blog);
+                await context.SaveChangesAsync();
+            }
         }
     }
 
