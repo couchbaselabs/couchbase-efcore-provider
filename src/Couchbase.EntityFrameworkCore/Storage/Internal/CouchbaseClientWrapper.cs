@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Couchbase.Core.Exceptions;
+using Couchbase.Core.IO.Serializers;
 using Couchbase.Core.IO.Transcoders;
 using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.EntityFrameworkCore.Utils;
@@ -7,13 +8,14 @@ using Couchbase.Extensions.DependencyInjection;
 using Couchbase.KeyValue;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Newtonsoft.Json;
+
 // ReSharper disable MethodHasAsyncOverload
 
 namespace Couchbase.EntityFrameworkCore.Storage.Internal;
 
 public class CouchbaseClientWrapper : ICouchbaseClientWrapper
 {
-    private readonly  ITypeTranscoder _transcoder = new RawJsonTranscoder();
     private IBucket? _bucket;
     private readonly IBucketProvider _bucketProvider;
     private readonly ICouchbaseDbContextOptionsBuilder _couchbaseDbContextOptionsBuilder;
@@ -56,7 +58,7 @@ public class CouchbaseClientWrapper : ICouchbaseClientWrapper
         try
         {
             var collection = await GetCollection(keyspace).ConfigureAwait(false);
-            await collection.InsertAsync(id, entity, new InsertOptions().Transcoder(_transcoder)).ConfigureAwait(false);
+            await collection.InsertAsync(id, entity).ConfigureAwait(false);
             success = true;
         }
         catch (Exception e)
@@ -75,7 +77,7 @@ public class CouchbaseClientWrapper : ICouchbaseClientWrapper
         try
         {
             var collection = await GetCollection(keyspace).ConfigureAwait(false);
-            await collection.UpsertAsync(id, entity, new UpsertOptions().Transcoder(_transcoder)).ConfigureAwait(false);
+            await collection.UpsertAsync(id, entity).ConfigureAwait(false);
             success = true;
         }
         catch (Exception e)

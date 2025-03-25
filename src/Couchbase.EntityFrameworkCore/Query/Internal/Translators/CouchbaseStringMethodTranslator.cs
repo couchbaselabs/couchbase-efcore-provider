@@ -92,7 +92,7 @@ public class CouchbaseStringMethodTranslator : IMethodCallTranslator
                 var stringTypeMapping = ExpressionExtensions.InferTypeMapping(instance, argument);
 
                 return _sqlExpressionFactory.Function(
-                        "contains",
+                        "CONTAINS",
                         new[]
                         {
                             _sqlExpressionFactory.ApplyTypeMapping(instance, stringTypeMapping),
