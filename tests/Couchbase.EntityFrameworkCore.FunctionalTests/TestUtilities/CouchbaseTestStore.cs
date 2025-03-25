@@ -148,11 +148,19 @@ public class CouchbaseTestStore : RelationalTestStore
         if (!context.Database.EnsureCreated())
         {
             clean?.Invoke(context);
-            Clean(context);
+            CleanAsync(context).ConfigureAwait(false).GetAwaiter().GetResult();
         }
 
         seed?.Invoke(context);
         CreateFromFile(context).GetAwaiter().GetResult();
+    }
+
+    public override async Task CleanAsync(DbContext context)
+    {
+        if (_seed)
+        {
+           await context.Database.EnsureCleanAsync().ConfigureAwait(false);
+        }
     }
 
     public override void Clean(DbContext context)
@@ -235,12 +243,10 @@ public class CouchbaseTestStore : RelationalTestStore
                                                     document["Discriminator"] = entityName;
 
                                                     var keyspace =
-                                                        $"{TestEnvironment.BucketName.EscapeIfRequired()}.{TestEnvironment.Scope.EscapeIfRequired()}.{entityName.EscapeIfRequired()}";
+                                                        $"{entityName}.{TestEnvironment.BucketName}.{TestEnvironment.Scope}";
 
-                                                    var json = document.ToString();
-                                                    var bytes = System.Text.Encoding.UTF8.GetBytes(json);
-
-                                                    await couchbaseClient.CreateDocument(key, keyspace, bytes);
+                                                    var json = document.ToObject<object>();
+                                                    await couchbaseClient.CreateDocument(key, keyspace, json);
                                                 }
                                                 else if (reader.TokenType == JsonToken.EndObject)
                                                 {
