@@ -15,7 +15,6 @@
         <PackageTags>couchbase, json, efcore, entity, framework, ef, database, nosql</PackageTags>
         <Description>An EF Core DB Provider for Couchbase NoSQL database written in CSharp</Description>
         <PackageIcon>couchbase.png</PackageIcon>
-        <SignAssembly>true</SignAssembly>
         <AssemblyOriginatorKeyFile>Couchbase.snk</AssemblyOriginatorKeyFile>
         <PackageReadmeFile>README.md</PackageReadmeFile>
     </PropertyGroup>
