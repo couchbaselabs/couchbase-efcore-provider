@@ -131,6 +131,7 @@ public class BloggingContext : DbContext
                 couchbaseDbContextOptions.Bucket = "Content";
                 couchbaseDbContextOptions.Scope = "Blogs";
             });
+        options.UseCamelCaseNamingConvention();
     }
 }
 
