@@ -33,7 +33,7 @@ public class SessionContext : DbContext
                 couchbaseDbContextOptions.Bucket = "default";
                 couchbaseDbContextOptions.Scope = "_default";
             });
-        //optionsBuilder.UseCamelCaseNamingConvention();
+        optionsBuilder.UseCamelCaseNamingConvention();
     }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
