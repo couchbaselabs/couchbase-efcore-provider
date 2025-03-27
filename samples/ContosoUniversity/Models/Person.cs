@@ -23,5 +23,7 @@ namespace ContosoUniversity.Models
 
         [Display(Name = "Full Name")]
         public string FullName => LastName + ", " + FirstMidName;
+
+        public string Discriminator { get; set; }
     }
 }

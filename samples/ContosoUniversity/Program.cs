@@ -5,21 +5,34 @@ using Serilog.Extensions.Logging.File;
 using Couchbase.EntityFrameworkCore.Extensions;
 using Couchbase.EntityFrameworkCore.Infrastructure.Internal;
 using Couchbase.Extensions.DependencyInjection;
+using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddControllersWithViews();
 
-builder.Services.AddDbContext<SchoolContext>(options=> options
-    .UseCouchbase(new ClusterOptions()
-        .WithCredentials("Administrator", "password")
-        .WithConnectionString("couchbases://localhost"),
-        couchbaseDbContextOptions =>
-        {
-            couchbaseDbContextOptions.Bucket = "Universities";
-            couchbaseDbContextOptions.Scope = "Contoso";
-        }));
+builder.Services.AddDbContext<SchoolContext>(options=>
+    {
+        var clusterOptions = new ClusterOptions()
+            .WithCredentials("Pfftpfft", "!Pinkbear2!")
+            .WithConnectionString("couchbases://cb.h4tcdaaoi9bd.cloud.couchbase.com")
+            .WithLogging(
+                LoggerFactory.Create(
+                    builder =>
+                        {
+                            builder.AddFilter(level => level >= LogLevel.Debug);
+                            builder.AddFile("Logs/myapp-{Date}-blog-sdk.txt", LogLevel.Debug);
+                        }));
+        options
+            .UseCouchbase(clusterOptions,
+                couchbaseDbContextOptions =>
+                    {
+                        couchbaseDbContextOptions.Bucket = "Universities";
+                        couchbaseDbContextOptions.Scope = "Contoso";
+                    });
+        options.UseCamelCaseNamingConvention();
+    });
 
 
 builder.Logging.AddFile("Logs/myapp-{Date}.txt");
@@ -44,12 +57,11 @@ app.UseAuthorization();
 app.MapControllerRoute(
     name: "default",
     pattern: "{controller=Home}/{action=Index}/{id?}");
-
-CreateDbIfNotExists(app);
+await CreateDbIfNotExists(app);
 
 app.Run();
 
-void CreateDbIfNotExists(IHost host)
+async Task CreateDbIfNotExists(IHost host)
 {
     using (var scope = host.Services.CreateScope())
     {
@@ -57,7 +69,7 @@ void CreateDbIfNotExists(IHost host)
         try
         {
             var context = services.GetRequiredService<SchoolContext>();
-            DbInitializer.Initialize(context);
+           await DbInitializer.Initialize(context);
         }
         catch (Exception ex)
         {

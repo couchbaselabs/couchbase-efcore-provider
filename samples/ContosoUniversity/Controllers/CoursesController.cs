@@ -27,9 +27,9 @@ namespace ContosoUniversity.Controllers
                 .AsNoTracking().ToListAsync();
 
             var departmentIds = courses.Select(x => x.DepartmentID).ToList();
-            var departments = (from d in _context.Departments
+            var departments = await (from d in _context.Departments
                 where departmentIds.Contains(d.DepartmentID)
-                select d).ToList();
+                select d).ToListAsync();
 
             foreach (var course in courses)
             {
