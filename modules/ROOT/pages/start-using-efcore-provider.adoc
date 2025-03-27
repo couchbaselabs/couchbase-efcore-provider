@@ -1,0 +1,20 @@
+= Getting Started with Couchbase EFCore
+:page-toclevels: 2
+:description: Get up and running with `Couchbase.EntityFrameworkCore` via a Console application.
+
+
+// Note to editors
+// 
+// This page pulls in content from
+// https://github.com/couchbase/docs-sdk-common/blob/release/7.7/modules/shared/partials/???.adoc
+//
+// and code samples from
+// https://github.com/couchbase/docs-sdk-dotnet/tree/release/3.7/modules/devguide/examples/dotnet
+// 
+// It can be seen built at
+// https://docs.couchbase.com/dotnet-sdk/3.7/hello-world/entity-framework-core-getting-started.html
+
+
+[abstract]
+{description}
+

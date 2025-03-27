@@ -1,0 +1,11 @@
+= Entity Framework Core Compatibility Guide
+:description: Compatibility between EFCore Provider, EF Core, .NET Frameworks, and the Couchbase .NET SDK.
+
+
+
+[abstract]
+{description}
+
+TODO - compat tables.
+
+

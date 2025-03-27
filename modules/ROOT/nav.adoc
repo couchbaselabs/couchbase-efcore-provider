@@ -1,0 +1,7 @@
+* xref:ROOT:overview.adoc[Couchbase EFCore Provider Overview]
+
+* xref:ROOT:start-using-efcore-provider.adoc[Getting Started]
+* xref:ROOT:entity-framework-core-release-notes.adoc[Release Notes]
+* xref:ROOT:entity-framework-core-compatibility-guide.adoc[Compatibility Guide]
+* [API Reference]
+* [GitHub Source Code Repo]
