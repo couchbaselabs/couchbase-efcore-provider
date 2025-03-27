@@ -1,0 +1,27 @@
+= Couchbase EFCore Provider
+
+This repository hosts the documentation source for the https://docs.couchbase.com/efcore/1.0/ROOT/overview.html[Couchbase EFCore Provider].
+
+This branch documents the 1.0 release of the Provider, which follows the 3.7 release of the .NET SDK,
+which in turn follows the https://docs.couchbase.com/dotnet-sdk/3.7/project-docs/compatibility.html#api-version[SDK 3.7 API].
+
+
+== Contributing
+
+Contributions are welcome!
+Please test them locally, and then submit a pull request.
+A guide to using asciidoc, building Antora locally, and working with our repos can be found at https://docs.couchbase.com/home/contribute/index.html[https://docs.couchbase.com/home/contribute/index.html] (this may still be in the middle of being updated).
+
+At a minimum, to build the docs locally, you will need this repo,
+the https://github.com/couchbase/docs-sdk-dotnet[.NET SDK repo],
+https://github.com/couchbase/docs-sdk-common[docs-sdk-common],
+and the https://github.com/couchbase/docs-server[Server Docs repo]
+in your Antora playbook.
+
+If you are not sure the best way to update the docs, please raise a GitHub issue.
+
+
+== Docs License
+
+©2025 Couchbase, Inc.
+This work is licensed under https://creativecommons.org/licenses/by-nc-sa/4.0/[CC BY-NC-SA 4.0].
