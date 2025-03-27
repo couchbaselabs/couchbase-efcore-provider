@@ -14,17 +14,24 @@ public class BloggingContext : DbContext
     //on localhost with a Bucket named "Content" and a Scope named "Blogs"
     protected override void OnConfiguring(DbContextOptionsBuilder options)
     {
-        using var loggingFactory = LoggerFactory.Create(builder => builder.AddConsole());
+        var loggingFactory = LoggerFactory.Create(builder => builder.AddConsole());
         options.UseCouchbase(
             new ClusterOptions()
                 .WithCredentials("USERNAME", "PASSWORD")
-                .WithConnectionString("couchbases://cb.xxxxxxxx.cloud.couchbase.com")
-                .WithLogging(loggingFactory),
+                .WithConnectionString("couchbases://XXXX.cloud.couchbase.com")
+                .WithLogging(LoggerFactory.Create(
+                    builder =>
+                        {
+                            builder.AddFilter(level => level >= LogLevel.Debug);
+                            builder.AddFile("Logs/myapp-{Date}-blog-sdk.txt", LogLevel.Debug);
+                        })),
             couchbaseDbContextOptions =>
             {
                 couchbaseDbContextOptions.Bucket = "Content";
                 couchbaseDbContextOptions.Scope = "Blogs";
             });
+        options.UseCamelCaseNamingConvention();
+        options.EnableSensitiveDataLogging();
     }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -46,6 +53,5 @@ public class Post
     public string PostId { get; set; }
     public string Title { get; set; }
     public string Content { get; set; }
-    public int BlogId { get; set; }
     public Blog Blog { get; set; }
 }
