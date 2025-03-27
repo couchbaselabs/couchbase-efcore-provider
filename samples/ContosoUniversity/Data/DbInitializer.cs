@@ -8,12 +8,12 @@ namespace ContosoUniversity.Data
 {
     public static class DbInitializer
     {
-        public static void Initialize(SchoolContext context)
+        public static async Task Initialize(SchoolContext context)
         {
             //context.Database.EnsureCreated();
 
             // Look for any students.
-            if (context.Students.Any())
+            if (await context.Students.AnyAsync())
             {
                 return;   // DB has been seeded
             }
@@ -39,7 +39,7 @@ namespace ContosoUniversity.Data
             };
 
             context.Students.AddRange(students);
-            context.SaveChanges();
+            await context.SaveChangesAsync();
 
             var instructors = new Instructor[]
             {
@@ -56,7 +56,7 @@ namespace ContosoUniversity.Data
             };
 
             context.Instructors.AddRange(instructors);
-            context.SaveChanges();
+            await context.SaveChangesAsync();
 
             var departments = new Department[]
             {
@@ -75,7 +75,7 @@ namespace ContosoUniversity.Data
             };
 
             context.Departments.AddRange(departments);
-            context.SaveChanges();
+            await context.SaveChangesAsync();
 
             var courses = new Course[]
             {
@@ -106,7 +106,7 @@ namespace ContosoUniversity.Data
             {
                 context.Courses.Add(c);
             }
-            context.SaveChanges();
+            await context.SaveChangesAsync();
 
             var officeAssignments = new OfficeAssignment[]
             {
@@ -122,7 +122,7 @@ namespace ContosoUniversity.Data
             };
 
             context.OfficeAssignments.AddRange(officeAssignments);
-            context.SaveChanges();
+            await context.SaveChangesAsync();
 
             var courseInstructors = new CourseAssignment[]
             {
@@ -161,7 +161,7 @@ namespace ContosoUniversity.Data
             };
 
             context.CourseAssignments.AddRange(courseInstructors);
-            context.SaveChanges();
+            await context.SaveChangesAsync();
 
             var enrollments = new Enrollment[]
             {
@@ -224,10 +224,10 @@ namespace ContosoUniversity.Data
             var id = 1;
             foreach (Enrollment e in enrollments)
             {
-                var enrollmentInDataBase = context.Enrollments.Where(
+                var enrollmentInDataBase = await context.Enrollments.Where(
                     s =>
                             s.Student.ID == e.StudentID &&
-                            s.Course.CourseID == e.CourseID).SingleOrDefault();
+                            s.Course.CourseID == e.CourseID).SingleOrDefaultAsync();
                 e.EnrollmentID = id;
                 if (enrollmentInDataBase == null)
                 {
@@ -235,7 +235,7 @@ namespace ContosoUniversity.Data
                     id++;
                 }
             }
-            context.SaveChanges();
+            await context.SaveChangesAsync();
         }
     }
 }
