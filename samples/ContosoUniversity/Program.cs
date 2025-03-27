@@ -15,8 +15,8 @@ builder.Services.AddControllersWithViews();
 builder.Services.AddDbContext<SchoolContext>(options=>
     {
         var clusterOptions = new ClusterOptions()
-            .WithCredentials("Pfftpfft", "!Pinkbear2!")
-            .WithConnectionString("couchbases://cb.h4tcdaaoi9bd.cloud.couchbase.com")
+            .WithCredentials("USERNAME", "PASSWORD")
+            .WithConnectionString("couchbases://XXXX.cloud.couchbase.com")
             .WithLogging(
                 LoggerFactory.Create(
                     builder =>

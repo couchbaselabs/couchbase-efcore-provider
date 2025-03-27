@@ -2,41 +2,45 @@
 
 using System;
 using System.Linq;
+using Microsoft.EntityFrameworkCore;
 
-using var db = new BloggingContext();
-
-// Note: This sample requires the Couchbase database to be created before running.
-//The Bucket name is "blogging", the scope is "myblog" and the collections are "post and "blog"
-
-// Create
-Console.WriteLine("Inserting a new blog");
-var blog = new Blog
+using (var db = new BloggingContext())
 {
-    Url = "http://blogs.msdn.com/adonet", 
-    BlogId = Guid.NewGuid().ToString()
-};
-db.Add(blog);
-db.SaveChanges();
+    // Note: This sample requires the Couchbase database to be created before running.
+    //The Bucket name is "Content", the scope is "Blogs" and the collections are "Post and "Blog"
 
-// Read
-Console.WriteLine("Querying for a blog");
-blog = db.Blogs
-    .OrderBy(b => b.BlogId)
-    .First();
-
-// Update
-Console.WriteLine("Updating the blog and adding a post");
-blog.Url = "https://devblogs.microsoft.com/dotnet";
-blog.Posts.Add(
-    new Post
+    // Create
+    Console.WriteLine("Inserting a new blog");
+    var blog = new Blog
     {
-        Title = "Hello World", 
-        Content = "I wrote an app using EF Core!", 
-        PostId = Guid.NewGuid().ToString()
-    });
-db.SaveChanges();
+        Url = "http://blogs.msdn.com/adonet",
+        BlogId = Guid.NewGuid().ToString()
+    };
+    db.Add(blog);
+    await db.SaveChangesAsync();
 
-// Delete
-Console.WriteLine("Delete the blog");
-db.Remove(blog);
-db.SaveChanges();
+    // Read
+    Console.WriteLine("Querying for a blog");
+    blog = await db.Blogs
+        .OrderBy(b => b.BlogId)
+        .FirstAsync();
+
+    Console.WriteLine(blog.Url);
+
+    // Update
+    Console.WriteLine("Updating the blog and adding a post");
+    blog.Url = "https://devblogs.microsoft.com/dotnet";
+    blog.Posts.Add(
+        new Post
+        {
+            Title = "Hello World",
+            Content = "I wrote an app using EF Core!",
+            PostId = Guid.NewGuid().ToString()
+        });
+    await db.SaveChangesAsync();
+
+    // Delete
+    Console.WriteLine("Delete the blog");
+    db.Remove(blog);
+    await db.SaveChangesAsync();
+}
