@@ -6,6 +6,15 @@
 [abstract]
 {description}
 
-TODO - compat tables.
 
+.Compatibility
+[cols="1,1"]
+|===
+| Couchbase EF Core Provider | 1.0.0
+| EF Core | 8.0.0
+| .NET Version | .NET8*
+| Couchbase Server | >= 7.6.0
+| Couchbase .NET SDK | >= 6.6.6
+|===
 
+* May work other .NET versions, but not tested.

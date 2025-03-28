@@ -15,10 +15,18 @@ The provider is maintained as part of the https://github.com/couchbaselabs/couch
 [#latest-release]
 == Couchbase EF Core 1.0 Releases
 
-We always recommend using the latest version of the SDK -- it contains all of the latest security patches and support for new and upcoming features.
+We always recommend using the latest version of the Couchbase EF Core Provider -- it contains all of the latest security patches and support for new and upcoming features.
 All patch releases for each dot minor release should be API compatible, and safe to upgrade;
 any changes to expected behavior are noted in the release notes that follow.
 
 
 === Version 1.0.0 (?? March 2025)
+Version 1.0.0 is the initial release of the Couchbase EF Core Provider.
 
+[Download] | API Reference |
+https://www.nuget.org/packages/Couchbase.EntityFrameworkCore/1.0.0[NUGET]
+
+
+=== Fixed Issues
+
+=== New Features and Behavioral Changes

@@ -13,12 +13,24 @@ The provider is maintained as part of the https://github.com/couchbaselabs/couch
 * xref:ROOT:entity-framework-core-release-notes.adoc[Release Notes]
 * xref:ROOT:entity-framework-core-compatibility-guide.adoc[Compatibility Guide]
 * [API Reference]
-* [GitHub Source Code Repo]
+* https://github.com/couchbaselabs/couchbase-efcore-provider[GitHub Source Code Repo]
 
 
 
 == Limitations
+The Couchbase EF Core Provider is a work in progress, and does not yet support all of the features of EF Core or Couchbase.
 
-* List
-* of
-* Limitations
+* Eager Loading aka https://learn.microsoft.com/en-us/ef/core/querying/related-data/eager[Include]
+* https://learn.microsoft.com/en-us/ef/core/modeling/generated-properties?tabs=data-annotations[Generated Values] or https://docs.couchbase.com/server/current/n1ql/n1ql-language-reference/sequenceops.html[SEQUENCES] for primary and foreign keys - they must be added explicitly to your entities.
+* Couchbase https://docs.couchbase.com/cloud/n1ql/n1ql-language-reference/metafun.html#meta[META()] function
+* Couchbase https://docs.couchbase.com/ruby-sdk/current/howtos/n1ql-queries-with-sdk.html#scan-consistency[Scan Consistency] - the default Not Bounded is used
+* https://docs.couchbase.com/dotnet-sdk/current/howtos/distributed-acid-transactions-from-the-sdk.html[Transactions]
+* Synchronous operations are not supported (https://learn.microsoft.com/en-us/ef/core/providers/cosmos/limitations[Similar to Cosmos DB EF Core Provider]) and methods will throw exceptions if used.
+* Most all ADO.NET features are only partially supported
+* Nested documents are stored in seperate collections
+* https://learn.microsoft.com/en-us/ef/core/modeling/inheritance[Discrimantor] fields must be explicitly added to your entities
+* Explicit or implicit CROSS JOINs
+* https://jira.issues.couchbase.com/browse/CBEF-50[Bitwise operator] support
+* The ability to use https://docs.couchbase.com/dotnet-sdk/current/howtos/n1ql-queries-with-sdk.html#query-options[custom options] for KV and Query. The default options are used.
+* Not all LINQ queries are supported. The provider will throw exceptions if unsupported LINQ queries are used. The exception will state that this is the case. Jira tickets with this information can be created for these issues in the Jira https://jira.issues.couchbase.com/jira/core/projects/CBEF/[CBEF] project.
+* Not all SQL++ queries or functions are supported. The provider will throw exceptions if unsupported SQL++ queries are used. The exception will contain parsing or other information as to why it failed. Jira tickets with this information can be created for these issues in the Jira https://jira.issues.couchbase.com/jira/core/projects/CBEF/[CBEF] project.
