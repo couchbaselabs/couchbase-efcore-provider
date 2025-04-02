@@ -6,6 +6,7 @@ using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.EntityFrameworkCore.Utils;
 using Couchbase.Extensions.DependencyInjection;
 using Couchbase.KeyValue;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
@@ -44,9 +45,11 @@ public class CouchbaseClientWrapper : ICouchbaseClientWrapper
         }
         catch (Exception e)
         {
-            success = false;
             _logger.LogError(e, "Delete failed for key {Id} in keyspace {keyspace}",
                 id, keyspace);
+
+            throw new DbUpdateException(
+                $"Delete failed for key {id} in keyspace {keyspace}", e);
         }
 
         return success;
@@ -63,9 +66,11 @@ public class CouchbaseClientWrapper : ICouchbaseClientWrapper
         }
         catch (Exception e)
         {
-            success = false;
             _logger.LogError(e, "Insert failed for key {Id} in keyspace {keyspace}",
                 id, keyspace);
+
+            throw new DbUpdateException(
+                $"Insert failed for key {id} in keyspace {keyspace}", e);
         }
 
         return success;
@@ -82,10 +87,11 @@ public class CouchbaseClientWrapper : ICouchbaseClientWrapper
         }
         catch (Exception e)
         {
-            //TODO error should be propagated
-            success = false;
             _logger.LogError(e, "Update failed for key {Id} in keyspace {keyspace}",
                 id, keyspace);
+
+            throw new DbUpdateException(
+                $"Update failed for key {id} in keyspace {keyspace}", e);
         }
 
         return success;
