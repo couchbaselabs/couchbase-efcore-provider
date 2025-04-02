@@ -60,7 +60,7 @@ public class CouchbaseTestStore : RelationalTestStore
 
     private readonly bool _seed = false;
 
-    private CouchbaseTestStore(string name, bool seed = false, bool sharedCache = false, bool shared = true, string dataFilePath = null)
+    private CouchbaseTestStore(string name, bool seed = true, bool sharedCache = false, bool shared = true, string dataFilePath = null)
         : base(name, shared)
     {
         _seed = seed;
