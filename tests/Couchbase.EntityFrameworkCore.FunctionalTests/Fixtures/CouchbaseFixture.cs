@@ -13,8 +13,9 @@ public class CouchbaseFixture : IAsyncLifetime
 {
     private bool _disposed;
     private bool _created;
+    private ClusterOptions _options;
 
-    public TravelSampleDbContext? TravelSampleContext { get; private set; }
+    public TravelSampleDbContext? TravelSampleContext  => new(_options);
     
     public BloggingContext BloggingContext { get; private set; }
 
@@ -26,13 +27,12 @@ public class CouchbaseFixture : IAsyncLifetime
             builder.AddFile("Logs/myapp-{Date}-5.txt", LogLevel.Debug);
         });
 
-        var options = new ClusterOptions()
+        _options = new ClusterOptions()
             .WithConnectionString("http://127.0.0.1")
             .WithCredentials("Administrator", "password")
             .WithLogging(loggerFactory)
             .WithBuckets("default");
 
-        TravelSampleContext = new TravelSampleDbContext(options);
         BloggingContext = new BloggingContext();
         return Task.CompletedTask;
     }
