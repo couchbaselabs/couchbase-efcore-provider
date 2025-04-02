@@ -39,7 +39,7 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
 
     private async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
-        var clusterProvider = _serviceProvider.GetRequiredKeyedService<IClusterProvider>(_couchbaseDbContextOptionsBuilder.ClusterOptions.ConnectionString);
+        var clusterProvider = _serviceProvider.GetRequiredService<IClusterProvider>();
         _cluster = await clusterProvider.GetClusterAsync();
     }
 
@@ -193,7 +193,11 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
     /// </returns>
     public override bool Exists()
     {
+#if DEBUG
+        return ExistsAsync().GetAwaiter().GetResult();
+#else
         throw ExceptionHelper.SyncroIONotSupportedException();
+#endif
     }
 
     public override async Task<bool> ExistsAsync(CancellationToken cancellationToken = new CancellationToken())

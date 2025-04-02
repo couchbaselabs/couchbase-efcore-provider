@@ -19,10 +19,6 @@ public class CouchbaseTypeMappingSource: RelationalTypeMappingSource
                         typeof(JsonObject), jsonValueReaderWriter: dependencies.JsonValueReaderWriterSource.FindReaderWriter(typeof(JsonObject)))
                 },
                 {
-                    typeof(string), new CouchbaseTypeMapping(
-                        typeof(string), jsonValueReaderWriter: dependencies.JsonValueReaderWriterSource.FindReaderWriter(typeof(string)))
-                },
-                {
                     typeof(int), new IntTypeMapping("NUMBER")
                 },
                 {
@@ -37,11 +33,10 @@ public class CouchbaseTypeMappingSource: RelationalTypeMappingSource
                 {
                     typeof(bool), new BoolTypeMapping("BOOLEAN")
                 }
-                /*,
+                ,
                 {
                     typeof(string), new StringTypeMapping("STRING", DbType.String)
-                }*/
-                //TODO add the rest of the type mappings
+                }
             };
     }
 

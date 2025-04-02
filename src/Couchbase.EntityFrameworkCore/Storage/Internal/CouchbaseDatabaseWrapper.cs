@@ -25,7 +25,7 @@ public class CouchbaseDatabaseWrapper(DatabaseDependencies dependencies, ICouchb
         //Required for test infrastructure database creation and seeding
         return SaveChangesAsync(entries).ConfigureAwait(false).GetAwaiter().GetResult();
 #else
-        ExceptionHelper.SyncroIONotSupportedException();
+        throw ExceptionHelper.SyncroIONotSupportedException();
 #endif
     }
 

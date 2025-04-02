@@ -6,28 +6,21 @@
         <Nullable>enable</Nullable>
     </PropertyGroup>
 
-    <ItemGroup><!-- <ProjectReference Include="..\..\..\efcore\src\dotnet-ef\dotnet-ef.csproj" />
-      <ProjectReference Include="..\..\..\efcore\src\EFCore.Design\EFCore.Design.csproj" />
-      <ProjectReference Include="..\..\..\efcore\src\EFCore.Sqlite.NTS\EFCore.Sqlite.NTS.csproj" />
-      <ProjectReference Include="..\..\samples\ContosoUniversity\ContosoUniversity.csproj" />
-      <ProjectReference Include="..\..\src\Couchbase.EntityFrameworkCore\Couchbase.EntityFrameworkCore.csproj" />-->
-    
-      <ProjectReference Include="..\..\samples\ContosoUniversity\ContosoUniversity.csproj" />
-      <ProjectReference Include="..\..\src\Couchbase.EntityFrameworkCore\Couchbase.EntityFrameworkCore.csproj" />
+    <ItemGroup>
+        <ProjectReference Include="..\..\samples\ContosoUniversity\ContosoUniversity.csproj" />
+        <ProjectReference Include="..\..\src\Couchbase.EntityFrameworkCore\Couchbase.EntityFrameworkCore.csproj" />
     </ItemGroup>
 
     <ItemGroup>
-      <PackageReference Include="Couchbase.Extensions.DependencyInjection" Version="3.6.6" />
-      <PackageReference Include="EFCore.NamingConventions" Version="8.0.3" />
-      <PackageReference Include="Microsoft.EntityFrameworkCore.Relational.Specification.Tests" Version="8.0.13" />
-      <PackageReference Include="Microsoft.EntityFrameworkCore.Specification.Tests" Version="8.0.13" />
-      <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="8.0.0" />
-      <PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="9.0.0-preview.4.24266.19" />
-      <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.9.0" />
-      <PackageReference Include="Serilog.Extensions.Logging.File" Version="3.0.0" />
-      <PackageReference Include="xunit" Version="2.8.0" />
-        <PackageReference Include="SQLitePCLRaw.provider.sqlite3" Version="2.1.8" />
-   
+        <PackageReference Include="Couchbase.Extensions.DependencyInjection" Version="3.6.6" />
+        <PackageReference Include="EFCore.NamingConventions" Version="8.0.3" />
+        <PackageReference Include="Microsoft.EntityFrameworkCore.Relational.Specification.Tests" Version="8.0.14" />
+        <PackageReference Include="Microsoft.EntityFrameworkCore.Specification.Tests" Version="8.0.14" />
+        <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="8.0.0" />
+        <PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="9.0.0-preview.4.24266.19" />
+        <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.9.0" />
+        <PackageReference Include="Serilog.Extensions.Logging.File" Version="3.0.0" />
+        <PackageReference Include="xunit" Version="2.8.0" />    
     </ItemGroup>
 
     <ItemGroup>
