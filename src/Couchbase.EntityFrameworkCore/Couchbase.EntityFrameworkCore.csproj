@@ -22,13 +22,8 @@
     <ItemGroup>
       <PackageReference Include="Couchbase.Extensions.DependencyInjection" Version="3.6.6" />
       <PackageReference Include="CouchbaseNetClient" Version="3.6.6" />
-      <PackageReference Include="Microsoft.EntityFrameworkCore" Version="8.0.13" />
-      <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="8.0.13" />
-    </ItemGroup>
-
-    <ItemGroup>
-        <!--<ProjectReference Include="..\..\..\efcore\src\EFCore.Relational\EFCore.Relational.csproj" />
-        <ProjectReference Include="..\..\..\efcore\src\EFCore\EFCore.csproj" />-->
+      <PackageReference Include="Microsoft.EntityFrameworkCore" Version="8.0.14" />
+      <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="8.0.14" />
     </ItemGroup>
 
     <ItemGroup>
