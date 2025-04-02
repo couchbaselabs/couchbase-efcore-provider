@@ -63,7 +63,7 @@ public class QueryTests
     [Fact]
     public async Task Test()
     {
-        var context = _couchbaseFixture.TravelSampleContext;
+        await using var context = _couchbaseFixture.TravelSampleContext;
         var airline = new Airline
         {
             Type = "airline",
@@ -75,7 +75,7 @@ public class QueryTests
             Name = "40-Mile Air"
         };
 
-        context.Add(airline);
+        context.Update(airline);
         airline.Name = "foo";
 
         var airlines1 = await context.Airlines
@@ -129,7 +129,7 @@ public class QueryTests
     [Fact]
     public async Task Test_FindAsync()
     {
-        var context = new SessionContext(new ClusterOptions()
+        await using var context = new SessionContext(new ClusterOptions()
             .WithConnectionString("couchbase://localhost")
             .WithCredentials("Administrator", "password"));
 
@@ -144,20 +144,22 @@ public class QueryTests
 
         try
         {
-            context.Add(session);
+            var entityEntry = context.Update(session);
+            await context.SaveChangesAsync();
             var found = await context.FindAsync<Session>(pkey);
             Assert.Equal(found.Id, pkey);
         }
         finally
         {
-            context.Remove(session);
+            var entityEntry = context.Remove(session);
+            await context.SaveChangesAsync();
         }
     }
 
     [Fact]
     public async Task Test_FromSqlRaw_Throws_InvalidOperationException()
     {
-        var context = new BloggingContext();
+        await using var context = new BloggingContext();
         var rating = 5;
 
         //InvalidOperationException is thrown because CouchbaseDbDataReader implementation is incomplete
@@ -169,7 +171,7 @@ public class QueryTests
     [Fact]
     public async Task Test_Simple_Joins()
     {
-        var context = new BloggingContext();
+        await using var context = new BloggingContext();
 
         context.Update(
             new Person
@@ -192,76 +194,80 @@ public class QueryTests
                 on photo.PersonPhotoId equals person.PhotoId
             select new { person, photo };
 
-        var results = await query.ToListAsync();
         Assert.True(await query.AnyAsync());
     }
 
     [Fact]
     public async Task Test_Count_Group_OrderBy()
     {
-        var context = new BloggingContext();
-        var query = from p in context.Set<Post>()
-            group p by p.AuthorId
-            into g
-            where g.Count() > 0
-            orderby g.Key
-            select new { g.Key, Count = g.Count() };
+       await using var context = new BloggingContext();
+       var query = from p in context.Set<Post>()
+           group p by p.AuthorId
+           into g
+           where g.Count() > 0
+           orderby g.Key
+           select new { g.Key, Count = g.Count() };
 
-        var result = await query.ToListAsync();
+       var result = await query.ToListAsync();
+        Assert.NotEmpty(result);
     }
 
     [Fact]
     public async Task Test_LongCount()
     {
-        var context = new BloggingContext();
+        await using var context = new BloggingContext();
         var query = from p in context.Set<Post>()
             group p by p.AuthorId
             into g
             select new { g.Key, Count = g.LongCount() };
 
         var result = await query.ToListAsync();
+        Assert.NotEmpty(result);
     }
 
     [Fact]
     public async Task Test_Max()
     {
-        var context = new BloggingContext();
+        await using var context = new BloggingContext();
         var query = from p in context.Set<Post>()
             group p by p.AuthorId
             into g
             select new { g.Key, Max=g.Max(x=>x.Rating) };
 
         var result = await query.ToListAsync();
+        Assert.NotEmpty(result);
     }
 
     [Fact]
     public async Task Test_Min()
     {
-        var context = new BloggingContext();
+        await using var context = new BloggingContext();
         var query = from p in context.Set<Post>()
             group p by p.AuthorId
             into g
             select new { g.Key, Min=g.Min(x=>x.Rating) };
 
         var result = await query.ToListAsync();
+        Assert.NotEmpty(result);
     }
 
     [Fact]
     public async Task Test_Sum()
     {
-        var context = new BloggingContext();
+        await using var context = new BloggingContext();
         var query = from p in context.Set<Post>()
             group p by p.AuthorId
             into g
             select new { g.Key, Sum=g.Sum(x=>x.Rating) };
 
         var result = await query.ToListAsync();
+        Assert.NotEmpty(result);
     }
 
     [Fact]
     public async Task Test_Average_Does_Not_Throw_CouchbaseParsingException()
     {
-        var context = new BloggingContext();
+        await using var context = new BloggingContext();
         var query = from p in context.Set<Post>()
             group p by p.AuthorId
             into g
@@ -274,17 +280,19 @@ public class QueryTests
     [Fact]
     public async Task Test_FromSqlRaw_With_Parameters()
     {
-        var context = new BloggingContext();
-        string query = "SELECT p.* FROM `Content`.`Blogs`.`Person` as p WHERE PersonId={0}";
+        await using var context = new BloggingContext();
+        var query = "SELECT p.* FROM `Content`.`Blogs`.`Person` as p WHERE personId={0}";
         var person = await context.Set<Person>()
             .FromSqlRaw(query, 1)
             .FirstOrDefaultAsync();
+
+        Assert.NotNull(person);
     }
 
     [Fact]
     public async Task Test_FromRaw_Throws_InvalidOperationException()
     {
-        var context = new BloggingContext();
+        await using var context = new BloggingContext();
 
         //Exception is because of an incomplete implementation of CouchbaseDbDataReader
         Assert.Throws<InvalidOperationException>(()=>context.Blogs
