@@ -25,7 +25,7 @@ public class CrudTests
     [Fact]
     public async Task Test_ExecuteUpdate()
     {
-        var context = _couchbaseFixture.TravelSampleContext;
+        await using var context = _couchbaseFixture.TravelSampleContext;
         var airline1 = new Airline
         {
             Type = "airline",
@@ -55,6 +55,9 @@ public class CrudTests
 
             var inserted = await context.SaveChangesAsync();
             Assert.Equal(2, inserted);
+
+            //RYOW is currently not supported, so we need a brief delay for indexing etc.
+            await Task.Delay(100);
 
             var count = await context.Airlines.CountAsync(a => a.Id > 665 && a.Id < 668);
             Assert.Equal(2, count);
@@ -119,9 +122,15 @@ public class CrudTests
         }
         finally
         {
-            context.Remove(airline1);
-            context.Remove(airline2);
-            await context.SaveChangesAsync();
+            if (context.Remove(airline1).State != EntityState.Deleted)
+            {
+                await context.SaveChangesAsync();
+            }
+
+            if (context.Remove(airline2).State != EntityState.Deleted)
+            {
+                await context.SaveChangesAsync();
+            }
         }
     }
 
@@ -148,7 +157,7 @@ public class CrudTests
                 }
             ]
         };
-        await context.AddAsync(user);
+        context.Update(user);
         await context.SaveChangesAsync();
     }
 
@@ -168,7 +177,7 @@ public class CrudTests
         };
         try
         {
-            context.Add(airline);
+            var saved = context.Update(airline);
             await context.SaveChangesAsync();
 
             var airline1 = await context.Airlines.FindAsync("airline", 11);
@@ -176,7 +185,7 @@ public class CrudTests
         }
         finally
         {
-            context.Remove(airline);
+            var entity = context.Remove(airline);
             await context.SaveChangesAsync();
         }
     }
@@ -243,7 +252,7 @@ public class CrudTests
     [Fact]
     public async Task Test_AddAsyncAsync()
     {
-        var context = _couchbaseFixture.TravelSampleContext;
+        await using var context = _couchbaseFixture.TravelSampleContext;
         var airline = new Airline
         {
             Type = "airline",
@@ -256,7 +265,7 @@ public class CrudTests
         };
         try
         {
-            await context.AddAsync(airline);
+            context.Update(airline);
             await context.SaveChangesAsync();
 
             var airline1 = await context.Airlines.FindAsync("airline", 11);
@@ -344,7 +353,7 @@ public class CrudTests
     {
         using (var context = new BloggingContext())
         {
-            context.Add(new Post { Title = "Intro to EF Core", PostId = 4, BlogId = 2 });
+            context.Update(new Post { Title = "Intro to EF Core", PostId = 4, BlogId = 2 });
             await context.SaveChangesAsync();
             var blog1 = await context.Blogs.FirstAsync();
 
