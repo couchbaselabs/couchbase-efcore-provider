@@ -7,6 +7,8 @@ namespace ContosoUniversity.Models
 {
     public abstract class Person
     {
+        [JsonProperty("iD")]
+        [JsonPropertyName("iD")]
         public int ID { get; set; } 
 
         [Required]
@@ -15,10 +17,10 @@ namespace ContosoUniversity.Models
         public string LastName { get; set; }
         [Required]
         [StringLength(50, ErrorMessage = "First name cannot be longer than 50 characters.")]
-        [JsonProperty("FirstName")]
-        [JsonPropertyName("FirstName")]
+        [JsonProperty("firstName")]
+        [JsonPropertyName("firstName")]
         [Display(Name = "First Name")]
-        [Column("FirstName")]
+        [Column("firstName")]
         public string FirstMidName { get; set; }
 
         [Display(Name = "Full Name")]
