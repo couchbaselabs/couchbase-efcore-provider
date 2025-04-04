@@ -62,9 +62,9 @@ namespace ContosoUniversity.Controllers
         }
 
         // GET: Courses/Create
-        public IActionResult Create()
+        public async Task<IActionResult> Create()
         {
-            PopulateDepartmentsDropDownList();
+            await PopulateDepartmentsDropDownList();
             return View();
         }
 
@@ -81,7 +81,7 @@ namespace ContosoUniversity.Controllers
                 await _context.SaveChangesAsync();
                 return RedirectToAction(nameof(Index));
             }
-            PopulateDepartmentsDropDownList(course.DepartmentID);
+            await PopulateDepartmentsDropDownList(course.DepartmentID);
             return View(course);
         }
 
@@ -100,7 +100,7 @@ namespace ContosoUniversity.Controllers
             {
                 return NotFound();
             }
-            PopulateDepartmentsDropDownList(course.DepartmentID);
+            await  PopulateDepartmentsDropDownList(course.DepartmentID);
             return View(course);
         }
 
