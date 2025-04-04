@@ -62,9 +62,9 @@ namespace ContosoUniversity.Controllers
         }
 
         // GET: Courses/Create
-        public IActionResult Create()
+        public async Task<IActionResult> Create()
         {
-            PopulateDepartmentsDropDownList();
+            await PopulateDepartmentsDropDownList();
             return View();
         }
 
@@ -81,7 +81,7 @@ namespace ContosoUniversity.Controllers
                 await _context.SaveChangesAsync();
                 return RedirectToAction(nameof(Index));
             }
-            PopulateDepartmentsDropDownList(course.DepartmentID);
+            await PopulateDepartmentsDropDownList(course.DepartmentID);
             return View(course);
         }
 
@@ -100,7 +100,7 @@ namespace ContosoUniversity.Controllers
             {
                 return NotFound();
             }
-            PopulateDepartmentsDropDownList(course.DepartmentID);
+            await  PopulateDepartmentsDropDownList(course.DepartmentID);
             return View(course);
         }
 
@@ -136,16 +136,17 @@ namespace ContosoUniversity.Controllers
                         "see your system administrator.");
                 }
             }
-            PopulateDepartmentsDropDownList(courseToUpdate.DepartmentID);
+            await PopulateDepartmentsDropDownList(courseToUpdate.DepartmentID);
             return View(courseToUpdate);
         }
 
-        private void PopulateDepartmentsDropDownList(object selectedDepartment = null)
+        private async Task PopulateDepartmentsDropDownList(object selectedDepartment = null)
         {
             var departmentsQuery = from d in _context.Departments
                                    orderby d.Name
                                    select d;
-            ViewBag.DepartmentID = new SelectList(departmentsQuery.AsNoTracking(), "DepartmentID", "Name", selectedDepartment);
+            var departments = await departmentsQuery.AsNoTracking().ToListAsync();
+            ViewBag.DepartmentID = new SelectList(departments, "DepartmentID", "Name", selectedDepartment);
         }
 
         // GET: Courses/Delete/5

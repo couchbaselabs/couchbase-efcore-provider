@@ -70,7 +70,7 @@
     "Data": []
   },
   {
-    "Name": "Customer",
+    "Name": "Customers",
     "Data": [
       {
         "id": "ALFKI",
@@ -1349,7 +1349,7 @@
     ]
   },
   {
-    "Name": "Employee",
+    "Name": "Employees",
     "Data": [
       {
         "id": "1",
@@ -1793,7 +1793,7 @@
     ]
   },
   {
-    "Name": "Order",
+    "Name": "Orders",
     "Data": [
       {
         "id": "10248",
@@ -15908,7 +15908,7 @@
     ]
   },
   {
-    "Name": "OrderDetail",
+    "Name": "OrderDetails",
     "Data": [
       {
         "id": "10248|11",
@@ -33153,7 +33153,7 @@
     ]
   },
   {
-    "Name": "Product",
+    "Name": "Products",
     "Data": [
       {
         "id": "1",
