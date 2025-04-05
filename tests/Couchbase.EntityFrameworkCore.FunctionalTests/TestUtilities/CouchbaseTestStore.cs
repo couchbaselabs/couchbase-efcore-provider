@@ -37,7 +37,7 @@ public class CouchbaseTestStore : RelationalTestStore
             new ServiceCollection().AddEntityFrameworkCouchbase(
                     new CouchbaseOptionsExtension(
                         new CouchbaseDbContextOptionsBuilder(
-                            new DbContextOptionsBuilder(),
+                            new DbContextOptionsBuilder().UseCamelCaseNamingConvention(),
                             new ClusterOptions()
                                 .WithLogging(LoggerFactory.Create(builder =>
                                         {
@@ -60,7 +60,7 @@ public class CouchbaseTestStore : RelationalTestStore
 
     private readonly bool _seed = false;
 
-    private CouchbaseTestStore(string name, bool seed = true, bool sharedCache = false, bool shared = true, string dataFilePath = null)
+    private CouchbaseTestStore(string name, bool seed = false, bool sharedCache = false, bool shared = true, string dataFilePath = null)
         : base(name, shared)
     {
         _seed = seed;
@@ -74,7 +74,7 @@ public class CouchbaseTestStore : RelationalTestStore
             });
 
         var dbConnectionOptions = new CouchbaseDbContextOptionsBuilder(
-            new DbContextOptionsBuilder(),
+            new DbContextOptionsBuilder().UseCamelCaseNamingConvention(),
             new ClusterOptions()
                 .WithLogging(loggerFactory)
                 .WithConnectionString(TestEnvironment.ConnectionString)
@@ -122,7 +122,7 @@ public class CouchbaseTestStore : RelationalTestStore
                 {
                     couchbaseDbContextOptions.Bucket = "Content";
                     couchbaseDbContextOptions.Scope = "Blogs";
-                });
+                }).UseCamelCaseNamingConvention();
     }
 
     public override DbContextOptionsBuilder AddProviderOptions(DbContextOptionsBuilder builder)
@@ -246,7 +246,7 @@ public class CouchbaseTestStore : RelationalTestStore
                                                         $"{entityName}.{TestEnvironment.BucketName}.{TestEnvironment.Scope}";
 
                                                     var json = document.ToObject<object>();
-                                                    await couchbaseClient.CreateDocument(key, keyspace, json);
+                                                    await couchbaseClient.UpdateDocument(key, keyspace, json);
                                                 }
                                                 else if (reader.TokenType == JsonToken.EndObject)
                                                 {
