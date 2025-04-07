@@ -5,7 +5,7 @@
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
         <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
-        <Version>1.0.0-pre.2</Version>
+        <Version>1.0.0-RC.2</Version>
         <Title>EF Core Couchbase DB Provider</Title>
         <Authors>Couchbase, Inc.</Authors>
         <Copyright>Couchbase, Inc. (c) 2025</Copyright>
@@ -20,8 +20,8 @@
     </PropertyGroup>
 
     <ItemGroup>
-      <PackageReference Include="Couchbase.Extensions.DependencyInjection" Version="3.6.6" />
-      <PackageReference Include="CouchbaseNetClient" Version="3.6.6" />
+      <PackageReference Include="Couchbase.Extensions.DependencyInjection" Version="3.7.0" />
+      <PackageReference Include="CouchbaseNetClient" Version="3.7.0" />
       <PackageReference Include="Microsoft.EntityFrameworkCore" Version="8.0.14" />
       <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="8.0.14" />
     </ItemGroup>
