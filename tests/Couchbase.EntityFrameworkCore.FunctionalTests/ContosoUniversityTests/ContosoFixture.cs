@@ -10,7 +10,14 @@ namespace Couchbase.EntityFrameworkCore.FunctionalTests.ContosoUniversityTests;
 
 public class ContosoFixture : IAsyncLifetime
 {
-    public ContosoContext DbContext { get; private set; }
+    public ClusterOptions ClusterOptions { get; private set; }
+    public ILogger logger { get; private set; }
+
+    public ContosoContext DbContext()
+    {
+        var contextOptions = new DbContextOptions<SchoolContext>();
+        return new ContosoContext(contextOptions, ClusterOptions);
+    }
     
     public Task InitializeAsync()
     {
@@ -19,15 +26,13 @@ public class ContosoFixture : IAsyncLifetime
             builder.AddFilter(level => level >= LogLevel.Debug);
             builder.AddFile("Logs/myapp-{Date}.txt", LogLevel.Debug);
         });
+        logger = loggerFactory.CreateLogger<ContosoFixture>();
 
-        var clusterOptions = new ClusterOptions()
+        ClusterOptions = new ClusterOptions()
             .WithConnectionString("http://127.0.0.1")
             .WithCredentials("Administrator", "password")
-            .WithLogging(loggerFactory)
-            .WithBuckets("contoso");
-
-        var contextOptions = new DbContextOptions<SchoolContext>();
-        DbContext = new ContosoContext(contextOptions, clusterOptions);
+            .WithLogging(loggerFactory);
+        
         return Task.CompletedTask;
     }
 

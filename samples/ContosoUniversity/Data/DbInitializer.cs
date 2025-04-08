@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Linq;
+using System.Xml;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using ContosoUniversity.Models;
@@ -8,35 +9,46 @@ namespace ContosoUniversity.Data
 {
     public static class DbInitializer
     {
+        private static int _baseId = 0;
+        private static int ID_SPACE_SIZE = 1000;
+
+        static Student[] students = new Student[]
+        {
+            new Student { FirstMidName = "Carson",   LastName = "Alexander",
+                EnrollmentDate = DateTime.Parse("2010-09-01"), ID = 1 },
+            new Student { FirstMidName = "Meredith", LastName = "Alonso",
+                EnrollmentDate = DateTime.Parse("2012-09-01"), ID = 2 },
+            new Student { FirstMidName = "Arturo",   LastName = "Anand",
+                EnrollmentDate = DateTime.Parse("2013-09-01"), ID = 3 },
+            new Student { FirstMidName = "Gytis",    LastName = "Barzdukas",
+                EnrollmentDate = DateTime.Parse("2012-09-01"), ID = 4 },
+            new Student { FirstMidName = "Yan",      LastName = "Li",
+                EnrollmentDate = DateTime.Parse("2012-09-01"), ID = 5 },
+            new Student { FirstMidName = "Peggy",    LastName = "Justice",
+                EnrollmentDate = DateTime.Parse("2011-09-01"), ID = 6 },
+            new Student { FirstMidName = "Laura",    LastName = "Norman",
+                EnrollmentDate = DateTime.Parse("2013-09-01"), ID = 7 },
+            new Student { FirstMidName = "Nino",     LastName = "Olivetto",
+                EnrollmentDate = DateTime.Parse("2005-09-01"), ID = 8 }
+        };
+
+        public static Student[] someStudents()
+        {
+            _baseId = _baseId + ID_SPACE_SIZE;
+            return students.ToList().ConvertAll(s => new Student { FirstMidName = s.FirstMidName, LastName = s.LastName, ID = _baseId + s.ID }).ToArray();
+        }
+
         public static async Task Initialize(SchoolContext context)
         {
             //context.Database.EnsureCreated();
 
             // Look for any students.
+
             if (await context.Students.AnyAsync())
             {
                 return;   // DB has been seeded
             }
 
-            var students = new Student[]
-            {
-                new Student { FirstMidName = "Carson",   LastName = "Alexander",
-                    EnrollmentDate = DateTime.Parse("2010-09-01"), ID = 1 },
-                new Student { FirstMidName = "Meredith", LastName = "Alonso",
-                    EnrollmentDate = DateTime.Parse("2012-09-01"), ID = 2 },
-                new Student { FirstMidName = "Arturo",   LastName = "Anand",
-                    EnrollmentDate = DateTime.Parse("2013-09-01"), ID = 3 },
-                new Student { FirstMidName = "Gytis",    LastName = "Barzdukas",
-                    EnrollmentDate = DateTime.Parse("2012-09-01"), ID = 4 },
-                new Student { FirstMidName = "Yan",      LastName = "Li",
-                    EnrollmentDate = DateTime.Parse("2012-09-01"), ID = 5 },
-                new Student { FirstMidName = "Peggy",    LastName = "Justice",
-                    EnrollmentDate = DateTime.Parse("2011-09-01"), ID = 6 },
-                new Student { FirstMidName = "Laura",    LastName = "Norman",
-                    EnrollmentDate = DateTime.Parse("2013-09-01"), ID = 7 },
-                new Student { FirstMidName = "Nino",     LastName = "Olivetto",
-                    EnrollmentDate = DateTime.Parse("2005-09-01"), ID = 8 }
-            };
 
             context.Students.AddRange(students);
             await context.SaveChangesAsync();

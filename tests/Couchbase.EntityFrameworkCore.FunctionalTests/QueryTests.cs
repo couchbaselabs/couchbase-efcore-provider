@@ -102,28 +102,31 @@ public class QueryTests
             .WithConnectionString("couchbase://localhost")
             .WithCredentials("Administrator", "password"));
 
-        context.Add(new Session
+        var s1 = new Session
         {
             Category = "disabled",
             SessionId = 1,
             TenantId = "1"
-        });
-        context.Add(new Session
+        };
+        context.Add(s1);
+
+        var s2 = new Session
         {
             Category = "xydisabled",
             SessionId = 2,
             TenantId = "2"
-        });
+        };
+        context.Add(s2);
 
         var count = await context.SaveChangesAsync();
 
-        var position = 2;
+        var position = 1;
         var nextPage = await context.Sessions
-            .OrderBy(s => s.Id)
+            .OrderBy(s => s.Category)
             .Skip(position)
             .Take(10)
             .ToListAsync();
-        _outputHelper.WriteLine(nextPage.First().Category);
+        Assert.Equal(s2.Category, nextPage.First().Category);
     }
 
     [Fact]
