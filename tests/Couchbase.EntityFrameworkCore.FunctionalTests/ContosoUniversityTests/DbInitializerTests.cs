@@ -19,6 +19,6 @@ public class DbInitializerTests
     [Fact]
     public void Test_Initialize()
     {
-        DbInitializer.Initialize(_contosoFixture.DbContext);
+       DbInitializer.Initialize(_contosoFixture.DbContext());
     }
 }
