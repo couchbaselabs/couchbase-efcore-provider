@@ -43,22 +43,6 @@ public static class CouchbaseDbContextOptionsExtensions
     return optionsBuilder;
   }
   
-  public static DbContextOptionsBuilder UseCouchbase<TNamedBucketProvider>(
-    this DbContextOptionsBuilder optionsBuilder, 
-    string connectionString,
-    Action<CouchbaseDbContextOptionsBuilder>? couchbaseActionOptions = null) where TNamedBucketProvider : class, INamedBucketProvider
-  {
-    var clusterOptions = new ClusterOptions().WithConnectionString(connectionString);
-    var couchbaseDbContextOptionsBuilder = new CouchbaseDbContextOptionsBuilder(optionsBuilder, clusterOptions);
-    couchbaseActionOptions?.Invoke(couchbaseDbContextOptionsBuilder);
-
-    var extension = CouchbaseDbContextOptionsBuilderExtensions.GetOrCreateExtension(optionsBuilder, clusterOptions, couchbaseDbContextOptionsBuilder);
-    ((IDbContextOptionsBuilderInfrastructure) optionsBuilder).AddOrUpdateExtension(extension);
-    CouchbaseDbContextOptionsBuilderExtensions.ConfigureWarnings(optionsBuilder);
-
-    return optionsBuilder;
-  }
-  
   #nullable disable
   private static CouchbaseOptionsExtension GetOrCreateExtension(DbContextOptionsBuilder optionsBuilder, ClusterOptions clusterOptions, CouchbaseDbContextOptionsBuilder couchbaseDbContextOptionsBuilder)
     => optionsBuilder.Options.FindExtension<CouchbaseOptionsExtension>() is CouchbaseOptionsExtension existing
