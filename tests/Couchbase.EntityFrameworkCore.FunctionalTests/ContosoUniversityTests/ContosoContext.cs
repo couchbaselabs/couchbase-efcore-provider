@@ -31,8 +31,8 @@ public class ContosoContext : SchoolContext
         optionsBuilder.UseCouchbase(_clusterOptions,
             couchbaseDbContextOptions =>
         {
-            couchbaseDbContextOptions.Bucket = "universities";
-            couchbaseDbContextOptions.Scope = "contoso";
+            couchbaseDbContextOptions.Bucket = "Content";
+            couchbaseDbContextOptions.Scope = "Contoso";
         });
         optionsBuilder.EnableSensitiveDataLogging();
         optionsBuilder.EnableDetailedErrors();
