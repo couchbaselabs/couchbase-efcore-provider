@@ -8,7 +8,7 @@ namespace Couchbase.EntityFrameworkCore.FunctionalTests.Query;
 
 
 public abstract class CouchbaseNorthwindWhereQueryRelationalTestBase<TFixture> : CouchbaseNorthwindWhereQueryTestBase<TFixture>
-    where TFixture : NorthwindQueryFixtureBase<NoopModelCustomizer>, new()
+    where TFixture : NorthwindQueryCouchbaseFixture<NoopModelCustomizer>, new()
 {
     protected CouchbaseNorthwindWhereQueryRelationalTestBase(TFixture fixture)
         : base(fixture)

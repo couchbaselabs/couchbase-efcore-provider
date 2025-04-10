@@ -18,7 +18,7 @@ using Xunit;
 // ReSharper disable AccessToDisposedClosure
 namespace Couchbase.EntityFrameworkCore.FunctionalTests.Query;
 
-public abstract class FromSqlQueryTestBase<TFixture> : QueryTestBase<TFixture>
+public abstract class FromSqlQueryTestBase<TFixture> : CouchbaseQueryTestBase<TFixture>
     where TFixture : NorthwindQueryRelationalFixture<NoopModelCustomizer>, new()
 {
     // ReSharper disable once StaticMemberInGenericType
