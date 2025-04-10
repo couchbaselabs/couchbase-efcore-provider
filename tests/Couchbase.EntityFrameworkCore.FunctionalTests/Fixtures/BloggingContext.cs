@@ -43,7 +43,7 @@ public class BloggingContext : DbContext
                 },
                 new Blog { BlogId = 2, Url = @"https://mytravelblog.com/", Rating = 4, OwnerId = 3 });
 
-        modelBuilder.Entity<Post>().ToCouchbaseCollection("Post");
+        modelBuilder.Entity<Post>().ToCouchbaseCollection(this, "Post");
         modelBuilder.Entity<Post>()
             .HasData(
                 new Post
@@ -83,13 +83,13 @@ public class BloggingContext : DbContext
                     AuthorId = 3
                 });
 
-        modelBuilder.Entity<Person>().ToCouchbaseCollection("Person")
+        modelBuilder.Entity<Person>().ToCouchbaseCollection(this, "Person")
             .HasData(
                 new Person { PersonId = 1, Name = "Dotnet Blog Admin", PhotoId = 1 },
                 new Person { PersonId = 2, Name = "Phileas Fogg", PhotoId = 2 },
                 new Person { PersonId = 3, Name = "Jane Doe", PhotoId = 3 });
 
-        modelBuilder.Entity<PersonPhoto>().ToCouchbaseCollection("PersonPhoto")
+        modelBuilder.Entity<PersonPhoto>().ToCouchbaseCollection(this, "PersonPhoto")
             .HasData(
                 new PersonPhoto { PersonPhotoId = 1, Caption = "SN", Photo = new byte[] { 0x00, 0x01 } },
                 new PersonPhoto { PersonPhotoId = 2, Caption = "PF", Photo = new byte[] { 0x01, 0x02, 0x03 } },

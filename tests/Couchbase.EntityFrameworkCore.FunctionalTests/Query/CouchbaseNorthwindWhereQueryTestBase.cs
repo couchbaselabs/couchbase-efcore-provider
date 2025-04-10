@@ -15,15 +15,13 @@ namespace Couchbase.EntityFrameworkCore.FunctionalTests.Query;
 // ReSharper disable RedundantBoolCompare
 // ReSharper disable InconsistentNaming
 
-public abstract class CouchbaseNorthwindWhereQueryTestBase<TFixture> : QueryTestBase<TFixture>
+public abstract class CouchbaseNorthwindWhereQueryTestBase<TFixture> : CouchbaseQueryTestBase<TFixture>
     where TFixture : NorthwindQueryFixtureBase<NoopModelCustomizer>, new()
 {
     protected CouchbaseNorthwindWhereQueryTestBase(TFixture fixture)
         : base(fixture)
     {
     }
-
-    public new static IEnumerable<object[]> IsAsyncData = new[] { new object[] { true } };
 
     protected NorthwindContext CreateContext()
         => Fixture.CreateContext();

@@ -10,6 +10,7 @@ namespace Couchbase.EntityFrameworkCore.FunctionalTests.Query;
 
 public class NorthwindWhereQueryCouchbaseTest : CouchbaseNorthwindWhereQueryRelationalTestBase<NorthwindQueryCouchbaseFixture<NoopModelCustomizer>>
 {
+    //public class NorthwindWhereQuerySqliteTest : NorthwindWhereQueryRelationalTestBase<NorthwindQuerySqliteFixture<NoopModelCustomizer>>
     public NorthwindWhereQueryCouchbaseTest(NorthwindQueryCouchbaseFixture<NoopModelCustomizer> fixture, ITestOutputHelper testOutputHelper)
         : base(fixture)
     {
