@@ -1,11 +1,13 @@
 using Couchbase.EntityFrameworkCore.Extensions;
 using Couchbase.EntityFrameworkCore.FunctionalTests.Models;
 using Couchbase.Extensions.DependencyInjection;
+using Couchbase.Management.Users;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using EFCore.NamingConventions;
 using Microsoft.EntityFrameworkCore.ValueGeneration;
 using Xunit;
+using User = Couchbase.EntityFrameworkCore.FunctionalTests.Models.User;
 
 namespace Couchbase.EntityFrameworkCore.FunctionalTests.Fixtures;
 
@@ -43,7 +45,9 @@ public class CouchbaseFixture : IAsyncLifetime
 
         public TravelSampleDbContext(DbContextOptions<TravelSampleDbContext> options): base(options){}
 
-        public TravelSampleDbContext()
+        public TravelSampleDbContext(): this(new ClusterOptions()
+            .WithConnectionString("http://127.0.0.1")
+            .WithCredentials("Administrator", "password"))
         {
         }
 
@@ -55,6 +59,8 @@ public class CouchbaseFixture : IAsyncLifetime
         public DbSet<Airline> Airlines { get; set; }
 
         public DbSet<User> Users { get; set; }
+        
+        public DbSet<FromRawSqlTests.DestinationAirport> DestinationAirport { get; set; }
 
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
         {
@@ -73,6 +79,8 @@ public class CouchbaseFixture : IAsyncLifetime
             base.OnModelCreating(modelBuilder);
             modelBuilder.ConfigureToCouchbase(this);
             modelBuilder.Entity<Airline>().HasKey(x=>new {x.Type, x.Id});//composite key mapping
+            modelBuilder.Entity<FromRawSqlTests.DestinationAirport>().ToCouchbaseCollection(this, "destinationairport");
+            modelBuilder.Entity<FromRawSqlTests.DestinationAirport>().HasNoKey();
         }
     }
 
