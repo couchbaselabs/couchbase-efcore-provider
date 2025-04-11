@@ -351,7 +351,7 @@ public partial class CouchbaseShapedQueryCompilingExpressionVisitor : ShapedQuer
 
             if (nonComposedFromSql)
             {
-                return New(
+               /* return New(
                     typeof(FromSqlQueryingEnumerable<>).MakeGenericType(shaper.ReturnType).GetConstructors()[0],
                     Convert(QueryCompilationContext.QueryContextParameter, typeof(RelationalQueryContext)),
                     Constant(relationalCommandCache),
@@ -364,7 +364,14 @@ public partial class CouchbaseShapedQueryCompilingExpressionVisitor : ShapedQuer
                     Constant(
                         QueryCompilationContext.QueryTrackingBehavior == QueryTrackingBehavior.NoTrackingWithIdentityResolution),
                     Constant(_detailedErrorsEnabled),
-                    Constant(_threadSafetyChecksEnabled));
+                    Constant(_threadSafetyChecksEnabled));*/
+               return New(typeof(CouchbaseFromSqlQueryingEnumerable<>).MakeGenericType(shaper.ReturnType).GetConstructors()[0],
+                   Convert(QueryCompilationContext.QueryContextParameter, typeof(RelationalQueryContext)),
+                   Constant(relationalCommandCache),
+                   Constant(
+                       QueryCompilationContext.QueryTrackingBehavior == QueryTrackingBehavior.NoTrackingWithIdentityResolution),
+                   Constant(_bucketProvider),
+                   Constant(_couchbaseDbContextOptionsBuilder));
             }
 
             if (splitQuery)

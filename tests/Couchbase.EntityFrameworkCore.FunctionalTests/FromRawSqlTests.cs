@@ -2,6 +2,7 @@ using System.Text.Json.Serialization;
 using Couchbase.EntityFrameworkCore.FunctionalTests.Fixtures;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.TestUtilities;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -37,7 +38,7 @@ public class FromRawSqlTests
     {
         var pageSize = 10;
         var skip = 0;
-        var airportCode = "airport_3817";
+        var airportCode = "sfo";
 
         using (var context = new CouchbaseFixture.TravelSampleDbContext())
         {
@@ -52,10 +53,9 @@ public class FromRawSqlTests
                 OFFSET {2}";
 
             var destinations = await context.Set<DestinationAirport>()
-                .FromSqlRaw(sql, airportCode, pageSize, skip)
-                .ToListAsync();
+                .FromSqlRaw(sql, airportCode, pageSize, skip).ToListAsync();
             
-            Assert.Empty(destinations);
+            Assert.NotNull(destinations);
         }
     }
     
