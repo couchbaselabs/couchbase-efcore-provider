@@ -110,9 +110,18 @@ public class CouchbaseFromSqlQueryingEnumerable<T> : IEnumerable<T>, IAsyncEnume
                         var values = value as object[];
                         foreach (var relationalParameter in actualParameter.RelationalParameters)
                         {
-                            if (relationalParameter is TypeMappedRelationalParameter typeMappedRelationalParameter)
+                            if (relationalParameter is
+                                TypeMappedRelationalParameter
+                                typeMappedRelationalParameter)
                             {
                                 key = typeMappedRelationalParameter.Name;
+                                queryOptions.Parameter(key, values[count++]);
+                            }
+                            else if (relationalParameter is
+                                RawRelationalParameter
+                                rawRelationalParameter)
+                            {
+                                key = rawRelationalParameter.InvariantName;
                                 queryOptions.Parameter(key, values[count++]);
                             }
                         }
