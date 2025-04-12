@@ -5,9 +5,6 @@ This database provider allows Entity Framework Core to be used with Couchbase Da
 It is strongly recommended to familiarize yourself with the [Couchbase Database documentation](https://docs.couchbase.com/home/index.html) before reading this section. The EF Core Couchbase Db Provider, works
 with [Couchbase Server](https://docs.couchbase.com/home/server.html) and [Couchbase Capella DBaaS](https://docs.couchbase.com/home/cloud.html).
 
-> [!NOTE]
-> The EF Core Couchbase DB Provider is currently in developer preview and not all code paths work as of the writing of this document.
-
 ## Install
 
 Install the Couchbase.EntityFrameworkCore NuGet package.
