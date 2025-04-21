@@ -14,6 +14,13 @@ Install the Couchbase.EntityFrameworkCore NuGet package.
 ### Visual Studio
 ```Install-Package Couchbase.EntityFrameworkCore```
 
+### Control casing
+This is  required as the Couchbase defaults to Camel-Casing but EF Core defaults to Pascal-Casing for generated SQL:
+
+```Install-Package EFCore.NamingConventions```
+
+Without this queries will likely return back empty results as the JSON is case sensitive.
+
 ## Get Started
 
 > [!TIP]
@@ -30,7 +37,7 @@ protected override void OnConfiguring(DbContextOptionsBuilder options)
             {
                 couchbaseDbContextOptions.Bucket = "OrdersDB";
                 couchbaseDbContextOptions.Scope = "_default";
-            });
+            }).UseCamelCaseNamingConvention();
 ```
 
 In this example Order is a simple entity with a reference to the [owned type](https://learn.microsoft.com/en-us/ef/core/modeling/owned-entities) StreetAddress.
