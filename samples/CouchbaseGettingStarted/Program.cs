@@ -24,6 +24,7 @@ Console.WriteLine("Updating the blog and adding a post");
 blog.Url = "https://devblogs.microsoft.com/dotnet";
 blog.Posts.Add(
     new Post { Title = "Hello World", Content = "I wrote an app using EF Core!", PostId = Guid.NewGuid().ToString()});
+db.Update(blog);
 await db.SaveChangesAsync();
 
 // Delete
