@@ -12,6 +12,9 @@ namespace Couchbase.EntityFrameworkCore.FunctionalTests.Query;
 public abstract class CouchbaseNorthwindAsTrackingQueryTestBase<TFixture> : IClassFixture<TFixture>
     where TFixture : NorthwindQueryCouchbaseFixture<NoopModelCustomizer>, new()
 {
+
+    public static IEnumerable<object[]> IsAsyncData = new[] { new object[] { true } };
+
     protected CouchbaseNorthwindAsTrackingQueryTestBase(TFixture fixture)
     {
         Fixture = fixture;

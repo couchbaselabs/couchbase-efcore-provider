@@ -26,12 +26,13 @@ namespace Couchbase.EntityFrameworkCore.FunctionalTests.Query;
 public abstract class CouchbaseNorthwindFunctionsQueryTestBase<TFixture> : QueryTestBase<TFixture>
     where TFixture : NorthwindQueryFixtureBase<NoopModelCustomizer>, new()
 {
+
+    public new static IEnumerable<object[]> IsAsyncData = new[] { new object[] { true } };
+
     protected CouchbaseNorthwindFunctionsQueryTestBase(TFixture fixture)
         : base(fixture)
     {
     }
-    
-    public new static IEnumerable<object[]> IsAsyncData = new[] { new object[] { true } };
 
     protected NorthwindContext CreateContext()
         => Fixture.CreateContext();

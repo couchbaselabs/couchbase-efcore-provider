@@ -1,6 +1,8 @@
 using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Query;
+using Microsoft.EntityFrameworkCore.Query.Internal;
 using Microsoft.EntityFrameworkCore.TestUtilities;
 using Xunit;
 
@@ -14,6 +16,9 @@ using System.Runtime.CompilerServices;
 public abstract class CouchbaseQueryTestBase<TFixture> : IClassFixture<TFixture>
     where TFixture : class, IQueryFixtureBase, new()
 {
+
+    public static IEnumerable<object[]> IsAsyncData = new[] { new object[] { true } };
+
     protected CouchbaseQueryTestBase(TFixture fixture)
     {
         Fixture = fixture;
@@ -34,12 +39,32 @@ public abstract class CouchbaseQueryTestBase<TFixture> : IClassFixture<TFixture>
         => false;
 
     protected virtual Expression RewriteServerQueryExpression(Expression serverQueryExpression)
-        => serverQueryExpression;
+    {
+
+        if (serverQueryExpression is FromSqlQueryRootExpression fromSqlQuery && fromSqlQuery.Sql.Contains("*"))
+        {
+            string propertyString = "";
+            foreach (var item in fromSqlQuery.EntityType.GetProperties())
+            {
+                if (propertyString != "")
+                {
+                    propertyString += ", ";
+                }
+                propertyString += item.Name;
+            }
+            string sql = fromSqlQuery.Sql.Replace("*", propertyString);
+            var exp = new FromSqlQueryRootExpression(
+                fromSqlQuery.QueryProvider,
+                fromSqlQuery.EntityType,
+                sql,
+                fromSqlQuery.Argument);
+            return exp;
+        }
+        return serverQueryExpression;;
+    }
 
     protected virtual Expression RewriteExpectedQueryExpression(Expression expectedQueryExpression)
         => new ExpectedQueryRewritingVisitor().Visit(expectedQueryExpression);
-
-    public static IEnumerable<object[]> IsAsyncData = new[] { new object[] { true } };
 
     public Task AssertQuery<TResult>(
         bool async,

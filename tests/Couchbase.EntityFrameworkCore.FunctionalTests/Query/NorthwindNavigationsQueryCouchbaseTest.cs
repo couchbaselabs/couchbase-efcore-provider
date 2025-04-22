@@ -9,6 +9,9 @@ namespace Couchbase.EntityFrameworkCore.FunctionalTests.Query;
 public class NorthwindNavigationsQueryCouchbaseTest : NorthwindNavigationsQueryRelationalTestBase<
     NorthwindQueryCouchbaseFixture<NoopModelCustomizer>>
 {
+
+    public static IEnumerable<object[]> IsAsyncData = new[] { new object[] { true } };
+
     public NorthwindNavigationsQueryCouchbaseTest(NorthwindQueryCouchbaseFixture<NoopModelCustomizer> fixture)
         : base(fixture)
     {

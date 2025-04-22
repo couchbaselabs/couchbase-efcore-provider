@@ -11,9 +11,12 @@ using Xunit;
 
 namespace Couchbase.EntityFrameworkCore.FunctionalTests.Query;
 
-public abstract class CouchbaseNorthwindQueryFixtureBase<TModelCustomizer> : SharedStoreFixtureBase<NorthwindContext>, IFilteredQueryFixtureBase
+public abstract class CouchbaseNorthwindQueryFixtureBase<TModelCustomizer> : NorthwindQueryRelationalFixture<TModelCustomizer>, IFilteredQueryFixtureBase
     where TModelCustomizer : IModelCustomizer, new()
 {
+
+    public static IEnumerable<object[]> IsAsyncData = new[] { new object[] { true } };
+
     public Func<DbContext> GetContextCreator()
         => () => CreateContext();
 

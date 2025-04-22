@@ -10,10 +10,12 @@ using Microsoft.Extensions.Logging;
 using TestSqlLoggerFactory = Microsoft.EntityFrameworkCore.TestUtilities.TestSqlLoggerFactory;
 
 namespace Couchbase.EntityFrameworkCore.FunctionalTests.Query;
-
-public class NorthwindQueryCouchbaseFixture<TModelCustomizer> : NorthwindQueryRelationalFixture<TModelCustomizer>
+public class NorthwindQueryCouchbaseFixture<TModelCustomizer> :CouchbaseNorthwindQueryFixtureBase<TModelCustomizer>
     where TModelCustomizer : IModelCustomizer, new()
 {
+
+    public static IEnumerable<object[]> IsAsyncData = new[] { new object[] { true } };
+
     public NorthwindQueryCouchbaseFixture()
     {
     }
@@ -51,4 +53,7 @@ public class NorthwindQueryCouchbaseFixture<TModelCustomizer> : NorthwindQueryRe
 
         modelBuilder.ConfigureToCouchbase(context);
     }
+
+    protected override void Seed(NorthwindContext context)
+        => base.Seed(context);
 }
