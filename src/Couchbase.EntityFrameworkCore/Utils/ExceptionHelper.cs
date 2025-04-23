@@ -21,11 +21,11 @@ public static class ExceptionHelper
             "documentation for more information.");
     }
 
-    public static Exception InvalidKeyspaceFormatOrMissingCollection(string? keyspace)
+    public static Exception InvalidKeyspaceFormatOrMissingCollection(string? keyspace, Exception? innerException = null)
     {
         return new CollectionNotFoundException($"The keyspace {keyspace} format is invalid. The keyspace " +
             "should be in the following format: [Bucket].[Scope].[Collection]. This usually indicates an issue " +
             "with modeling your entities to the Couchbase schema. Please investigate your Entity Modeling (OnModelCreating) so that " +
-            "the correct keyspace is generate and that the same keyspace exists in Couchbase Server.");
+            "the correct keyspace is generate and that the same keyspace exists in Couchbase Server.", innerException);
     }
 }
