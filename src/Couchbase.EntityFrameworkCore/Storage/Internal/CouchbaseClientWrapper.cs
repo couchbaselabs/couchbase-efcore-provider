@@ -120,7 +120,7 @@ public class CouchbaseClientWrapper : ICouchbaseClientWrapper
         catch (Exception e)
         {
             _logger.LogError(e, "Could not find collection for keypace {Keyspace}", keyspace);
-            throw ExceptionHelper.InvalidKeyspaceFormatOrMissingCollection(keyspace);
+            throw ExceptionHelper.InvalidKeyspaceFormatOrMissingCollection(keyspace, e);
         }
         finally
         {
