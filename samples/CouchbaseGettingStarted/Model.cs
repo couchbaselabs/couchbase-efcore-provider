@@ -14,7 +14,6 @@ public class BloggingContext : DbContext
     //on localhost with a Bucket named "Content" and a Scope named "Blogs"
     protected override void OnConfiguring(DbContextOptionsBuilder options)
     {
-        var loggingFactory = LoggerFactory.Create(builder => builder.AddConsole());
         options.UseCouchbase(
             new ClusterOptions()
                 .WithCredentials("USERNAME", "PASSWORD")
