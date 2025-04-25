@@ -10,14 +10,20 @@ with [Couchbase Server](https://docs.couchbase.com/home/server.html) and [Couchb
 Install the Couchbase.EntityFrameworkCore NuGet package.
 
 ### .NET Core CLI or Jet Brains Rider IDE
-```dotnet add package Couchbase.EntityFrameworkCore```
+```
+dotnet add package Couchbase.EntityFrameworkCore
+```
 ### Visual Studio
-```Install-Package Couchbase.EntityFrameworkCore```
+```ps1
+Install-Package Couchbase.EntityFrameworkCore
+```
 
 ### Control casing
 This is  required as the Couchbase defaults to Camel-Casing but EF Core defaults to Pascal-Casing for generated SQL:
 
-```Install-Package EFCore.NamingConventions```
+```ps1
+Install-Package EFCore.NamingConventions
+```
 
 Without this queries will likely return back empty results as the JSON is case sensitive.
 
@@ -28,21 +34,22 @@ Without this queries will likely return back empty results as the JSON is case s
 
 As for other providers the first step is to call UseCouchbase:
 
-```
+```cs
 protected override void OnConfiguring(DbContextOptionsBuilder options)
-        => options.UseCouchbase(new ClusterOptions()
-                .WithCredentials("Administrator", "password")
-                .WithConnectionString("couchbase://localhost"),
-            couchbaseDbContextOptions =>
-            {
-                couchbaseDbContextOptions.Bucket = "OrdersDB";
-                couchbaseDbContextOptions.Scope = "_default";
-            }).UseCamelCaseNamingConvention();
+    => options.UseCouchbase(new ClusterOptions()
+           .WithCredentials("Administrator", "password")
+           .WithConnectionString("couchbase://localhost"),
+                couchbaseDbContextOptions =>
+                {
+                    couchbaseDbContextOptions.Bucket = "OrdersDB";
+                    couchbaseDbContextOptions.Scope = "_default";
+                })
+        .UseCamelCaseNamingConvention();
 ```
 
 In this example Order is a simple entity with a reference to the [owned type](https://learn.microsoft.com/en-us/ef/core/modeling/owned-entities) StreetAddress.
 
-```
+```cs
 public class Order
 {
     public int Id { get; set; }
@@ -50,8 +57,7 @@ public class Order
     public string PartitionKey { get; set; }
     public StreetAddress ShippingAddress { get; set; }
 }
-```
-```
+
 public class StreetAddress
 {
     public string Street { get; set; }
@@ -61,7 +67,7 @@ public class StreetAddress
 
 Saving and querying data follows the normal EF pattern:
 
-```
+```cs
 using (var context = new OrderContext())
 {
     await context.Database.EnsureDeletedAsync();
