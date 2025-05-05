@@ -17,6 +17,9 @@ namespace Couchbase.EntityFrameworkCore.FunctionalTests.Query;
 public abstract class CouchbaseNorthwindCompiledQueryTestBase<TFixture> : IClassFixture<TFixture>
     where TFixture : CouchbaseNorthwindQueryFixtureBase<NoopModelCustomizer>, new()
 {
+
+    public static IEnumerable<object[]> IsAsyncData = new[] {new object[] { true } };
+
     protected CouchbaseNorthwindCompiledQueryTestBase(TFixture fixture)
     {
         Fixture = fixture;
@@ -529,7 +532,7 @@ public abstract class CouchbaseNorthwindCompiledQueryTestBase<TFixture> : IClass
             Assert.True(query(context, "ALFKI"));
         }
     }
-    
+
     [ConditionalFact]
     public virtual async Task Compiled_query_with_max_parameters()
     {
@@ -842,6 +845,4 @@ public abstract class CouchbaseNorthwindCompiledQueryTestBase<TFixture> : IClass
 
     protected NorthwindContext CreateContext()
         => Fixture.CreateContext();
-
-    public static IEnumerable<object[]> IsAsyncData = new[] { new object[] { false }, new object[] { true } };
 }

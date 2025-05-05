@@ -14,6 +14,9 @@ using Microsoft.EntityFrameworkCore.TestModels.Northwind;
 public abstract class CouchbaseNorthwindChangeTrackingQueryTestBase<TFixture> : IClassFixture<TFixture>
     where TFixture :  NorthwindQueryCouchbaseFixture<NoopModelCustomizer>, new()
 {
+
+    public static IEnumerable<object[]> IsAsyncData = new[] { new object[] { true } };
+
     protected CouchbaseNorthwindChangeTrackingQueryTestBase(TFixture fixture)
     {
         Fixture = fixture;

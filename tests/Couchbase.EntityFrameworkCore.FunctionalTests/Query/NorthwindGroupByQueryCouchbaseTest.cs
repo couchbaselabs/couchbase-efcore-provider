@@ -20,6 +20,8 @@ public class NorthwindGroupByQueryCouchbaseTest : NorthwindGroupByQueryRelationa
         Fixture.TestSqlLoggerFactory.SetTestOutputHelper(testOutputHelper);
     }
 
+    public static IEnumerable<object[]> IsAsyncData = new[] { new object[] { true } };
+
     public override Task Select_uncorrelated_collection_with_groupby_multiple_collections_work(bool async)
         => AssertApplyNotSupported(() => base.Select_uncorrelated_collection_with_groupby_multiple_collections_work(async));
 

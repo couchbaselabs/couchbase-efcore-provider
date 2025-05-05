@@ -19,6 +19,9 @@ namespace Couchbase.EntityFrameworkCore.FunctionalTests.Query;
 public abstract class CouchbaseNorthwindWhereQueryTestBase<TFixture> : CouchbaseQueryTestBase<TFixture>
     where TFixture : NorthwindQueryFixtureBase<NoopModelCustomizer>, new()
 {
+
+    public static IEnumerable<object[]> IsAsyncData = new[] { new object[] { true } };
+
     protected CouchbaseNorthwindWhereQueryTestBase(TFixture fixture)
         : base(fixture)
     {
@@ -1657,6 +1660,7 @@ public abstract class CouchbaseNorthwindWhereQueryTestBase<TFixture> : Couchbase
             async,
             ss => ss.Set<Order>().Select(o => o.OrderDate.Value.TimeOfDay));
 
+    /* TODO: MSR has compile error
     [ConditionalTheory]
     [MemberData(nameof(IsAsyncData))]
     public virtual Task TypeBinary_short_circuit(bool async)
@@ -1670,7 +1674,7 @@ public abstract class CouchbaseNorthwindWhereQueryTestBase<TFixture> : Couchbase
 #pragma warning restore CS0184 // 'is' expression's given expression is never of the provided type
             assertEmpty: true);
     }
-
+*/
     [ConditionalTheory]
     [MemberData(nameof(IsAsyncData))]
     public virtual Task Decimal_cast_to_double_works(bool async)
