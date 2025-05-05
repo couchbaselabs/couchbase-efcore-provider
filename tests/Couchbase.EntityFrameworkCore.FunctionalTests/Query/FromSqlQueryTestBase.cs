@@ -233,9 +233,9 @@ public abstract class FromSqlQueryTestBase<TFixture> : CouchbaseQueryTestBase<TF
 
             using (var context = CreateContext())
             {
-                var actual = await query(context).ToListAsync();
+                var actual = query(context).ToBlockingEnumerable();
 
-                Assert.Equal(14, actual.Count);
+                Assert.Equal(14, actual.Count());
             }
         }
         else
@@ -268,7 +268,7 @@ public abstract class FromSqlQueryTestBase<TFixture> : CouchbaseQueryTestBase<TF
 
             using (var context = CreateContext())
             {
-                var actual = await query(context).ToListAsync();
+                var actual = query(context).ToBlockingEnumerable();
 
                 Assert.Single(actual);
             }
@@ -305,7 +305,7 @@ public abstract class FromSqlQueryTestBase<TFixture> : CouchbaseQueryTestBase<TF
 
             using (var context = CreateContext())
             {
-                var actual = await query(context).ToListAsync();
+                var actual = query(context).ToBlockingEnumerable();
 
                 Assert.Single(actual);
             }
@@ -343,7 +343,7 @@ public abstract class FromSqlQueryTestBase<TFixture> : CouchbaseQueryTestBase<TF
 
             using (var context = CreateContext())
             {
-                var actual = await query(context).ToListAsync();
+                var actual = query(context).ToBlockingEnumerable();
 
                 Assert.Single(actual);
             }

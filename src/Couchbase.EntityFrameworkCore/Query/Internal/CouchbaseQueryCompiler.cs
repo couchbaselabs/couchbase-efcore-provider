@@ -15,7 +15,7 @@ public class CouchbaseQueryCompiler : QueryCompiler
     {
     }
 
-    public override Expression ExtractParameters(Expression query, IParameterValues parameterValues, IDiagnosticsLogger<DbLoggerCategory.Query> logger,
+    public override Expression ExtractParameters(Expression query, Dictionary<string,object?> parameterValues, IDiagnosticsLogger<DbLoggerCategory.Query> logger,
         bool parameterize = true, bool generateContextAccessors = false)
     {
         return base.ExtractParameters(query, parameterValues, logger, parameterize, generateContextAccessors);

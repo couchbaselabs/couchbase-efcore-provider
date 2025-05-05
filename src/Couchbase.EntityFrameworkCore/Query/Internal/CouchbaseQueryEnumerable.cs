@@ -6,6 +6,7 @@ using Couchbase.EntityFrameworkCore.Utils;
 using Couchbase.Extensions.DependencyInjection;
 using Couchbase.Query;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking.Internal;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Internal;
 using Microsoft.EntityFrameworkCore.Query;
@@ -54,14 +55,14 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
 
     public async IAsyncEnumerator<T> GetAsyncEnumerator(CancellationToken cancellationToken = new CancellationToken())
     {
-        var command = _relationalCommandCache.RentAndPopulateRelationalCommand(_relationalQueryContext);
+        var command = _relationalQueryContext.Connection.RentCommand();
         var logger = (CouchbaseRelationalDiagnosticsCommandLogger)_relationalQueryContext.CommandLogger;
 #if DEBUG
         //This likely needs to be refactored and just use the relational command instead
         var loggingCommand = CreateDbCommand();
         logger.LogStatement(loggingCommand, TimeSpan.Zero);
 #endif
-        var queryOptions = GetParameters(command);
+        var queryOptions = GetParameters(_relationalQueryContext.Connection.RentCommand());
 
         var bucket = await _bucketProvider.
             GetBucketAsync(_couchbaseDbContextOptionsBuilder.Bucket).
@@ -82,7 +83,7 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
                 //Scalar values for functions like COUNT are not tracked.
                 if (entityType != null)
                 {
-                    _relationalQueryContext.StartTracking(entityType, doc, new ValueBuffer());
+                    _relationalQueryContext.StartTracking(entityType, doc, Snapshot.Empty);
                 }
             }
             catch (Exception e)
@@ -97,7 +98,7 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
     private QueryOptions GetParameters(IRelationalCommand command)
     {
         var queryOptions = new QueryOptions();
-        foreach (var parameter in _relationalQueryContext.ParameterValues)
+        foreach (var parameter in _relationalQueryContext.Parameters)
         {
             var key = parameter.Key;
             var value = parameter.Value;
@@ -160,11 +161,11 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
     ///     doing so can result in application failures when updating to a new Entity Framework Core release.
     /// </summary>
     public DbCommand CreateDbCommand()=> _relationalCommandCache
-        .GetRelationalCommandTemplate(_relationalQueryContext.ParameterValues)
+        .GetRelationalCommandTemplate(_relationalQueryContext.Parameters)
         .CreateDbCommand(
             new RelationalCommandParameterObject(
                 _relationalQueryContext.Connection,
-                _relationalQueryContext.ParameterValues,
+                _relationalQueryContext.Parameters,
                 null,
                 null,
                 null, CommandSource.LinqQuery),

@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
-        <TargetFramework>net8.0</TargetFramework>
+        <TargetFramework>net10.0</TargetFramework>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
         <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
@@ -17,6 +17,7 @@
         <PackageIcon>couchbase.png</PackageIcon>
         <AssemblyOriginatorKeyFile>Couchbase.snk</AssemblyOriginatorKeyFile>
         <PackageReadmeFile>README.md</PackageReadmeFile>
+        <IsPackable>false</IsPackable>
     </PropertyGroup>
 
     <ItemGroup>
@@ -34,9 +35,21 @@
 
     <ItemGroup>
       <Compile Remove="Query\Internal\CouchbaseShapedQueryCompilingExpressionVisitor2.cs" />
+      <Compile Remove="Query\Internal\CouchbaseProjectionBindingExpressionVisitor.cs" />
+      <Compile Remove="Storage\Internal\CouchbaseRelationalCommandBuilder.cs" />
+      <Compile Remove="Query\Internal\CouchbaseQueryableMethodTranslatingExpressionVisitor.cs" />
+      <Compile Remove="Query\Internal\CouchbaseQueryableMethodTranslatingExpressionVisitorFactory.cs" />
+      <Compile Remove="Query\Internal\CouchbaseQueryContextFactory.cs" />
+      <Compile Remove="Query\Internal\CouchbaseQueryContext.cs" />
     </ItemGroup>
 
     <ItemGroup>
         <None Include="../../README.md" Pack="true" PackagePath="\"/>
+    </ItemGroup>
+
+    <ItemGroup>
+      <ProjectReference Include="..\..\..\efcore\src\EFCore.InMemory\EFCore.InMemory.csproj" />
+      <ProjectReference Include="..\..\..\efcore\src\EFCore.Relational\EFCore.Relational.csproj" />
+      <ProjectReference Include="..\..\..\efcore\src\ef\ef.csproj" />
     </ItemGroup>
 </Project>

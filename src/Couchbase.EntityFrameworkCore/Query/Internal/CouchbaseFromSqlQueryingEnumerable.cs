@@ -5,6 +5,7 @@ using Couchbase.EntityFrameworkCore.Storage.Internal;
 using Couchbase.Extensions.DependencyInjection;
 using Couchbase.Query;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking.Internal;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Internal;
 using Microsoft.EntityFrameworkCore.Query;
@@ -52,7 +53,7 @@ public class CouchbaseFromSqlQueryingEnumerable<T> : IEnumerable<T>, IAsyncEnume
 
     public async IAsyncEnumerator<T> GetAsyncEnumerator(CancellationToken cancellationToken = new CancellationToken())
     {
-        var command = _relationalCommandCache.RentAndPopulateRelationalCommand(_relationalQueryContext);
+        var command = _relationalQueryContext.Connection.RentCommand();
         var logger = (CouchbaseRelationalDiagnosticsCommandLogger)_relationalQueryContext.CommandLogger;
 #if DEBUG
         //This likely needs to be refactored and just use the relational command instead
@@ -80,7 +81,7 @@ public class CouchbaseFromSqlQueryingEnumerable<T> : IEnumerable<T>, IAsyncEnume
                 //Scalar values for functions like COUNT are not tracked.
                 if (entityType != null && _dbContext.Entry(doc).State != EntityState.Detached)
                 {
-                    _relationalQueryContext.StartTracking(entityType, doc, new ValueBuffer());
+                    _relationalQueryContext.StartTracking(entityType, doc, Snapshot.Empty);
                 }
             }
             catch (Exception e)
@@ -95,7 +96,7 @@ public class CouchbaseFromSqlQueryingEnumerable<T> : IEnumerable<T>, IAsyncEnume
     private QueryOptions GetParameters(IRelationalCommand command)
     {
         var queryOptions = new QueryOptions();
-        foreach (var parameter in _relationalQueryContext.ParameterValues)
+        foreach (var parameter in _relationalQueryContext.Parameters)
         {
             var key = parameter.Key;
             var value = parameter.Value;
@@ -157,15 +158,18 @@ public class CouchbaseFromSqlQueryingEnumerable<T> : IEnumerable<T>, IAsyncEnume
         throw new NotImplementedException();
     }
 
-    public DbCommand CreateDbCommand()=> _relationalCommandCache
-        .GetRelationalCommandTemplate(_relationalQueryContext.ParameterValues)
-        .CreateDbCommand(
-            new RelationalCommandParameterObject(
-                _relationalQueryContext.Connection,
-                _relationalQueryContext.ParameterValues,
-                null,
-                null,
-                null, CommandSource.LinqQuery),
-            Guid.Empty,
-            (DbCommandMethod)(-1));
+    public DbCommand CreateDbCommand()
+    {
+        return _relationalCommandCache
+            .GetRelationalCommandTemplate(_relationalQueryContext.Parameters)
+            .CreateDbCommand(
+                new RelationalCommandParameterObject(
+                    _relationalQueryContext.Connection,
+                    _relationalQueryContext.Parameters,
+                    null,
+                    null,
+                    null, CommandSource.LinqQuery),
+                Guid.Empty,
+                (DbCommandMethod)(-1));
+    }
 }

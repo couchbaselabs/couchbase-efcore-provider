@@ -290,6 +290,16 @@ public class CouchbaseTestStore : RelationalTestStore
         public object GetCurrentValue(IPropertyBase propertyBase)
             => throw new NotImplementedException();
 
+        /// <summary>
+        ///     Returns <see langword="true" /> only if the property has storage for an original value.
+        /// </summary>
+        /// <param name="propertyBase">The property.</param>
+        /// <returns><see langword="true" /> if the property may have an original value; <see langword="false" /> if it never can.</returns>
+        public bool CanHaveOriginalValue(IPropertyBase propertyBase)
+        {
+            throw new NotImplementedException();
+        }
+
         public TProperty GetCurrentValue<TProperty>(IPropertyBase propertyBase)
             => throw new NotImplementedException();
 
@@ -299,8 +309,39 @@ public class CouchbaseTestStore : RelationalTestStore
         public TProperty GetOriginalValue<TProperty>(IProperty property)
             => throw new NotImplementedException();
 
+        /// <summary>
+        ///     Gets a value indicating if the specified complex property is modified. If <see langword="true" />,
+        ///     the current value assigned to the property should be saved to the database.
+        /// </summary>
+        /// <param name="property">The property to be checked.</param>
+        /// <returns><see langword="true" /> if the property is modified, otherwise <see langword="false" />.</returns>
+        public bool IsModified(IComplexProperty property)
+        {
+            throw new NotImplementedException();
+        }
+
         public bool HasTemporaryValue(IProperty property)
             => throw new NotImplementedException();
+
+        /// <summary>
+        ///     Gets a value indicating if the specified property has an explicit value set.
+        /// </summary>
+        /// <param name="property">The property to be checked.</param>
+        /// <returns><see langword="true" /> if the property has an explicitly set value, otherwise <see langword="false" />.</returns>
+        public bool HasExplicitValue(IProperty property)
+        {
+            throw new NotImplementedException();
+        }
+
+        /// <summary>
+        ///     Gets a value indicating if the specified property has a store-generated value that has not yet been saved to the entity.
+        /// </summary>
+        /// <param name="property">The property to be checked.</param>
+        /// <returns><see langword="true" /> if the property has a store-gen value, otherwise <see langword="false" />.</returns>
+        public bool HasStoreGeneratedValue(IProperty property)
+        {
+            throw new NotImplementedException();
+        }
 
         public bool IsModified(IProperty property)
             => throw new NotImplementedException();
@@ -346,6 +387,20 @@ public class CouchbaseTestStore : RelationalTestStore
 
         public IModel Model
             => throw new NotImplementedException();
+
+        /// <summary>
+        ///     Gets the base type of this type. Returns <see langword="null" /> if this is not a
+        ///     derived type in an inheritance hierarchy.
+        /// </summary>
+        IReadOnlyTypeBase? IReadOnlyTypeBase.BaseType
+            => BaseType;
+
+        /// <summary>
+        ///     Gets the base type of this type. Returns <see langword="null" /> if this is not a derived type in an inheritance
+        ///     hierarchy.
+        /// </summary>
+        ITypeBase? ITypeBase.BaseType
+            => BaseType;
 
         public string Name
             => throw new NotImplementedException();
@@ -403,6 +458,28 @@ public class CouchbaseTestStore : RelationalTestStore
 
         public PropertyInfo FindIndexerPropertyInfo()
             => throw new NotImplementedException();
+
+        /// <summary>
+        ///     This is an internal API that supports the Entity Framework Core infrastructure and not subject to
+        ///     the same compatibility standards as public APIs. It may be changed or removed without notice in
+        ///     any release. You should only use it directly in your code with extreme caution and knowing that
+        ///     doing so can result in application failures when updating to a new Entity Framework Core release.
+        /// </summary>
+        public Func<MaterializationContext, object> GetOrCreateMaterializer(IStructuralTypeMaterializerSource source)
+        {
+            throw new NotImplementedException();
+        }
+
+        /// <summary>
+        ///     This is an internal API that supports the Entity Framework Core infrastructure and not subject to
+        ///     the same compatibility standards as public APIs. It may be changed or removed without notice in
+        ///     any release. You should only use it directly in your code with extreme caution and knowing that
+        ///     doing so can result in application failures when updating to a new Entity Framework Core release.
+        /// </summary>
+        public Func<MaterializationContext, object> GetOrCreateEmptyMaterializer(IStructuralTypeMaterializerSource source)
+        {
+            throw new NotImplementedException();
+        }
 
         public IKey FindKey(IReadOnlyList<IProperty> properties)
             => throw new NotImplementedException();
@@ -476,6 +553,33 @@ public class CouchbaseTestStore : RelationalTestStore
         public IEnumerable<IReadOnlyEntityType> GetDerivedTypes()
             => throw new NotImplementedException();
 
+        /// <summary>
+        ///     Gets all types in the model that directly derive from this type.
+        /// </summary>
+        /// <returns>The derived types.</returns>
+        IEnumerable<ITypeBase> ITypeBase.GetDirectlyDerivedTypes()
+        {
+            return GetDirectlyDerivedTypes();
+        }
+
+        /// <summary>
+        ///     Gets all types in the model that directly derive from this type.
+        /// </summary>
+        /// <returns>The derived types.</returns>
+        IEnumerable<IReadOnlyTypeBase> IReadOnlyTypeBase.GetDirectlyDerivedTypes()
+        {
+            return GetDirectlyDerivedTypes();
+        }
+
+        /// <summary>
+        ///     Gets all types in the model that derive from this type.
+        /// </summary>
+        /// <returns>The derived types.</returns>
+        IEnumerable<IReadOnlyTypeBase> IReadOnlyTypeBase.GetDerivedTypes()
+        {
+            return GetDerivedTypes();
+        }
+
         public IEnumerable<IEntityType> GetDirectlyDerivedTypes()
             => throw new NotImplementedException();
 
@@ -503,11 +607,40 @@ public class CouchbaseTestStore : RelationalTestStore
         public IEnumerable<IProperty> GetProperties()
             => throw new NotImplementedException();
 
+        /// <summary>
+        ///     Returns the properties that need a value to be generated when the entity entry transitions to the
+        ///     <see cref="EntityState.Added" /> state, including properties defined on non-collection complex types.
+        /// </summary>
+        /// <returns>The properties that need a value to be generated on add.</returns>
+        public IEnumerable<IProperty> GetFlattenedValueGeneratingProperties()
+        {
+            throw new NotImplementedException();
+        }
+
         public PropertyAccessMode GetPropertyAccessMode()
             => throw new NotImplementedException();
 
+        /// <summary>
+        ///     Gets the query filters automatically applied to queries for this entity type.
+        /// </summary>
+        /// <returns>The query filters.</returns>
+        public IReadOnlyCollection<IQueryFilter> GetDeclaredQueryFilters()
+        {
+            throw new NotImplementedException();
+        }
+
         public LambdaExpression GetQueryFilter()
             => throw new NotImplementedException();
+
+        /// <summary>
+        ///     Retrieves the query filter associated with the specified key.
+        /// </summary>
+        /// <param name="filterKey">The key identifying the query filter to retrieve.</param>
+        /// <returns>The <see cref="IQueryFilter" /> associated with the specified key.</returns>
+        public IQueryFilter? FindDeclaredQueryFilter(string? filterKey)
+        {
+            throw new NotImplementedException();
+        }
 
         public IEnumerable<IForeignKey> GetReferencingForeignKeys()
             => throw new NotImplementedException();
@@ -516,12 +649,6 @@ public class CouchbaseTestStore : RelationalTestStore
             => throw new NotImplementedException();
 
         public IEnumerable<IServiceProperty> GetServiceProperties()
-            => throw new NotImplementedException();
-
-        public Func<MaterializationContext, object> GetOrCreateMaterializer(IEntityMaterializerSource source)
-            => throw new NotImplementedException();
-
-        public Func<MaterializationContext, object> GetOrCreateEmptyMaterializer(IEntityMaterializerSource source)
             => throw new NotImplementedException();
 
         public IEnumerable<ISkipNavigation> GetSkipNavigations()

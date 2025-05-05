@@ -47,6 +47,7 @@ public class CouchbaseRelationalDiagnosticsCommandLogger : RelationalCommandDiag
     public override DbDataReader CommandReaderExecuted(
         IRelationalConnection connection,
         DbCommand command,
+        string logCommandText,
         DbContext? context,
         Guid commandId,
         Guid connectionId,
