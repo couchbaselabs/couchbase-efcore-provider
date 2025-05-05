@@ -1,5 +1,6 @@
-// Licensed to the .NET Foundation under one or more agreements.
-// The .NET Foundation licenses this file to you under the MIT license.
+// Portions Copyright .NET foundation
+// Copyright 2025 Couchbase, Inc.
+// This file is under an MIT license as granted under license from the .NET Foundation
 
 using Microsoft.EntityFrameworkCore.Query;
 using Microsoft.EntityFrameworkCore.TestUtilities;
