@@ -120,6 +120,29 @@ public class CouchbaseQueryableMethodTranslatingExpressionVisitor : QueryableMet
         throw new NotImplementedException();
     }
 
+    /// <summary>
+    ///     Translates LeftJoin over the given source.
+    /// </summary>
+    /// <remarks>
+    ///     Certain patterns of GroupJoin-DefaultIfEmpty-SelectMany represents a left join in database. We identify such pattern
+    ///     in advance and convert it to join like syntax.
+    /// </remarks>
+    /// <param name="outer">The shaped query on which the operator is applied.</param>
+    /// <param name="inner">The inner shaped query to perform join with.</param>
+    /// <param name="outerKeySelector">The key selector for the outer source.</param>
+    /// <param name="innerKeySelector">The key selector for the inner source.</param>
+    /// <param name="resultSelector">The result selector supplied in the call.</param>
+    /// <returns>The shaped query after translation.</returns>
+    protected override ShapedQueryExpression? TranslateRightJoin(
+        ShapedQueryExpression outer,
+        ShapedQueryExpression inner,
+        LambdaExpression outerKeySelector,
+        LambdaExpression innerKeySelector,
+        LambdaExpression resultSelector)
+    {
+        throw new NotImplementedException();
+    }
+
     protected override ShapedQueryExpression? TranslateLastOrDefault(ShapedQueryExpression source, LambdaExpression? predicate,
         Type returnType, bool returnDefault)
     {

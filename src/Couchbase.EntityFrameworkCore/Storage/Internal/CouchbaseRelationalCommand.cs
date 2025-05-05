@@ -6,8 +6,8 @@ namespace Couchbase.EntityFrameworkCore.Storage.Internal;
 
 public class CouchbaseRelationalCommand : RelationalCommand
 {
-  public CouchbaseRelationalCommand(RelationalCommandBuilderDependencies dependencies, string commandText, IReadOnlyList<IRelationalParameter> parameters) 
-    : base(dependencies, commandText, parameters)
+  public CouchbaseRelationalCommand(RelationalCommandBuilderDependencies dependencies, string commandText, string logCommandText, IReadOnlyList<IRelationalParameter> parameters)
+    : base(dependencies, commandText, logCommandText, parameters)
   {
   }
 

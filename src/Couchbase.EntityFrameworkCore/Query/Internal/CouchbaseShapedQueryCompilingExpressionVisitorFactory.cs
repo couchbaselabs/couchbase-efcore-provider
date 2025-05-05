@@ -2,6 +2,7 @@ using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.EntityFrameworkCore.Infrastructure.Internal;
 using Couchbase.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.InMemory.Query.Internal;
 using Microsoft.EntityFrameworkCore.Query;
 using Microsoft.EntityFrameworkCore.Query.Internal;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -18,7 +19,7 @@ public class CouchbaseShapedQueryCompilingExpressionVisitorFactory : IShapedQuer
     private readonly IBucketProvider _bucketProvider;
 
     public CouchbaseShapedQueryCompilingExpressionVisitorFactory(
-        ShapedQueryCompilingExpressionVisitorDependencies dependencies, 
+        ShapedQueryCompilingExpressionVisitorDependencies dependencies,
         RelationalShapedQueryCompilingExpressionVisitorDependencies relationalDependencies,
         IQuerySqlGeneratorFactory querySqlGeneratorFactory,
         IBucketProvider bucketProvider,
@@ -36,9 +37,7 @@ public class CouchbaseShapedQueryCompilingExpressionVisitorFactory : IShapedQuer
         //the QuerySqlGenerator may be cacheable - if so make a field and call create in ctor above
         return new CouchbaseShapedQueryCompilingExpressionVisitor(
             _dependencies,
-            _relationalDependencies,
             queryCompilationContext,
-            _querySqlGeneratorFactory.Create(),
             _bucketProvider,
             _couchbaseDbContextOptionsBuilder);
     }

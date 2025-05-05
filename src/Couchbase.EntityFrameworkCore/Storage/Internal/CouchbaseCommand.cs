@@ -27,7 +27,7 @@ public class CouchbaseCommand : DbCommand
     public override int ExecuteNonQuery()
     {
         var result = Cluster.QueryAsync<int>(CommandText).GetAwaiter().GetResult();
-        return result.Rows.CountAsync().GetAwaiter().GetResult();
+        return result.Rows.ToBlockingEnumerable().Count();
     }
 
     public override object? ExecuteScalar()

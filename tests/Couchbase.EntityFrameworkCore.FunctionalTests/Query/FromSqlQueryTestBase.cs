@@ -1,5 +1,6 @@
-// Licensed to the .NET Foundation under one or more agreements.
-// The .NET Foundation licenses this file to you under the MIT license.
+// Portions Copyright .NET foundation
+// Copyright 2025 Couchbase, Inc.
+// This file is under an MIT license as granted under license from the .NET Foundation
 
 using System.Data;
 using System.Data.Common;
@@ -232,9 +233,9 @@ public abstract class FromSqlQueryTestBase<TFixture> : CouchbaseQueryTestBase<TF
 
             using (var context = CreateContext())
             {
-                var actual = await query(context).ToListAsync();
+                var actual = query(context).ToBlockingEnumerable();
 
-                Assert.Equal(14, actual.Count);
+                Assert.Equal(14, actual.Count());
             }
         }
         else
@@ -267,7 +268,7 @@ public abstract class FromSqlQueryTestBase<TFixture> : CouchbaseQueryTestBase<TF
 
             using (var context = CreateContext())
             {
-                var actual = await query(context).ToListAsync();
+                var actual = query(context).ToBlockingEnumerable();
 
                 Assert.Single(actual);
             }
@@ -304,7 +305,7 @@ public abstract class FromSqlQueryTestBase<TFixture> : CouchbaseQueryTestBase<TF
 
             using (var context = CreateContext())
             {
-                var actual = await query(context).ToListAsync();
+                var actual = query(context).ToBlockingEnumerable();
 
                 Assert.Single(actual);
             }
@@ -342,7 +343,7 @@ public abstract class FromSqlQueryTestBase<TFixture> : CouchbaseQueryTestBase<TF
 
             using (var context = CreateContext())
             {
-                var actual = await query(context).ToListAsync();
+                var actual = query(context).ToBlockingEnumerable();
 
                 Assert.Single(actual);
             }

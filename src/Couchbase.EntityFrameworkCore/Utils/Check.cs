@@ -1,5 +1,6 @@
-// Licensed to the .NET Foundation under one or more agreements.
-// The .NET Foundation licenses this file to you under the MIT license.
+// Portions Copyright .NET foundation
+// Copyright 2025 Couchbase, Inc.
+// This file is under an MIT license as granted under license from the .NET Foundation
 
 using System.Diagnostics;
 using Microsoft.EntityFrameworkCore.Diagnostics;
@@ -39,7 +40,7 @@ internal static class Check
         {
             NotEmpty(parameterName, nameof(parameterName));
 
-            throw new ArgumentException(AbstractionsStrings.CollectionArgumentIsEmpty(parameterName));
+            throw new ArgumentException(AbstractionsStrings.CollectionArgumentIsEmpty);
         }
 
         return value;
@@ -59,7 +60,7 @@ internal static class Check
         {
             NotEmpty(parameterName, nameof(parameterName));
 
-            throw new ArgumentException(AbstractionsStrings.ArgumentIsEmpty(parameterName));
+            throw new ArgumentException(AbstractionsStrings.ArgumentIsEmpty);
         }
 
         return value;
@@ -71,7 +72,7 @@ internal static class Check
         {
             NotEmpty(parameterName, nameof(parameterName));
 
-            throw new ArgumentException(AbstractionsStrings.ArgumentIsEmpty(parameterName));
+            throw new ArgumentException(AbstractionsStrings.ArgumentIsEmpty);
         }
 
         return value;
@@ -104,7 +105,7 @@ internal static class Check
         {
             NotEmpty(parameterName, nameof(parameterName));
 
-            throw new ArgumentException(AbstractionsStrings.CollectionArgumentHasEmptyElements(parameterName));
+            throw new ArgumentException(AbstractionsStrings.CollectionArgumentHasEmptyElements);
         }
 
         return value;

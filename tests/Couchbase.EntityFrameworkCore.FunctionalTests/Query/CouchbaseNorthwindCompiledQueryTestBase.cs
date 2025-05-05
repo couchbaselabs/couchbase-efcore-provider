@@ -1,7 +1,9 @@
 
-// Licensed to the .NET Foundation under one or more agreements.
-// The .NET Foundation licenses this file to you under the MIT license.
+// Portions Copyright .NET foundation
+// Copyright 2025 Couchbase, Inc.
+// This file is under an MIT license as granted under license from the .NET Foundation
 
+using Couchbase.EntityFrameworkCore.Extensions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.TestModels.Northwind;
 using Microsoft.EntityFrameworkCore.TestUtilities;
@@ -302,12 +304,12 @@ public abstract class CouchbaseNorthwindCompiledQueryTestBase<TFixture> : IClass
 
         using (var context = CreateContext())
         {
-            Assert.Equal(91, (await query(context).ToListAsync()).Count);
+            Assert.Equal(91, (query(context).ToBlockingEnumerable()).Count());
         }
 
         using (var context = CreateContext())
         {
-            Assert.Equal(91, (await query(context).ToListAsync()).Count);
+            Assert.Equal(91, (query(context).ToBlockingEnumerable()).Count());
         }
     }
 
@@ -331,12 +333,12 @@ public abstract class CouchbaseNorthwindCompiledQueryTestBase<TFixture> : IClass
 
         using (var context = CreateContext())
         {
-            Assert.Equal(91, (await query(context).ToListAsync()).Count);
+            Assert.Equal(91, (query(context).ToBlockingEnumerable()).Count());
         }
 
         using (var context = CreateContext())
         {
-            Assert.Equal(91, (await query(context).ToListAsync()).Count);
+            Assert.Equal(91, (query(context).ToBlockingEnumerable()).Count());
         }
     }
 
@@ -360,12 +362,12 @@ public abstract class CouchbaseNorthwindCompiledQueryTestBase<TFixture> : IClass
 
         using (var context = CreateContext())
         {
-            Assert.Equal(91, (await query(context).ToListAsync()).Count);
+            Assert.Equal(91, (query(context).ToBlockingEnumerable()).Count());
         }
 
         using (var context = CreateContext())
         {
-            Assert.Equal(91, (await query(context).ToListAsync()).Count);
+            Assert.Equal(91,(query(context).ToBlockingEnumerable()).Count());
         }
     }
 
@@ -378,12 +380,12 @@ public abstract class CouchbaseNorthwindCompiledQueryTestBase<TFixture> : IClass
 
         using (var context = CreateContext())
         {
-            Assert.Equal("ALFKI", (await query(context, "ALFKI").ToListAsync()).First().CustomerID);
+            Assert.Equal("ALFKI", (query(context, "ALFKI").ToBlockingEnumerable()).First().CustomerID);
         }
 
         using (var context = CreateContext())
         {
-            Assert.Equal("ANATR", (await query(context, "ANATR").ToListAsync()).First().CustomerID);
+            Assert.Equal("ANATR", (query(context, "ANATR").ToBlockingEnumerable()).First().CustomerID);
         }
     }
 
@@ -434,12 +436,12 @@ public abstract class CouchbaseNorthwindCompiledQueryTestBase<TFixture> : IClass
 
         using (var context = CreateContext())
         {
-            Assert.Equal("ALFKI", (await query(context, null, "ALFKI").ToListAsync()).First().CustomerID);
+            Assert.Equal("ALFKI", (query(context, null, "ALFKI").ToBlockingEnumerable().First().CustomerID));
         }
 
         using (var context = CreateContext())
         {
-            Assert.Equal("ANATR", (await query(context, null, "ANATR").ToListAsync()).First().CustomerID);
+            Assert.Equal("ANATR", (query(context, null, "ANATR").ToBlockingEnumerable()).First().CustomerID);
         }
     }
 
@@ -452,12 +454,12 @@ public abstract class CouchbaseNorthwindCompiledQueryTestBase<TFixture> : IClass
 
         using (var context = CreateContext())
         {
-            Assert.Equal("ALFKI", (await query(context, null, 1, "ALFKI").ToListAsync()).First().CustomerID);
+            Assert.Equal("ALFKI", (query(context, null, 1, "ALFKI").ToBlockingEnumerable()).First().CustomerID);
         }
 
         using (var context = CreateContext())
         {
-            Assert.Equal("ANATR", (await query(context, null, 1, "ANATR").ToListAsync()).First().CustomerID);
+            Assert.Equal("ANATR", ( query(context, null, 1, "ANATR").ToBlockingEnumerable()).First().CustomerID);
         }
     }
 
@@ -490,14 +492,14 @@ public abstract class CouchbaseNorthwindCompiledQueryTestBase<TFixture> : IClass
 
         using (var context = CreateContext())
         {
-            Assert.Equal("ALFKI", (await query(context).ToListAsync()).First().CustomerID);
+            Assert.Equal("ALFKI", (query(context).ToBlockingEnumerable()).First().CustomerID);
         }
 
         customerID = "ANATR";
 
         using (var context = CreateContext())
         {
-            Assert.Equal("ALFKI", (await query(context).ToListAsync()).First().CustomerID);
+            Assert.Equal("ALFKI", (query(context).ToBlockingEnumerable()).First().CustomerID);
         }
     }
 
@@ -512,7 +514,7 @@ public abstract class CouchbaseNorthwindCompiledQueryTestBase<TFixture> : IClass
 
         using (var context = CreateContext())
         {
-            Assert.Empty(await query(context).ToListAsync());
+            Assert.Empty( query(context).ToBlockingEnumerable());
         }
     }
 
@@ -804,15 +806,15 @@ public abstract class CouchbaseNorthwindCompiledQueryTestBase<TFixture> : IClass
                 context, "ALFKI", "ANATR", "ANTON", "AROUT", "BERGS", "BLAUS", "BLONP", "BOLID", "BONAP", "BSBEV", "CACTU", "CENTC",
                 "CHOPS", "CONSH", "RANDM"));
 
-        var asyncEnumerableResult = await asyncEnumerableQuery(
+        var asyncEnumerableResult = asyncEnumerableQuery(
             context, "ALFKI", "ANATR", "ANTON", "AROUT", "BERGS", "BLAUS", "BLONP", "BOLID", "BONAP", "BSBEV", "CACTU", "CENTC",
-            "CHOPS", "CONSH", "RANDM").ToListAsync();
-        Assert.Equal(14, asyncEnumerableResult.Count);
+            "CHOPS", "CONSH", "RANDM").ToBlockingEnumerable();
+        Assert.Equal(14, asyncEnumerableResult.Count());
 
-        var asyncIncludeEnumerableResult = await asyncIncludeEnumerableQuery(
+        var asyncIncludeEnumerableResult = asyncIncludeEnumerableQuery(
             context, "ALFKI", "ANATR", "ANTON", "AROUT", "BERGS", "BLAUS", "BLONP", "BOLID", "BONAP", "BSBEV", "CACTU", "CENTC",
-            "CHOPS", "CONSH", "RANDM").ToListAsync();
-        Assert.Equal(14, asyncIncludeEnumerableResult.Count);
+            "CHOPS", "CONSH", "RANDM").ToBlockingEnumerable();
+        Assert.Equal(14, asyncIncludeEnumerableResult.Count());
         Assert.All(asyncIncludeEnumerableResult, t => Assert.NotNull(t.Orders));
 
         Assert.Equal(
