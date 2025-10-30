@@ -125,6 +125,7 @@ namespace ContosoUniversity.Controllers
             {
                 try
                 {
+                    _context.Courses.Update(courseToUpdate);
                     await _context.SaveChangesAsync();
                     return RedirectToAction(nameof(Index));
                 }

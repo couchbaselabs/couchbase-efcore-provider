@@ -141,7 +141,7 @@ namespace ContosoUniversity.Controllers
                 return NotFound();
             }
 
-            var student = await _context.Students.FindAsync(id);
+            var student = await _context.Students.AsNoTracking().FirstAsync(x=>x.ID==id);//.FindAsync(id);
             if (student == null)
             {
                 return NotFound();
@@ -168,6 +168,7 @@ namespace ContosoUniversity.Controllers
             {
                 try
                 {
+                    _context.Update(studentToUpdate);
                     await _context.SaveChangesAsync();
                     return RedirectToAction(nameof(Index));
                 }
