@@ -80,7 +80,7 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
             {
                 //If the returned type is an entity add start change tracking
                 //Scalar values for functions like COUNT are not tracked.
-                if (entityType != null && _dbContext.Entry(doc).State != EntityState.Detached)
+                if (entityType != null)
                 {
                     _relationalQueryContext.StartTracking(entityType, doc, new ValueBuffer());
                 }

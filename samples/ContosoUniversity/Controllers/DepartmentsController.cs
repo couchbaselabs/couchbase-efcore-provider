@@ -106,7 +106,7 @@ namespace ContosoUniversity.Controllers
             department.Administrator =
                 await _context.Instructors.FirstOrDefaultAsync(x => x.ID == department.DepartmentID);
 
-            ViewData["InstructorID"] = new SelectList(_context.Instructors, "ID", "FullName", department.InstructorID);
+            ViewData["InstructorID"] = new SelectList(await _context.Instructors.AsAsyncEnumerable().ToListAsync(), "ID", "FullName", department.InstructorID);
             return View(department);
         }
 
@@ -143,6 +143,7 @@ namespace ContosoUniversity.Controllers
             {
                 try
                 {
+                    _context.Update(departmentToUpdate);
                     await _context.SaveChangesAsync();
                     return RedirectToAction(nameof(Index));
                 }
@@ -188,7 +189,7 @@ namespace ContosoUniversity.Controllers
                     }
                 }
             }
-            ViewData["InstructorID"] = new SelectList(_context.Instructors, "ID", "FullName", departmentToUpdate.InstructorID);
+            ViewData["InstructorID"] = new SelectList(await _context.Instructors.AsAsyncEnumerable().ToListAsync(), "ID", "FullName", departmentToUpdate.InstructorID);
             return View(departmentToUpdate);
         }
 
