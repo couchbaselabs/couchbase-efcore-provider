@@ -1,4 +1,5 @@
 using Couchbase.EntityFrameworkCore.Storage.Internal;
+using Couchbase.EntityFrameworkCore.UnitTests.Fakes;
 using Couchbase.Query;
 using Moq;
 using Xunit;
@@ -49,10 +50,15 @@ namespace Couchbase.EntityFrameworkCore.UnitTests
         public void HasRows_ReturnsTrue_WhenQueryStatusIsSuccess()
         {
             // Arrange
-            var mockQueryResult = new Mock<IQueryResult<object>>();
-            mockQueryResult.Setup(q => q.MetaData.Status).Returns(QueryStatus.Success);
+            var fakeQueryResult = new FakeQueryResult<object>
+            {
+                MetaData = new QueryMetaData
+                {
+                    Status = QueryStatus.Success
+                }
+            };
 
-            var reader = new CouchbaseDbDataReader<object>(mockQueryResult.Object);
+            var reader = new CouchbaseDbDataReader<object>(fakeQueryResult);
 
             // Act
             var result = reader.HasRows;
@@ -65,10 +71,15 @@ namespace Couchbase.EntityFrameworkCore.UnitTests
         public void HasRows_ReturnsFalse_WhenQueryStatusIsNotSuccess()
         {
             // Arrange
-            var mockQueryResult = new Mock<IQueryResult<object>>();
-            mockQueryResult.Setup(q => q.MetaData.Status).Returns(QueryStatus.Errors);
+            var fakeQueryResult = new FakeQueryResult<object>
+            {
+                MetaData = new QueryMetaData
+                {
+                    Status = QueryStatus.Errors
+                }
+            };
 
-            var reader = new CouchbaseDbDataReader<object>(mockQueryResult.Object);
+            var reader = new CouchbaseDbDataReader<object>(fakeQueryResult);
 
             // Act
             var result = reader.HasRows;
@@ -92,14 +103,15 @@ namespace Couchbase.EntityFrameworkCore.UnitTests
         }
 
         [Fact]
-        public void FieldCount_ThrowsNotImplementedException()
+        public void FieldCount_DoesNot_ThrowsNotImplementedException()
         {
             // Arrange
             var mockQueryResult = new Mock<IQueryResult<object>>();
             var reader = new CouchbaseDbDataReader<object>(mockQueryResult.Object);
 
             // Act & Assert
-            Assert.Throws<NotImplementedException>(() => reader.FieldCount);
+            var result = reader.FieldCount;
+            Assert.Equal(0, result);
         }
 
         [Fact]
