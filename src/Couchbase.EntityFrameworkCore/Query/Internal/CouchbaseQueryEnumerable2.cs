@@ -5,6 +5,7 @@ using System.Collections;
 using System.Data.Common;
 using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.EntityFrameworkCore.Storage.Internal;
+using Couchbase.EntityFrameworkCore.Utils;
 using Couchbase.Extensions.DependencyInjection;
 using Couchbase.Query;
 using Microsoft.EntityFrameworkCore;
@@ -88,7 +89,7 @@ public class CouchbaseQueryEnumerable2<T> : IEnumerable<T>, IAsyncEnumerable<T>,
     /// <returns>An enumerator that can be used to iterate through the collection.</returns>
     public IEnumerator<T> GetEnumerator()
     {
-        throw new NotImplementedException();
+        throw ExceptionHelper.SyncroIONotSupportedException();
     }
 
     /// <summary>Returns an enumerator that iterates through a collection.</summary>
@@ -109,7 +110,7 @@ public class CouchbaseQueryEnumerable2<T> : IEnumerable<T>, IAsyncEnumerable<T>,
 #if DEBUG
         logger.LogStatement(dbCommand, TimeSpan.Zero);
 #endif
-        var queryOptions = GetParameters(_relationalQueryContext.Connection.RentCommand());
+        var queryOptions = GetParameters2(dbCommand);
 
         var bucket = await _bucketProvider.
             GetBucketAsync(_couchbaseDbContextOptionsBuilder.Bucket).
@@ -175,7 +176,17 @@ public class CouchbaseQueryEnumerable2<T> : IEnumerable<T>, IAsyncEnumerable<T>,
                 Guid.Empty,
                 (DbCommandMethod)(-1));
 
-    private QueryOptions GetParameters(IRelationalCommand command)
+    private QueryOptions GetParameters2(DbCommand command)
+    {
+        var queryOptions = new QueryOptions();
+        foreach (CouchbaseParameter parameter in command.Parameters)
+        {
+            queryOptions.Parameter(parameter.ParameterName, parameter.Value);
+        }
+        return queryOptions;
+    }
+
+    private QueryOptions GetParameters(DbCommand command)
     {
         var queryOptions = new QueryOptions();
         foreach (var parameter in _relationalQueryContext.Parameters)
