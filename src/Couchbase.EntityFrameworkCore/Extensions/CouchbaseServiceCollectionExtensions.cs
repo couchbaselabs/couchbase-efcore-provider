@@ -53,7 +53,7 @@ public static class CouchbaseServiceCollectionExtensions
             //.TryAdd<IAsyncQueryProvider, CouchbaseQueryProvider>()
             .TryAdd<IQuerySqlGeneratorFactory, CouchbaseQuerySqlGeneratorFactory>()
             .TryAdd<ISqlGenerationHelper, CouchbaseSqlGenerationHelper>()
-            .TryAdd<IShapedQueryCompilingExpressionVisitorFactory, CouchbaseShapedQueryCompilingExpressionVisitorFactory>()
+            .TryAdd<IShapedQueryCompilingExpressionVisitorFactory, CouchbaseShapedQueryCompilingExpressionVisitorFactory2>()
             .TryAdd<IHistoryRepository, CouchbaseHistoryRepository>()//not used but required by ASP.NET
             .TryAdd<IModificationCommandBatchFactory, CouchbaseModificationCommandBatchFactory>()
             .TryAdd<IMethodCallTranslatorProvider, CouchbaseMethodCallTranslatorProvider>()

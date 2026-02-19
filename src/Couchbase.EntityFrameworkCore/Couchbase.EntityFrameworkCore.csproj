@@ -34,7 +34,6 @@
     </ItemGroup>
 
     <ItemGroup>
-      <Compile Remove="Query\Internal\CouchbaseShapedQueryCompilingExpressionVisitor2.cs" />
       <Compile Remove="Query\Internal\CouchbaseProjectionBindingExpressionVisitor.cs" />
       <Compile Remove="Storage\Internal\CouchbaseRelationalCommandBuilder.cs" />
       <Compile Remove="Query\Internal\CouchbaseQueryableMethodTranslatingExpressionVisitor.cs" />
