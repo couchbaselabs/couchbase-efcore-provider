@@ -47,7 +47,6 @@
     </ItemGroup>
 
     <ItemGroup>
-      <ProjectReference Include="..\..\..\efcore\src\EFCore.InMemory\EFCore.InMemory.csproj" />
       <ProjectReference Include="..\..\..\efcore\src\EFCore.Relational\EFCore.Relational.csproj" />
       <ProjectReference Include="..\..\..\efcore\src\ef\ef.csproj" />
     </ItemGroup>

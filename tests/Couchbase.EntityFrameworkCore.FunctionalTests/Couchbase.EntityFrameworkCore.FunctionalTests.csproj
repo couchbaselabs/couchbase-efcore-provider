@@ -29,6 +29,18 @@
       <None Update="config.json">
         <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       </None>
+      <None Remove="TestUtilities\**" />
+      <None Remove="Query\**" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <Compile Remove="TestUtilities\**" />
+      <Compile Remove="Query\**" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <EmbeddedResource Remove="TestUtilities\**" />
+      <EmbeddedResource Remove="Query\**" />
     </ItemGroup>
 
 </Project>
