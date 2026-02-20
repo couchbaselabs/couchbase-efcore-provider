@@ -3,25 +3,24 @@
 
 using System.Collections;
 using System.Data.Common;
+using Couchbase.Query;
 using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.EntityFrameworkCore.Storage.Internal;
 using Couchbase.EntityFrameworkCore.Utils;
 using Couchbase.Extensions.DependencyInjection;
-using Couchbase.Query;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking.Internal;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Query;
 using Microsoft.EntityFrameworkCore.Query.Internal;
 using Microsoft.EntityFrameworkCore.Storage;
-using Microsoft.EntityFrameworkCore.Storage.Internal;
 using Microsoft.Extensions.Logging;
 
 namespace Couchbase.EntityFrameworkCore.Query.Internal;
 
-public static class CouchbaseQueryEnumerable2
+public static class CouchbaseQueryEnumerable
 {
-    public static CouchbaseQueryEnumerable2<T> Create<T>(
+    public static CouchbaseQueryEnumerable<T> Create<T>(
         RelationalQueryContext relationalQueryContext,
         RelationalCommandResolver relationalCommandResolver,
         IReadOnlyList<ReaderColumn?>? readerColumns,
@@ -45,7 +44,7 @@ public static class CouchbaseQueryEnumerable2
             couchbaseDbContextOptionsBuilder);
 }
 
-public class CouchbaseQueryEnumerable2<T> : IEnumerable<T>, IAsyncEnumerable<T>, IRelationalQueryingEnumerable
+public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, IRelationalQueryingEnumerable
 {
     private readonly bool _threadSafetyChecksEnabled;
     private readonly bool _detailedErrorsEnabled;
@@ -60,8 +59,8 @@ public class CouchbaseQueryEnumerable2<T> : IEnumerable<T>, IAsyncEnumerable<T>,
     private readonly IBucketProvider _bucketProvider;
     private readonly DbContext _dbContext;
 
-    public CouchbaseQueryEnumerable2(
-        RelationalQueryContext relationalQueryContext, 
+    public CouchbaseQueryEnumerable(
+        RelationalQueryContext relationalQueryContext,
         RelationalCommandResolver relationalCommandResolver,
         IReadOnlyList<ReaderColumn?>? readerColumns,
         Func<QueryContext, DbDataReader, ResultContext, SingleQueryResultCoordinator, T> shaper,
@@ -85,6 +84,7 @@ public class CouchbaseQueryEnumerable2<T> : IEnumerable<T>, IAsyncEnumerable<T>,
         _bucketProvider = bucketProvider;
         _dbContext = relationalQueryContext.Context;
     }
+
     /// <summary>Returns an enumerator that iterates through the collection.</summary>
     /// <returns>An enumerator that can be used to iterate through the collection.</returns>
     public IEnumerator<T> GetEnumerator()
@@ -105,16 +105,14 @@ public class CouchbaseQueryEnumerable2<T> : IEnumerable<T>, IAsyncEnumerable<T>,
     public async IAsyncEnumerator<T> GetAsyncEnumerator(CancellationToken cancellationToken = new CancellationToken())
     {
         using var dbCommand = CreateDbCommand();
-        var queryString =_relationalQueryContext.RelationalQueryStringFactory.Create(dbCommand);
+        var queryString = _relationalQueryContext.RelationalQueryStringFactory.Create(dbCommand);
         var logger = (CouchbaseRelationalDiagnosticsCommandLogger)_relationalQueryContext.CommandLogger;
 #if DEBUG
         logger.LogStatement(dbCommand, TimeSpan.Zero);
 #endif
         var queryOptions = GetParameters2(dbCommand);
 
-        var bucket = await _bucketProvider.
-            GetBucketAsync(_couchbaseDbContextOptionsBuilder.Bucket).
-            ConfigureAwait(false);
+        var bucket = await _bucketProvider.GetBucketAsync(_couchbaseDbContextOptionsBuilder.Bucket).ConfigureAwait(false);
         var cluster = bucket.Cluster;
         var result = await cluster.QueryAsync<T>(queryString, queryOptions).ConfigureAwait(false);
 
@@ -183,51 +181,7 @@ public class CouchbaseQueryEnumerable2<T> : IEnumerable<T>, IAsyncEnumerable<T>,
         {
             queryOptions.Parameter(parameter.ParameterName, parameter.Value);
         }
+
         return queryOptions;
-    }
-
-    private QueryOptions GetParameters(DbCommand command)
-    {
-        var queryOptions = new QueryOptions();
-        foreach (var parameter in _relationalQueryContext.Parameters)
-        {
-            var key = parameter.Key;
-            var value = parameter.Value;
-
-            foreach (var compositeParameter in command.Parameters)
-            {
-                if (compositeParameter is CompositeRelationalParameter actualParameter)
-                {
-                    if (actualParameter.InvariantName == key)
-                    {
-                        foreach (var relationalParameter in actualParameter.RelationalParameters)
-                        {
-                            if (relationalParameter is TypeMappedRelationalParameter typeMappedRelationalParameter)
-                            {
-                                key = typeMappedRelationalParameter.Name;
-                            }
-                        }
-                    }
-                }
-            }
-            queryOptions.Parameter(key, UnWrap(value));
-        }
-        return queryOptions;
-    }
-
-    private object? UnWrap(object? value)
-    {
-        var type = value?.GetType();
-        if (type is { IsArray: true })
-        {
-            if (value is object[] outValue)
-            {
-                return outValue.FirstOrDefault();
-            }
-
-            throw new ArgumentException(@"Cannot parse!", nameof(value));
-        }
-
-        return value;
     }
 }
