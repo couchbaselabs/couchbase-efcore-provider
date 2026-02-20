@@ -17,7 +17,7 @@ using Constant = System.Linq.Expressions.ConstantExpression;
 
 namespace Couchbase.EntityFrameworkCore.Query.Internal;
 
-public class CouchbaseShapedQueryCompilingExpressionVisitor2 : RelationalShapedQueryCompilingExpressionVisitor
+public class CouchbaseShapedQueryCompilingExpressionVisitor : RelationalShapedQueryCompilingExpressionVisitor
 {
     private readonly IBucketProvider _bucketProvider;
     private readonly ICouchbaseDbContextOptionsBuilder _couchbaseDbContextOptionsBuilder;
@@ -32,7 +32,7 @@ public class CouchbaseShapedQueryCompilingExpressionVisitor2 : RelationalShapedQ
     /// <param name="dependencies">Parameter object containing dependencies for this class.</param>
     /// <param name="relationalDependencies">Parameter object containing relational dependencies for this class.</param>
     /// <param name="queryCompilationContext">The query compilation context object to use.</param>
-    public CouchbaseShapedQueryCompilingExpressionVisitor2(
+    public CouchbaseShapedQueryCompilingExpressionVisitor(
         ShapedQueryCompilingExpressionVisitorDependencies dependencies,
         RelationalShapedQueryCompilingExpressionVisitorDependencies relationalDependencies,
         QueryCompilationContext queryCompilationContext,
