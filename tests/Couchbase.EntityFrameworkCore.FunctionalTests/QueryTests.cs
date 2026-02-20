@@ -91,16 +91,17 @@ public class QueryTests
               .FirstAsync();
 
         _outputHelper.WriteLine(airlines.ToString());
-        
+
         await context.SaveChangesAsync();
     }
 
     [Fact]
     public async Task Test_Pagination()
     {
-        var context = new SessionContext(new ClusterOptions()
-            .WithConnectionString("couchbase://localhost")
-            .WithCredentials("Administrator", "password"));
+        var context = new SessionContext(
+            new ClusterOptions()
+                .WithConnectionString("couchbase://localhost")
+                .WithCredentials("Administrator", "password"));
 
         var s1 = new Session
         {
@@ -118,15 +119,23 @@ public class QueryTests
         };
         context.Add(s2);
 
-        var count = await context.SaveChangesAsync();
+        try
+        {
+            var count = await context.SaveChangesAsync();
 
-        var position = 1;
-        var nextPage = await context.Sessions
-            .OrderBy(s => s.Category)
-            .Skip(position)
-            .Take(10)
-            .ToListAsync();
-        Assert.Equal(s2.Category, nextPage.First().Category);
+            var position = 1;
+            var nextPage = await context.Sessions
+                .OrderBy(s => s.Category)
+                .Skip(position)
+                .Take(10)
+                .ToListAsync();
+            Assert.Equal(s2.Category, nextPage.First().Category);
+        }
+        finally
+        {
+            context.RemoveRange(s1, s2);
+            await context.SaveChangesAsync();
+        }
     }
 
     [Fact]
