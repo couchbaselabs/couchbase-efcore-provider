@@ -226,6 +226,6 @@ public class CouchbaseShapedQueryCompilingExpressionVisitor2 : RelationalShapedQ
             .GetMethod(nameof(FromSqlQueryingEnumerable.Create))!;
 
     private static readonly MethodInfo CreateSingleQueryingEnumerableMethodInfo
-        = typeof(CouchbaseQueryEnumerable2)
-            .GetMethod(nameof(CouchbaseQueryEnumerable2.Create))!;
+        = typeof(CouchbaseQueryEnumerable)
+            .GetMethod(nameof(CouchbaseQueryEnumerable.Create))!;
 }

@@ -49,7 +49,7 @@ public class CouchbaseShapedQueryCompilingExpressionVisitorFactory2 : IShapedQue
     /// </summary>
     [DebuggerStepThrough]
     public virtual ShapedQueryCompilingExpressionVisitor Create(QueryCompilationContext queryCompilationContext)
-        => new CouchbaseShapedQueryCompilingExpressionVisitor2(
+        => new CouchbaseShapedQueryCompilingExpressionVisitor(
             Dependencies,
             RelationalDependencies,
             queryCompilationContext,
