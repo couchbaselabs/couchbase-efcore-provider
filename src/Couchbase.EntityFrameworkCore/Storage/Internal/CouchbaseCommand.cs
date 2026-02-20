@@ -1,21 +1,14 @@
 using System.Data;
 using System.Data.Common;
-using Couchbase.EntityFrameworkCore.Infrastructure;
-using Couchbase.Extensions.DependencyInjection;
 using Couchbase.Query;
-using Microsoft.EntityFrameworkCore.Storage;
-using Microsoft.EntityFrameworkCore.Storage.Internal;
-using Microsoft.Extensions.DependencyInjection;
+using Couchbase.EntityFrameworkCore.Internal;
 
 namespace Couchbase.EntityFrameworkCore.Storage.Internal;
 
 public class CouchbaseCommand : DbCommand
 {
-    public CouchbaseCommand(){}
-
-    private CouchbaseParameterCollection? _parameters;
     public new virtual CouchbaseParameterCollection Parameters
-        => _parameters ??= new CouchbaseParameterCollection();
+        => field ??= new CouchbaseParameterCollection();
 
     internal ICluster Cluster { get; set; }
 
@@ -26,8 +19,20 @@ public class CouchbaseCommand : DbCommand
 
     public override int ExecuteNonQuery()
     {
-        var result = Cluster.QueryAsync<int>(CommandText).GetAwaiter().GetResult();
-        return result.Rows.ToBlockingEnumerable().Count();
+        return AsyncHelper.RunSync(async ValueTask<int> (state) =>
+            {
+                var options = new QueryOptions();
+                foreach (var dbParameter in state.Parameters)
+                {
+                    if (dbParameter is CouchbaseParameter parameter)
+                    {
+                        options.Parameter(parameter.ParameterName, parameter.Value!);
+                    }
+                }
+
+                var result = await state.Cluster.QueryAsync<int>(state.CommandText, options).ConfigureAwait(false);
+                return await result.Rows.CountAsync(CancellationToken.None).ConfigureAwait(false);
+            }, this);
     }
 
     public override object? ExecuteScalar()
