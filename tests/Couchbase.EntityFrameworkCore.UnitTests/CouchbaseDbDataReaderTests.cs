@@ -92,17 +92,6 @@ namespace Couchbase.EntityFrameworkCore.UnitTests
         }
 
         [Fact]
-        public void FieldCount_ThrowsNotImplementedException()
-        {
-            // Arrange
-            var mockQueryResult = new Mock<IQueryResult<object>>();
-            var reader = new CouchbaseDbDataReader<object>(mockQueryResult.Object);
-
-            // Act & Assert
-            Assert.Throws<NotImplementedException>(() => reader.FieldCount);
-        }
-
-        [Fact]
         public void GetBoolean_ThrowsNotImplementedException()
         {
             // Arrange

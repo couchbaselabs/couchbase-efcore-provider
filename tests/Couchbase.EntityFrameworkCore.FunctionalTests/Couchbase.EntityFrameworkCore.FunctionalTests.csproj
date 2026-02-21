@@ -12,17 +12,17 @@
     </ItemGroup>
 
     <ItemGroup>
-        <PackageReference Include="Couchbase.Extensions.DependencyInjection" Version="3.9.0-rc3" />
-        <PackageReference Include="EFCore.NamingConventions" Version="8.0.3" />
-        <PackageReference Include="Microsoft.EntityFrameworkCore.Relational.Specification.Tests" Version="10.0.4" />
-        <PackageReference Include="Microsoft.EntityFrameworkCore.Specification.Tests" Version="10.0.4" />
-        <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="10.0.4" />
-        <PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="10.0.4" />
-        <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.0.1" />
-        <PackageReference Include="Serilog.Extensions.Logging.File" Version="3.0.0" />
-        <PackageReference Include="xunit" Version="2.9.3" />    
-        <PackageReference Include="xunit.assert" Version="2.9.3" />    
-        <PackageReference Include="xunit.core" Version="2.9.3" />    
+        <PackageReference Include="Couchbase.Extensions.DependencyInjection" />
+        <PackageReference Include="EFCore.NamingConventions" />
+        <PackageReference Include="Microsoft.EntityFrameworkCore.Relational.Specification.Tests" />
+        <PackageReference Include="Microsoft.EntityFrameworkCore.Specification.Tests" />
+        <PackageReference Include="Microsoft.Extensions.Logging.Console" />
+        <PackageReference Include="Microsoft.Extensions.Logging.Debug"  />
+        <PackageReference Include="Microsoft.NET.Test.Sdk" />
+        <PackageReference Include="Serilog.Extensions.Logging.File" />
+        <PackageReference Include="xunit" />    
+        <PackageReference Include="xunit.assert" />    
+        <PackageReference Include="xunit.core" />    
     </ItemGroup>
 
     <ItemGroup>
