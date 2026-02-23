@@ -110,7 +110,7 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
 #if DEBUG
         logger.LogStatement(dbCommand, TimeSpan.Zero);
 #endif
-        var queryOptions = GetParameters2(dbCommand);
+        var queryOptions = GetParameters(dbCommand);
 
         var bucket = await _bucketProvider.GetBucketAsync(_couchbaseDbContextOptionsBuilder.Bucket).ConfigureAwait(false);
         var cluster = bucket.Cluster;
@@ -174,7 +174,7 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
                 Guid.Empty,
                 (DbCommandMethod)(-1));
 
-    private QueryOptions GetParameters2(DbCommand command)
+    private QueryOptions GetParameters(DbCommand command)
     {
         var queryOptions = new QueryOptions();
         foreach (CouchbaseParameter parameter in command.Parameters)
