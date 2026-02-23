@@ -16,6 +16,35 @@ using Microsoft.Extensions.Logging;
 
 namespace Couchbase.EntityFrameworkCore.Query.Internal;
 
+public static class CouchbaseFromSqlQueryingEnumerable
+{
+    public static CouchbaseFromSqlQueryingEnumerable<T> Create<T>(
+        RelationalQueryContext relationalQueryContext,
+        RelationalCommandResolver relationalCommandResolver,
+        IReadOnlyList<ReaderColumn?>? readerColumns,
+        IReadOnlyList<string> columnNames,
+        Func<QueryContext, DbDataReader, int[], T> shaper,
+        Type contextType,
+        bool standAloneStateManager,
+        bool detailedErrorsEnabled,
+        bool threadSafetyChecksEnabled,
+        IBucketProvider bucketProvider,
+        ICouchbaseDbContextOptionsBuilder couchbaseDbContextOptionsBuilder)
+        => new(
+            relationalQueryContext,
+            relationalCommandResolver,
+            readerColumns,
+            columnNames,
+            shaper,
+            contextType,
+            standAloneStateManager,
+            detailedErrorsEnabled,
+            threadSafetyChecksEnabled,
+            bucketProvider,
+            couchbaseDbContextOptionsBuilder);
+}
+
+
 public class CouchbaseFromSqlQueryingEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T> , IRelationalQueryingEnumerable
 {
     private readonly RelationalQueryContext _relationalQueryContext;
@@ -24,21 +53,42 @@ public class CouchbaseFromSqlQueryingEnumerable<T> : IEnumerable<T>, IAsyncEnume
     private readonly bool _standAloneStateManager;
     private readonly IBucketProvider _bucketProvider;
     private readonly ICouchbaseDbContextOptionsBuilder _couchbaseDbContextOptionsBuilder;
+    private readonly RelationalCommandResolver _relationalCommandResolver;
+    private readonly IReadOnlyList<ReaderColumn?>? _readerColumns;
+    private readonly IReadOnlyList<string> _columnNames;
+    private readonly Func<QueryContext, DbDataReader, int[], T> _shaper;
+    private readonly Type _contextType;
+    private readonly IDiagnosticsLogger<DbLoggerCategory.Query> _queryLogger;
+    private readonly bool _detailedErrorsEnabled;
+    private readonly bool _threadSafetyChecksEnabled;
 
     public CouchbaseFromSqlQueryingEnumerable(
-        RelationalQueryContext relationalQueryContext, 
-        RelationalCommandCache relationalCommandCache,
+        RelationalQueryContext relationalQueryContext,
+        RelationalCommandResolver relationalCommandResolver,
+        IReadOnlyList<ReaderColumn?>? readerColumns,
+        IReadOnlyList<string> columnNames,
+        Func<QueryContext, DbDataReader, int[], T> shaper,
+        Type contextType,
         bool standAloneStateManager,
+        bool detailedErrorsEnabled,
+        bool threadSafetyChecksEnabled,
         IBucketProvider bucketProvider,
         ICouchbaseDbContextOptionsBuilder couchbaseDbContextOptionsBuilder)
     {
 
-        _dbContext = relationalQueryContext.Context;
+        _relationalQueryContext = relationalQueryContext;
+        _relationalCommandResolver = relationalCommandResolver;
+        _readerColumns = readerColumns;
+        _columnNames = columnNames;
+        _shaper = shaper;
+        _contextType = contextType;
+        _queryLogger = relationalQueryContext.QueryLogger;
         _standAloneStateManager = standAloneStateManager;
+        _detailedErrorsEnabled = detailedErrorsEnabled;
+        _threadSafetyChecksEnabled = threadSafetyChecksEnabled;
         _bucketProvider = bucketProvider;
         _couchbaseDbContextOptionsBuilder = couchbaseDbContextOptionsBuilder;
-        _relationalQueryContext = relationalQueryContext;
-        _relationalCommandCache = relationalCommandCache;
+        _dbContext = relationalQueryContext.Context;
     }
     
     public IEnumerator<T> GetEnumerator()
@@ -53,20 +103,22 @@ public class CouchbaseFromSqlQueryingEnumerable<T> : IEnumerable<T>, IAsyncEnume
 
     public async IAsyncEnumerator<T> GetAsyncEnumerator(CancellationToken cancellationToken = new CancellationToken())
     {
-        var command = _relationalQueryContext.Connection.RentCommand();
+        using var dbCommand = CreateDbCommand();
+        var queryString = _relationalQueryContext.RelationalQueryStringFactory.Create(dbCommand);
+
         var logger = (CouchbaseRelationalDiagnosticsCommandLogger)_relationalQueryContext.CommandLogger;
 #if DEBUG
         //This likely needs to be refactored and just use the relational command instead
         var loggingCommand = CreateDbCommand();
         logger.LogStatement(loggingCommand, TimeSpan.Zero);
 #endif
-        var queryOptions = GetParameters(command);
+        var queryOptions = GetParameters(dbCommand);
 
         var bucket = await _bucketProvider.
             GetBucketAsync(_couchbaseDbContextOptionsBuilder.Bucket).
             ConfigureAwait(false);
         var cluster = bucket.Cluster;
-        var result = await cluster.QueryAsync<T>(command.CommandText, queryOptions).ConfigureAwait(false);
+        var result = await cluster.QueryAsync<T>(queryString, queryOptions).ConfigureAwait(false);
 
         _relationalQueryContext.InitializeStateManager(_standAloneStateManager);
 
@@ -93,83 +145,32 @@ public class CouchbaseFromSqlQueryingEnumerable<T> : IEnumerable<T>, IAsyncEnume
         }
     }
     
-    private QueryOptions GetParameters(IRelationalCommand command)
+    private QueryOptions GetParameters(DbCommand command)
     {
         var queryOptions = new QueryOptions();
-        foreach (var parameter in _relationalQueryContext.Parameters)
+        foreach (CouchbaseParameter parameter in command.Parameters)
         {
-            var key = parameter.Key;
-            var value = parameter.Value;
-
-            foreach (var compositeParameter in command.Parameters)
-            {
-                if (compositeParameter is CompositeRelationalParameter actualParameter)
-                {
-                    if (actualParameter.InvariantName == key)
-                    {
-                        var count = 0;
-                        var values = value as object[];
-                        foreach (var relationalParameter in actualParameter.RelationalParameters)
-                        {
-                            if (relationalParameter is
-                                TypeMappedRelationalParameter
-                                typeMappedRelationalParameter)
-                            {
-                                key = typeMappedRelationalParameter.Name;
-                                queryOptions.Parameter(key, values[count++]);
-                            }
-                            else if (relationalParameter is
-                                RawRelationalParameter
-                                rawRelationalParameter)
-                            {
-                                key = rawRelationalParameter.InvariantName;
-                                queryOptions.Parameter(key, values[count++]);
-                            }
-                        }
-                    }
-                }
-                else
-                {
-                    queryOptions.Parameter(key, UnWrap(value));
-                }
-            }
+            queryOptions.Parameter(parameter.ParameterName, parameter.Value);
         }
+
         return queryOptions;
-    }
-
-    private object? UnWrap(object? value)
-    {
-        var type = value?.GetType();
-        if (type is { IsArray: true })
-        {
-            if (value is object[] outValue)
-            {
-                return outValue.FirstOrDefault();
-            }
-
-            throw new ArgumentException(@"Cannot parse!", nameof(value));
-        }
-
-        return value;
     }
 
     public string ToQueryString()
     {
-        throw new NotImplementedException();
+        using var dbCommand = CreateDbCommand();
+        return _relationalQueryContext.RelationalQueryStringFactory.Create(dbCommand);
     }
 
-    public DbCommand CreateDbCommand()
-    {
-        return _relationalCommandCache
-            .GetRelationalCommandTemplate(_relationalQueryContext.Parameters)
+    public virtual DbCommand CreateDbCommand()
+        => _relationalCommandResolver(_relationalQueryContext.Parameters)
             .CreateDbCommand(
                 new RelationalCommandParameterObject(
                     _relationalQueryContext.Connection,
                     _relationalQueryContext.Parameters,
                     null,
-                    null,
+                    _relationalQueryContext.Context,
                     null, CommandSource.LinqQuery),
                 Guid.Empty,
                 (DbCommandMethod)(-1));
-    }
 }

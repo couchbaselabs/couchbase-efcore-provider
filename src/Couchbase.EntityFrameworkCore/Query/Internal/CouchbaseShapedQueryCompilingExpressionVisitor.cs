@@ -147,7 +147,9 @@ public class CouchbaseShapedQueryCompilingExpressionVisitor : RelationalShapedQu
                     Expression.Constant(_contextType),
                     Expression.Constant(QueryCompilationContext.QueryTrackingBehavior == QueryTrackingBehavior.NoTrackingWithIdentityResolution),
                     Expression.Constant(_detailedErrorsEnabled),
-                    Expression.Constant(_threadSafetyChecksEnabled));
+                    Expression.Constant(_threadSafetyChecksEnabled),
+                    Expression.Constant(_bucketProvider),
+                    Expression.Constant(_couchbaseDbContextOptionsBuilder));
             }
 
             return Expression.Call(
@@ -222,8 +224,8 @@ public class CouchbaseShapedQueryCompilingExpressionVisitor : RelationalShapedQu
             .GetMethod(nameof(GroupBySingleQueryingEnumerable.Create))!;
 
     private static readonly MethodInfo CreateFromSqlQueryingEnumerableMethodInfo
-        = typeof(FromSqlQueryingEnumerable)
-            .GetMethod(nameof(FromSqlQueryingEnumerable.Create))!;
+        = typeof(CouchbaseFromSqlQueryingEnumerable)
+            .GetMethod(nameof(CouchbaseFromSqlQueryingEnumerable.Create))!;
 
     private static readonly MethodInfo CreateSingleQueryingEnumerableMethodInfo
         = typeof(CouchbaseQueryEnumerable)
