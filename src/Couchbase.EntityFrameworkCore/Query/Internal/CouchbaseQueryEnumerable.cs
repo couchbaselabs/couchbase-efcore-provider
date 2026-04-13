@@ -123,21 +123,47 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
 
         await foreach (var doc in result)
         {
-            try
+            // Scalar values (e.g. COUNT results) are not entities and are never tracked.
+            if (entityType == null)
             {
-                //If the returned type is an entity add start change tracking
-                //Scalar values for functions like COUNT are not tracked.
-                if (entityType != null && _dbContext.Entry(doc).State != EntityState.Detached)
-                {
-                    _relationalQueryContext.StartTracking(entityType, doc, Snapshot.Empty);
-                }
-            }
-            catch (Exception e)
-            {
-                logger.Logger.LogError("{E}", e);
+                yield return doc;
+                continue;
             }
 
-            yield return doc;
+            var toReturn = doc;
+            var primaryKey = entityType.FindPrimaryKey();
+
+            if (primaryKey != null)
+            {
+                // Extract primary key values from the deserialized document.
+                var keyValues = primaryKey.Properties
+                    .Select(p => p.PropertyInfo?.GetValue(doc))
+                    .ToArray();
+
+                // Identity resolution: if a different instance with the same key is already
+                // tracked, return the tracked instance. Returning a second instance with the
+                // same key causes EF Core to throw when the caller later calls Remove/Attach.
+                var existingEntry = _relationalQueryContext
+                    .TryGetEntry(primaryKey, keyValues!, true, out var key);
+
+                if (existingEntry != null)
+                {
+                    toReturn = (T)existingEntry.Entity;
+                }
+                else
+                {
+                    try
+                    {
+                        _relationalQueryContext.StartTracking(entityType, doc, Snapshot.Empty);
+                    }
+                    catch (Exception e)
+                    {
+                        logger.Logger.LogError("{E}", e);
+                    }
+                }
+            }
+
+            yield return toReturn;
         }
     }
 
