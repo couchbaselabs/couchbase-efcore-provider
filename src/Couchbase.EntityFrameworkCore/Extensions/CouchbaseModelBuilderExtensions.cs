@@ -13,8 +13,9 @@ namespace Couchbase.EntityFrameworkCore.Extensions;
 public static class CouchbaseModelBuilderExtensions
 {
     public static ModelBuilder ConfigureToCouchbase(
-        this ModelBuilder modelBuilder,
-        DbContext dbContext)
+            this ModelBuilder modelBuilder, 
+            DbContext dbContext, 
+            bool? toLowerCaseNaming = null)
     {
         var dbContextOptions = (ICouchbaseDbContextOptionsBuilder)dbContext.
             Database.GetInfrastructure().GetService(typeof(ICouchbaseDbContextOptionsBuilder))!;
@@ -30,7 +31,12 @@ public static class CouchbaseModelBuilderExtensions
             {
                 var tableName = entityType.GetTableName();
                 if (tableName is null) continue;
-
+                if (toLowerCaseNaming.HasValue &&
+                    toLowerCaseNaming.Value)
+                {
+                    tableName = tableName.ToLower();
+                }
+ 
                 var splitTableName = tableName.Split('.');
                 if(splitTableName.Length == 3) continue;
 

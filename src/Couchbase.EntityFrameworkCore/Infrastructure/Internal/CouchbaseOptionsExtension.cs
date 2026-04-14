@@ -39,7 +39,14 @@ public class CouchbaseOptionsExtension: RelationalOptionsExtension
         {
             options.WithLogging(_couchbaseDbContextOptionsBuilder.ClusterOptions.Logging);
             options.WithConnectionString(_couchbaseDbContextOptionsBuilder.ClusterOptions.ConnectionString);
-            options.WithCredentials(_couchbaseDbContextOptionsBuilder.ClusterOptions.UserName, _couchbaseDbContextOptionsBuilder.ClusterOptions.Password);
+            if (_couchbaseDbContextOptionsBuilder.ClusterOptions.Authenticator == null)
+            {
+                options.WithCredentials(_couchbaseDbContextOptionsBuilder.ClusterOptions.UserName, _couchbaseDbContextOptionsBuilder.ClusterOptions.Password);
+            }
+            else
+            {
+                options.WithAuthenticator(_couchbaseDbContextOptionsBuilder.ClusterOptions.Authenticator);
+            }
         });
 
         services.AddEntityFrameworkCouchbase(this);
