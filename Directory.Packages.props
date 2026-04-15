@@ -3,8 +3,9 @@
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
   </PropertyGroup>
   <ItemGroup>
-    <PackageVersion Include="Couchbase.Extensions.DependencyInjection" Version="3.9.0" />
-    <PackageVersion Include="CouchbaseNetClient" Version="3.9.0" />
+    <PackageVersion Include="Couchbase.Extensions.DependencyInjection" Version="3.9.1" />
+    <PackageVersion Include="CouchbaseNetClient" Version="3.9.1" />
+    <PackageVersion Include="JetBrains.Annotations" Version="2025.2.4" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="10.0.5" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.5" />
   </ItemGroup>

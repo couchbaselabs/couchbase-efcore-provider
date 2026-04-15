@@ -19,7 +19,7 @@ public class BloggingContext : DbContext
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.Entity<Blog>().ToCouchbaseCollection(this,"Blog");
+        modelBuilder.Entity<Blog>().ToCouchbaseCollection(this,"blog");
         modelBuilder.Entity<Blog>()
             .HasMany(b => b.Posts)
             .WithOne(p => p.Blog)
@@ -43,7 +43,7 @@ public class BloggingContext : DbContext
                 },
                 new Blog { BlogId = 2, Url = @"https://mytravelblog.com/", Rating = 4, OwnerId = 3 });
 
-        modelBuilder.Entity<Post>().ToCouchbaseCollection(this, "Post");
+        modelBuilder.Entity<Post>().ToCouchbaseCollection(this, "post");
         modelBuilder.Entity<Post>()
             .HasData(
                 new Post
@@ -83,13 +83,13 @@ public class BloggingContext : DbContext
                     AuthorId = 3
                 });
 
-        modelBuilder.Entity<Person>().ToCouchbaseCollection(this, "Person")
+        modelBuilder.Entity<Person>().ToCouchbaseCollection(this, "person")
             .HasData(
                 new Person { PersonId = 1, Name = "Dotnet Blog Admin", PhotoId = 1 },
                 new Person { PersonId = 2, Name = "Phileas Fogg", PhotoId = 2 },
                 new Person { PersonId = 3, Name = "Jane Doe", PhotoId = 3 });
 
-        modelBuilder.Entity<PersonPhoto>().ToCouchbaseCollection(this, "PersonPhoto")
+        modelBuilder.Entity<PersonPhoto>().ToCouchbaseCollection(this, "personphoto")
             .HasData(
                 new PersonPhoto { PersonPhotoId = 1, Caption = "SN", Photo = new byte[] { 0x00, 0x01 } },
                 new PersonPhoto { PersonPhotoId = 2, Caption = "PF", Photo = new byte[] { 0x01, 0x02, 0x03 } },
@@ -110,7 +110,7 @@ public class BloggingContext : DbContext
                 new PostTag { PostTagId = 4, PostId = 3, TagId = "opinion" },
                 new PostTag { PostTagId = 5, PostId = 4, TagId = "opinion" },
                 new PostTag { PostTagId = 6, PostId = 4, TagId = "informative" });
-        modelBuilder.ConfigureToCouchbase(this);
+        modelBuilder.ConfigureToCouchbase(this, true);
     }
 
     //The following configures the application to use a Couchbase cluster
@@ -128,8 +128,8 @@ public class BloggingContext : DbContext
                 .WithLogging(loggerFactory),
             couchbaseDbContextOptions =>
             {
-                couchbaseDbContextOptions.Bucket = "Content";
-                couchbaseDbContextOptions.Scope = "Blogs";
+                couchbaseDbContextOptions.Bucket = "default";
+                couchbaseDbContextOptions.Scope = "blogs";
             });
         options.UseCamelCaseNamingConvention();
     }

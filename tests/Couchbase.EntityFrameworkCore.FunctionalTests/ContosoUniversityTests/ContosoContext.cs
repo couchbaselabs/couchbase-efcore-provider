@@ -7,7 +7,7 @@ namespace Couchbase.EntityFrameworkCore.FunctionalTests.ContosoUniversityTests;
 
 public class ContosoContext : SchoolContext
 {
-    private ClusterOptions _clusterOptions;
+    private readonly ClusterOptions _clusterOptions;
     
     public ContosoContext(ClusterOptions clusterOptions) : base(new DbContextOptions<SchoolContext>())
     {
@@ -31,8 +31,8 @@ public class ContosoContext : SchoolContext
         optionsBuilder.UseCouchbase(_clusterOptions,
             couchbaseDbContextOptions =>
         {
-            couchbaseDbContextOptions.Bucket = "Content";
-            couchbaseDbContextOptions.Scope = "Contoso";
+            couchbaseDbContextOptions.Bucket = "default";
+            couchbaseDbContextOptions.Scope = "contoso";
         });
         optionsBuilder.EnableSensitiveDataLogging();
         optionsBuilder.EnableDetailedErrors();

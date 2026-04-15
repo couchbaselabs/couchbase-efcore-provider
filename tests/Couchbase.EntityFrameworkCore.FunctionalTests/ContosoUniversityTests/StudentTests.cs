@@ -27,7 +27,7 @@ public class StudentTests : IAsyncDisposable, IDisposable
         string searchString,
         int? pageNumber)
     {
-        ContosoContext context = _contosoFixture.DbContext();
+        ContosoContext context = _contosoFixture.CreateDbContext();
         try
         {
             if (searchString != null)
@@ -82,7 +82,7 @@ public class StudentTests : IAsyncDisposable, IDisposable
     [Fact]
     public async Task Test_PersonStudent_AddRange()
     {
-        var context = _contosoFixture.DbContext();
+        var context = _contosoFixture.CreateDbContext();
         try
         {
             var students = DbInitializer.someStudents();
@@ -110,7 +110,7 @@ public class StudentTests : IAsyncDisposable, IDisposable
     [Fact]
     public async Task Test_PersonStudent_RemoveRange()
     {
-        var context = _contosoFixture.DbContext();
+        var context = _contosoFixture.CreateDbContext();
         try
         {
             var students = DbInitializer.someStudents();
@@ -138,7 +138,7 @@ public class StudentTests : IAsyncDisposable, IDisposable
     [Fact]
     public async Task Test_PersonStudent_UpdateRange()
     {
-        var context = _contosoFixture.DbContext();
+        var context = _contosoFixture.CreateDbContext();
         try
         {
             var students = DbInitializer.someStudents();
@@ -178,7 +178,7 @@ public class StudentTests : IAsyncDisposable, IDisposable
 
     public async ValueTask CleanUp(Student[] students)
     {
-        var context = _contosoFixture.DbContext();
+        var context = _contosoFixture.CreateDbContext();
         try
         {
             context.Students.RemoveRange(students);

@@ -13,19 +13,21 @@ namespace Couchbase.EntityFrameworkCore.FunctionalTests;
 [Collection(CouchbaseTestingCollection.Name)]
 public class CrudTests
 {
-    private readonly CouchbaseFixture _couchbaseFixture;
+    private readonly TravelSampleFixture _travelSampleFixture;
+    private readonly BloggingFixture _bloggingFixture;
     private readonly ITestOutputHelper _outputHelper;
 
-    public CrudTests(CouchbaseFixture couchbaseFixture, ITestOutputHelper outputHelper)
+    public CrudTests(TravelSampleFixture travelSampleFixture, BloggingFixture bloggingFixture, ITestOutputHelper outputHelper)
     {
-        _couchbaseFixture = couchbaseFixture;
+        _travelSampleFixture = travelSampleFixture;
+        _bloggingFixture = bloggingFixture;
         _outputHelper = outputHelper;
     }
 
     [Fact]
     public async Task Test_ExecuteUpdate()
     {
-        await using var context = _couchbaseFixture.TravelSampleContext;
+        await using var context = new TravelSampleDbContext();
         var airline1 = new Airline
         {
             Type = "airline",
@@ -81,7 +83,7 @@ public class CrudTests
     [Fact]
     public async Task Test_ExecuteDelete()
     {
-        var context = _couchbaseFixture.TravelSampleContext;
+        var context = new TravelSampleDbContext();
         var airline1 = new Airline
         {
             Type = "airline",
@@ -110,6 +112,7 @@ public class CrudTests
             context.Update(airline2);
 
             await context.SaveChangesAsync();
+            await Task.Delay(100);
             var count = await context.Airlines.CountAsync(a => a.Id > 776 && a.Id < 779);
             Assert.Equal(2, count);
 
@@ -137,8 +140,7 @@ public class CrudTests
     [Fact]
     public async Task Test_ComplexObject()
     {
-        var context = _couchbaseFixture.TravelSampleContext;
-
+        var context = new TravelSampleDbContext();
         var user = new User
         {
             Name = "Jeff Morris",
@@ -157,14 +159,22 @@ public class CrudTests
                 }
             ]
         };
-        context.Update(user);
-        await context.SaveChangesAsync();
+        try
+        {
+            context.Update(user);
+            await context.SaveChangesAsync();
+        }
+        finally
+        {
+            context.Remove(user);
+            await context.SaveChangesAsync();
+        }
     }
 
     [Fact]
     public async Task Test_AddAsync()
     {
-        var context = _couchbaseFixture.TravelSampleContext;
+        var context = new TravelSampleDbContext();
         var airline = new Airline
         {
             Type = "airline",
@@ -193,7 +203,7 @@ public class CrudTests
     [Fact]
     public async Task Test_RemoveAsync()
     {
-        var context = _couchbaseFixture.TravelSampleContext;
+        var context = new TravelSampleDbContext();
         var airline = new Airline
         {
             Type = "airline",
@@ -218,7 +228,7 @@ public class CrudTests
     [Fact]
     public async Task Test_UpdateAsync()
     {
-        var context = _couchbaseFixture.TravelSampleContext;
+        var context = new TravelSampleDbContext();
         var airline = new Airline
         {
             Type = "airline",
@@ -252,7 +262,7 @@ public class CrudTests
     [Fact]
     public async Task Test_AddAsyncAsync()
     {
-        await using var context = _couchbaseFixture.TravelSampleContext;
+        var context = new TravelSampleDbContext();
         var airline = new Airline
         {
             Type = "airline",
@@ -330,7 +340,7 @@ public class CrudTests
     [Fact]
     public async Task Test_Adding_Related_Entity()
     {
-        await using (var context = new BloggingContext())
+        using (var context = new BloggingContext())
         {
             context.Update(new Blog{ BlogId = 10, Url = "http://example.com" });
             context.Update(new Post { BlogId = 10, PostId = 10 });
@@ -353,11 +363,11 @@ public class CrudTests
     {
         using (var context = new BloggingContext())
         {
-            context.Update(new Post { Title = "Intro to EF Core", PostId = 4, BlogId = 2 });
+            context.Update(new Post { Title = "Intro to EF Core", PostId = 4, BlogId = 202 });
             await context.SaveChangesAsync();
             var blog1 = await context.Blogs.FirstAsync();
 
-            var blog = new Blog { Url = "http://blogs.msdn.com/visualstudio", BlogId = 2};
+            var blog = new Blog { Url = "http://blogs.msdn.com/visualstudio", BlogId = 202};
             var post = await context.Posts.FirstAsync();
 
             post.Blog = blog;

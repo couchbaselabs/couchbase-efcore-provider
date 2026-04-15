@@ -1,25 +1,29 @@
 using ContosoUniversity.Data;
-using Couchbase.Core.IO.Serializers;
-using Couchbase.Core.IO.Transcoders;
+using Couchbase.EntityFrameworkCore.FunctionalTests.Fixtures;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
-using Newtonsoft.Json;
-using Xunit;
 
 namespace Couchbase.EntityFrameworkCore.FunctionalTests.ContosoUniversityTests;
 
-public class ContosoFixture : IAsyncLifetime
+public class ContosoFixture : CouchbaseFixtureBase
 {
-    public ClusterOptions ClusterOptions { get; private set; }
     public ILogger logger { get; private set; }
 
-    public ContosoContext DbContext()
+    protected override string ScopeName => "contoso";
+
+    public ContosoContext CreateDbContext()
     {
         var contextOptions = new DbContextOptions<SchoolContext>();
-        return new ContosoContext(contextOptions, ClusterOptions);
+        return new ContosoContext(contextOptions, Options);
     }
-    
-    public Task InitializeAsync()
+
+    protected override Task LoadDataAsync()
+    {
+        //nothing for now
+        return Task.CompletedTask;
+    }
+
+    public override async Task InitializeAsync()
     {
         var loggerFactory = LoggerFactory.Create(builder =>
         {
@@ -28,16 +32,12 @@ public class ContosoFixture : IAsyncLifetime
         });
         logger = loggerFactory.CreateLogger<ContosoFixture>();
 
-        ClusterOptions = new ClusterOptions()
+        Options = new ClusterOptions()
             .WithConnectionString("http://127.0.0.1")
             .WithCredentials("Administrator", "password")
             .WithLogging(loggerFactory);
-        
-        return Task.CompletedTask;
-    }
 
-    public Task DisposeAsync()
-    {
-       return Task.CompletedTask;
+        DbContext = CreateDbContext();
+        await base.InitializeAsync();
     }
 }
