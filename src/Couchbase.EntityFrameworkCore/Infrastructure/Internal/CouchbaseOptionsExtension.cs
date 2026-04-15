@@ -71,7 +71,7 @@ public class CouchbaseOptionsExtension: RelationalOptionsExtension
 
         public override string LogFragment => $"Using Custom Couchbase Provider - ConnectionString: {ConnectionString}";
 
-        public override int GetServiceProviderHashCode() => ConnectionString.GetHashCode();
+        public override int GetServiceProviderHashCode() => HashCode.Combine(ConnectionString, Extension._couchbaseDbContextOptionsBuilder.Bucket, Extension._couchbaseDbContextOptionsBuilder.Scope);
 
         public override bool ShouldUseSameServiceProvider(DbContextOptionsExtensionInfo other) => other is CouchbaseOptionsExtensionInfo;
 
@@ -81,6 +81,7 @@ public class CouchbaseOptionsExtension: RelationalOptionsExtension
         }
 
         public override CouchbaseOptionsExtension Extension => (CouchbaseOptionsExtension)base.Extension;
+
         private string? ConnectionString => Extension.Connection == null ?
             Extension.ConnectionString :
             Extension.Connection.ConnectionString;
