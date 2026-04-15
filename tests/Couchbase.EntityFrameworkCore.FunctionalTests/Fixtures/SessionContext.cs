@@ -31,7 +31,7 @@ public class SessionContext : DbContext
             couchbaseDbContextOptions =>
             {
                 couchbaseDbContextOptions.Bucket = "default";
-                couchbaseDbContextOptions.Scope = "_default";
+                couchbaseDbContextOptions.Scope = "sessions";
             });
         optionsBuilder.UseCamelCaseNamingConvention();
     }

@@ -52,7 +52,7 @@ public class CreditCard
     public string Expiration { get; set; }
 }
 
-[CouchbaseKeyspace("tenant_agent_00", "users")]
+[CouchbaseKeyspace("tenant_agent_00", "user")]
 public class User
 {
     public Guid ID { get; set; }

@@ -17,25 +17,25 @@ namespace Couchbase.EntityFrameworkCore.FunctionalTests;
 [Collection(CouchbaseTestingCollection.Name)]
 public class DependencyInjectionTests
 {
-    private readonly CouchbaseFixture _fixture;
+    private readonly BloggingFixture _bloggingFixture;
+    private readonly TravelSampleFixture _travelSampleFixture;
     private readonly ITestOutputHelper _output;
 
-    public DependencyInjectionTests(CouchbaseFixture fixture, ITestOutputHelper testOutputHelper)
+    public DependencyInjectionTests(BloggingFixture bloggingFixture, TravelSampleFixture travelSampleFixture, ITestOutputHelper testOutputHelper)
     {
-        _fixture = fixture;
+        _bloggingFixture = bloggingFixture;
+        _travelSampleFixture = travelSampleFixture;
         _output = testOutputHelper;
     }
-    
 
     [Fact]
     public async Task Check_That_More_Than_One_Context_Can_Be_Injected()
     {
-        var bloggingContext = _fixture.BloggingContext;
-        var travelSampleContext = _fixture.TravelSampleContext;
+        var bloggingContext = _bloggingFixture.DbContext as BloggingContext;
+        var travelSampleContext = _travelSampleFixture.DbContext as TravelSampleDbContext;
 
         var blogs = await bloggingContext.Blogs.Take(1).ToListAsync();
         var airlines = await travelSampleContext.Airlines.Take(1).ToListAsync();
-
 
         Assert.Single(blogs);
         Assert.Single(airlines);
@@ -60,11 +60,11 @@ public class DependencyInjectionTests
                 .WithLogging(_loggerFactory),
             couchbaseDbContextOptions =>
             {
-                couchbaseDbContextOptions.Bucket = "Content";
-                couchbaseDbContextOptions.Scope = "Blogs";
+                couchbaseDbContextOptions.Bucket = "default";
+                couchbaseDbContextOptions.Scope = "blogs";
             });
 
-        services.AddCouchbase<CouchbaseFixture.TravelSampleDbContext>(new ClusterOptions()
+        services.AddCouchbase<TravelSampleDbContext>(new ClusterOptions()
                 .WithConnectionString("couchbase://localhost")
                 .WithCredentials("Administrator", "password")
                 .WithLogging(_loggerFactory),
@@ -84,7 +84,7 @@ public class DependencyInjectionTests
         var provider = services.BuildServiceProvider();
         var boo = provider.GetRequiredKeyedService<IClusterProvider>("mine");
         var bloggingContext = provider.GetRequiredService<BloggingContext>();
-        var travelSampleContext = provider.GetRequiredService<CouchbaseFixture.TravelSampleDbContext>();
+        var travelSampleContext = provider.GetRequiredService<TravelSampleDbContext>();
 
         var cluster = await boo.GetClusterAsync();
         var result = cluster.QueryAsync<dynamic>("SELECT 1;");
