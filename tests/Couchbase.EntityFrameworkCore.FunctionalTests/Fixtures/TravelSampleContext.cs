@@ -8,7 +8,10 @@ public class TravelSampleDbContext : DbContext
 {
     private readonly ClusterOptions _clusterOptions;
 
-    public TravelSampleDbContext(DbContextOptions<TravelSampleDbContext> options): base(options){}
+    public TravelSampleDbContext(
+        DbContextOptions<TravelSampleDbContext> options) : base(options)
+    {
+    }
 
     public TravelSampleDbContext(): this(new ClusterOptions()
         .WithConnectionString("http://127.0.0.1")
@@ -31,14 +34,17 @@ public class TravelSampleDbContext : DbContext
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
-        base.OnConfiguring(optionsBuilder);
-        optionsBuilder.UseCouchbase(_clusterOptions,
-            couchbaseDbContextOptions =>
-            {
-                couchbaseDbContextOptions.Bucket = "travel-sample";
-                couchbaseDbContextOptions.Scope = "inventory";
-            });
-        optionsBuilder.UseCamelCaseNamingConvention();
+        if (!optionsBuilder.IsConfigured)
+        {
+            base.OnConfiguring(optionsBuilder);
+            optionsBuilder.UseCouchbase(_clusterOptions,
+                couchbaseDbContextOptions =>
+                {
+                    couchbaseDbContextOptions.Bucket = "travel-sample";
+                    couchbaseDbContextOptions.Scope = "inventory";
+                });
+            optionsBuilder.UseCamelCaseNamingConvention();
+        }
     }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)

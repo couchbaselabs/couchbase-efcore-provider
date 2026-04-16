@@ -83,7 +83,7 @@ public class FromRawSqlTests
     }
     
     [Fact]
-    public async Task Test_FromSqlRaw_Throws_InvalidOperationException()
+    public async Task Test_FromSqlRaw_Returns_Results()
     {
         await using var context = new BloggingContext();
         var rating = 4;

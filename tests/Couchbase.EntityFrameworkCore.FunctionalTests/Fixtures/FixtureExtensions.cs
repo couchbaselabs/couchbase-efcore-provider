@@ -25,12 +25,12 @@ public static class FixtureExtensions
         var scope = scopes.First(x => x.Name == scopeName);
         foreach (var entityType in dbContext.Model.GetEntityTypes())
         {
-            var collectionName = entityType.ClrType.Name;
+            var collectionName = entityType.ClrType.Name.ToLower();
             if (scope.Collections.FirstOrDefault(x =>
                     x.Name == collectionName) == null)
             {
                 await manager.CreateCollectionAsync(scopeName,
-                    collectionName.ToLower(),
+                    collectionName,
                     new CreateCollectionSettings());
             }
         }
