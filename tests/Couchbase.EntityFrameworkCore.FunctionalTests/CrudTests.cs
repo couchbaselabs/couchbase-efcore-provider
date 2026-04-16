@@ -83,7 +83,7 @@ public class CrudTests
     [Fact]
     public async Task Test_ExecuteDelete()
     {
-        var context = new TravelSampleDbContext();
+        await using var context = new TravelSampleDbContext();
         var airline1 = new Airline
         {
             Type = "airline",
@@ -140,7 +140,7 @@ public class CrudTests
     [Fact]
     public async Task Test_ComplexObject()
     {
-        var context = new TravelSampleDbContext();
+        await using var context = new TravelSampleDbContext();
         var user = new User
         {
             Name = "Jeff Morris",
@@ -174,7 +174,7 @@ public class CrudTests
     [Fact]
     public async Task Test_AddAsync()
     {
-        var context = new TravelSampleDbContext();
+        await using var context = new TravelSampleDbContext();
         var airline = new Airline
         {
             Type = "airline",
@@ -203,7 +203,7 @@ public class CrudTests
     [Fact]
     public async Task Test_RemoveAsync()
     {
-        var context = new TravelSampleDbContext();
+        await using var context = new TravelSampleDbContext();
         var airline = new Airline
         {
             Type = "airline",
@@ -228,7 +228,7 @@ public class CrudTests
     [Fact]
     public async Task Test_UpdateAsync()
     {
-        var context = new TravelSampleDbContext();
+        await using var context = new TravelSampleDbContext();
         var airline = new Airline
         {
             Type = "airline",
@@ -262,7 +262,7 @@ public class CrudTests
     [Fact]
     public async Task Test_AddAsyncAsync()
     {
-        var context = new TravelSampleDbContext();
+        await using var context = new TravelSampleDbContext();
         var airline = new Airline
         {
             Type = "airline",
@@ -291,120 +291,110 @@ public class CrudTests
     [Fact]
     public async Task Test_SaveChanges()
     {
-        using (var context = new BloggingContext())
+        await using var context = new BloggingContext();
+        context.Blogs.Add(new Blog
         {
-            context.Blogs.Add(new Blog
-            {
-                BlogId = Guid.NewGuid().GetHashCode(), Url = "http://example.com"
-            });
-            await context.SaveChangesAsync();
-            var blog = await context.Blogs.FirstAsync(b => b.Url == "http://example.com");
-            blog.Url = "http://example.com/blog";
-            await context.SaveChangesAsync();
+            BlogId = Guid.NewGuid().GetHashCode(), Url = "http://example.com"
+        });
+        await context.SaveChangesAsync();
+        var blog = await context.Blogs.FirstAsync(b => b.Url == "http://example.com");
+        blog.Url = "http://example.com/blog";
+        await context.SaveChangesAsync();
+        context.Remove(blog);
+        await context.SaveChangesAsync();
+    }
+
+    [Fact]
+    public async Task Test_Saving_Related_Data()
+    {
+        await using var context = new BloggingContext();
+        var blog = new Blog
+        {
+            BlogId = Guid.NewGuid().GetHashCode(),
+            Url = "http://blogs.msdn.com/dotnet",
+            Posts =
+            [
+                new() { Title = "Intro to C#", PostId = Guid.NewGuid().GetHashCode() },
+                new() { Title = "Intro to VB.NET", PostId = Guid.NewGuid().GetHashCode() },
+                new() { Title = "Intro to F#", PostId = Guid.NewGuid().GetHashCode() }
+            ]
+        };
+
+        try
+        {
+            await context.Blogs.AddAsync(blog);
+            var count = await context.SaveChangesAsync();
+            Assert.Equal(4, count);
+        }
+        finally
+        {
             context.Remove(blog);
             await context.SaveChangesAsync();
         }
     }
 
     [Fact]
-    public async Task Test_Saving_Related_Data()
-    {
-        using (var context = new BloggingContext())
-        {
-            var blog = new Blog
-            {
-                BlogId = Guid.NewGuid().GetHashCode(),
-                Url = "http://blogs.msdn.com/dotnet",
-                Posts =
-                [
-                    new() { Title = "Intro to C#", PostId = Guid.NewGuid().GetHashCode() },
-                    new() { Title = "Intro to VB.NET", PostId = Guid.NewGuid().GetHashCode() },
-                    new() { Title = "Intro to F#", PostId = Guid.NewGuid().GetHashCode() }
-                ]
-            };
-
-            try
-            {
-                await context.Blogs.AddAsync(blog);
-                var count = await context.SaveChangesAsync();
-                Assert.Equal(4, count);
-            }
-            finally
-            {
-                context.Remove(blog);
-                await context.SaveChangesAsync();
-            }
-        }
-    }
-
-    [Fact]
     public async Task Test_Adding_Related_Entity()
     {
-        using (var context = new BloggingContext())
-        {
-            context.Update(new Blog{ BlogId = 10, Url = "http://example.com" });
-            context.Update(new Post { BlogId = 10, PostId = 10 });
-            await context.SaveChangesAsync();
+        await using var context = new BloggingContext();
+        context.Update(new Blog{ BlogId = 10, Url = "http://example.com" });
+        context.Update(new Post { BlogId = 10, PostId = 10 });
+        await context.SaveChangesAsync();
 
-            var blog = await context.Blogs.FirstAsync();
-            blog.Posts = await context.Posts.Where(x => x.BlogId == blog.BlogId).ToListAsync();
+        var blog = await context.Blogs.FirstAsync();
+        blog.Posts = await context.Posts.Where(x => x.BlogId == blog.BlogId).ToListAsync();
 
-            var post = new Post { Title = "Intro to EF Core", PostId = 11};
-            blog.Posts.Add(post);
-            await context.SaveChangesAsync();
+        var post = new Post { Title = "Intro to EF Core", PostId = 11};
+        blog.Posts.Add(post);
+        await context.SaveChangesAsync();
 
-            blog.Posts.Remove(post);
-            await context.SaveChangesAsync();
-        }
+        blog.Posts.Remove(post);
+        await context.SaveChangesAsync();
     }
 
     [Fact]
     public async Task Test_Changing_Relationships()
     {
-        using (var context = new BloggingContext())
-        {
-            context.Update(new Post { Title = "Intro to EF Core", PostId = 4, BlogId = 202 });
-            await context.SaveChangesAsync();
-            var blog1 = await context.Blogs.FirstAsync();
+        await using var context = new BloggingContext();
+        context.Update(new Post { Title = "Intro to EF Core", PostId = 4, BlogId = 202 });
+        await context.SaveChangesAsync();
+        var blog1 = await context.Blogs.FirstAsync();
 
-            var blog = new Blog { Url = "http://blogs.msdn.com/visualstudio", BlogId = 202};
-            var post = await context.Posts.FirstAsync();
+        var blog = new Blog { Url = "http://blogs.msdn.com/visualstudio", BlogId = 202};
+        var post = await context.Posts.FirstAsync();
 
-            post.Blog = blog;
-            await context.SaveChangesAsync();
-        }
+        post.Blog = blog;
+        await context.SaveChangesAsync();
     }
 
     [Fact]
     public async Task Removing_Relationships_Async()
     {
-        using (var context = new BloggingContext())
+        await using var context = new BloggingContext();
+        var blog = new Blog { Url = "http://blogs.msdn.com/visualstudio", BlogId = 2 };
+        var post = new Post { Title = "Intro to EF Core", PostId = 4, BlogId = 2 };
+        try
         {
-            var blog = new Blog { Url = "http://blogs.msdn.com/visualstudio", BlogId = 2 };
-            var post = new Post { Title = "Intro to EF Core", PostId = 4, BlogId = 2 };
-            try
-            {
-                context.Update(blog);
-                await context.SaveChangesAsync();
+            context.Update(blog);
+            await context.SaveChangesAsync();
 
-                context.Update(post);
-                await context.SaveChangesAsync();
+            context.Update(post);
+            await context.SaveChangesAsync();
 
-                blog = await context.Blogs.FirstAsync();
-                var posts = await context.Posts.ToListAsync();
-                blog.Posts = await context.Posts.Where(x => x.BlogId == blog.BlogId).ToListAsync();
-                post = blog.Posts.First();
-            }
-            catch (Exception ex)
-            {
-                _outputHelper.WriteLine(ex.Message);
-            }
-            finally
-            {
+            blog = await context.Blogs.FirstAsync();
+            var posts = await context.Posts.ToListAsync();
+            blog.Posts = await context.Posts.Where(x => x.BlogId == blog.BlogId).ToListAsync();
+            post = blog.Posts.First();
+        }
+        catch (Exception ex)
+        {
+            _outputHelper.WriteLine(ex.Message);
+        }
+        finally
+        {
 
-                blog.Posts.Remove(post);
-                await context.SaveChangesAsync();
-            }
+            blog.Posts.Remove(post);
+            await context.SaveChangesAsync();
         }
     }
 }
