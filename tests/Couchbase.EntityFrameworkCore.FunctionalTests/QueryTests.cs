@@ -10,19 +10,26 @@ namespace Couchbase.EntityFrameworkCore.FunctionalTests;
 [Collection(CouchbaseTestingCollection.Name)]
 public class QueryTests
 {
-    private readonly CouchbaseFixture _couchbaseFixture;
+    private readonly BloggingFixture _bloggingFixture;
+    private readonly TravelSampleFixture _travelSampleFixture;
+    private readonly SessionFixture _sessionFixture;
     private readonly ITestOutputHelper _outputHelper;
 
-    public QueryTests(CouchbaseFixture couchbaseFixture,  ITestOutputHelper outputHelper)
+    public QueryTests(BloggingFixture bloggingFixture,
+        TravelSampleFixture travelSampleFixture,
+        SessionFixture sessionFixture,
+        ITestOutputHelper outputHelper)
     {
-        _couchbaseFixture = couchbaseFixture;
+        _bloggingFixture = bloggingFixture;
+        _travelSampleFixture = travelSampleFixture;
+        _sessionFixture = sessionFixture;
         _outputHelper = outputHelper;
     }
 
     [Fact]
     public async Task Test_Select_Limit()
     {
-        var context = _couchbaseFixture.TravelSampleContext;
+        await using var context = _travelSampleFixture.CreateDbContext();
         var results = await context.Airlines.OrderBy(x => x.Id).Take(10).ToListAsync();
         foreach (var airline in results)
         {
@@ -31,10 +38,9 @@ public class QueryTests
     }
 
     [Fact]
-    public void Test_Skip_And_Take()
+    public async Task Test_Skip_And_Take()
     {
-        var context = _couchbaseFixture.TravelSampleContext;
-
+        await using var context = _travelSampleFixture.CreateDbContext();
         var pageIndex = 0;
         var pageSize = 10;
         var items = context.Airlines.Skip((pageIndex - 1) * pageSize).Take(pageSize).ToListAsync();
@@ -44,7 +50,7 @@ public class QueryTests
     [Fact]
     public async Task Test_Count()
     {
-        var context = _couchbaseFixture.TravelSampleContext;
+        await using var context = _travelSampleFixture.CreateDbContext();
         var count = await context.Airlines.CountAsync().ConfigureAwait(false);
         Assert.True(count != 0);
     }
@@ -52,18 +58,18 @@ public class QueryTests
     [Fact]
     public async Task Test_Select_Linq()
     {
-        var context = _couchbaseFixture.TravelSampleContext;
-        var airlines = from a in context.Airlines
+       await using var context = _travelSampleFixture.CreateDbContext();
+       var addresses = from a in context.Address
             select a;
 
-        var count = await airlines.CountAsync();
-        Assert.Equal(188, count);
+        var count = await addresses.CountAsync();
+        Assert.Equal(2, count);
     }
 
     [Fact]
     public async Task Test()
     {
-        await using var context = _couchbaseFixture.TravelSampleContext;
+        await using var context = _travelSampleFixture.CreateDbContext();
         var airline = new Airline
         {
             Type = "airline",
@@ -77,6 +83,11 @@ public class QueryTests
 
         context.Update(airline);
         airline.Name = "foo";
+        
+        var airlines3 =
+            await context.Airlines
+                .Where(o => o.Name == "40-Mile Air")
+                .ToListAsync();
 
         var airlines1 = await context.Airlines
               .OrderBy(x => x.Id).ToListAsync<Airline>(); 
@@ -98,10 +109,7 @@ public class QueryTests
     [Fact]
     public async Task Test_Pagination()
     {
-        var context = new SessionContext(
-            new ClusterOptions()
-                .WithConnectionString("couchbase://localhost")
-                .WithCredentials("Administrator", "password"));
+        await using var context = _sessionFixture.CreateDbContext();
 
         var s1 = new Session
         {
@@ -141,9 +149,7 @@ public class QueryTests
     [Fact]
     public async Task Test_FindAsync()
     {
-        await using var context = new SessionContext(new ClusterOptions()
-            .WithConnectionString("couchbase://localhost")
-            .WithCredentials("Administrator", "password"));
+        await using var context = _sessionFixture.CreateDbContext();
 
         var pkey = Guid.NewGuid();
         var session = new Session
@@ -169,21 +175,9 @@ public class QueryTests
     }
 
     [Fact]
-    public async Task Test_FromSqlRaw_Throws_InvalidOperationException()
-    {
-        await using var context = new BloggingContext();
-        var rating = 5;
-
-        //InvalidOperationException is thrown because CouchbaseDbDataReader implementation is incomplete
-        await Assert.ThrowsAsync<InvalidOperationException>(async () => await context.Blogs
-            .FromSqlRaw($"SELECT VALUE p FROM Content.Blogs.Post p WHERE p.Rating > {rating}")
-            .ToListAsync());
-    }
-
-    [Fact]
     public async Task Test_Simple_Joins()
     {
-        await using var context = new BloggingContext();
+        await using var context = _bloggingFixture.CreateDbContext();
 
         context.Update(
             new Person
@@ -212,8 +206,8 @@ public class QueryTests
     [Fact]
     public async Task Test_Count_Group_OrderBy()
     {
-       await using var context = new BloggingContext();
-       var query = from p in context.Set<Post>()
+        await using var context = new BloggingContext();
+        var query = from p in context.Set<Post>()
            group p by p.AuthorId
            into g
            where g.Count() > 0
@@ -287,28 +281,5 @@ public class QueryTests
 
         var result = await query.ToListAsync();
         Assert.NotEmpty(result);
-    }
-
-    [Fact]
-    public async Task Test_FromSqlRaw_With_Parameters()
-    {
-        await using var context = new BloggingContext();
-        var query = "SELECT p.* FROM `Content`.`Blogs`.`Person` as p WHERE personId={0}";
-        var person = await context.Set<Person>()
-            .FromSqlRaw(query, 1)
-            .FirstOrDefaultAsync();
-
-        Assert.NotNull(person);
-    }
-
-    [Fact]
-    public async Task Test_FromRaw_Throws_InvalidOperationException()
-    {
-        await using var context = new BloggingContext();
-
-        //Exception is because of an incomplete implementation of CouchbaseDbDataReader
-        Assert.Throws<InvalidOperationException>(()=>context.Blogs
-            .FromSql($"SELECT * FROM `Content`.`Blogs`.`Blog`")
-            .ToList());
     }
 }

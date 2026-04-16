@@ -3,7 +3,7 @@ using Xunit;
 namespace Couchbase.EntityFrameworkCore.FunctionalTests.Fixtures;
 
 [CollectionDefinition(Name)]
-public class CouchbaseTestingCollection : ICollectionFixture<CouchbaseFixture>
+public class CouchbaseTestingCollection : ICollectionFixture<TravelSampleFixture>, ICollectionFixture<BloggingFixture>, ICollectionFixture<SessionFixture>
 {
     public const string Name = "CouchbaseTestingCollection";
 

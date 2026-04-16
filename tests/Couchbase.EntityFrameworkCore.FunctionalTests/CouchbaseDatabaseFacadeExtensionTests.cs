@@ -8,21 +8,14 @@ namespace Couchbase.EntityFrameworkCore.FunctionalTests;
 
 
 [Collection(CouchbaseTestingCollection.Name)]
-public class CouchbaseDatabaseFacadeExtensionTests
+public class CouchbaseDatabaseFacadeExtensionTests(
+    TravelSampleFixture travelSampleFixture,
+    ITestOutputHelper outputHelper)
 {
-    private readonly CouchbaseFixture _couchbaseFixture;
-    private readonly ITestOutputHelper _outputHelper;
-
-    public CouchbaseDatabaseFacadeExtensionTests(CouchbaseFixture couchbaseFixture, ITestOutputHelper outputHelper)
-    {
-        _couchbaseFixture = couchbaseFixture;
-        _outputHelper = outputHelper;
-    }
-
     [Fact]
     public async Task Test_GetCouchbaseClientAsync()
     {
-        var travelSampleContext = _couchbaseFixture.TravelSampleContext;
+        var travelSampleContext = travelSampleFixture.DbContext;
         var cluster = await travelSampleContext.Database.GetCouchbaseClientAsync().ConfigureAwait(false);
         Assert.NotNull(cluster);
     }

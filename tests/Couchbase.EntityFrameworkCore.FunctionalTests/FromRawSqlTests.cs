@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using Couchbase.Core.Diagnostics.Metrics.AppTelemetry;
 using Couchbase.EntityFrameworkCore.FunctionalTests.Fixtures;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.EntityFrameworkCore;
@@ -11,12 +12,12 @@ namespace Couchbase.EntityFrameworkCore.FunctionalTests;
 [Collection(CouchbaseTestingCollection.Name)]
 public class FromRawSqlTests
 {
-    private readonly CouchbaseFixture _couchbaseFixture;
+    private readonly BloggingFixture _bloggingFixture;
     private readonly ITestOutputHelper _outputHelper;
 
-    public FromRawSqlTests(CouchbaseFixture couchbaseFixture, ITestOutputHelper outputHelper)
+    public FromRawSqlTests(BloggingFixture bloggingFixture, TravelSampleFixture travelSampleFixture, ITestOutputHelper outputHelper)
     {
-        _couchbaseFixture = couchbaseFixture;
+        _bloggingFixture = bloggingFixture;
         _outputHelper = outputHelper;
     }
 
@@ -25,8 +26,7 @@ public class FromRawSqlTests
     {
         using (var context = new BloggingContext())
         {
-            await _couchbaseFixture.InitializeBloggingAsync();
-            var statement = "SELECT `b`.* FROM `Content`.`Blogs`.`Blog` as `b` WHERE META().id = \"2\"";
+            var statement = "SELECT `b`.* FROM `default`.`blogs`.`blog` as `b` WHERE META().id = \"2\"";
             var blog = await context.Blogs.FromSqlRaw(statement).AsNoTracking().FirstOrDefaultAsync();
             
             Assert.NotNull(blog);
@@ -40,7 +40,7 @@ public class FromRawSqlTests
         var skip = 0;
         var airportCode = "sfo";
 
-        using (var context = new CouchbaseFixture.TravelSampleDbContext())
+        using (var context = new TravelSampleDbContext())
         {
             const string sql = @"SELECT DISTINCT route.destinationairport
                 FROM `travel-sample`.`inventory`.`airport` AS airport
@@ -57,6 +57,43 @@ public class FromRawSqlTests
             
             Assert.NotNull(destinations);
         }
+    }
+    
+    [Fact]
+    public async Task Test_FromSqlRaw_With_Parameters()
+    {
+        await using var context = new BloggingContext();
+        var query = "SELECT p.* FROM `default`.`blogs`.`person` as p WHERE personId={0}";
+        var person = await context.Set<Person>()
+            .FromSqlRaw(query, 1)
+            .FirstOrDefaultAsync();
+
+        Assert.NotNull(person);
+    }
+
+    [Fact]
+    public async Task Test_FromRaw_Throws_NotImplementedException()
+    {
+        await using var context = new BloggingContext();
+
+        //Exception is because of an incomplete implementation of CouchbaseDbDataReader
+        Assert.Throws<NotImplementedException>(()=>context.Blogs
+            .FromSql($"SELECT * FROM `default`.`blogs`.`blog`")
+            .ToList());
+    }
+    
+    [Fact]
+    public async Task Test_FromSqlRaw_Returns_Results()
+    {
+        await using var context = new BloggingContext();
+        var rating = 4;
+
+        var results = await context.Blogs
+            .FromSqlRaw(
+                $"SELECT VALUE p FROM default.blogs.post p WHERE p.rating == {rating}")
+            .ToListAsync();
+        
+        Assert.Equal(1, results.Count);
     }
     
     public class DestinationAirport

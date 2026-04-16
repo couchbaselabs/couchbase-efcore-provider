@@ -14,6 +14,7 @@
     <ItemGroup>
         <PackageReference Include="Couchbase.Extensions.DependencyInjection" />
         <PackageReference Include="EFCore.NamingConventions" />
+        <PackageReference Include="JetBrains.Annotations" />
         <PackageReference Include="Microsoft.EntityFrameworkCore.Relational.Specification.Tests" />
         <PackageReference Include="Microsoft.EntityFrameworkCore.Specification.Tests" />
         <PackageReference Include="Microsoft.Extensions.Logging.Console" />

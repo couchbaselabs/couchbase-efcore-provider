@@ -22,14 +22,14 @@ namespace ContosoUniversity.Data
         
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
-            modelBuilder.Entity<Course>().ToCouchbaseCollection(this, "Course");
-            modelBuilder.Entity<Enrollment>().ToCouchbaseCollection(this, "Enrollment");
-            modelBuilder.Entity<Student>().ToCouchbaseCollection(this, "Person");
-            modelBuilder.Entity<Instructor>().ToCouchbaseCollection(this, "Person");
-            modelBuilder.Entity<Person>().ToCouchbaseCollection(this, "Person");
-            modelBuilder.Entity<Department>().ToCouchbaseCollection(this, "Department");
-            modelBuilder.Entity<OfficeAssignment>().ToCouchbaseCollection(this, "OfficeAssignment");
-            modelBuilder.Entity<CourseAssignment>().ToCouchbaseCollection(this, "CourseAssignment");
+            modelBuilder.Entity<Course>().ToCouchbaseCollection(this, "course");
+            modelBuilder.Entity<Enrollment>().ToCouchbaseCollection(this, "enrollment");
+            modelBuilder.Entity<Student>().ToCouchbaseCollection(this, "person");
+            modelBuilder.Entity<Instructor>().ToCouchbaseCollection(this, "person");
+            modelBuilder.Entity<Person>().ToCouchbaseCollection(this, "person");
+            modelBuilder.Entity<Department>().ToCouchbaseCollection(this, "department");
+            modelBuilder.Entity<OfficeAssignment>().ToCouchbaseCollection(this, "officeAssignment");
+            modelBuilder.Entity<CourseAssignment>().ToCouchbaseCollection(this, "courseAssignment");
             modelBuilder.Entity<CourseAssignment>()
                 .HasKey(c => new { c.CourseID, c.InstructorID });
         }
