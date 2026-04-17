@@ -3,6 +3,7 @@
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
   </PropertyGroup>
   <ItemGroup>
+    <PackageVersion Include="Couchbase.Aspire.Hosting" Version="1.0.0-beta.3" />
     <PackageVersion Include="Couchbase.Extensions.DependencyInjection" Version="3.9.1" />
     <PackageVersion Include="CouchbaseNetClient" Version="3.9.1" />
     <PackageVersion Include="JetBrains.Annotations" Version="2025.2.4" />
@@ -13,7 +14,6 @@
   <ItemGroup>
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.3.0" />
     <PackageVersion Include="Moq" Version="4.20.72" />
-    <PackageVersion Include="Couchbase.Extensions.DependencyInjection" Version="3.9.0" />
     <PackageVersion Include="EFCore.NamingConventions" Version="10.0.1" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational.Specification.Tests" Version="10.0.5" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Specification.Tests" Version="10.0.5" />
@@ -24,5 +24,7 @@
     <PackageVersion Include="xunit.assert" Version="2.9.3" />
     <PackageVersion Include="xunit.core" Version="2.9.3" />
     <PackageVersion Include="System.Linq.AsyncEnumerable" Version="10.0.5" />
+    <PackageVersion Include="coverlet.collector" Version="6.0.4" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.4" />
   </ItemGroup>
 </Project>

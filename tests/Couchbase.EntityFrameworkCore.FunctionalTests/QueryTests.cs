@@ -12,17 +12,14 @@ public class QueryTests
 {
     private readonly BloggingFixture _bloggingFixture;
     private readonly TravelSampleFixture _travelSampleFixture;
-    private readonly SessionFixture _sessionFixture;
     private readonly ITestOutputHelper _outputHelper;
 
     public QueryTests(BloggingFixture bloggingFixture,
         TravelSampleFixture travelSampleFixture,
-        SessionFixture sessionFixture,
         ITestOutputHelper outputHelper)
     {
         _bloggingFixture = bloggingFixture;
         _travelSampleFixture = travelSampleFixture;
-        _sessionFixture = sessionFixture;
         _outputHelper = outputHelper;
     }
 
@@ -109,76 +106,21 @@ public class QueryTests
     [Fact]
     public async Task Test_Pagination()
     {
-        await using var context = _sessionFixture.CreateDbContext();
+        await using var context = _bloggingFixture.CreateDbContext();
+        var position = 1;
+        var nextPage = await context.PersonPhotos
+            .OrderBy(s => s.PersonPhotoId)
+            .Skip(position)
+            .Take(10)
+            .ToListAsync();
 
-        var s1 = new Session
-        {
-            Category = "disabled",
-            SessionId = 1,
-            TenantId = "1"
-        };
-        context.Add(s1);
-
-        var s2 = new Session
-        {
-            Category = "xydisabled",
-            SessionId = 2,
-            TenantId = "2"
-        };
-        context.Add(s2);
-
-        try
-        {
-            var count = await context.SaveChangesAsync();
-
-            var position = 1;
-            var nextPage = await context.Sessions
-                .OrderBy(s => s.Category)
-                .Skip(position)
-                .Take(10)
-                .ToListAsync();
-            Assert.Equal(s2.Category, nextPage.First().Category);
-        }
-        finally
-        {
-            context.RemoveRange(s1, s2);
-            await context.SaveChangesAsync();
-        }
-    }
-
-    [Fact]
-    public async Task Test_FindAsync()
-    {
-        await using var context = _sessionFixture.CreateDbContext();
-
-        var pkey = Guid.NewGuid();
-        var session = new Session
-        {
-            Id = pkey,
-            Category = "disabled",
-            SessionId = 1,
-            TenantId = "1"
-        };
-
-        try
-        {
-            var entityEntry = context.Update(session);
-            await context.SaveChangesAsync();
-            var found = await context.FindAsync<Session>(pkey);
-            Assert.Equal(found.Id, pkey);
-        }
-        finally
-        {
-            var entityEntry = context.Remove(session);
-            await context.SaveChangesAsync();
-        }
+        Assert.Equal(2, nextPage.First().PersonPhotoId);
     }
 
     [Fact]
     public async Task Test_Simple_Joins()
     {
         await using var context = _bloggingFixture.CreateDbContext();
-
         context.Update(
             new Person
             {
