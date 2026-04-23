@@ -3,6 +3,7 @@
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
   </PropertyGroup>
   <ItemGroup>
+    <PackageVersion Include="Couchbase.Aspire.Client" Version="1.0.0-beta.3" />
     <PackageVersion Include="Couchbase.Aspire.Hosting" Version="1.0.0-beta.3" />
     <PackageVersion Include="Couchbase.Extensions.DependencyInjection" Version="3.9.1" />
     <PackageVersion Include="CouchbaseNetClient" Version="3.9.1" />
@@ -20,11 +21,15 @@
     <PackageVersion Include="Microsoft.Extensions.Logging.Console" Version="10.0.5" />
     <PackageVersion Include="Microsoft.Extensions.Logging.Debug" Version="10.0.5" />
     <PackageVersion Include="Serilog.Extensions.Logging.File" Version="3.0.0" />
-    <PackageVersion Include="xunit" Version="2.9.3" />
     <PackageVersion Include="xunit.assert" Version="2.9.3" />
     <PackageVersion Include="xunit.core" Version="2.9.3" />
     <PackageVersion Include="System.Linq.AsyncEnumerable" Version="10.0.5" />
     <PackageVersion Include="coverlet.collector" Version="6.0.4" />
+    <PackageVersion Include="Testcontainers.Couchbase" Version="4.3.0" />
+    <PackageVersion Include="Testcontainers.Xunit" Version="4.3.0" />
+    <PackageVersion Include="Aspire.Hosting.Testing" Version="13.2.2" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageVersion Include="xunit" Version="2.9.3" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.4" />
   </ItemGroup>
 </Project>
