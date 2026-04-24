@@ -25,10 +25,10 @@ public class QueryTests(
     public async Task Test_Skip_And_Take()
     {
         await using var context = travelSampleFixture.GetDbContext();
-        var pageIndex = 0;
+        var pageIndex = 1;
         var pageSize = 10;
-        var items = context.Airlines.Skip((pageIndex - 1) * pageSize).Take(pageSize).ToListAsync();
-        Assert.Equal(10, items.Result.Count);
+        var items = await context.Airlines.Skip((pageIndex - 1) * pageSize).Take(pageSize).ToListAsync();
+        Assert.Equal(10, items.Count);
     }
 
     [Fact]
