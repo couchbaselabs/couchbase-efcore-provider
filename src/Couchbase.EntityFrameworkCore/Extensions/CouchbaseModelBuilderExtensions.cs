@@ -20,35 +20,30 @@ public static class CouchbaseModelBuilderExtensions
         var dbContextOptions = (ICouchbaseDbContextOptionsBuilder)dbContext.
             Database.GetInfrastructure().GetService(typeof(ICouchbaseDbContextOptionsBuilder))!;
 
-        var dbSetNames = dbContext.GetType().GetProperties()
-            .Where(x => x.PropertyType.IsGenericType && typeof(DbSet<>).IsAssignableFrom(x.PropertyType.GetGenericTypeDefinition()))
-            .Select(x => x.Name)
-            .ToList();
-
         foreach (var entityType in modelBuilder.Model.GetEntityTypes())
         {
-            if (!entityType.IsOwned())
+            // Skip owned types - they are embedded in their owner's document
+            if (entityType.IsOwned()) continue;
+
+            var tableName = entityType.GetTableName();
+            if (tableName is null) continue;
+            if (toLowerCaseNaming.HasValue &&
+                toLowerCaseNaming.Value)
             {
-                var tableName = entityType.GetTableName();
-                if (tableName is null) continue;
-                if (toLowerCaseNaming.HasValue &&
-                    toLowerCaseNaming.Value)
-                {
-                    tableName = tableName.ToLower();
-                }
- 
-                var splitTableName = tableName.Split('.');
-                if(splitTableName.Length == 3) continue;
-
-                var keyspaceBuilder = new StringBuilder();
-                keyspaceBuilder.Append(tableName);
-                keyspaceBuilder.Append('.');
-                keyspaceBuilder.Append(dbContextOptions.Bucket);
-                keyspaceBuilder.Append('.');
-                keyspaceBuilder.Append(dbContextOptions.Scope);
-
-                entityType.SetTableName(keyspaceBuilder.ToString());
+                tableName = tableName.ToLower();
             }
+
+            var splitTableName = tableName.Split('.');
+            if(splitTableName.Length == 3) continue;
+
+            var keyspaceBuilder = new StringBuilder();
+            keyspaceBuilder.Append(tableName);
+            keyspaceBuilder.Append('.');
+            keyspaceBuilder.Append(dbContextOptions.Bucket);
+            keyspaceBuilder.Append('.');
+            keyspaceBuilder.Append(dbContextOptions.Scope);
+
+            entityType.SetTableName(keyspaceBuilder.ToString());
         }
         return modelBuilder;
     }

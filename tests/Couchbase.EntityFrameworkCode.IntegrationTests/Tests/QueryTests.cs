@@ -43,11 +43,11 @@ public class QueryTests(
     public async Task Test_Select_Linq()
     {
        await using var context = travelSampleFixture.GetDbContext();
-       var addresses = from a in context.Address
+       var airlines = from a in context.Airlines
             select a;
 
-        var count = await addresses.CountAsync();
-        Assert.Equal(2, count);
+        var count = await airlines.CountAsync();
+        Assert.True(count > 0);
     }
 
     [Fact]

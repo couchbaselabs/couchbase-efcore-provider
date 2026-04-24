@@ -34,6 +34,42 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
     }
 
     /// <inheritdoc />
+    protected override Expression VisitLeftJoin(LeftJoinExpression leftJoinExpression)
+    {
+        // Skip LEFT JOINs for owned types - they don't have a proper keyspace (bucket.scope.collection)
+        // Owned types are embedded in their owner's document
+        if (leftJoinExpression.Table is TableExpression tableExpression)
+        {
+            var splitName = tableExpression.Name.Split('.');
+            if (splitName.Length != 3)
+            {
+                // This is an owned type - skip the JOIN entirely
+                return leftJoinExpression;
+            }
+        }
+
+        return base.VisitLeftJoin(leftJoinExpression);
+    }
+
+    /// <inheritdoc />
+    protected override Expression VisitInnerJoin(InnerJoinExpression innerJoinExpression)
+    {
+        // Skip INNER JOINs for owned types - they don't have a proper keyspace (bucket.scope.collection)
+        // Owned types are embedded in their owner's document
+        if (innerJoinExpression.Table is TableExpression tableExpression)
+        {
+            var splitName = tableExpression.Name.Split('.');
+            if (splitName.Length != 3)
+            {
+                // This is an owned type - skip the JOIN entirely
+                return innerJoinExpression;
+            }
+        }
+
+        return base.VisitInnerJoin(innerJoinExpression);
+    }
+
+    /// <inheritdoc />
     protected override Expression VisitSqlUnary(SqlUnaryExpression sqlUnaryExpression)
     {
         switch (sqlUnaryExpression.OperatorType)
@@ -387,7 +423,13 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
 
             //first split apart the keyspace and extract the alias from the collection
             var splitName = originalName.Split('.');
-            if(splitName.Length != 3) throw ExceptionHelper.InvalidKeyspaceFormatOrMissingCollection(splitName.FirstOrDefault());
+            if(splitName.Length != 3)
+            {
+                // This may be an owned type which doesn't have a full keyspace - use the name as-is
+                _alias = originalAlias;
+                _name = originalName;
+                return;
+            }
             _alias = splitName[2].FirstOrDefault().ToString().ToLowerInvariant();
 
             //if the original alias has an ordinal index add it to the index
@@ -426,6 +468,16 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
         //NOTE: TableExpression is a sealed class so cannot be overridden without
         //bring it inside this assembly which then requires the TableExpressionBase to
         //be moved into this assembly as Alias field is internal.
+
+        // Skip owned type tables - they don't have a proper keyspace (bucket.scope.collection)
+        // Owned types are embedded in their owner's document and don't need separate FROM clauses
+        var splitName = tableExpression.Name.Split('.');
+        if (splitName.Length != 3)
+        {
+            // This is an owned type - skip generating FROM clause for it
+            return tableExpression;
+        }
+
         var keyspace = _tableNameCache.GetOrAdd(
             tableExpression.Name, key => new Keyspace(key, tableExpression.Alias));
 

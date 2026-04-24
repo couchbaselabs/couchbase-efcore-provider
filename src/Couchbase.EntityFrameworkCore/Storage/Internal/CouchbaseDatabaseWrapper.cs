@@ -39,6 +39,12 @@ public class CouchbaseDatabaseWrapper(DatabaseDependencies dependencies, ICouchb
             var entity = entityEntry.Entity;
             var entityType = updateEntry.EntityType;
 
+            // Skip owned entities - they are embedded in their owner's document
+            if (entityType.IsOwned())
+            {
+                continue;
+            }
+
             // document info
             var primaryKey = entityType.GetPrimaryKey(entity);
 
