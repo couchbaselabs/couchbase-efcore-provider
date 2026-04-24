@@ -15,6 +15,8 @@ public class TravelSampleFixture : CouchbaseFixture<TravelSampleDbContext>
 
     public override string BucketName => "travel-sample";
 
+    public override string ResourceName { get; set; } = "travel-sample";
+
     public override TravelSampleDbContext GetDbContext()
     {
         return new TravelSampleDbContext(CreateDbContextOptions<TravelSampleDbContext>());
@@ -22,7 +24,7 @@ public class TravelSampleFixture : CouchbaseFixture<TravelSampleDbContext>
 
     public override Task LoadDataAsync()
     {
-        throw new NotImplementedException();
+        return Task.CompletedTask;
     }
     
     [CouchbaseKeyspace("airline")]
