@@ -67,7 +67,7 @@ public class CrudTests(
         }
     }
 
-    [Fact]
+    [Fact(Skip = "This test requires customizing travel-sample with airline and user collections.")]
     public async Task Test_ExecuteDelete()
     {
         await using var context = travelSampleFixture.GetDbContext();
@@ -382,6 +382,109 @@ public class CrudTests(
 
             blog.Posts.Remove(post);
             await context.SaveChangesAsync();
+        }
+    }
+
+    [Fact]
+    public async Task Test_Hotel_Query()
+    {
+        await using var context = travelSampleFixture.GetDbContext();
+
+        // Query hotels from the travel-sample bucket
+        var hotels = await context.Hotels.Take(10).ToListAsync();
+
+        Assert.NotEmpty(hotels);
+
+        // Verify basic hotel properties are populated
+        var hotel = hotels.First();
+        Assert.NotNull(hotel.Id);
+        Assert.NotNull(hotel.Type);
+        Assert.Equal("hotel", hotel.Type);
+    }
+
+    [Fact(Skip = "Nested objects (Geo) are ignored by EF Core - requires document-oriented query support")]
+    public async Task Test_Hotel_With_Geo()
+    {
+        await using var context = travelSampleFixture.GetDbContext();
+
+        // Query any hotel - Geo is ignored by EF so not included in query projection
+        var hotels = await context.Hotels.Take(10).ToListAsync();
+
+        // Find one with geo data
+        var hotel = hotels.FirstOrDefault(h => h.Geo != null);
+
+        Assert.NotNull(hotel);
+        Assert.NotNull(hotel.Geo);
+        Assert.NotNull(hotel.Geo.Lat);
+        Assert.NotNull(hotel.Geo.Lon);
+    }
+
+    [Fact(Skip = "Nested collections (Reviews) are ignored by EF Core - requires document-oriented query support")]
+    public async Task Test_Hotel_With_Reviews()
+    {
+        await using var context = travelSampleFixture.GetDbContext();
+
+        // Query any hotel - Reviews is ignored by EF so not included in query projection
+        var hotels = await context.Hotels.Take(10).ToListAsync();
+
+        // Find one with reviews
+        var hotel = hotels.FirstOrDefault(h => h.Reviews != null && h.Reviews.Count > 0);
+
+        Assert.NotNull(hotel);
+        Assert.NotNull(hotel.Reviews);
+        Assert.NotEmpty(hotel.Reviews);
+
+        // Verify review properties
+        var review = hotel.Reviews.First();
+        Assert.NotNull(review.Author);
+        Assert.NotNull(review.Content);
+    }
+
+    [Fact]
+    public async Task Test_Hotel_Crud()
+    {
+        await using var context = travelSampleFixture.GetDbContext();
+
+        // Note: Geo and Reviews are ignored by EF Core, so only scalar properties are persisted
+        var hotel = new TravelSampleFixture.Hotel
+        {
+            Id = 99999,
+            Type = "hotel",
+            Name = "Test Hotel",
+            City = "Test City",
+            Country = "Test Country",
+            Description = "A test hotel for integration testing"
+        };
+
+        try
+        {
+            // Create
+            context.Hotels.Add(hotel);
+            var inserted = await context.SaveChangesAsync();
+            Assert.Equal(1, inserted);
+
+            // Read
+            var retrievedHotel = await context.Hotels.FindAsync(hotel.Id);
+            Assert.NotNull(retrievedHotel);
+            Assert.Equal("Test Hotel", retrievedHotel.Name);
+            Assert.Equal("Test City", retrievedHotel.City);
+
+            // Update
+            retrievedHotel.Name = "Updated Test Hotel";
+            context.Hotels.Update(retrievedHotel);
+            await context.SaveChangesAsync();
+
+            var updatedHotel = await context.Hotels.FindAsync(hotel.Id);
+            Assert.Equal("Updated Test Hotel", updatedHotel?.Name);
+        }
+        finally
+        {
+            // Delete
+            context.Hotels.Remove(hotel);
+            await context.SaveChangesAsync();
+
+            var deletedHotel = await context.Hotels.FindAsync(hotel.Id);
+            Assert.Null(deletedHotel);
         }
     }
 }

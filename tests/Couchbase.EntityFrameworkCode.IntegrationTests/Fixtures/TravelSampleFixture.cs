@@ -123,7 +123,7 @@ public class TravelSampleFixture : CouchbaseFixture<TravelSampleDbContext>
     public class User
     {
         public Guid ID { get; set; }
-        
+
         [JsonProperty("name", NullValueHandling = NullValueHandling.Ignore)]
         [JsonPropertyName("name")]
         public string Name { get; set; }
@@ -167,5 +167,145 @@ public class TravelSampleFixture : CouchbaseFixture<TravelSampleDbContext>
         [JsonProperty("updated", NullValueHandling = NullValueHandling.Ignore)]
         [JsonPropertyName("updated")]
         public string Updated { get; set; }
+    }
+
+    // Root myDeserializedClass = JsonSerializer.Deserialize<Root>(myJsonResponse);
+    public class Geo
+    {
+        [JsonPropertyName("lat")]
+        public double? Lat { get; set; }
+
+        [JsonPropertyName("lon")]
+        public double? Lon { get; set; }
+
+        [JsonPropertyName("accuracy")]
+        public string Accuracy { get; set; }
+    }
+
+    public class Ratings
+    {
+        [JsonPropertyName("Service")]
+        public int? Service { get; set; }
+
+        [JsonPropertyName("Cleanliness")]
+        public int? Cleanliness { get; set; }
+
+        [JsonPropertyName("Check in / front desk")]
+        public int? CheckInFrontDesk { get; set; }
+
+        [JsonPropertyName("Overall")]
+        public int? Overall { get; set; }
+
+        [JsonPropertyName("Value")]
+        public int? Value { get; set; }
+
+        [JsonPropertyName("Rooms")]
+        public int? Rooms { get; set; }
+
+        [JsonPropertyName("Location")]
+        public int? Location { get; set; }
+
+        [JsonPropertyName("Sleep Quality")]
+        public int? SleepQuality { get; set; }
+    }
+
+    public class Review
+    {
+        [JsonPropertyName("content")]
+        public string Content { get; set; }
+
+        [JsonPropertyName("ratings")]
+        public Ratings Ratings { get; set; }
+
+        [JsonPropertyName("author")]
+        public string Author { get; set; }
+
+        [JsonPropertyName("date")]
+        public string Date { get; set; }
+    }
+
+    [CouchbaseKeyspace("hotel")]
+    public class Hotel
+    {
+        [JsonPropertyName("title")]
+        public string Title { get; set; }
+
+        [JsonPropertyName("name")]
+        public string Name { get; set; }
+
+        [JsonPropertyName("address")]
+        public string Address { get; set; }
+
+        [JsonPropertyName("directions")]
+        public string Directions { get; set; }
+
+        [JsonPropertyName("phone")]
+        public string Phone { get; set; }
+
+        [JsonPropertyName("tollfree")]
+        public string Tollfree { get; set; }
+
+        [JsonPropertyName("email")]
+        public string Email { get; set; }
+
+        [JsonPropertyName("fax")]
+        public string Fax { get; set; }
+
+        [JsonPropertyName("url")]
+        public string Url { get; set; }
+
+        [JsonPropertyName("checkin")]
+        public string Checkin { get; set; }
+
+        [JsonPropertyName("checkout")]
+        public string Checkout { get; set; }
+
+        [JsonPropertyName("price")]
+        public string Price { get; set; }
+
+        [JsonPropertyName("geo")]
+        public Geo Geo { get; set; }
+
+        [JsonPropertyName("type")]
+        public string Type { get; set; }
+
+        [JsonPropertyName("id")]
+        public int? Id { get; set; }
+
+        [JsonPropertyName("country")]
+        public string Country { get; set; }
+
+        [JsonPropertyName("city")]
+        public string City { get; set; }
+
+        [JsonPropertyName("state")]
+        public string State { get; set; }
+
+        [JsonPropertyName("reviews")]
+        public List<Review>? Reviews { get; set; }
+
+        [JsonPropertyName("public_likes")]
+        public List<string>? PublicLikes { get; set; }
+
+        [JsonPropertyName("vacancy")]
+        public bool? Vacancy { get; set; }
+
+        [JsonPropertyName("description")]
+        public string Description { get; set; }
+
+        [JsonPropertyName("alias")]
+        public string Alias { get; set; }
+
+        [JsonPropertyName("pets_ok")]
+        public bool? PetsOk { get; set; }
+
+        [JsonPropertyName("free_breakfast")]
+        public bool? FreeBreakfast { get; set; }
+
+        [JsonPropertyName("free_internet")]
+        public bool? FreeInternet { get; set; }
+
+        [JsonPropertyName("free_parking")]
+        public bool? FreeParking { get; set; }
     }
 }
