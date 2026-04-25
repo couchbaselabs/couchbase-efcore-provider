@@ -124,7 +124,7 @@ public class CrudTests(
         }
     }
 
-    [Fact]
+    [Fact(Skip = "This test requires customizing travel-sample with user collections.")]
     public async Task Test_ComplexObject()
     {
         await using var context = travelSampleFixture.GetDbContext();
