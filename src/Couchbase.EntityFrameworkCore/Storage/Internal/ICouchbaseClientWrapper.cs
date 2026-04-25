@@ -1,3 +1,5 @@
+using Couchbase.KeyValue;
+
 namespace Couchbase.EntityFrameworkCore.Storage.Internal;
 
 public interface ICouchbaseClientWrapper
@@ -9,6 +11,26 @@ public interface ICouchbaseClientWrapper
     Task<bool> UpdateDocument<TEntity>(string id, string keyspace, TEntity entity);
 
     string BucketName { get; }
+
+    /// <summary>
+    /// Gets the collection for the specified keyspace.
+    /// </summary>
+    Task<ICouchbaseCollection> GetCollectionAsync(string keyspace);
+
+    /// <summary>
+    /// Enqueues a document insert operation on the given transaction.
+    /// </summary>
+    Task EnqueueTransactionalInsert<TEntity>(CouchbaseDbTransaction transaction, string id, string keyspace, TEntity entity);
+
+    /// <summary>
+    /// Enqueues a document upsert operation on the given transaction.
+    /// </summary>
+    Task EnqueueTransactionalUpsert<TEntity>(CouchbaseDbTransaction transaction, string id, string keyspace, TEntity entity);
+
+    /// <summary>
+    /// Enqueues a document remove operation on the given transaction.
+    /// </summary>
+    Task EnqueueTransactionalRemove(CouchbaseDbTransaction transaction, string id, string keyspace);
 }
 
 /* ************************************************************

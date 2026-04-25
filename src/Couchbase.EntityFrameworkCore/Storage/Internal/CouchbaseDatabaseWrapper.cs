@@ -1,28 +1,33 @@
-using System.Collections.Concurrent;
-using System.Text.Json;
 using Couchbase.Core.IO.Serializers;
 using Couchbase.Core.IO.Transcoders;
 using Couchbase.EntityFrameworkCore.Extensions;
-using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.EntityFrameworkCore.Utils;
-using Couchbase.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking.Internal;
-using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.EntityFrameworkCore.Update;
-using Microsoft.VisualBasic;
 using Database = Microsoft.EntityFrameworkCore.Storage.Database;
 
 namespace Couchbase.EntityFrameworkCore.Storage.Internal;
 
-public class CouchbaseDatabaseWrapper(DatabaseDependencies dependencies, ICouchbaseClientWrapper couchbaseClient)
-    : Database(dependencies)
+public class CouchbaseDatabaseWrapper : Database
 {
+    private readonly ICouchbaseClientWrapper _couchbaseClient;
+    private readonly IRelationalConnection _relationalConnection;
+
+    public CouchbaseDatabaseWrapper(
+        DatabaseDependencies dependencies,
+        ICouchbaseClientWrapper couchbaseClient,
+        IRelationalConnection relationalConnection)
+        : base(dependencies)
+    {
+        _couchbaseClient = couchbaseClient ?? throw new ArgumentNullException(nameof(couchbaseClient));
+        _relationalConnection = relationalConnection ?? throw new ArgumentNullException(nameof(relationalConnection));
+    }
+
     public override int SaveChanges(IList<IUpdateEntry> entries)
     {
 #if DEBUG
-        //Required for test infrastructure database creation and seeding
         return SaveChangesAsync(entries).ConfigureAwait(false).GetAwaiter().GetResult();
 #else
         throw ExceptionHelper.SyncroIONotSupportedException();
@@ -31,58 +36,91 @@ public class CouchbaseDatabaseWrapper(DatabaseDependencies dependencies, ICouchb
 
     public override async Task<int> SaveChangesAsync(IList<IUpdateEntry> entries, CancellationToken cancellationToken = new())
     {
+        var transaction = GetCurrentTransaction();
         var updateCount = 0;
+
         foreach (var updateEntry in entries)
         {
-            // entity info
             var entityEntry = updateEntry.ToEntityEntry();
             var entity = entityEntry.Entity;
             var entityType = updateEntry.EntityType;
 
-            // Skip owned entities - they are embedded in their owner's document
             if (entityType.IsOwned())
             {
                 continue;
             }
 
-            // document info
             var primaryKey = entityType.GetPrimaryKey(entity);
+            var keyspace = entityType.GetCollectionName();
 
             switch (updateEntry.EntityState)
             {
                 case EntityState.Detached:
-                    break;
                 case EntityState.Unchanged:
                     break;
+
                 case EntityState.Deleted:
-                    if (await couchbaseClient.DeleteDocument(primaryKey, entityType.GetCollectionName()).ConfigureAwait(false))
+                    if (transaction != null)
                     {
+                        await _couchbaseClient.EnqueueTransactionalRemove(transaction, primaryKey, keyspace).ConfigureAwait(false);
                         updateCount++;
                     }
+                    else
+                    {
+                        if (await _couchbaseClient.DeleteDocument(primaryKey, keyspace).ConfigureAwait(false))
+                        {
+                            updateCount++;
+                        }
+                    }
                     break;
+
                 case EntityState.Modified:
                     var modifiedDocument = HydrateObjectFromEntity(updateEntry);
-                    if (await couchbaseClient.UpdateDocument(primaryKey,  entityType.GetCollectionName(), modifiedDocument).ConfigureAwait(false))
+                    if (transaction != null)
                     {
+                        await _couchbaseClient.EnqueueTransactionalUpsert(transaction, primaryKey, keyspace, modifiedDocument).ConfigureAwait(false);
                         updateCount++;
+                    }
+                    else
+                    {
+                        if (await _couchbaseClient.UpdateDocument(primaryKey, keyspace, modifiedDocument).ConfigureAwait(false))
+                        {
+                            updateCount++;
+                        }
                     }
                     break;
-                case EntityState.Added:
-                {
-                    var newDocument = HydrateObjectFromEntity(updateEntry);
-                    if (await couchbaseClient.CreateDocument(primaryKey,  entityType.GetCollectionName(), newDocument).ConfigureAwait(false))
-                    {
-                        updateCount++;
-                    }
 
+                case EntityState.Added:
+                    var newDocument = HydrateObjectFromEntity(updateEntry);
+                    if (transaction != null)
+                    {
+                        await _couchbaseClient.EnqueueTransactionalInsert(transaction, primaryKey, keyspace, newDocument).ConfigureAwait(false);
+                        updateCount++;
+                    }
+                    else
+                    {
+                        if (await _couchbaseClient.CreateDocument(primaryKey, keyspace, newDocument).ConfigureAwait(false))
+                        {
+                            updateCount++;
+                        }
+                    }
                     break;
-                }
+
                 default:
                     throw new ArgumentOutOfRangeException();
             }
         }
 
         return updateCount;
+    }
+
+    private CouchbaseDbTransaction? GetCurrentTransaction()
+    {
+        if (_relationalConnection is CouchbaseRelationalConnection couchbaseRelationalConnection)
+        {
+            return couchbaseRelationalConnection.CouchbaseTransaction;
+        }
+        return null;
     }
 
     private readonly ITypeTranscoder _transcoder = new JsonTranscoder(new DefaultSerializer());
