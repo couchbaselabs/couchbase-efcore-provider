@@ -100,7 +100,12 @@ public class CouchbaseConnection : DbConnection
             throw new InvalidOperationException("Cluster is not available. Ensure the connection is properly opened.");
         }
 
-        _currentTransaction = new CouchbaseDbTransaction(this, _cluster, isolationLevel, _logger);
+        _currentTransaction = new CouchbaseDbTransaction(
+            this, 
+            _cluster, 
+            isolationLevel, 
+            _couchbaseDbContextOptionsBuilder.TransactionDurabilityLevel,
+            _logger);
         return _currentTransaction;
     }
 
