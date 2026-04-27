@@ -157,7 +157,7 @@ public class CouchbaseConnection : DbConnection
 
     protected override DbCommand CreateDbCommand()
     {
-        if (_cluster == null && _state != ConnectionState.Open)
+        if (_state != ConnectionState.Open)
         {
             Open();
         }
