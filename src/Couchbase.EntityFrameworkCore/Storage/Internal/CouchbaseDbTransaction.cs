@@ -15,14 +15,32 @@ public class CouchbaseDbTransaction : DbTransaction
     private readonly CouchbaseConnection _connection;
     private readonly ICluster _cluster;
     private readonly ILogger? _logger;
+    private readonly DurabilityLevel _durabilityLevel;
     private readonly List<TransactionOperation> _pendingOperations = new();
     private bool _disposed;
     private bool _completed;
 
-    public CouchbaseDbTransaction(CouchbaseConnection connection, ICluster cluster, IsolationLevel isolationLevel, ILogger? logger = null)
+    /// <summary>
+    /// Creates a new Couchbase transaction with the specified durability level.
+    /// </summary>
+    /// <param name="connection">The parent connection.</param>
+    /// <param name="cluster">The Couchbase cluster.</param>
+    /// <param name="isolationLevel">The isolation level (informational only for Couchbase).</param>
+    /// <param name="durabilityLevel">
+    /// The durability level for the transaction. Defaults to <see cref="DurabilityLevel.Majority"/>.
+    /// Use <see cref="DurabilityLevel.None"/> for single-node development/test clusters.
+    /// </param>
+    /// <param name="logger">Optional logger.</param>
+    public CouchbaseDbTransaction(
+        CouchbaseConnection connection, 
+        ICluster cluster, 
+        IsolationLevel isolationLevel, 
+        DurabilityLevel durabilityLevel = DurabilityLevel.Majority,
+        ILogger? logger = null)
     {
         _connection = connection ?? throw new ArgumentNullException(nameof(connection));
         _cluster = cluster ?? throw new ArgumentNullException(nameof(cluster));
+        _durabilityLevel = durabilityLevel;
         _logger = logger;
         IsolationLevel = isolationLevel;
     }
@@ -79,9 +97,8 @@ public class CouchbaseDbTransaction : DbTransaction
 
         try
         {
-            // Use relaxed durability for single-node clusters (common in dev/test)
             var perTxnConfig = PerTransactionConfigBuilder.Create()
-                .DurabilityLevel(DurabilityLevel.None)
+                .DurabilityLevel(_durabilityLevel)
                 .Build();
 
             await _cluster.Transactions.RunAsync(async ctx =>
