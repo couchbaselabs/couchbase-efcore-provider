@@ -3,6 +3,7 @@ using System.Data.Common;
 using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.EntityFrameworkCore.Infrastructure.Internal;
 using Couchbase.Extensions.DependencyInjection;
+using Couchbase.KeyValue;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -185,6 +186,54 @@ public class CouchbaseRelationalConnection : RelationalConnection, ICouchbaseCon
         }
 
         return await base.UseTransactionAsync(transaction, transactionId, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Begins a Couchbase transaction with the specified durability level.
+    /// </summary>
+    /// <param name="durabilityLevel">The durability level for this transaction.</param>
+    /// <param name="isolationLevel">The isolation level (informational only for Couchbase).</param>
+    /// <returns>A transaction that can be committed or rolled back.</returns>
+    public IDbContextTransaction BeginCouchbaseTransaction(
+        DurabilityLevel durabilityLevel,
+        IsolationLevel isolationLevel = IsolationLevel.Unspecified)
+    {
+        // Temporarily override the default durability level
+        var originalDurability = _couchbaseDbContextOptionsBuilder.TransactionDurabilityLevel;
+        try
+        {
+            _couchbaseDbContextOptionsBuilder.TransactionDurabilityLevel = durabilityLevel;
+            return BeginTransaction(isolationLevel);
+        }
+        finally
+        {
+            _couchbaseDbContextOptionsBuilder.TransactionDurabilityLevel = originalDurability;
+        }
+    }
+
+    /// <summary>
+    /// Begins a Couchbase transaction asynchronously with the specified durability level.
+    /// </summary>
+    /// <param name="durabilityLevel">The durability level for this transaction.</param>
+    /// <param name="isolationLevel">The isolation level (informational only for Couchbase).</param>
+    /// <param name="cancellationToken">A cancellation token.</param>
+    /// <returns>A transaction that can be committed or rolled back.</returns>
+    public async Task<IDbContextTransaction> BeginCouchbaseTransactionAsync(
+        DurabilityLevel durabilityLevel,
+        IsolationLevel isolationLevel = IsolationLevel.Unspecified,
+        CancellationToken cancellationToken = default)
+    {
+        // Temporarily override the default durability level
+        var originalDurability = _couchbaseDbContextOptionsBuilder.TransactionDurabilityLevel;
+        try
+        {
+            _couchbaseDbContextOptionsBuilder.TransactionDurabilityLevel = durabilityLevel;
+            return await BeginTransactionAsync(isolationLevel, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _couchbaseDbContextOptionsBuilder.TransactionDurabilityLevel = originalDurability;
+        }
     }
 }
 
