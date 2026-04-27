@@ -2,6 +2,7 @@ using System.Data;
 using System.Data.Common;
 using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.Extensions.DependencyInjection;
+using Couchbase.KeyValue;
 using Microsoft.Extensions.Logging;
 
 namespace Couchbase.EntityFrameworkCore.Storage.Internal;
@@ -85,6 +86,17 @@ public class CouchbaseConnection : DbConnection
 
     protected override DbTransaction BeginDbTransaction(IsolationLevel isolationLevel)
     {
+        return BeginDbTransaction(isolationLevel, _couchbaseDbContextOptionsBuilder.TransactionDurabilityLevel);
+    }
+
+    /// <summary>
+    /// Begins a transaction with the specified isolation level and durability level.
+    /// </summary>
+    /// <param name="isolationLevel">The isolation level (informational only for Couchbase).</param>
+    /// <param name="durabilityLevel">The durability level for this transaction.</param>
+    /// <returns>A new <see cref="CouchbaseDbTransaction"/>.</returns>
+    internal CouchbaseDbTransaction BeginDbTransaction(IsolationLevel isolationLevel, DurabilityLevel durabilityLevel)
+    {
         if (_state != ConnectionState.Open)
         {
             throw new InvalidOperationException("Connection must be open to begin a transaction.");
@@ -104,7 +116,7 @@ public class CouchbaseConnection : DbConnection
             this, 
             _cluster, 
             isolationLevel, 
-            _couchbaseDbContextOptionsBuilder.TransactionDurabilityLevel,
+            durabilityLevel,
             _logger);
         return _currentTransaction;
     }
