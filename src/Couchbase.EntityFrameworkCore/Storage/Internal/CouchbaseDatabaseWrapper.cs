@@ -41,6 +41,8 @@ public class CouchbaseDatabaseWrapper : Database
 
         foreach (var updateEntry in entries)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             var entityEntry = updateEntry.ToEntityEntry();
             var entity = entityEntry.Entity;
             var entityType = updateEntry.EntityType;

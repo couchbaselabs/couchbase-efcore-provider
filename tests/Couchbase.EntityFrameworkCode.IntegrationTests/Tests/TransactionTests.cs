@@ -57,18 +57,31 @@ public class TransactionTests(
             Rating = 3
         };
 
-        await using var transaction = await context.Database.BeginTransactionAsync();
+        try
+        {
+            await using var transaction = await context.Database.BeginTransactionAsync();
 
-        context.Blogs.Add(blog);
-        await context.SaveChangesAsync();
+            context.Blogs.Add(blog);
+            await context.SaveChangesAsync();
 
-        await transaction.RollbackAsync();
+            await transaction.RollbackAsync();
 
-        // Verify document was not persisted
-        await Task.Delay(100);
-        await using var verifyContext = bloggingFixture.GetDbContext();
-        var notSavedBlog = await verifyContext.Blogs.FindAsync(blog.BlogId);
-        Assert.Null(notSavedBlog);
+            // Verify document was not persisted
+            await Task.Delay(100);
+            await using var verifyContext = bloggingFixture.GetDbContext();
+            var notSavedBlog = await verifyContext.Blogs.FindAsync(blog.BlogId);
+            Assert.Null(notSavedBlog);
+        }
+        finally
+        {
+            await using var cleanupContext = bloggingFixture.GetDbContext();
+            var persistedBlog = await cleanupContext.Blogs.FindAsync(blog.BlogId);
+            if (persistedBlog != null)
+            {
+                cleanupContext.Remove(persistedBlog);
+                await cleanupContext.SaveChangesAsync();
+            }
+        }
     }
 
     [Fact]
@@ -193,21 +206,34 @@ public class TransactionTests(
             Url = "http://dispose-test.com"
         };
 
+        try
         {
-            await using var transaction = await context.Database.BeginTransactionAsync();
+            {
+                await using var transaction = await context.Database.BeginTransactionAsync();
 
-            context.Blogs.Add(blog);
-            await context.SaveChangesAsync();
+                context.Blogs.Add(blog);
+                await context.SaveChangesAsync();
 
-            // Transaction disposed without commit
+                // Transaction disposed without commit
+            }
+
+            await Task.Delay(100);
+
+            // Verify not persisted
+            await using var verifyContext = bloggingFixture.GetDbContext();
+            var notSaved = await verifyContext.Blogs.FindAsync(blog.BlogId);
+            Assert.Null(notSaved);
         }
-
-        await Task.Delay(100);
-
-        // Verify not persisted
-        await using var verifyContext = bloggingFixture.GetDbContext();
-        var notSaved = await verifyContext.Blogs.FindAsync(blog.BlogId);
-        Assert.Null(notSaved);
+        finally
+        {
+            await using var cleanupContext = bloggingFixture.GetDbContext();
+            var persistedBlog = await cleanupContext.Blogs.FindAsync(blog.BlogId);
+            if (persistedBlog != null)
+            {
+                cleanupContext.Blogs.Remove(persistedBlog);
+                await cleanupContext.SaveChangesAsync();
+            }
+        }
     }
 
     [Fact]
