@@ -72,13 +72,34 @@ public class FromRawSqlTests(
     public async Task Test_FromSqlRaw_Returns_Results()
     {
         await using var context = bloggingFixture.GetDbContext();
-        var rating = 4;
-
-        var results = await context.Blogs
-            .FromSqlRaw(
-                $"SELECT VALUE p FROM default.blogs.post p WHERE p.rating == {rating}")
-            .ToListAsync();
         
-        Assert.Equal(1, results.Count);
+        // Create isolated test data to avoid dependency on shared fixture data
+        var testBlog = new BloggingFixture.Blog
+        {
+            BlogId = 99901,
+            Url = "http://fromsqlraw-test.com",
+            Rating = 4
+        };
+        
+        try
+        {
+            context.Blogs.Add(testBlog);
+            await context.SaveChangesAsync();
+            
+            // Brief delay for indexing
+            await Task.Delay(100);
+
+            var results = await context.Blogs
+                .FromSqlRaw(
+                    "SELECT VALUE b FROM default.blogs.blog b WHERE b.Rating == 4 AND b.BlogId == 99901")
+                .ToListAsync();
+            
+            Assert.Equal(1, results.Count);
+        }
+        finally
+        {
+            context.Blogs.Remove(testBlog);
+            await context.SaveChangesAsync();
+        }
     }
 }
