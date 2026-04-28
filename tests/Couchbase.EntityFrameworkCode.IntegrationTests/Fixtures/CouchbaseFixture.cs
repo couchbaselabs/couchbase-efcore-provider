@@ -45,8 +45,6 @@ public abstract class CouchbaseFixture<T> : IDisposable, IAsyncDisposable, IAsyn
             {
                 couchbaseDbContextOptions.Bucket = BucketName;
                 couchbaseDbContextOptions.Scope = ScopeName;
-                // Use relaxed durability for single-node test clusters
-                couchbaseDbContextOptions.TransactionDurabilityLevel = Couchbase.KeyValue.DurabilityLevel.None;
             });
         optionsBuilder.UseCamelCaseNamingConvention();
 

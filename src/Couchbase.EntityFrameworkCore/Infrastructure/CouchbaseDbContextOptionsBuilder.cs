@@ -1,5 +1,4 @@
 using Couchbase.EntityFrameworkCore.Extensions;
-using Couchbase.KeyValue;
 using Microsoft.EntityFrameworkCore;
 
 namespace Couchbase.EntityFrameworkCore.Infrastructure;
@@ -32,13 +31,6 @@ public class CouchbaseDbContextOptionsBuilder : ICouchbaseDbContextOptionsBuilde
 
     public string Scope { get; set; }
 
-    /// <summary>
-    /// Gets or sets the default durability level for transactions.
-    /// Defaults to <see cref="DurabilityLevel.Majority"/> for production safety.
-    /// Set to <see cref="DurabilityLevel.None"/> for single-node development/test clusters.
-    /// </summary>
-    public DurabilityLevel TransactionDurabilityLevel { get; set; } = DurabilityLevel.Majority;
-
     DbContextOptionsBuilder ICouchbaseDbContextOptionsBuilder.OptionsBuilder => OptionsBuilder;
 }
 
@@ -53,13 +45,6 @@ public interface ICouchbaseDbContextOptionsBuilder
     public string Bucket { get; set; }
 
     public string Scope { get; set; }
-
-    /// <summary>
-    /// Gets or sets the default durability level for transactions.
-    /// Defaults to <see cref="DurabilityLevel.Majority"/> for production safety.
-    /// Set to <see cref="DurabilityLevel.None"/> for single-node development/test clusters.
-    /// </summary>
-    public DurabilityLevel TransactionDurabilityLevel { get; set; }
 }
 
 /* ************************************************************
