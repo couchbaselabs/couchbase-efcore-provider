@@ -25,19 +25,16 @@ internal sealed class CouchbaseContextTransaction : ICouchbaseDbContextTransacti
 {
     private readonly IDbContextTransaction _inner;
     private readonly DbContext _context;
-    private readonly CouchbaseSaveChangesInterceptor _interceptor;
     private int _committedCount;
 
     public CouchbaseContextTransaction(
         IDbContextTransaction inner,
-        DbContext context,
-        CouchbaseSaveChangesInterceptor interceptor)
+        DbContext context)
     {
         _inner = inner ?? throw new ArgumentNullException(nameof(inner));
         _context = context ?? throw new ArgumentNullException(nameof(context));
-        _interceptor = interceptor ?? throw new ArgumentNullException(nameof(interceptor));
         
-        _interceptor.BeginTracking();
+        CouchbaseSaveChangesInterceptor.BeginTracking(_context);
     }
 
     public Guid TransactionId => _inner.TransactionId;
@@ -49,41 +46,41 @@ internal sealed class CouchbaseContextTransaction : ICouchbaseDbContextTransacti
     {
         _inner.Commit();
         _committedCount = GetUnderlyingTransactionCommittedCount();
-        _interceptor.AcceptTrackedChanges(_context);
-        _interceptor.EndTracking();
+        CouchbaseSaveChangesInterceptor.AcceptTrackedChanges(_context);
+        CouchbaseSaveChangesInterceptor.EndTracking(_context);
     }
 
     public async Task CommitAsync(CancellationToken cancellationToken = default)
     {
         await _inner.CommitAsync(cancellationToken).ConfigureAwait(false);
         _committedCount = GetUnderlyingTransactionCommittedCount();
-        _interceptor.AcceptTrackedChanges(_context);
-        _interceptor.EndTracking();
+        CouchbaseSaveChangesInterceptor.AcceptTrackedChanges(_context);
+        CouchbaseSaveChangesInterceptor.EndTracking(_context);
     }
 
     public void Rollback()
     {
         _inner.Rollback();
-        _interceptor.EndTracking();
+        CouchbaseSaveChangesInterceptor.EndTracking(_context);
     }
 
     public async Task RollbackAsync(CancellationToken cancellationToken = default)
     {
         await _inner.RollbackAsync(cancellationToken).ConfigureAwait(false);
-        _interceptor.EndTracking();
+        CouchbaseSaveChangesInterceptor.EndTracking(_context);
     }
 
     public DbTransaction GetDbTransaction() => _inner.GetDbTransaction();
 
     public void Dispose()
     {
-        _interceptor.EndTracking();
+        CouchbaseSaveChangesInterceptor.EndTracking(_context);
         _inner.Dispose();
     }
 
     public async ValueTask DisposeAsync()
     {
-        _interceptor.EndTracking();
+        CouchbaseSaveChangesInterceptor.EndTracking(_context);
         await _inner.DisposeAsync().ConfigureAwait(false);
     }
 

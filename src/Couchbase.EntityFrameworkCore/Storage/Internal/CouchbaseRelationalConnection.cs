@@ -22,7 +22,6 @@ public class CouchbaseRelationalConnection : RelationalConnection, ICouchbaseCon
     private readonly ICouchbaseDbContextOptionsBuilder _couchbaseDbContextOptionsBuilder;
     private readonly IDiagnosticsLogger<DbLoggerCategory.Infrastructure> _logger;
     private readonly ILoggerFactory? _loggerFactory;
-    private readonly CouchbaseSaveChangesInterceptor? _saveChangesInterceptor;
 
     public CouchbaseRelationalConnection(
         RelationalConnectionDependencies dependencies,
@@ -38,10 +37,6 @@ public class CouchbaseRelationalConnection : RelationalConnection, ICouchbaseCon
 
         var optionsExtension = dependencies.ContextOptions.Extensions.OfType<CouchbaseOptionsExtension>().FirstOrDefault();
         _loggerFactory = optionsExtension?.DbContextOptionsBuilder?.ClusterOptions?.Logging;
-        
-        // Get the interceptor from core options
-        var coreOptionsExtension = dependencies.ContextOptions.Extensions.OfType<CoreOptionsExtension>().FirstOrDefault();
-        _saveChangesInterceptor = coreOptionsExtension?.Interceptors?.OfType<CouchbaseSaveChangesInterceptor>().FirstOrDefault();
     }
 
     /// <summary>
@@ -257,12 +252,6 @@ public class CouchbaseRelationalConnection : RelationalConnection, ICouchbaseCon
 
     private IDbContextTransaction WrapWithDeferredChangeTracking(IDbContextTransaction innerTransaction)
     {
-        if (_saveChangesInterceptor == null)
-        {
-            // Interceptor not available, fall back to standard behavior
-            return innerTransaction;
-        }
-
         // Get the DbContext from the dependencies
         var context = Dependencies.CurrentContext.Context;
         if (context == null)
@@ -270,7 +259,7 @@ public class CouchbaseRelationalConnection : RelationalConnection, ICouchbaseCon
             return innerTransaction;
         }
 
-        return new CouchbaseContextTransaction(innerTransaction, context, _saveChangesInterceptor);
+        return new CouchbaseContextTransaction(innerTransaction, context);
     }
 }
 
