@@ -133,10 +133,8 @@ public class CouchbaseDbTransaction : DbTransaction
                             }
                             else
                             {
-                                _logger?.LogWarning(
-                                    "Document with id '{Id}' not found in collection during transaction remove. " +
-                                    "The document may have been deleted outside the transaction or the key format may be incorrect.",
-                                    op.Id);
+                                throw new InvalidOperationException(
+                                    $"Document with id '{op.Id}' not found in collection during transaction remove.");
                             }
                             break;
                     }
