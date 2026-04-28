@@ -191,30 +191,30 @@ public class CouchbaseRelationalConnection : RelationalConnection, ICouchbaseCon
     /// <summary>
     /// Begins a Couchbase transaction with the specified durability level.
     /// </summary>
-    /// <param name="durabilityLevel">The durability level for this transaction.</param>
+    /// <param name="durabilityLevel">The durability level for this transaction. 
+    /// Use <see cref="DurabilityLevel.None"/> for single-node development/test clusters.</param>
     /// <param name="isolationLevel">The isolation level (informational only for Couchbase).</param>
     /// <returns>A transaction that can be committed or rolled back.</returns>
     public IDbContextTransaction BeginCouchbaseTransaction(
         DurabilityLevel durabilityLevel,
         IsolationLevel isolationLevel = IsolationLevel.Unspecified)
     {
-        // Temporarily override the default durability level
-        var originalDurability = _couchbaseDbContextOptionsBuilder.TransactionDurabilityLevel;
-        try
+        Open();
+        
+        if (DbConnection is not CouchbaseConnection couchbaseConnection)
         {
-            _couchbaseDbContextOptionsBuilder.TransactionDurabilityLevel = durabilityLevel;
-            return BeginTransaction(isolationLevel);
+            throw new InvalidOperationException("DbConnection is not a CouchbaseConnection.");
         }
-        finally
-        {
-            _couchbaseDbContextOptionsBuilder.TransactionDurabilityLevel = originalDurability;
-        }
+
+        var dbTransaction = couchbaseConnection.BeginDbTransaction(isolationLevel, durabilityLevel);
+        return new CouchbaseDbContextTransaction(this, dbTransaction);
     }
 
     /// <summary>
     /// Begins a Couchbase transaction asynchronously with the specified durability level.
     /// </summary>
-    /// <param name="durabilityLevel">The durability level for this transaction.</param>
+    /// <param name="durabilityLevel">The durability level for this transaction.
+    /// Use <see cref="DurabilityLevel.None"/> for single-node development/test clusters.</param>
     /// <param name="isolationLevel">The isolation level (informational only for Couchbase).</param>
     /// <param name="cancellationToken">A cancellation token.</param>
     /// <returns>A transaction that can be committed or rolled back.</returns>
@@ -223,18 +223,50 @@ public class CouchbaseRelationalConnection : RelationalConnection, ICouchbaseCon
         IsolationLevel isolationLevel = IsolationLevel.Unspecified,
         CancellationToken cancellationToken = default)
     {
-        // Temporarily override the default durability level
-        var originalDurability = _couchbaseDbContextOptionsBuilder.TransactionDurabilityLevel;
-        try
+        await OpenAsync(cancellationToken).ConfigureAwait(false);
+        
+        if (DbConnection is not CouchbaseConnection couchbaseConnection)
         {
-            _couchbaseDbContextOptionsBuilder.TransactionDurabilityLevel = durabilityLevel;
-            return await BeginTransactionAsync(isolationLevel, cancellationToken).ConfigureAwait(false);
+            throw new InvalidOperationException("DbConnection is not a CouchbaseConnection.");
         }
-        finally
-        {
-            _couchbaseDbContextOptionsBuilder.TransactionDurabilityLevel = originalDurability;
-        }
+
+        var dbTransaction = couchbaseConnection.BeginDbTransaction(isolationLevel, durabilityLevel);
+        return new CouchbaseDbContextTransaction(this, dbTransaction);
     }
+}
+
+/// <summary>
+/// A simple IDbContextTransaction wrapper for CouchbaseDbTransaction.
+/// </summary>
+internal sealed class CouchbaseDbContextTransaction : IDbContextTransaction
+{
+    private readonly CouchbaseRelationalConnection _connection;
+    private readonly CouchbaseDbTransaction _transaction;
+
+    public CouchbaseDbContextTransaction(CouchbaseRelationalConnection connection, CouchbaseDbTransaction transaction)
+    {
+        _connection = connection;
+        _transaction = transaction;
+        TransactionId = Guid.NewGuid();
+    }
+
+    public Guid TransactionId { get; }
+
+    public void Commit() => _transaction.Commit();
+
+    public async Task CommitAsync(CancellationToken cancellationToken = default) 
+        => await _transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+
+    public void Rollback() => _transaction.Rollback();
+
+    public async Task RollbackAsync(CancellationToken cancellationToken = default) 
+        => await _transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+
+    public DbTransaction GetDbTransaction() => _transaction;
+
+    public void Dispose() => _transaction.Dispose();
+
+    public async ValueTask DisposeAsync() => await _transaction.DisposeAsync().ConfigureAwait(false);
 }
 
 /* ************************************************************

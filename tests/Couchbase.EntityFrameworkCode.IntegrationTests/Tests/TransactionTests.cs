@@ -1,5 +1,7 @@
 using Couchbase.EntityFrameworkCode.IntegrationTests.Fixtures;
+using Couchbase.EntityFrameworkCore.Extensions;
 using Couchbase.EntityFrameworkCore.Storage.Internal;
+using Couchbase.KeyValue;
 using Microsoft.EntityFrameworkCore;
 using Xunit.Abstractions;
 
@@ -23,7 +25,8 @@ public class TransactionTests(
 
         try
         {
-            await using var transaction = await context.Database.BeginTransactionAsync();
+            // Use DurabilityLevel.None for single-node test cluster
+            await using var transaction = await context.Database.BeginCouchbaseTransactionAsync(DurabilityLevel.None);
 
             context.Blogs.Add(blog);
             await context.SaveChangesAsync();
@@ -59,7 +62,7 @@ public class TransactionTests(
 
         try
         {
-            await using var transaction = await context.Database.BeginTransactionAsync();
+            await using var transaction = await context.Database.BeginCouchbaseTransactionAsync(DurabilityLevel.None);
 
             context.Blogs.Add(blog);
             await context.SaveChangesAsync();
@@ -93,7 +96,7 @@ public class TransactionTests(
 
         try
         {
-            await using var transaction = await context.Database.BeginTransactionAsync();
+            await using var transaction = await context.Database.BeginCouchbaseTransactionAsync(DurabilityLevel.None);
 
             context.Blogs.AddRange(blog1, blog2);
             await context.SaveChangesAsync();
@@ -136,7 +139,7 @@ public class TransactionTests(
             await Task.Delay(100);
 
             // Now update in transaction
-            await using var transaction = await context.Database.BeginTransactionAsync();
+            await using var transaction = await context.Database.BeginCouchbaseTransactionAsync(DurabilityLevel.None);
 
             var existingBlog = await context.Blogs.FindAsync(blog.BlogId);
             existingBlog!.Url = "http://update-modified.com";
@@ -180,7 +183,7 @@ public class TransactionTests(
         await Task.Delay(100);
 
         // Delete in transaction
-        await using var transaction = await context.Database.BeginTransactionAsync();
+        await using var transaction = await context.Database.BeginCouchbaseTransactionAsync(DurabilityLevel.None);
 
         var existingBlog = await context.Blogs.FindAsync(blog.BlogId);
         context.Blogs.Remove(existingBlog!);
@@ -209,7 +212,7 @@ public class TransactionTests(
         try
         {
             {
-                await using var transaction = await context.Database.BeginTransactionAsync();
+                await using var transaction = await context.Database.BeginCouchbaseTransactionAsync(DurabilityLevel.None);
 
                 context.Blogs.Add(blog);
                 await context.SaveChangesAsync();
@@ -262,7 +265,7 @@ public class TransactionTests(
 
         Assert.Null(context.Database.CurrentTransaction);
 
-        await using var transaction = await context.Database.BeginTransactionAsync();
+        await using var transaction = await context.Database.BeginCouchbaseTransactionAsync(DurabilityLevel.None);
 
         Assert.NotNull(context.Database.CurrentTransaction);
     }

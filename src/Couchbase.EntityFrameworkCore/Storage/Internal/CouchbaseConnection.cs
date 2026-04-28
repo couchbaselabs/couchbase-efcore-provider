@@ -86,7 +86,7 @@ public class CouchbaseConnection : DbConnection
 
     protected override DbTransaction BeginDbTransaction(IsolationLevel isolationLevel)
     {
-        return BeginDbTransaction(isolationLevel, _couchbaseDbContextOptionsBuilder.TransactionDurabilityLevel);
+        return BeginDbTransaction(isolationLevel, DurabilityLevel.Majority);
     }
 
     /// <summary>
