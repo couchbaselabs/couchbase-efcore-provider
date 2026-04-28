@@ -24,6 +24,9 @@ public static class CouchbaseDbContextOptionsBuilderExtensions
 
         ((IDbContextOptionsBuilderInfrastructure)couchbaseDbContextOptions).AddOrUpdateExtension(extension);
         ConfigureWarnings(couchbaseDbContextOptions.OptionsBuilder);
+        
+        // Add the save changes interceptor for deferred change tracking in transactions
+        AddSaveChangesInterceptor(couchbaseDbContextOptions.OptionsBuilder);
 
         return couchbaseDbContextOptions.OptionsBuilder;
     }
