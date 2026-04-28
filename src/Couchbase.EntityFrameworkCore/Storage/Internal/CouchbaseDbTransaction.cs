@@ -19,6 +19,7 @@ public class CouchbaseDbTransaction : DbTransaction
     private readonly List<TransactionOperation> _pendingOperations = new();
     private bool _disposed;
     private bool _completed;
+    private int _committedCount;
 
     /// <summary>
     /// Creates a new Couchbase transaction with the specified durability level.
@@ -52,6 +53,12 @@ public class CouchbaseDbTransaction : DbTransaction
     internal IReadOnlyList<TransactionOperation> PendingOperations => _pendingOperations;
 
     internal bool IsCompleted => _completed;
+
+    /// <summary>
+    /// Gets the number of operations that were successfully committed.
+    /// This value is only valid after CommitAsync completes successfully.
+    /// </summary>
+    public int CommittedCount => _committedCount;
 
     /// <summary>
     /// Enqueue an insert operation to be executed when the transaction commits.
@@ -141,6 +148,7 @@ public class CouchbaseDbTransaction : DbTransaction
                 }
             }, perTxnConfig).ConfigureAwait(false);
 
+            _committedCount = _pendingOperations.Count;
             _completed = true;
             _pendingOperations.Clear();
         }
