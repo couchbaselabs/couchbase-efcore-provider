@@ -22,6 +22,7 @@ public class CouchbaseRelationalConnection : RelationalConnection, ICouchbaseCon
     private readonly ICouchbaseDbContextOptionsBuilder _couchbaseDbContextOptionsBuilder;
     private readonly IDiagnosticsLogger<DbLoggerCategory.Infrastructure> _logger;
     private readonly ILoggerFactory? _loggerFactory;
+    private readonly CouchbaseSaveChangesInterceptor? _saveChangesInterceptor;
 
     public CouchbaseRelationalConnection(
         RelationalConnectionDependencies dependencies,
@@ -37,6 +38,10 @@ public class CouchbaseRelationalConnection : RelationalConnection, ICouchbaseCon
 
         var optionsExtension = dependencies.ContextOptions.Extensions.OfType<CouchbaseOptionsExtension>().FirstOrDefault();
         _loggerFactory = optionsExtension?.DbContextOptionsBuilder?.ClusterOptions?.Logging;
+        
+        // Get the interceptor from core options
+        var coreOptionsExtension = dependencies.ContextOptions.Extensions.OfType<CoreOptionsExtension>().FirstOrDefault();
+        _saveChangesInterceptor = coreOptionsExtension?.Interceptors.OfType<CouchbaseSaveChangesInterceptor>().FirstOrDefault();
     }
 
     /// <summary>
@@ -190,6 +195,8 @@ public class CouchbaseRelationalConnection : RelationalConnection, ICouchbaseCon
 
     /// <summary>
     /// Begins a Couchbase transaction with the specified durability level.
+    /// When using this method, entity state changes are deferred until commit succeeds.
+    /// If commit fails, the change tracker state is preserved, allowing retry on the same context.
     /// </summary>
     /// <param name="durabilityLevel">The durability level for this transaction. 
     /// Use <see cref="DurabilityLevel.None"/> for single-node development/test clusters.</param>
@@ -210,11 +217,16 @@ public class CouchbaseRelationalConnection : RelationalConnection, ICouchbaseCon
         
         // Register the transaction with EF Core so CurrentTransaction is properly set
         var transactionId = Guid.NewGuid();
-        return UseTransaction(dbTransaction, transactionId)!;
+        var efTransaction = UseTransaction(dbTransaction, transactionId)!;
+        
+        // Wrap with our transaction that handles deferred AcceptAllChanges
+        return WrapWithDeferredChangeTracking(efTransaction);
     }
 
     /// <summary>
     /// Begins a Couchbase transaction asynchronously with the specified durability level.
+    /// When using this method, entity state changes are deferred until commit succeeds.
+    /// If commit fails, the change tracker state is preserved, allowing retry on the same context.
     /// </summary>
     /// <param name="durabilityLevel">The durability level for this transaction.
     /// Use <see cref="DurabilityLevel.None"/> for single-node development/test clusters.</param>
@@ -237,7 +249,28 @@ public class CouchbaseRelationalConnection : RelationalConnection, ICouchbaseCon
         
         // Register the transaction with EF Core so CurrentTransaction is properly set
         var transactionId = Guid.NewGuid();
-        return (await UseTransactionAsync(dbTransaction, transactionId, cancellationToken).ConfigureAwait(false))!;
+        var efTransaction = (await UseTransactionAsync(dbTransaction, transactionId, cancellationToken).ConfigureAwait(false))!;
+        
+        // Wrap with our transaction that handles deferred AcceptAllChanges
+        return WrapWithDeferredChangeTracking(efTransaction);
+    }
+
+    private IDbContextTransaction WrapWithDeferredChangeTracking(IDbContextTransaction innerTransaction)
+    {
+        if (_saveChangesInterceptor == null)
+        {
+            // Interceptor not available, fall back to standard behavior
+            return innerTransaction;
+        }
+
+        // Get the DbContext from the dependencies
+        var context = Dependencies.CurrentContext.Context;
+        if (context == null)
+        {
+            return innerTransaction;
+        }
+
+        return new CouchbaseContextTransaction(innerTransaction, context, _saveChangesInterceptor);
     }
 }
 
