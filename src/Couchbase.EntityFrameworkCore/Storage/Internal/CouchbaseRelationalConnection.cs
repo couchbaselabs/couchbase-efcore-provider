@@ -207,7 +207,10 @@ public class CouchbaseRelationalConnection : RelationalConnection, ICouchbaseCon
         }
 
         var dbTransaction = couchbaseConnection.BeginDbTransaction(isolationLevel, durabilityLevel);
-        return new CouchbaseDbContextTransaction(this, dbTransaction);
+        
+        // Register the transaction with EF Core so CurrentTransaction is properly set
+        var transactionId = Guid.NewGuid();
+        return UseTransaction(dbTransaction, transactionId)!;
     }
 
     /// <summary>
@@ -231,42 +234,11 @@ public class CouchbaseRelationalConnection : RelationalConnection, ICouchbaseCon
         }
 
         var dbTransaction = couchbaseConnection.BeginDbTransaction(isolationLevel, durabilityLevel);
-        return new CouchbaseDbContextTransaction(this, dbTransaction);
+        
+        // Register the transaction with EF Core so CurrentTransaction is properly set
+        var transactionId = Guid.NewGuid();
+        return (await UseTransactionAsync(dbTransaction, transactionId, cancellationToken).ConfigureAwait(false))!;
     }
-}
-
-/// <summary>
-/// A simple IDbContextTransaction wrapper for CouchbaseDbTransaction.
-/// </summary>
-internal sealed class CouchbaseDbContextTransaction : IDbContextTransaction
-{
-    private readonly CouchbaseRelationalConnection _connection;
-    private readonly CouchbaseDbTransaction _transaction;
-
-    public CouchbaseDbContextTransaction(CouchbaseRelationalConnection connection, CouchbaseDbTransaction transaction)
-    {
-        _connection = connection;
-        _transaction = transaction;
-        TransactionId = Guid.NewGuid();
-    }
-
-    public Guid TransactionId { get; }
-
-    public void Commit() => _transaction.Commit();
-
-    public async Task CommitAsync(CancellationToken cancellationToken = default) 
-        => await _transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-
-    public void Rollback() => _transaction.Rollback();
-
-    public async Task RollbackAsync(CancellationToken cancellationToken = default) 
-        => await _transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-
-    public DbTransaction GetDbTransaction() => _transaction;
-
-    public void Dispose() => _transaction.Dispose();
-
-    public async ValueTask DisposeAsync() => await _transaction.DisposeAsync().ConfigureAwait(false);
 }
 
 /* ************************************************************
