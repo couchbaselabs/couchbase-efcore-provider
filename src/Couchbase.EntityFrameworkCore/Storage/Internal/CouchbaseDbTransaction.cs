@@ -99,6 +99,7 @@ public class CouchbaseDbTransaction : DbTransaction
         if (_pendingOperations.Count == 0)
         {
             _completed = true;
+            _connection.ClearCurrentTransaction();
             return;
         }
 
@@ -151,6 +152,7 @@ public class CouchbaseDbTransaction : DbTransaction
             _committedCount = _pendingOperations.Count;
             _completed = true;
             _pendingOperations.Clear();
+            _connection.ClearCurrentTransaction();
         }
         catch (Couchbase.Client.Transactions.Error.TransactionFailedException ex)
         {
@@ -172,6 +174,7 @@ public class CouchbaseDbTransaction : DbTransaction
         ThrowIfCompleted();
         _pendingOperations.Clear();
         _completed = true;
+        _connection.ClearCurrentTransaction();
     }
 
     public override Task RollbackAsync(CancellationToken cancellationToken = default)
