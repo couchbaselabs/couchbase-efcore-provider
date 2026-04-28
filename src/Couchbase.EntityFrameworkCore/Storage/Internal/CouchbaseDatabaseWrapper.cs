@@ -65,7 +65,7 @@ public class CouchbaseDatabaseWrapper : Database
                     if (transaction != null)
                     {
                         await _couchbaseClient.EnqueueTransactionalRemove(transaction, primaryKey, keyspace).ConfigureAwait(false);
-                        // Don't increment updateCount - actual persistence happens at commit
+                        updateCount++; // Count enqueued operations to match EF Core semantics
                     }
                     else
                     {
@@ -81,7 +81,7 @@ public class CouchbaseDatabaseWrapper : Database
                     if (transaction != null)
                     {
                         await _couchbaseClient.EnqueueTransactionalUpsert(transaction, primaryKey, keyspace, modifiedDocument).ConfigureAwait(false);
-                        // Don't increment updateCount - actual persistence happens at commit
+                        updateCount++; // Count enqueued operations to match EF Core semantics
                     }
                     else
                     {
@@ -97,7 +97,7 @@ public class CouchbaseDatabaseWrapper : Database
                     if (transaction != null)
                     {
                         await _couchbaseClient.EnqueueTransactionalInsert(transaction, primaryKey, keyspace, newDocument).ConfigureAwait(false);
-                        // Don't increment updateCount - actual persistence happens at commit
+                        updateCount++; // Count enqueued operations to match EF Core semantics
                     }
                     else
                     {
