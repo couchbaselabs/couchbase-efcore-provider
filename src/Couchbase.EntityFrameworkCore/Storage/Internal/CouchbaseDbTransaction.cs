@@ -2,6 +2,7 @@ using System.Data;
 using System.Data.Common;
 using Couchbase.Client.Transactions.Config;
 using Couchbase.KeyValue;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
 namespace Couchbase.EntityFrameworkCore.Storage.Internal;
@@ -141,8 +142,9 @@ public class CouchbaseDbTransaction : DbTransaction
                             }
                             else
                             {
-                                throw new InvalidOperationException(
-                                    $"Document with id '{op.Id}' not found in collection during transaction remove.");
+                                throw new DbUpdateException(
+                                    $"Delete failed for key {op.Id} in collection {op.Collection.Name}: document not found",
+                                    new KeyNotFoundException($"Document with id '{op.Id}' not found"));
                             }
                             break;
                     }
