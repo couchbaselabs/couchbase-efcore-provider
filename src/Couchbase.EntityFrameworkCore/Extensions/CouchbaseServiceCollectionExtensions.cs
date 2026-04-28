@@ -82,7 +82,8 @@ public static class CouchbaseServiceCollectionExtensions
             .AddScoped<IQueryCompiler, CouchbaseQueryCompiler>()
             .AddSingleton<ISqlGenerationHelper, CouchbaseSqlGenerationHelper>()
             .AddScoped<IRelationalCommandDiagnosticsLogger, CouchbaseRelationalDiagnosticsCommandLogger>()
-            .AddScoped<IRelationalDatabaseCreator, CouchbaseDatabaseCreator>();
+            .AddScoped<IRelationalDatabaseCreator, CouchbaseDatabaseCreator>()
+            .AddScoped<CouchbaseSaveChangesInterceptor>();
 
         return serviceCollection;
     }
