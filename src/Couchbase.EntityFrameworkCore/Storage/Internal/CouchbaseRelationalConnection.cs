@@ -41,7 +41,7 @@ public class CouchbaseRelationalConnection : RelationalConnection, ICouchbaseCon
         
         // Get the interceptor from core options
         var coreOptionsExtension = dependencies.ContextOptions.Extensions.OfType<CoreOptionsExtension>().FirstOrDefault();
-        _saveChangesInterceptor = coreOptionsExtension?.Interceptors.OfType<CouchbaseSaveChangesInterceptor>().FirstOrDefault();
+        _saveChangesInterceptor = coreOptionsExtension?.Interceptors?.OfType<CouchbaseSaveChangesInterceptor>().FirstOrDefault();
     }
 
     /// <summary>

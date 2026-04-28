@@ -1,8 +1,9 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 using System.Data.Common;
 using Couchbase.EntityFrameworkCore.Extensions;
 using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.EntityFrameworkCore.Infrastructure.Internal;
+using Couchbase.EntityFrameworkCore.Storage.Internal;
 using Couchbase.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
@@ -23,6 +24,7 @@ public static class CouchbaseDbContextOptionsExtensions
     var extension = CouchbaseDbContextOptionsBuilderExtensions.GetOrCreateExtension(optionsBuilder, clusterOptions, couchbaseDbContextOptionsBuilder);
     ((IDbContextOptionsBuilderInfrastructure) optionsBuilder).AddOrUpdateExtension(extension);
     CouchbaseDbContextOptionsBuilderExtensions.ConfigureWarnings(optionsBuilder);
+    AddSaveChangesInterceptor(optionsBuilder);
 
     return optionsBuilder;
   }
@@ -39,8 +41,29 @@ public static class CouchbaseDbContextOptionsExtensions
     var extension = CouchbaseDbContextOptionsBuilderExtensions.GetOrCreateExtension(optionsBuilder, clusterOptions, couchbaseDbContextOptionsBuilder);
     ((IDbContextOptionsBuilderInfrastructure) optionsBuilder).AddOrUpdateExtension(extension);
     CouchbaseDbContextOptionsBuilderExtensions.ConfigureWarnings(optionsBuilder);
+    AddSaveChangesInterceptor(optionsBuilder);
 
     return optionsBuilder;
+  }
+  
+  private static void AddSaveChangesInterceptor(DbContextOptionsBuilder optionsBuilder)
+  {
+    var coreOptionsExtension = optionsBuilder.Options.FindExtension<CoreOptionsExtension>()
+                               ?? new CoreOptionsExtension();
+
+    // Check if interceptor is already added
+    var existingInterceptors = coreOptionsExtension.Interceptors ?? Enumerable.Empty<IInterceptor>();
+    if (existingInterceptors.OfType<CouchbaseSaveChangesInterceptor>().Any())
+    {
+      return;
+    }
+
+    // Add the interceptor
+    var interceptor = new CouchbaseSaveChangesInterceptor();
+    coreOptionsExtension = coreOptionsExtension.WithInterceptors(
+      existingInterceptors.Append(interceptor).ToArray());
+
+    ((IDbContextOptionsBuilderInfrastructure)optionsBuilder).AddOrUpdateExtension(coreOptionsExtension);
   }
   
   #nullable disable
