@@ -54,7 +54,7 @@ public static class CouchbaseDbContextOptionsBuilderExtensions
                                    ?? new CoreOptionsExtension();
 
         // Check if interceptor is already added
-        var existingInterceptors = coreOptionsExtension.Interceptors;
+        var existingInterceptors = coreOptionsExtension.Interceptors ?? Enumerable.Empty<IInterceptor>();
         if (existingInterceptors.OfType<CouchbaseSaveChangesInterceptor>().Any())
         {
             return;
