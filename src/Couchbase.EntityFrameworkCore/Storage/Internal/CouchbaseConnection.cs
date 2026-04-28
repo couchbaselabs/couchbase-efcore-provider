@@ -134,6 +134,7 @@ public class CouchbaseConnection : DbConnection
         }
 
         _state = ConnectionState.Closed;
+        _currentTransaction?.Dispose();
         _currentTransaction = null;
         _logger?.LogDebug("Couchbase connection closed");
     }
