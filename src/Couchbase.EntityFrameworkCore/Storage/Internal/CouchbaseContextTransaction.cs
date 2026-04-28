@@ -5,14 +5,28 @@ using Microsoft.EntityFrameworkCore.Storage;
 namespace Couchbase.EntityFrameworkCore.Storage.Internal;
 
 /// <summary>
+/// A Couchbase-specific transaction that provides access to the committed operation count
+/// and handles deferred change tracking.
+/// </summary>
+public interface ICouchbaseDbContextTransaction : IDbContextTransaction
+{
+    /// <summary>
+    /// Gets the number of operations that were successfully committed.
+    /// This value is only valid after Commit/CommitAsync completes successfully.
+    /// </summary>
+    int CommittedCount { get; }
+}
+
+/// <summary>
 /// Wraps an IDbContextTransaction to handle AcceptAllChanges on commit success
 /// when using Couchbase transactions with deferred change tracking.
 /// </summary>
-internal sealed class CouchbaseContextTransaction : IDbContextTransaction
+internal sealed class CouchbaseContextTransaction : ICouchbaseDbContextTransaction
 {
     private readonly IDbContextTransaction _inner;
     private readonly DbContext _context;
     private readonly CouchbaseSaveChangesInterceptor _interceptor;
+    private int _committedCount;
 
     public CouchbaseContextTransaction(
         IDbContextTransaction inner,
@@ -28,9 +42,13 @@ internal sealed class CouchbaseContextTransaction : IDbContextTransaction
 
     public Guid TransactionId => _inner.TransactionId;
 
+    /// <inheritdoc />
+    public int CommittedCount => _committedCount;
+
     public void Commit()
     {
         _inner.Commit();
+        _committedCount = GetUnderlyingTransactionCommittedCount();
         _interceptor.AcceptTrackedChanges(_context);
         _interceptor.EndTracking();
     }
@@ -38,6 +56,7 @@ internal sealed class CouchbaseContextTransaction : IDbContextTransaction
     public async Task CommitAsync(CancellationToken cancellationToken = default)
     {
         await _inner.CommitAsync(cancellationToken).ConfigureAwait(false);
+        _committedCount = GetUnderlyingTransactionCommittedCount();
         _interceptor.AcceptTrackedChanges(_context);
         _interceptor.EndTracking();
     }
@@ -66,5 +85,15 @@ internal sealed class CouchbaseContextTransaction : IDbContextTransaction
     {
         _interceptor.EndTracking();
         await _inner.DisposeAsync().ConfigureAwait(false);
+    }
+
+    private int GetUnderlyingTransactionCommittedCount()
+    {
+        var dbTransaction = _inner.GetDbTransaction();
+        if (dbTransaction is CouchbaseDbTransaction couchbaseTransaction)
+        {
+            return couchbaseTransaction.CommittedCount;
+        }
+        return 0;
     }
 }

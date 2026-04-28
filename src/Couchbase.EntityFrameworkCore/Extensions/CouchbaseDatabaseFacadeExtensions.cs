@@ -141,6 +141,28 @@ public static class CouchbaseDatabaseFacadeExtensions
             await couchbaseClient.Buckets.FlushBucketAsync(bucketName.ToString()).ConfigureAwait(false);
         }
     }
+
+    /// <summary>
+    /// Gets the number of operations committed in a Couchbase transaction.
+    /// </summary>
+    /// <param name="transaction">The transaction to get the count from.</param>
+    /// <returns>The number of committed operations, or 0 if not a Couchbase transaction.</returns>
+    public static int GetCommittedCount(this IDbContextTransaction transaction)
+    {
+        if (transaction is ICouchbaseDbContextTransaction couchbaseTransaction)
+        {
+            return couchbaseTransaction.CommittedCount;
+        }
+        
+        // Try to get from the underlying DbTransaction
+        var dbTransaction = transaction.GetDbTransaction();
+        if (dbTransaction is CouchbaseDbTransaction couchbaseDbTransaction)
+        {
+            return couchbaseDbTransaction.CommittedCount;
+        }
+
+        return 0;
+    }
 }
 
 /* ************************************************************
