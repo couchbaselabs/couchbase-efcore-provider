@@ -86,7 +86,10 @@ public class CouchbaseConnection : DbConnection
 
     protected override DbTransaction BeginDbTransaction(IsolationLevel isolationLevel)
     {
-        return BeginDbTransaction(isolationLevel, DurabilityLevel.Majority);
+        // Default to DurabilityLevel.None for compatibility with single-node development clusters.
+        // Production deployments should use BeginCouchbaseTransaction/BeginCouchbaseTransactionAsync
+        // with an explicit durability level (e.g., DurabilityLevel.Majority) for data safety.
+        return BeginDbTransaction(isolationLevel, DurabilityLevel.None);
     }
 
     /// <summary>
