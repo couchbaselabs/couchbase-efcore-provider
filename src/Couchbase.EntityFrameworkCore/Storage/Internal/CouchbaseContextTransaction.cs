@@ -44,18 +44,30 @@ internal sealed class CouchbaseContextTransaction : ICouchbaseDbContextTransacti
 
     public void Commit()
     {
-        _inner.Commit();
-        _committedCount = GetUnderlyingTransactionCommittedCount();
-        CouchbaseSaveChangesInterceptor.AcceptTrackedChanges(_context);
-        CouchbaseSaveChangesInterceptor.EndTracking(_context);
+        try
+        {
+            _inner.Commit();
+            _committedCount = GetUnderlyingTransactionCommittedCount();
+            CouchbaseSaveChangesInterceptor.AcceptTrackedChanges(_context);
+        }
+        finally
+        {
+            CouchbaseSaveChangesInterceptor.EndTracking(_context);
+        }
     }
 
     public async Task CommitAsync(CancellationToken cancellationToken = default)
     {
-        await _inner.CommitAsync(cancellationToken).ConfigureAwait(false);
-        _committedCount = GetUnderlyingTransactionCommittedCount();
-        CouchbaseSaveChangesInterceptor.AcceptTrackedChanges(_context);
-        CouchbaseSaveChangesInterceptor.EndTracking(_context);
+        try
+        {
+            await _inner.CommitAsync(cancellationToken);
+            _committedCount = GetUnderlyingTransactionCommittedCount();
+            CouchbaseSaveChangesInterceptor.AcceptTrackedChanges(_context);
+        }
+        finally
+        {
+            CouchbaseSaveChangesInterceptor.EndTracking(_context);
+        }
     }
 
     public void Rollback()
