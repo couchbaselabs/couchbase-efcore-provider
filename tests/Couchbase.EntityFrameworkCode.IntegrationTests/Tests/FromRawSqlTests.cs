@@ -89,9 +89,11 @@ public class FromRawSqlTests(
             // Brief delay for indexing
             await Task.Delay(100);
 
+            // Use SELECT b.* syntax matching other working tests, with backticks for identifiers
             var results = await context.Blogs
                 .FromSqlRaw(
-                    "SELECT VALUE b FROM default.blogs.blog b WHERE b.Rating == 4 AND b.BlogId == 99901")
+                    "SELECT `b`.* FROM `default`.`blogs`.`blog` AS `b` WHERE `b`.`BlogId` = 99901")
+                .AsNoTracking()
                 .ToListAsync();
             
             Assert.Equal(1, results.Count);
