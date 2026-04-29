@@ -3,14 +3,14 @@ using System.Data.Common;
 
 namespace Couchbase.EntityFrameworkCore.Storage.Internal;
 
-public class CouchbaseParameterCollection : DbParameterCollection
+public sealed class CouchbaseParameterCollection : DbParameterCollection
 {
     private readonly List<CouchbaseParameter> _parameters = new();
 
-    public virtual CouchbaseParameter AddWithValue(string? parameterName, object? value)
+    public CouchbaseParameter AddWithValue(string? parameterName, object? value)
         => Add(new CouchbaseParameter(parameterName, value));
 
-    public virtual CouchbaseParameter Add(CouchbaseParameter value)
+    public CouchbaseParameter Add(CouchbaseParameter value)
     {
         _parameters.Add(value);
 
@@ -78,7 +78,8 @@ public class CouchbaseParameterCollection : DbParameterCollection
         throw new NotImplementedException();
     }
 
-    public override int Count { get; }
+    public override int Count => _parameters.Count;
+
     public override object SyncRoot { get; }
 
     public override int IndexOf(string parameterName)

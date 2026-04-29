@@ -6,6 +6,7 @@ using Couchbase;
 using Couchbase.EntityFrameworkCore.Extensions;
 using Couchbase.Extensions.DependencyInjection;
 using Couchbase.EntityFrameworkCore.Utils;
+using Couchbase.Core.IO.Serializers;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Couchbase.EntityFrameworkCore.Infrastructure.Internal;
@@ -39,6 +40,7 @@ public class CouchbaseOptionsExtension: RelationalOptionsExtension
         {
             options.WithLogging(_couchbaseDbContextOptionsBuilder.ClusterOptions.Logging);
             options.WithConnectionString(_couchbaseDbContextOptionsBuilder.ClusterOptions.ConnectionString);
+            options.WithSerializer(SystemTextJsonSerializer.Create());
             if (_couchbaseDbContextOptionsBuilder.ClusterOptions.Authenticator == null)
             {
                 options.WithCredentials(_couchbaseDbContextOptionsBuilder.ClusterOptions.UserName, _couchbaseDbContextOptionsBuilder.ClusterOptions.Password);
