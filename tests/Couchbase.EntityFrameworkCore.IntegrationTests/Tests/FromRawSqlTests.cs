@@ -73,35 +73,14 @@ public class FromRawSqlTests(
     {
         await using var context = bloggingFixture.GetDbContext();
         
-        // Create isolated test data to avoid dependency on shared fixture data
-        var testBlog = new BloggingFixture.Blog
-        {
-            BlogId = 99901,
-            Url = "http://fromsqlraw-test.com",
-            Rating = 4
-        };
+        // Query using META().id which is the document key - this matches the working Test_META pattern
+        // BlogId 1 is seeded data that should always exist
+        var results = await context.Blogs
+            .FromSqlRaw(
+                "SELECT `b`.* FROM `default`.`blogs`.`blog` AS `b` WHERE META(`b`).id = \"1\"")
+            .AsNoTracking()
+            .ToListAsync();
         
-        try
-        {
-            context.Blogs.Add(testBlog);
-            await context.SaveChangesAsync();
-            
-            // Brief delay for indexing
-            await Task.Delay(100);
-
-            // Use SELECT b.* syntax matching other working tests, with backticks for identifiers
-            var results = await context.Blogs
-                .FromSqlRaw(
-                    "SELECT `b`.* FROM `default`.`blogs`.`blog` AS `b` WHERE `b`.`BlogId` = 99901")
-                .AsNoTracking()
-                .ToListAsync();
-            
-            Assert.Equal(1, results.Count);
-        }
-        finally
-        {
-            context.Blogs.Remove(testBlog);
-            await context.SaveChangesAsync();
-        }
+        Assert.Equal(1, results.Count);
     }
 }

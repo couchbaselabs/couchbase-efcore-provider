@@ -19,7 +19,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 		Directory.Packages.props = Directory.Packages.props
 	EndProjectSection
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Couchbase.EntityFrameworkCode.IntegrationTests", "tests\Couchbase.EntityFrameworkCode.IntegrationTests\Couchbase.EntityFrameworkCode.IntegrationTests.csproj", "{95C42FE6-57CE-4C55-AE87-B81FBE109887}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Couchbase.EntityFrameworkCore.IntegrationTests", "tests\Couchbase.EntityFrameworkCore.IntegrationTests\Couchbase.EntityFrameworkCore.IntegrationTests.csproj", "{95C42FE6-57CE-4C55-AE87-B81FBE109887}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AppHost", "tests\AppHost\AppHost.csproj", "{665A2EEE-CBE2-4822-8E6F-E240F7294B8F}"
 EndProject

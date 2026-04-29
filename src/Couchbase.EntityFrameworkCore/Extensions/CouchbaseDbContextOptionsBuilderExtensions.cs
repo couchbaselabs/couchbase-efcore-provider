@@ -1,7 +1,6 @@
 using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.EntityFrameworkCore.Infrastructure.Internal;
 using Couchbase.EntityFrameworkCore.Storage.Internal;
-using Couchbase.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -51,7 +50,7 @@ public static class CouchbaseDbContextOptionsBuilderExtensions
         return optionsBuilder;
     }
     
-    private static void AddSaveChangesInterceptor(DbContextOptionsBuilder optionsBuilder)
+    internal static void AddSaveChangesInterceptor(DbContextOptionsBuilder optionsBuilder)
     {
         var coreOptionsExtension = optionsBuilder.Options.FindExtension<CoreOptionsExtension>()
                                    ?? new CoreOptionsExtension();
