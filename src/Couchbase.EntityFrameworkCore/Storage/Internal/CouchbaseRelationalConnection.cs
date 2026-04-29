@@ -70,8 +70,9 @@ public class CouchbaseRelationalConnection : RelationalConnection, ICouchbaseCon
                 var dbTransaction = efTransaction.GetDbTransaction();
                 return dbTransaction as CouchbaseDbTransaction;
             }
-            catch
+            catch(Exception e)
             {
+                _logger.Logger.LogError("Could not get CouchbaseDbTransaction: {Exception}", e);
                 return null;
             }
         }
