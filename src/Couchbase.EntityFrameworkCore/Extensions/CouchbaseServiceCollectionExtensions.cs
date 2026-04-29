@@ -83,6 +83,8 @@ public static class CouchbaseServiceCollectionExtensions
             .AddSingleton<ISqlGenerationHelper, CouchbaseSqlGenerationHelper>()
             .AddScoped<IRelationalCommandDiagnosticsLogger, CouchbaseRelationalDiagnosticsCommandLogger>()
             .AddScoped<IRelationalDatabaseCreator, CouchbaseDatabaseCreator>();
+            // Note: CouchbaseSaveChangesInterceptor is registered via CoreOptionsExtension.Interceptors
+            // in AddSaveChangesInterceptor() to avoid duplicate registration
 
         return serviceCollection;
     }

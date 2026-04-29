@@ -97,6 +97,29 @@ public class CouchbaseClientWrapper : ICouchbaseClientWrapper
         return success;
     }
 
+    public async Task<ICouchbaseCollection> GetCollectionAsync(string keyspace)
+    {
+        return await GetCollection(keyspace).ConfigureAwait(false);
+    }
+
+    public async Task EnqueueTransactionalInsert<TEntity>(CouchbaseDbTransaction transaction, string id, string keyspace, TEntity entity)
+    {
+        var collection = await GetCollection(keyspace).ConfigureAwait(false);
+        transaction.EnqueueInsert(collection, id, entity!);
+    }
+
+    public async Task EnqueueTransactionalUpsert<TEntity>(CouchbaseDbTransaction transaction, string id, string keyspace, TEntity entity)
+    {
+        var collection = await GetCollection(keyspace).ConfigureAwait(false);
+        transaction.EnqueueUpsert(collection, id, entity!);
+    }
+
+    public async Task EnqueueTransactionalRemove(CouchbaseDbTransaction transaction, string id, string keyspace)
+    {
+        var collection = await GetCollection(keyspace).ConfigureAwait(false);
+        transaction.EnqueueRemove(collection, id);
+    }
+
     private async Task<ICouchbaseCollection> GetCollection(string keyspace)
     {
         if(_collectionCache.TryGetValue(keyspace, out var collection)) return collection;

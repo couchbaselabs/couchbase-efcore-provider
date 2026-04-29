@@ -72,11 +72,13 @@ public class FromRawSqlTests(
     public async Task Test_FromSqlRaw_Returns_Results()
     {
         await using var context = bloggingFixture.GetDbContext();
-        var rating = 4;
-
+        
+        // Query using META().id which is the document key - this matches the working Test_META pattern
+        // BlogId 1 is seeded data that should always exist
         var results = await context.Blogs
             .FromSqlRaw(
-                $"SELECT VALUE p FROM default.blogs.post p WHERE p.rating == {rating}")
+                "SELECT `b`.* FROM `default`.`blogs`.`blog` AS `b` WHERE META(`b`).id = \"1\"")
+            .AsNoTracking()
             .ToListAsync();
         
         Assert.Equal(1, results.Count);

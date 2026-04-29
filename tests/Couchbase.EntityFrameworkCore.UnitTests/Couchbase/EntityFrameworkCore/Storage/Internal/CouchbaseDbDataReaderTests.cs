@@ -50,7 +50,8 @@ namespace Couchbase.EntityFrameworkCore.UnitTests
         {
             // Arrange
             var mockQueryResult = new Mock<IQueryResult<object>>();
-            mockQueryResult.Setup(q => q.MetaData.Status).Returns(QueryStatus.Success);
+            var metaData = new QueryMetaData { Status = QueryStatus.Success };
+            mockQueryResult.Setup(q => q.MetaData).Returns(metaData);
 
             var reader = new CouchbaseDbDataReader<object>(mockQueryResult.Object);
 
@@ -66,7 +67,8 @@ namespace Couchbase.EntityFrameworkCore.UnitTests
         {
             // Arrange
             var mockQueryResult = new Mock<IQueryResult<object>>();
-            mockQueryResult.Setup(q => q.MetaData.Status).Returns(QueryStatus.Errors);
+            var metaData = new QueryMetaData { Status = QueryStatus.Errors };
+            mockQueryResult.Setup(q => q.MetaData).Returns(metaData);
 
             var reader = new CouchbaseDbDataReader<object>(mockQueryResult.Object);
 
