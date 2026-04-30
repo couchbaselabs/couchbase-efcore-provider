@@ -583,6 +583,95 @@ public class CouchbaseCommandTests
         Assert.Equal(int.MaxValue, result);
     }
 
+    [Fact]
+    public async Task ExecuteReaderAsync_WithCloseConnectionBehavior_ClosesConnectionWhenReaderClosed()
+    {
+        var mockQueryResult = CreateMockQueryResultWithRows<object>(new List<object>());
+        _mockCluster.Setup(c => c.QueryAsync<object>(It.IsAny<string>(), It.IsAny<QueryOptions>()))
+            .ReturnsAsync(mockQueryResult);
+
+        var mockConnection = new Mock<DbConnection>();
+        mockConnection.Setup(c => c.CloseAsync()).Returns(Task.CompletedTask);
+
+        var command = new CouchbaseCommand
+        {
+            Cluster = _mockCluster.Object,
+            Connection = mockConnection.Object,
+            CommandText = "SELECT * FROM bucket"
+        };
+
+        var reader = await command.ExecuteReaderAsync(CommandBehavior.CloseConnection);
+        await reader.CloseAsync();
+
+        mockConnection.Verify(c => c.CloseAsync(), Times.Once);
+    }
+
+    [Fact]
+    public async Task ExecuteReaderAsync_WithCloseConnectionBehavior_ClosesConnectionWhenReaderDisposed()
+    {
+        var mockQueryResult = CreateMockQueryResultWithRows<object>(new List<object>());
+        _mockCluster.Setup(c => c.QueryAsync<object>(It.IsAny<string>(), It.IsAny<QueryOptions>()))
+            .ReturnsAsync(mockQueryResult);
+
+        var mockConnection = new Mock<DbConnection>();
+        mockConnection.Setup(c => c.CloseAsync()).Returns(Task.CompletedTask);
+
+        var command = new CouchbaseCommand
+        {
+            Cluster = _mockCluster.Object,
+            Connection = mockConnection.Object,
+            CommandText = "SELECT * FROM bucket"
+        };
+
+        var reader = await command.ExecuteReaderAsync(CommandBehavior.CloseConnection);
+        await reader.DisposeAsync();
+
+        mockConnection.Verify(c => c.CloseAsync(), Times.Once);
+    }
+
+    [Fact]
+    public async Task ExecuteReaderAsync_WithDefaultBehavior_DoesNotCloseConnection()
+    {
+        var mockQueryResult = CreateMockQueryResultWithRows<object>(new List<object>());
+        _mockCluster.Setup(c => c.QueryAsync<object>(It.IsAny<string>(), It.IsAny<QueryOptions>()))
+            .ReturnsAsync(mockQueryResult);
+
+        var mockConnection = new Mock<DbConnection>();
+
+        var command = new CouchbaseCommand
+        {
+            Cluster = _mockCluster.Object,
+            Connection = mockConnection.Object,
+            CommandText = "SELECT * FROM bucket"
+        };
+
+        var reader = await command.ExecuteReaderAsync(CommandBehavior.Default);
+        await reader.CloseAsync();
+
+        mockConnection.Verify(c => c.Close(), Times.Never);
+        mockConnection.Verify(c => c.CloseAsync(), Times.Never);
+    }
+
+    [Fact]
+    public async Task ExecuteReaderAsync_WithNoConnection_DoesNotThrowOnClose()
+    {
+        var mockQueryResult = CreateMockQueryResultWithRows<object>(new List<object>());
+        _mockCluster.Setup(c => c.QueryAsync<object>(It.IsAny<string>(), It.IsAny<QueryOptions>()))
+            .ReturnsAsync(mockQueryResult);
+
+        var command = new CouchbaseCommand
+        {
+            Cluster = _mockCluster.Object,
+            CommandText = "SELECT * FROM bucket"
+        };
+
+        var reader = await command.ExecuteReaderAsync(CommandBehavior.CloseConnection);
+
+        // Should not throw even with CloseConnection and no connection
+        var exception = await Record.ExceptionAsync(async () => await reader.CloseAsync());
+        Assert.Null(exception);
+    }
+
     private static IQueryResult<T> CreateMockQueryResultWithRows<T>(List<T> rows)
     {
         var mockResult = new Mock<IQueryResult<T>>();

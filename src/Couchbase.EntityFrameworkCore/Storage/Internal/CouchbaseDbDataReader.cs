@@ -9,6 +9,8 @@ namespace Couchbase.EntityFrameworkCore.Storage.Internal;
 public class CouchbaseDbDataReader<T> : DbDataReader
 {
     private readonly IQueryResult<T> _queryResult;
+    private readonly DbConnection? _connection;
+    private readonly CommandBehavior _behavior;
     private IAsyncEnumerator<T>? _enumerator;
     private CancellationToken _cancellationToken;
     private T? _currentRow;
@@ -22,8 +24,15 @@ public class CouchbaseDbDataReader<T> : DbDataReader
     private bool _schemaInitialized;
 
     public CouchbaseDbDataReader(IQueryResult<T> queryResult)
+        : this(queryResult, null, CommandBehavior.Default)
+    {
+    }
+
+    public CouchbaseDbDataReader(IQueryResult<T> queryResult, DbConnection? connection, CommandBehavior behavior)
     {
         _queryResult = queryResult ?? throw new ArgumentNullException(nameof(queryResult));
+        _connection = connection;
+        _behavior = behavior;
     }
 
     public override int FieldCount
@@ -143,6 +152,12 @@ public class CouchbaseDbDataReader<T> : DbDataReader
         {
             _isClosed = true;
             _enumerator?.DisposeAsync().AsTask().GetAwaiter().GetResult();
+
+            // Honor CloseConnection behavior
+            if ((_behavior & CommandBehavior.CloseConnection) != 0 && _connection != null)
+            {
+                _connection.Close();
+            }
         }
     }
 
@@ -154,6 +169,12 @@ public class CouchbaseDbDataReader<T> : DbDataReader
             if (_enumerator != null)
             {
                 await _enumerator.DisposeAsync().ConfigureAwait(false);
+            }
+
+            // Honor CloseConnection behavior
+            if ((_behavior & CommandBehavior.CloseConnection) != 0 && _connection != null)
+            {
+                await _connection.CloseAsync().ConfigureAwait(false);
             }
         }
     }

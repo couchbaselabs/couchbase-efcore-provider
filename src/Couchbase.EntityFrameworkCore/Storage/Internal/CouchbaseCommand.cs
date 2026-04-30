@@ -190,7 +190,8 @@ public class CouchbaseCommand : DbCommand
         var cluster = ResolveCluster();
         var queryResult = await cluster.QueryAsync<object>(CommandText, options).ConfigureAwait(false);
 
-        return new CouchbaseDbDataReader<object>(queryResult);
+        // Pass connection and behavior to reader so it can honor CloseConnection
+        return new CouchbaseDbDataReader<object>(queryResult, DbConnection, behavior);
     }
 
     protected override void Dispose(bool disposing)
