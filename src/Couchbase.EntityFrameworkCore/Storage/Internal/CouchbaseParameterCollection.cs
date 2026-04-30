@@ -8,8 +8,19 @@ public sealed class CouchbaseParameterCollection : DbParameterCollection
     private readonly List<CouchbaseParameter> _parameters = new();
 
     public CouchbaseParameter AddWithValue(string? parameterName, object? value)
-        => Add(new CouchbaseParameter(parameterName, value));
+    {
+        if (parameterName is null)
+        {
+            throw new ArgumentNullException(nameof(parameterName));
+        }
 
+        if (parameterName.Length == 0)
+        {
+            throw new ArgumentException("Parameter name cannot be empty.", nameof(parameterName));
+        }
+
+        return Add(new CouchbaseParameter(parameterName, value));
+    }
     public CouchbaseParameter Add(CouchbaseParameter value)
     {
         _parameters.Add(value);
