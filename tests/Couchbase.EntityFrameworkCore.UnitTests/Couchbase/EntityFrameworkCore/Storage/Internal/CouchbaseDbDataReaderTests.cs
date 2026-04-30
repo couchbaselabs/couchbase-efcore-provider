@@ -872,6 +872,134 @@ public class CouchbaseDbDataReaderTests
 
     #endregion
 
+    #region Overflow Tests
+
+    [Fact]
+    public async Task GetByte_WithValueGreaterThan255_ThrowsOverflowException()
+    {
+        var rows = new List<JsonElement> { JsonDocument.Parse("{\"val\": 256}").RootElement };
+        var reader = CreateReader(rows);
+
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Throws<OverflowException>(() => reader.GetByte(0));
+    }
+
+    [Fact]
+    public async Task GetByte_WithNegativeValue_ThrowsOverflowException()
+    {
+        var rows = new List<JsonElement> { JsonDocument.Parse("{\"val\": -1}").RootElement };
+        var reader = CreateReader(rows);
+
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Throws<OverflowException>(() => reader.GetByte(0));
+    }
+
+    [Fact]
+    public async Task GetByte_WithValidValue_ReturnsValue()
+    {
+        var rows = new List<JsonElement> { JsonDocument.Parse("{\"val\": 255}").RootElement };
+        var reader = CreateReader(rows);
+
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Equal((byte)255, reader.GetByte(0));
+    }
+
+    [Fact]
+    public async Task GetInt16_WithValueGreaterThanMaxShort_ThrowsOverflowException()
+    {
+        var rows = new List<JsonElement> { JsonDocument.Parse("{\"val\": 32768}").RootElement };
+        var reader = CreateReader(rows);
+
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Throws<OverflowException>(() => reader.GetInt16(0));
+    }
+
+    [Fact]
+    public async Task GetInt16_WithValueLessThanMinShort_ThrowsOverflowException()
+    {
+        var rows = new List<JsonElement> { JsonDocument.Parse("{\"val\": -32769}").RootElement };
+        var reader = CreateReader(rows);
+
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Throws<OverflowException>(() => reader.GetInt16(0));
+    }
+
+    [Fact]
+    public async Task GetInt16_WithValidValue_ReturnsValue()
+    {
+        var rows = new List<JsonElement> { JsonDocument.Parse("{\"val\": 32767}").RootElement };
+        var reader = CreateReader(rows);
+
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Equal((short)32767, reader.GetInt16(0));
+    }
+
+    [Fact]
+    public async Task GetInt32_WithValueGreaterThanMaxInt_ThrowsOverflowException()
+    {
+        var rows = new List<JsonElement> { JsonDocument.Parse("{\"val\": 2147483648}").RootElement };
+        var reader = CreateReader(rows);
+
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Throws<OverflowException>(() => reader.GetInt32(0));
+    }
+
+    [Fact]
+    public async Task GetInt32_WithValueLessThanMinInt_ThrowsOverflowException()
+    {
+        var rows = new List<JsonElement> { JsonDocument.Parse("{\"val\": -2147483649}").RootElement };
+        var reader = CreateReader(rows);
+
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Throws<OverflowException>(() => reader.GetInt32(0));
+    }
+
+    [Fact]
+    public async Task GetInt32_WithValidValue_ReturnsValue()
+    {
+        var rows = new List<JsonElement> { JsonDocument.Parse("{\"val\": 2147483647}").RootElement };
+        var reader = CreateReader(rows);
+
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Equal(2147483647, reader.GetInt32(0));
+    }
+
+    [Fact]
+    public async Task GetFloat_WithValueExceedingFloatRange_ReturnsInfinity()
+    {
+        // Values exceeding float range return infinity rather than throwing
+        var rows = new List<JsonElement> { JsonDocument.Parse("{\"val\": 3.5E+38}").RootElement };
+        var reader = CreateReader(rows);
+
+        await reader.ReadAsync(CancellationToken.None);
+
+        var result = reader.GetFloat(0);
+        Assert.True(float.IsInfinity(result));
+    }
+
+    [Fact]
+    public async Task GetDecimal_WithValueExceedingDecimalRange_ThrowsOverflowException()
+    {
+        // double.MaxValue exceeds decimal range
+        var rows = new List<JsonElement> { JsonDocument.Parse("{\"val\": 1.8E+308}").RootElement };
+        var reader = CreateReader(rows);
+
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Throws<OverflowException>(() => reader.GetDecimal(0));
+    }
+
+    #endregion
+
     private static CouchbaseDbDataReader<JsonElement> CreateReader(List<JsonElement> rows)
     {
         var mockQueryResult = new Mock<IQueryResult<JsonElement>>();

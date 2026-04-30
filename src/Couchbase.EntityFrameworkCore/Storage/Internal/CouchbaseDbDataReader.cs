@@ -245,8 +245,8 @@ public class CouchbaseDbDataReader<T> : DbDataReader
         return value switch
         {
             byte b => b,
-            int i => (byte)i,
-            long l => (byte)l,
+            int i => Convert.ToByte(i),
+            long l => Convert.ToByte(l),
             JsonElement je when je.ValueKind == JsonValueKind.Number => je.GetByte(),
             JsonElement je => throw new InvalidCastException($"Cannot convert JsonElement of kind {je.ValueKind} to Byte."),
             _ => Convert.ToByte(value)
@@ -319,9 +319,9 @@ public class CouchbaseDbDataReader<T> : DbDataReader
         return value switch
         {
             decimal d => d,
-            double dbl => (decimal)dbl,
-            long l => l,
-            int i => i,
+            double dbl => Convert.ToDecimal(dbl),
+            long l => Convert.ToDecimal(l),
+            int i => Convert.ToDecimal(i),
             JsonElement je when je.ValueKind == JsonValueKind.Number => je.GetDecimal(),
             JsonElement je => throw new InvalidCastException($"Cannot convert JsonElement of kind {je.ValueKind} to Decimal."),
             _ => Convert.ToDecimal(value)
@@ -334,8 +334,8 @@ public class CouchbaseDbDataReader<T> : DbDataReader
         return value switch
         {
             double d => d,
-            long l => l,
-            int i => i,
+            long l => Convert.ToDouble(l),
+            int i => Convert.ToDouble(i),
             JsonElement je when je.ValueKind == JsonValueKind.Number => je.GetDouble(),
             JsonElement je => throw new InvalidCastException($"Cannot convert JsonElement of kind {je.ValueKind} to Double."),
             _ => Convert.ToDouble(value)
@@ -348,9 +348,9 @@ public class CouchbaseDbDataReader<T> : DbDataReader
         return value switch
         {
             float f => f,
-            double d => (float)d,
-            long l => l,
-            int i => i,
+            double d => Convert.ToSingle(d),
+            long l => Convert.ToSingle(l),
+            int i => Convert.ToSingle(i),
             JsonElement je when je.ValueKind == JsonValueKind.Number => je.GetSingle(),
             JsonElement je => throw new InvalidCastException($"Cannot convert JsonElement of kind {je.ValueKind} to Single."),
             _ => Convert.ToSingle(value)
@@ -375,8 +375,8 @@ public class CouchbaseDbDataReader<T> : DbDataReader
         return value switch
         {
             short s => s,
-            int i => (short)i,
-            long l => (short)l,
+            int i => Convert.ToInt16(i),
+            long l => Convert.ToInt16(l),
             JsonElement je when je.ValueKind == JsonValueKind.Number => je.GetInt16(),
             JsonElement je => throw new InvalidCastException($"Cannot convert JsonElement of kind {je.ValueKind} to Int16."),
             _ => Convert.ToInt16(value)
@@ -389,7 +389,7 @@ public class CouchbaseDbDataReader<T> : DbDataReader
         return value switch
         {
             int i => i,
-            long l => (int)l,
+            long l => Convert.ToInt32(l),
             JsonElement je when je.ValueKind == JsonValueKind.Number => je.GetInt32(),
             JsonElement je => throw new InvalidCastException($"Cannot convert JsonElement of kind {je.ValueKind} to Int32."),
             _ => Convert.ToInt32(value)
