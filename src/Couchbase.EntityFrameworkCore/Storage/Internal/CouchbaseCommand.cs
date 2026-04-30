@@ -1,5 +1,6 @@
 using System.Data;
 using System.Data.Common;
+using System.Text.Json;
 using Couchbase.Query;
 using Couchbase.EntityFrameworkCore.Internal;
 
@@ -7,52 +8,152 @@ namespace Couchbase.EntityFrameworkCore.Storage.Internal;
 
 public class CouchbaseCommand : DbCommand
 {
+    private CancellationTokenSource? _cancellationTokenSource;
+    private string _commandText = string.Empty;
+
     public new virtual CouchbaseParameterCollection Parameters
         => field ??= new CouchbaseParameterCollection();
 
-    internal ICluster Cluster { get; set; }
+    internal ICluster? Cluster { get; set; }
+
+    public override string CommandText
+    {
+        get => _commandText;
+        set => _commandText = value ?? string.Empty;
+    }
+
+    public override int CommandTimeout { get; set; }
+
+    public override CommandType CommandType { get; set; } = CommandType.Text;
+
+    public override UpdateRowSource UpdatedRowSource { get; set; } = UpdateRowSource.None;
+
+    protected override DbConnection? DbConnection { get; set; }
+
+    protected override DbParameterCollection DbParameterCollection => Parameters;
+
+    protected override DbTransaction? DbTransaction { get; set; }
+
+    public override bool DesignTimeVisible { get; set; }
 
     public override void Cancel()
     {
-        throw new NotImplementedException();
-    }
-
-    public override int ExecuteNonQuery()
-    {
-        return AsyncHelper.RunSync(async ValueTask<int> (state) =>
-            {
-                var options = new QueryOptions();
-                foreach (var dbParameter in state.Parameters)
-                {
-                    if (dbParameter is CouchbaseParameter parameter)
-                    {
-                        options.Parameter(parameter.ParameterName, parameter.Value!);
-                    }
-                }
-
-                var result = await state.Cluster.QueryAsync<int>(state.CommandText, options).ConfigureAwait(false);
-                return await result.Rows.CountAsync(CancellationToken.None).ConfigureAwait(false);
-            }, this);
-    }
-
-    public override object? ExecuteScalar()
-    {
-        throw new NotImplementedException();
+        _cancellationTokenSource?.Cancel();
     }
 
     public override void Prepare()
     {
-        throw new NotImplementedException();
+        // No-op: Couchbase N1QL auto-prepares queries.
+        // The ADO.NET contract treats Prepare as a hint, not a requirement.
     }
 
-    public override string CommandText { get; set; }
-    public override int CommandTimeout { get; set; }
-    public override CommandType CommandType { get; set; }
-    public override UpdateRowSource UpdatedRowSource { get; set; }
-    protected override DbConnection? DbConnection { get; set; }
-    protected override DbParameterCollection DbParameterCollection => Parameters;
-    protected override DbTransaction? DbTransaction { get; set; }
-    public override bool DesignTimeVisible { get; set; }
+    public override Task PrepareAsync(CancellationToken cancellationToken = default)
+    {
+        // No-op for Couchbase
+        return Task.CompletedTask;
+    }
+
+    public override int ExecuteNonQuery()
+    {
+        return AsyncHelper.RunSync(
+            static state => state.ExecuteNonQueryAsync(CancellationToken.None),
+            this);
+    }
+
+    public override async Task<int> ExecuteNonQueryAsync(CancellationToken cancellationToken)
+    {
+        using var linkedCts = CreateLinkedTokenSource(cancellationToken);
+        var options = BuildQueryOptions(linkedCts.Token);
+
+        var cluster = ResolveCluster();
+        var result = await cluster.QueryAsync<object>(CommandText, options).ConfigureAwait(false);
+
+        // Drain all rows to ensure query completes
+        await foreach (var _ in result.Rows.WithCancellation(linkedCts.Token).ConfigureAwait(false))
+        {
+        }
+
+        // Return mutation count from metrics if available, otherwise -1
+        var metrics = result.MetaData?.Metrics;
+        if (metrics != null)
+        {
+            return (int)metrics.MutationCount;
+        }
+
+        return -1;
+    }
+
+    public override object? ExecuteScalar()
+    {
+        return AsyncHelper.RunSync(
+            static state => state.ExecuteScalarAsync(CancellationToken.None),
+            this);
+    }
+
+    public override async Task<object?> ExecuteScalarAsync(CancellationToken cancellationToken)
+    {
+        using var linkedCts = CreateLinkedTokenSource(cancellationToken);
+        var options = BuildQueryOptions(linkedCts.Token);
+
+        var cluster = ResolveCluster();
+        var result = await cluster.QueryAsync<JsonElement>(CommandText, options).ConfigureAwait(false);
+
+        await foreach (var row in result.Rows.WithCancellation(linkedCts.Token).ConfigureAwait(false))
+        {
+            return ExtractScalarValue(row);
+        }
+
+        return null;
+    }
+
+    private static object? ExtractScalarValue(JsonElement element)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Null:
+            case JsonValueKind.Undefined:
+                return DBNull.Value;
+
+            case JsonValueKind.True:
+                return true;
+
+            case JsonValueKind.False:
+                return false;
+
+            case JsonValueKind.String:
+                return element.GetString();
+
+            case JsonValueKind.Number:
+                if (element.TryGetInt64(out var longVal))
+                    return longVal;
+                return element.GetDouble();
+
+            case JsonValueKind.Object:
+                // SELECT col AS x -> extract first property value
+                using (var enumerator = element.EnumerateObject())
+                {
+                    if (enumerator.MoveNext())
+                    {
+                        return ExtractScalarValue(enumerator.Current.Value);
+                    }
+                }
+                return null;
+
+            case JsonValueKind.Array:
+                // Return first element if array
+                using (var enumerator = element.EnumerateArray())
+                {
+                    if (enumerator.MoveNext())
+                    {
+                        return ExtractScalarValue(enumerator.Current);
+                    }
+                }
+                return null;
+
+            default:
+                return null;
+        }
+    }
 
     protected override DbParameter CreateDbParameter()
     {
@@ -61,15 +162,87 @@ public class CouchbaseCommand : DbCommand
 
     protected override DbDataReader ExecuteDbDataReader(CommandBehavior behavior)
     {
-        var options = new QueryOptions();
-        foreach (var dbParameter in Parameters)
+        return AsyncHelper.RunSync(
+            static state => state.Command.ExecuteDbDataReaderAsync(state.Behavior, CancellationToken.None),
+            (Command: this, Behavior: behavior));
+    }
+
+    protected override async Task<DbDataReader> ExecuteDbDataReaderAsync(
+        CommandBehavior behavior,
+        CancellationToken cancellationToken)
+    {
+        using var linkedCts = CreateLinkedTokenSource(cancellationToken);
+        var options = BuildQueryOptions(linkedCts.Token);
+
+        var cluster = ResolveCluster();
+        var queryResult = await cluster.QueryAsync<object>(CommandText, options).ConfigureAwait(false);
+
+        return new CouchbaseDbDataReader<object>(queryResult);
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
         {
-            var parameter = (CouchbaseParameter)dbParameter;
-            options.Parameter(parameter.ParameterName, parameter.Value);
+            _cancellationTokenSource?.Dispose();
+            _cancellationTokenSource = null;
         }
 
-        var queryResult = Cluster.QueryAsync<object>(CommandText, options).GetAwaiter().GetResult();
-        return new CouchbaseDbDataReader<object>(queryResult);
+        base.Dispose(disposing);
+    }
+
+    public override async ValueTask DisposeAsync()
+    {
+        _cancellationTokenSource?.Dispose();
+        _cancellationTokenSource = null;
+
+        await base.DisposeAsync().ConfigureAwait(false);
+    }
+
+    private ICluster ResolveCluster()
+    {
+        if (Cluster != null)
+        {
+            return Cluster;
+        }
+
+        if (DbConnection is CouchbaseConnection couchbaseConnection && couchbaseConnection.Cluster != null)
+        {
+            return couchbaseConnection.Cluster;
+        }
+
+        throw new InvalidOperationException(
+            "No Couchbase cluster is available. Ensure the connection is open or the Cluster property is set.");
+    }
+
+    private QueryOptions BuildQueryOptions(CancellationToken cancellationToken)
+    {
+        var options = new QueryOptions().CancellationToken(cancellationToken);
+
+        if (CommandTimeout > 0)
+        {
+            options.Timeout(TimeSpan.FromSeconds(CommandTimeout));
+        }
+
+        foreach (var dbParameter in Parameters)
+        {
+            if (dbParameter is CouchbaseParameter parameter)
+            {
+                options.Parameter(parameter.ParameterName, parameter.Value!);
+            }
+        }
+
+        return options;
+    }
+
+    private CancellationTokenSource CreateLinkedTokenSource(CancellationToken externalToken)
+    {
+        _cancellationTokenSource?.Dispose();
+        _cancellationTokenSource = new CancellationTokenSource();
+
+        return externalToken.CanBeCanceled
+            ? CancellationTokenSource.CreateLinkedTokenSource(_cancellationTokenSource.Token, externalToken)
+            : _cancellationTokenSource;
     }
 }
 
