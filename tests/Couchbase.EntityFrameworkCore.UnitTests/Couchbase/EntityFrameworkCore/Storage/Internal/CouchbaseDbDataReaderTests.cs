@@ -408,29 +408,57 @@ public class CouchbaseDbDataReaderTests
     }
 
     [Fact]
-    public void HasRows_WithSuccessStatus_ReturnsTrue()
+    public void HasRows_WithRows_ReturnsTrue()
     {
-        var mockQueryResult = new Mock<IQueryResult<JsonElement>>();
-        var metaData = new QueryMetaData { Status = QueryStatus.Success };
-        mockQueryResult.Setup(q => q.MetaData).Returns(metaData);
-        mockQueryResult.Setup(q => q.Rows).Returns(new List<JsonElement>().ToAsyncEnumerable());
-
-        var reader = new CouchbaseDbDataReader<JsonElement>(mockQueryResult.Object);
+        var rows = new List<JsonElement> { JsonDocument.Parse("{\"id\": 1}").RootElement };
+        var reader = CreateReader(rows);
 
         Assert.True(reader.HasRows);
     }
 
     [Fact]
-    public void HasRows_WithErrorStatus_ReturnsFalse()
+    public void HasRows_WithNoRows_ReturnsFalse()
     {
-        var mockQueryResult = new Mock<IQueryResult<JsonElement>>();
-        var metaData = new QueryMetaData { Status = QueryStatus.Errors };
-        mockQueryResult.Setup(q => q.MetaData).Returns(metaData);
-        mockQueryResult.Setup(q => q.Rows).Returns(new List<JsonElement>().ToAsyncEnumerable());
-
-        var reader = new CouchbaseDbDataReader<JsonElement>(mockQueryResult.Object);
+        var reader = CreateReader(new List<JsonElement>());
 
         Assert.False(reader.HasRows);
+    }
+
+    [Fact]
+    public async Task HasRows_AfterReadingAllRows_StillReturnsTrue()
+    {
+        var rows = new List<JsonElement> { JsonDocument.Parse("{\"id\": 1}").RootElement };
+        var reader = CreateReader(rows);
+
+        // Read and exhaust all rows
+        Assert.True(await reader.ReadAsync(CancellationToken.None));
+        Assert.False(await reader.ReadAsync(CancellationToken.None));
+
+        // HasRows should still be true (it reflects whether there were rows, not current state)
+        Assert.True(reader.HasRows);
+    }
+
+    [Fact]
+    public async Task HasRows_DoesNotSkipFirstRow()
+    {
+        var rows = new List<JsonElement>
+        {
+            JsonDocument.Parse("{\"id\": 1}").RootElement,
+            JsonDocument.Parse("{\"id\": 2}").RootElement
+        };
+        var reader = CreateReader(rows);
+
+        // Check HasRows first
+        Assert.True(reader.HasRows);
+
+        // First row should still be readable
+        Assert.True(await reader.ReadAsync(CancellationToken.None));
+        Assert.Equal(1L, reader.GetInt64(0));
+
+        Assert.True(await reader.ReadAsync(CancellationToken.None));
+        Assert.Equal(2L, reader.GetInt64(0));
+
+        Assert.False(await reader.ReadAsync(CancellationToken.None));
     }
 
     [Fact]
