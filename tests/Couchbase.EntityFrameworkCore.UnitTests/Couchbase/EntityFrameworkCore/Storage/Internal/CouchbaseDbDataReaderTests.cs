@@ -1035,7 +1035,21 @@ public class CouchbaseDbDataReaderTests
         await reader.ReadAsync(CancellationToken.None);
         var buffer = new byte[10];
 
-        Assert.Throws<ArgumentOutOfRangeException>(() => reader.GetBytes(0, 0, buffer, 10, 5));
+        Assert.Throws<ArgumentOutOfRangeException>(() => reader.GetBytes(0, 0, buffer, 11, 5));
+    }
+
+    [Fact]
+    public async Task GetBytes_WithBufferOffsetAtEndAndZeroLength_ReturnsZero()
+    {
+        var rows = new List<JsonElement> { JsonDocument.Parse("{\"data\": \"SGVsbG8=\"}").RootElement };
+        var reader = CreateReader(rows);
+
+        await reader.ReadAsync(CancellationToken.None);
+        var buffer = new byte[10];
+
+        // bufferOffset == buffer.Length is valid when length is 0
+        var result = reader.GetBytes(0, 0, buffer, 10, 0);
+        Assert.Equal(0, result);
     }
 
     [Fact]
@@ -1127,7 +1141,21 @@ public class CouchbaseDbDataReaderTests
         await reader.ReadAsync(CancellationToken.None);
         var buffer = new char[10];
 
-        Assert.Throws<ArgumentOutOfRangeException>(() => reader.GetChars(0, 0, buffer, 10, 5));
+        Assert.Throws<ArgumentOutOfRangeException>(() => reader.GetChars(0, 0, buffer, 11, 5));
+    }
+
+    [Fact]
+    public async Task GetChars_WithBufferOffsetAtEndAndZeroLength_ReturnsZero()
+    {
+        var rows = new List<JsonElement> { JsonDocument.Parse("{\"text\": \"Hello\"}").RootElement };
+        var reader = CreateReader(rows);
+
+        await reader.ReadAsync(CancellationToken.None);
+        var buffer = new char[10];
+
+        // bufferOffset == buffer.Length is valid when length is 0
+        var result = reader.GetChars(0, 0, buffer, 10, 0);
+        Assert.Equal(0, result);
     }
 
     [Fact]
