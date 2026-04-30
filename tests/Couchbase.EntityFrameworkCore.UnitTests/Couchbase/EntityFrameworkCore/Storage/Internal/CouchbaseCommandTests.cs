@@ -586,7 +586,11 @@ public class CouchbaseCommandTests
     private static IQueryResult<T> CreateMockQueryResultWithRows<T>(List<T> rows)
     {
         var mockResult = new Mock<IQueryResult<T>>();
-        mockResult.Setup(r => r.Rows).Returns(rows.ToAsyncEnumerable());
+        var asyncEnumerable = rows.ToAsyncEnumerable();
+        mockResult.Setup(r => r.Rows).Returns(asyncEnumerable);
+        mockResult.As<IAsyncEnumerable<T>>()
+            .Setup(r => r.GetAsyncEnumerator(It.IsAny<CancellationToken>()))
+            .Returns(() => asyncEnumerable.GetAsyncEnumerator());
         mockResult.Setup(r => r.MetaData).Returns((QueryMetaData?)null);
 
         return mockResult.Object;
@@ -595,7 +599,11 @@ public class CouchbaseCommandTests
     private static IQueryResult<T> CreateMockQueryResultWithMetrics<T>(List<T> rows, uint mutationCount)
     {
         var mockResult = new Mock<IQueryResult<T>>();
-        mockResult.Setup(r => r.Rows).Returns(rows.ToAsyncEnumerable());
+        var asyncEnumerable = rows.ToAsyncEnumerable();
+        mockResult.Setup(r => r.Rows).Returns(asyncEnumerable);
+        mockResult.As<IAsyncEnumerable<T>>()
+            .Setup(r => r.GetAsyncEnumerator(It.IsAny<CancellationToken>()))
+            .Returns(() => asyncEnumerable.GetAsyncEnumerator());
 
         var metrics = new QueryMetrics
         {
