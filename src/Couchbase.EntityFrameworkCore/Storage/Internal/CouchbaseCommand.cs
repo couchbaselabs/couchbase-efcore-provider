@@ -242,7 +242,7 @@ public class CouchbaseCommand : DbCommand
 
         return externalToken.CanBeCanceled
             ? CancellationTokenSource.CreateLinkedTokenSource(_cancellationTokenSource.Token, externalToken)
-            : _cancellationTokenSource;
+            : CancellationTokenSource.CreateLinkedTokenSource(_cancellationTokenSource.Token);
     }
 }
 
