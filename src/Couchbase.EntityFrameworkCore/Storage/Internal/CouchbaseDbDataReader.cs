@@ -15,6 +15,7 @@ public class CouchbaseDbDataReader<T> : DbDataReader
     private T? _bufferedRow;
     private bool _hasBufferedRow;
     private bool _hasCurrentRow;
+    private bool? _hasRows;
     private List<string>? _fieldNames;
     private Dictionary<string, int>? _fieldOrdinals;
     private bool _isClosed;
@@ -36,7 +37,20 @@ public class CouchbaseDbDataReader<T> : DbDataReader
 
     public override int RecordsAffected => -1;
 
-    public override bool HasRows => _queryResult.MetaData?.Status == QueryStatus.Success;
+    public override bool HasRows
+    {
+        get
+        {
+            if (_hasRows.HasValue)
+            {
+                return _hasRows.Value;
+            }
+
+            // Peek at first row to determine if there are any rows
+            EnsureFieldInfo();
+            return _hasRows ?? false;
+        }
+    }
 
     public override bool IsClosed => _isClosed;
 
@@ -77,6 +91,10 @@ public class CouchbaseDbDataReader<T> : DbDataReader
         {
             _currentRow = _enumerator.Current;
             _hasCurrentRow = true;
+
+            // Set _hasRows on first successful read if not already set
+            _hasRows ??= true;
+
             if (!_schemaInitialized)
             {
                 _schemaInitialized = true;
@@ -87,6 +105,9 @@ public class CouchbaseDbDataReader<T> : DbDataReader
         {
             _currentRow = default;
             _hasCurrentRow = false;
+
+            // If this is the first read and it returned false, there are no rows
+            _hasRows ??= false;
         }
 
         return hasMore;
@@ -551,6 +572,7 @@ public class CouchbaseDbDataReader<T> : DbDataReader
     /// <summary>
     /// Ensures field metadata is available, reading and buffering the first row if necessary.
     /// The buffered row will be returned on the next explicit Read() call, so no data is lost.
+    /// Also sets _hasRows to indicate whether at least one row exists.
     /// </summary>
     private void EnsureFieldInfo()
     {
@@ -564,6 +586,8 @@ public class CouchbaseDbDataReader<T> : DbDataReader
 
         // Read the first row to discover schema, but buffer it so it's not lost
         var hasRow = _enumerator!.MoveNextAsync().AsTask().GetAwaiter().GetResult();
+        _hasRows = hasRow;
+
         if (hasRow)
         {
             _bufferedRow = _enumerator.Current;
