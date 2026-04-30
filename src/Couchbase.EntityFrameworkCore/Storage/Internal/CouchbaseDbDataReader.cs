@@ -1,8 +1,8 @@
 using System.Collections;
+using System.Data;
 using System.Data.Common;
-using Couchbase.Core.IO.Serializers;
+using System.Text.Json;
 using Couchbase.Query;
-using System.Threading.Tasks;
 
 namespace Couchbase.EntityFrameworkCore.Storage.Internal;
 
@@ -10,166 +10,560 @@ public class CouchbaseDbDataReader<T> : DbDataReader
 {
     private readonly IQueryResult<T> _queryResult;
     private readonly IAsyncEnumerator<T> _enumerator;
-    private bool _read;
+    private T? _currentRow;
+    private List<string>? _fieldNames;
+    private Dictionary<string, int>? _fieldOrdinals;
+    private bool _isClosed;
+    private bool _hasReadFirstRow;
 
     public CouchbaseDbDataReader(IQueryResult<T> queryResult)
     {
-        _queryResult = queryResult;
+        _queryResult = queryResult ?? throw new ArgumentNullException(nameof(queryResult));
         _enumerator = _queryResult.GetAsyncEnumerator(CancellationToken.None);
     }
 
-    public override bool GetBoolean(int ordinal)
+    public override int FieldCount
     {
-        throw new NotImplementedException();
+        get
+        {
+            EnsureFieldInfo();
+            return _fieldNames?.Count ?? 0;
+        }
     }
 
-    public override byte GetByte(int ordinal)
+    public override int RecordsAffected => -1;
+
+    public override bool HasRows => _queryResult.MetaData?.Status == QueryStatus.Success;
+
+    public override bool IsClosed => _isClosed;
+
+    public override int Depth => 0;
+
+    public override object this[int ordinal] => GetValue(ordinal);
+
+    public override object this[string name] => GetValue(GetOrdinal(name));
+
+    public override bool Read()
     {
-        throw new NotImplementedException();
+        return ReadAsync(CancellationToken.None).GetAwaiter().GetResult();
     }
 
-    public override long GetBytes(int ordinal, long dataOffset, byte[]? buffer, int bufferOffset, int length)
+    public override async Task<bool> ReadAsync(CancellationToken cancellationToken)
     {
-        throw new NotImplementedException();
+        if (_isClosed)
+        {
+            return false;
+        }
+
+        var hasMore = await _enumerator.MoveNextAsync().ConfigureAwait(false);
+        if (hasMore)
+        {
+            _currentRow = _enumerator.Current;
+            if (!_hasReadFirstRow)
+            {
+                _hasReadFirstRow = true;
+                InitializeFieldInfo();
+            }
+        }
+        else
+        {
+            _currentRow = default;
+        }
+
+        return hasMore;
     }
 
-    public override char GetChar(int ordinal)
+    public override bool NextResult()
     {
-        throw new NotImplementedException();
+        // Couchbase queries return a single result set
+        return false;
     }
 
-    public override long GetChars(int ordinal, long dataOffset, char[]? buffer, int bufferOffset, int length)
+    public override async Task<bool> NextResultAsync(CancellationToken cancellationToken)
     {
-        throw new NotImplementedException();
+        return false;
     }
 
-    public override string GetDataTypeName(int ordinal)
+    public override void Close()
     {
-        throw new NotImplementedException();
+        if (!_isClosed)
+        {
+            _isClosed = true;
+            _enumerator.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        }
     }
 
-    public override DateTime GetDateTime(int ordinal)
+    public override async Task CloseAsync()
     {
-        throw new NotImplementedException();
+        if (!_isClosed)
+        {
+            _isClosed = true;
+            await _enumerator.DisposeAsync().ConfigureAwait(false);
+        }
     }
 
-    public override decimal GetDecimal(int ordinal)
+    protected override void Dispose(bool disposing)
     {
-        throw new NotImplementedException();
+        if (disposing)
+        {
+            Close();
+        }
+        base.Dispose(disposing);
     }
 
-    public override double GetDouble(int ordinal)
+    public override async ValueTask DisposeAsync()
     {
-        throw new NotImplementedException();
-    }
-
-    public override Type GetFieldType(int ordinal)
-    {
-        throw new NotImplementedException();
-    }
-
-    public override float GetFloat(int ordinal)
-    {
-        throw new NotImplementedException();
-    }
-
-    public override Guid GetGuid(int ordinal)
-    {
-        throw new NotImplementedException();
-    }
-
-    public override short GetInt16(int ordinal)
-    {
-        throw new NotImplementedException();
-    }
-
-    public override int GetInt32(int ordinal)
-    {
-        throw new NotImplementedException();
-    }
-
-    public override long GetInt64(int ordinal)
-    {
-        throw new NotImplementedException();
+        await CloseAsync().ConfigureAwait(false);
+        await base.DisposeAsync().ConfigureAwait(false);
     }
 
     public override string GetName(int ordinal)
     {
-        throw new NotImplementedException();
+        EnsureFieldInfo();
+        ValidateOrdinal(ordinal);
+        return _fieldNames![ordinal];
     }
 
     public override int GetOrdinal(string name)
     {
-        throw new NotImplementedException();
+        if (name == null)
+        {
+            throw new ArgumentNullException(nameof(name));
+        }
+
+        EnsureFieldInfo();
+        if (_fieldOrdinals != null && _fieldOrdinals.TryGetValue(name, out var ordinal))
+        {
+            return ordinal;
+        }
+
+        throw new IndexOutOfRangeException($"Field '{name}' not found.");
     }
 
-    public override string GetString(int ordinal)
+    public override string GetDataTypeName(int ordinal)
     {
-        throw new NotImplementedException();
+        var value = GetValue(ordinal);
+        return value?.GetType().Name ?? "Object";
+    }
+
+    public override Type GetFieldType(int ordinal)
+    {
+        var value = GetValue(ordinal);
+        return value?.GetType() ?? typeof(object);
     }
 
     public override object GetValue(int ordinal)
     {
-        throw new NotImplementedException();
+        EnsureCurrentRow();
+        ValidateOrdinal(ordinal);
+
+        var fieldName = _fieldNames![ordinal];
+        return GetFieldValue(fieldName);
     }
 
     public override int GetValues(object[] values)
     {
-        throw new NotImplementedException();
+        if (values == null)
+        {
+            throw new ArgumentNullException(nameof(values));
+        }
+
+        EnsureCurrentRow();
+        EnsureFieldInfo();
+
+        var count = Math.Min(values.Length, _fieldNames!.Count);
+        for (var i = 0; i < count; i++)
+        {
+            values[i] = GetValue(i);
+        }
+
+        return count;
     }
 
     public override bool IsDBNull(int ordinal)
     {
-        throw new NotImplementedException();
+        var value = GetValue(ordinal);
+        return value == null || value == DBNull.Value;
     }
 
-    public override int FieldCount { get; }
-
-    public override object this[int ordinal] => throw new NotImplementedException();
-
-    public override object this[string name] => throw new NotImplementedException();
-
-    public override int RecordsAffected { get; }
-
-    public override bool HasRows
-        => _queryResult.MetaData.Status == QueryStatus.Success; //temporary
-
-    public override bool IsClosed { get; }
-
-    public override bool NextResult()
+    public override async Task<bool> IsDBNullAsync(int ordinal, CancellationToken cancellationToken)
     {
-        throw new NotImplementedException();
+        return IsDBNull(ordinal);
     }
 
-    public override bool Read()
+    public override bool GetBoolean(int ordinal)
     {
-        try
+        var value = GetValue(ordinal);
+        return value switch
         {
-            if (_read)
-            {
-                return false;
-            }
-            //TODO: should be awaited - CA2012 - Use ValueTasks correctly
-            var moreRows =_enumerator.MoveNextAsync().GetAwaiter().GetResult();
-            if (moreRows == false)
-            {
-                _read = true;
-                return moreRows;
-            }
-
-            return moreRows;
-        }
-        catch (Exception e)
-        {
-            return false;
-        }
+            bool b => b,
+            JsonElement { ValueKind: JsonValueKind.True } => true,
+            JsonElement { ValueKind: JsonValueKind.False } => false,
+            JsonElement je => throw new InvalidCastException($"Cannot convert JsonElement of kind {je.ValueKind} to Boolean."),
+            _ => Convert.ToBoolean(value)
+        };
     }
 
-    public override int Depth { get; }
+    public override byte GetByte(int ordinal)
+    {
+        var value = GetValue(ordinal);
+        return value switch
+        {
+            byte b => b,
+            int i => (byte)i,
+            long l => (byte)l,
+            JsonElement je when je.ValueKind == JsonValueKind.Number => je.GetByte(),
+            JsonElement je => throw new InvalidCastException($"Cannot convert JsonElement of kind {je.ValueKind} to Byte."),
+            _ => Convert.ToByte(value)
+        };
+    }
+
+    public override long GetBytes(int ordinal, long dataOffset, byte[]? buffer, int bufferOffset, int length)
+    {
+        var value = GetValue(ordinal);
+        byte[] bytes = value switch
+        {
+            byte[] b => b,
+            string s => Convert.FromBase64String(s),
+            JsonElement je when je.ValueKind == JsonValueKind.String => Convert.FromBase64String(je.GetString()!),
+            _ => throw new InvalidCastException($"Cannot convert {value?.GetType().Name} to byte array.")
+        };
+
+        if (buffer == null)
+        {
+            return bytes.Length;
+        }
+
+        var bytesToCopy = Math.Min(length, bytes.Length - (int)dataOffset);
+        Array.Copy(bytes, dataOffset, buffer, bufferOffset, bytesToCopy);
+        return bytesToCopy;
+    }
+
+    public override char GetChar(int ordinal)
+    {
+        var value = GetValue(ordinal);
+        return value switch
+        {
+            char c => c,
+            string s when s.Length > 0 => s[0],
+            JsonElement je when je.ValueKind == JsonValueKind.String => je.GetString()![0],
+            _ => Convert.ToChar(value)
+        };
+    }
+
+    public override long GetChars(int ordinal, long dataOffset, char[]? buffer, int bufferOffset, int length)
+    {
+        var str = GetString(ordinal);
+
+        if (buffer == null)
+        {
+            return str.Length;
+        }
+
+        var charsToCopy = Math.Min(length, str.Length - (int)dataOffset);
+        str.CopyTo((int)dataOffset, buffer, bufferOffset, charsToCopy);
+        return charsToCopy;
+    }
+
+    public override DateTime GetDateTime(int ordinal)
+    {
+        var value = GetValue(ordinal);
+        return value switch
+        {
+            DateTime dt => dt,
+            DateTimeOffset dto => dto.DateTime,
+            string s => DateTime.Parse(s),
+            JsonElement je when je.ValueKind == JsonValueKind.String => DateTime.Parse(je.GetString()!),
+            _ => Convert.ToDateTime(value)
+        };
+    }
+
+    public override decimal GetDecimal(int ordinal)
+    {
+        var value = GetValue(ordinal);
+        return value switch
+        {
+            decimal d => d,
+            double dbl => (decimal)dbl,
+            long l => l,
+            int i => i,
+            JsonElement je when je.ValueKind == JsonValueKind.Number => je.GetDecimal(),
+            JsonElement je => throw new InvalidCastException($"Cannot convert JsonElement of kind {je.ValueKind} to Decimal."),
+            _ => Convert.ToDecimal(value)
+        };
+    }
+
+    public override double GetDouble(int ordinal)
+    {
+        var value = GetValue(ordinal);
+        return value switch
+        {
+            double d => d,
+            long l => l,
+            int i => i,
+            JsonElement je when je.ValueKind == JsonValueKind.Number => je.GetDouble(),
+            JsonElement je => throw new InvalidCastException($"Cannot convert JsonElement of kind {je.ValueKind} to Double."),
+            _ => Convert.ToDouble(value)
+        };
+    }
+
+    public override float GetFloat(int ordinal)
+    {
+        var value = GetValue(ordinal);
+        return value switch
+        {
+            float f => f,
+            double d => (float)d,
+            long l => l,
+            int i => i,
+            JsonElement je when je.ValueKind == JsonValueKind.Number => je.GetSingle(),
+            JsonElement je => throw new InvalidCastException($"Cannot convert JsonElement of kind {je.ValueKind} to Single."),
+            _ => Convert.ToSingle(value)
+        };
+    }
+
+    public override Guid GetGuid(int ordinal)
+    {
+        var value = GetValue(ordinal);
+        return value switch
+        {
+            Guid g => g,
+            string s => Guid.Parse(s),
+            JsonElement je when je.ValueKind == JsonValueKind.String => Guid.Parse(je.GetString()!),
+            _ => throw new InvalidCastException($"Cannot convert {value?.GetType().Name} to Guid.")
+        };
+    }
+
+    public override short GetInt16(int ordinal)
+    {
+        var value = GetValue(ordinal);
+        return value switch
+        {
+            short s => s,
+            int i => (short)i,
+            long l => (short)l,
+            JsonElement je when je.ValueKind == JsonValueKind.Number => je.GetInt16(),
+            JsonElement je => throw new InvalidCastException($"Cannot convert JsonElement of kind {je.ValueKind} to Int16."),
+            _ => Convert.ToInt16(value)
+        };
+    }
+
+    public override int GetInt32(int ordinal)
+    {
+        var value = GetValue(ordinal);
+        return value switch
+        {
+            int i => i,
+            long l => (int)l,
+            JsonElement je when je.ValueKind == JsonValueKind.Number => je.GetInt32(),
+            JsonElement je => throw new InvalidCastException($"Cannot convert JsonElement of kind {je.ValueKind} to Int32."),
+            _ => Convert.ToInt32(value)
+        };
+    }
+
+    public override long GetInt64(int ordinal)
+    {
+        var value = GetValue(ordinal);
+        return value switch
+        {
+            long l => l,
+            int i => i,
+            JsonElement je when je.ValueKind == JsonValueKind.Number => je.GetInt64(),
+            JsonElement je => throw new InvalidCastException($"Cannot convert JsonElement of kind {je.ValueKind} to Int64."),
+            _ => Convert.ToInt64(value)
+        };
+    }
+
+    public override string GetString(int ordinal)
+    {
+        var value = GetValue(ordinal);
+        return value switch
+        {
+            string s => s,
+            JsonElement je when je.ValueKind == JsonValueKind.String => je.GetString()!,
+            JsonElement je => je.GetRawText(),
+            null => throw new InvalidCastException("Cannot convert null to string."),
+            _ => value.ToString()!
+        };
+    }
+
+    public override T1 GetFieldValue<T1>(int ordinal)
+    {
+        var value = GetValue(ordinal);
+
+        if (value is T1 typedValue)
+        {
+            return typedValue;
+        }
+
+        if (value is JsonElement je)
+        {
+            return je.Deserialize<T1>()!;
+        }
+
+        return (T1)Convert.ChangeType(value, typeof(T1))!;
+    }
+
+    public override DataTable GetSchemaTable()
+    {
+        EnsureFieldInfo();
+
+        var schemaTable = new DataTable("SchemaTable");
+        schemaTable.Columns.Add("ColumnName", typeof(string));
+        schemaTable.Columns.Add("ColumnOrdinal", typeof(int));
+        schemaTable.Columns.Add("DataType", typeof(Type));
+        schemaTable.Columns.Add("AllowDBNull", typeof(bool));
+
+        if (_fieldNames != null)
+        {
+            for (var i = 0; i < _fieldNames.Count; i++)
+            {
+                var row = schemaTable.NewRow();
+                row["ColumnName"] = _fieldNames[i];
+                row["ColumnOrdinal"] = i;
+                row["DataType"] = typeof(object);
+                row["AllowDBNull"] = true;
+                schemaTable.Rows.Add(row);
+            }
+        }
+
+        return schemaTable;
+    }
 
     public override IEnumerator GetEnumerator()
     {
-        throw new NotImplementedException();
+        return new DbEnumerator(this, closeReader: false);
+    }
+
+    private void EnsureCurrentRow()
+    {
+        if (_currentRow == null)
+        {
+            throw new InvalidOperationException("No current row. Call Read() first.");
+        }
+    }
+
+    private void EnsureFieldInfo()
+    {
+        if (_fieldNames == null && !_hasReadFirstRow && _currentRow == null)
+        {
+            // Try to read the first row to get field info
+            if (!_isClosed)
+            {
+                Read();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Initializes field metadata (names and ordinals) from the first row.
+    /// 
+    /// LIMITATION: Field schema is captured once from the first row and reused for all subsequent rows.
+    /// This means:
+    /// - If later rows have MISSING fields, GetValue returns DBNull.Value for those ordinals
+    /// - If later rows have EXTRA fields, they are inaccessible (not in the ordinal mapping)
+    /// - If later rows have DIFFERENT field order, ordinal-based access still uses the first row's order
+    /// 
+    /// This behavior is consistent with ADO.NET's expectation of a stable schema per result set,
+    /// but may not suit heterogeneous document collections where each document has a different shape.
+    /// For such cases, consider using name-based access (reader["fieldName"]) and checking IsDBNull.
+    /// </summary>
+    private void InitializeFieldInfo()
+    {
+        _fieldNames = new List<string>();
+        _fieldOrdinals = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+        if (_currentRow is JsonElement je && je.ValueKind == JsonValueKind.Object)
+        {
+            var ordinal = 0;
+            foreach (var property in je.EnumerateObject())
+            {
+                _fieldNames.Add(property.Name);
+                _fieldOrdinals[property.Name] = ordinal++;
+            }
+        }
+        else if (_currentRow != null)
+        {
+            // For non-JsonElement types, use reflection
+            var type = _currentRow.GetType();
+            var properties = type.GetProperties();
+            for (var i = 0; i < properties.Length; i++)
+            {
+                _fieldNames.Add(properties[i].Name);
+                _fieldOrdinals[properties[i].Name] = i;
+            }
+        }
+    }
+
+    private void ValidateOrdinal(int ordinal)
+    {
+        if (_fieldNames == null || ordinal < 0 || ordinal >= _fieldNames.Count)
+        {
+            throw new IndexOutOfRangeException($"Ordinal {ordinal} is out of range. FieldCount: {_fieldNames?.Count ?? 0}");
+        }
+    }
+
+    private object GetFieldValue(string fieldName)
+    {
+        if (_currentRow is JsonElement je)
+        {
+            if (je.ValueKind == JsonValueKind.Object && je.TryGetProperty(fieldName, out var property))
+            {
+                return ConvertJsonElement(property);
+            }
+            // For RAW queries, the entire element is the value
+            if (_fieldNames?.Count == 1)
+            {
+                return ConvertJsonElement(je);
+            }
+        }
+        else if (_currentRow != null)
+        {
+            var prop = _currentRow.GetType().GetProperty(fieldName);
+            if (prop != null)
+            {
+                return prop.GetValue(_currentRow) ?? DBNull.Value;
+            }
+        }
+
+        return DBNull.Value;
+    }
+
+    private static object ConvertJsonElement(JsonElement element)
+    {
+        return element.ValueKind switch
+        {
+            JsonValueKind.Null => DBNull.Value,
+            JsonValueKind.Undefined => DBNull.Value,
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            JsonValueKind.String => element.GetString()!,
+            JsonValueKind.Number when element.TryGetInt64(out var l) => l,
+            JsonValueKind.Number => element.GetDouble(),
+            JsonValueKind.Object => ExtractFirstValueFromObject(element),
+            JsonValueKind.Array => ExtractFirstValueFromArray(element),
+            _ => element
+        };
+    }
+
+    private static object ExtractFirstValueFromObject(JsonElement element)
+    {
+        using var enumerator = element.EnumerateObject();
+        if (enumerator.MoveNext())
+        {
+            return ConvertJsonElement(enumerator.Current.Value);
+        }
+        return DBNull.Value;
+    }
+
+    private static object ExtractFirstValueFromArray(JsonElement element)
+    {
+        using var enumerator = element.EnumerateArray();
+        if (enumerator.MoveNext())
+        {
+            return ConvertJsonElement(enumerator.Current);
+        }
+        return DBNull.Value;
     }
 }
 
