@@ -241,7 +241,15 @@ public class CouchbaseCommand : DbCommand
         {
             if (dbParameter is CouchbaseParameter parameter)
             {
-                options.Parameter(parameter.ParameterName, parameter.Value!);
+                if (string.IsNullOrEmpty(parameter.ParameterName))
+                {
+                    throw new InvalidOperationException(
+                        "Parameter name cannot be null or empty. Use AddWithValue or set ParameterName before executing.");
+                }
+
+                // Convert DBNull.Value to null for Couchbase SDK compatibility
+                var value = parameter.Value == DBNull.Value ? null : parameter.Value;
+                options.Parameter(parameter.ParameterName, value);
             }
         }
 
