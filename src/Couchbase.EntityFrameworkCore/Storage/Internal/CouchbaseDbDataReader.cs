@@ -9,10 +9,12 @@ namespace Couchbase.EntityFrameworkCore.Storage.Internal;
 public class CouchbaseDbDataReader<T> : DbDataReader
 {
     private readonly IQueryResult<T> _queryResult;
-    private readonly IAsyncEnumerator<T> _enumerator;
+    private IAsyncEnumerator<T>? _enumerator;
+    private CancellationToken _cancellationToken;
     private T? _currentRow;
     private T? _bufferedRow;
     private bool _hasBufferedRow;
+    private bool _hasCurrentRow;
     private List<string>? _fieldNames;
     private Dictionary<string, int>? _fieldOrdinals;
     private bool _isClosed;
@@ -21,7 +23,6 @@ public class CouchbaseDbDataReader<T> : DbDataReader
     public CouchbaseDbDataReader(IQueryResult<T> queryResult)
     {
         _queryResult = queryResult ?? throw new ArgumentNullException(nameof(queryResult));
-        _enumerator = _queryResult.GetAsyncEnumerator(CancellationToken.None);
     }
 
     public override int FieldCount
@@ -57,19 +58,25 @@ public class CouchbaseDbDataReader<T> : DbDataReader
             return false;
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
+
         // If we have a buffered row from schema discovery, return it first
         if (_hasBufferedRow)
         {
             _currentRow = _bufferedRow;
             _bufferedRow = default;
             _hasBufferedRow = false;
+            _hasCurrentRow = true;
             return true;
         }
 
-        var hasMore = await _enumerator.MoveNextAsync().ConfigureAwait(false);
+        EnsureEnumerator(cancellationToken);
+
+        var hasMore = await _enumerator!.MoveNextAsync().ConfigureAwait(false);
         if (hasMore)
         {
             _currentRow = _enumerator.Current;
+            _hasCurrentRow = true;
             if (!_schemaInitialized)
             {
                 _schemaInitialized = true;
@@ -79,9 +86,23 @@ public class CouchbaseDbDataReader<T> : DbDataReader
         else
         {
             _currentRow = default;
+            _hasCurrentRow = false;
         }
 
         return hasMore;
+    }
+
+    /// <summary>
+    /// Lazily creates the enumerator on first use, capturing the cancellation token.
+    /// This allows cancellation to abort row iteration.
+    /// </summary>
+    private void EnsureEnumerator(CancellationToken cancellationToken)
+    {
+        if (_enumerator == null)
+        {
+            _cancellationToken = cancellationToken;
+            _enumerator = _queryResult.Rows.GetAsyncEnumerator(_cancellationToken);
+        }
     }
 
     public override bool NextResult()
@@ -100,7 +121,7 @@ public class CouchbaseDbDataReader<T> : DbDataReader
         if (!_isClosed)
         {
             _isClosed = true;
-            _enumerator.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            _enumerator?.DisposeAsync().AsTask().GetAwaiter().GetResult();
         }
     }
 
@@ -109,7 +130,10 @@ public class CouchbaseDbDataReader<T> : DbDataReader
         if (!_isClosed)
         {
             _isClosed = true;
-            await _enumerator.DisposeAsync().ConfigureAwait(false);
+            if (_enumerator != null)
+            {
+                await _enumerator.DisposeAsync().ConfigureAwait(false);
+            }
         }
     }
 
@@ -448,7 +472,7 @@ public class CouchbaseDbDataReader<T> : DbDataReader
 
     private void EnsureCurrentRow()
     {
-        if (_currentRow == null)
+        if (!_hasCurrentRow)
         {
             throw new InvalidOperationException("No current row. Call Read() first.");
         }
@@ -465,8 +489,11 @@ public class CouchbaseDbDataReader<T> : DbDataReader
             return;
         }
 
+        // Create enumerator if needed (with no cancellation for schema discovery)
+        EnsureEnumerator(CancellationToken.None);
+
         // Read the first row to discover schema, but buffer it so it's not lost
-        var hasRow = _enumerator.MoveNextAsync().AsTask().GetAwaiter().GetResult();
+        var hasRow = _enumerator!.MoveNextAsync().AsTask().GetAwaiter().GetResult();
         if (hasRow)
         {
             _bufferedRow = _enumerator.Current;
