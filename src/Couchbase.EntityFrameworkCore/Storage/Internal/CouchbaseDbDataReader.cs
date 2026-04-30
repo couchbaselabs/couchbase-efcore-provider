@@ -11,10 +11,12 @@ public class CouchbaseDbDataReader<T> : DbDataReader
     private readonly IQueryResult<T> _queryResult;
     private readonly IAsyncEnumerator<T> _enumerator;
     private T? _currentRow;
+    private T? _bufferedRow;
+    private bool _hasBufferedRow;
     private List<string>? _fieldNames;
     private Dictionary<string, int>? _fieldOrdinals;
     private bool _isClosed;
-    private bool _hasReadFirstRow;
+    private bool _schemaInitialized;
 
     public CouchbaseDbDataReader(IQueryResult<T> queryResult)
     {
@@ -55,13 +57,22 @@ public class CouchbaseDbDataReader<T> : DbDataReader
             return false;
         }
 
+        // If we have a buffered row from schema discovery, return it first
+        if (_hasBufferedRow)
+        {
+            _currentRow = _bufferedRow;
+            _bufferedRow = default;
+            _hasBufferedRow = false;
+            return true;
+        }
+
         var hasMore = await _enumerator.MoveNextAsync().ConfigureAwait(false);
         if (hasMore)
         {
             _currentRow = _enumerator.Current;
-            if (!_hasReadFirstRow)
+            if (!_schemaInitialized)
             {
-                _hasReadFirstRow = true;
+                _schemaInitialized = true;
                 InitializeFieldInfo();
             }
         }
@@ -443,15 +454,34 @@ public class CouchbaseDbDataReader<T> : DbDataReader
         }
     }
 
+    /// <summary>
+    /// Ensures field metadata is available, reading and buffering the first row if necessary.
+    /// The buffered row will be returned on the next explicit Read() call, so no data is lost.
+    /// </summary>
     private void EnsureFieldInfo()
     {
-        if (_fieldNames == null && !_hasReadFirstRow && _currentRow == null)
+        if (_schemaInitialized || _isClosed)
         {
-            // Try to read the first row to get field info
-            if (!_isClosed)
-            {
-                Read();
-            }
+            return;
+        }
+
+        // Read the first row to discover schema, but buffer it so it's not lost
+        var hasRow = _enumerator.MoveNextAsync().AsTask().GetAwaiter().GetResult();
+        if (hasRow)
+        {
+            _bufferedRow = _enumerator.Current;
+            _hasBufferedRow = true;
+            _currentRow = _bufferedRow; // Set current row so InitializeFieldInfo can access it
+            _schemaInitialized = true;
+            InitializeFieldInfo();
+            _currentRow = default; // Clear current row - caller must call Read() to access data
+        }
+        else
+        {
+            // No rows - initialize empty schema
+            _schemaInitialized = true;
+            _fieldNames = new List<string>();
+            _fieldOrdinals = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         }
     }
 

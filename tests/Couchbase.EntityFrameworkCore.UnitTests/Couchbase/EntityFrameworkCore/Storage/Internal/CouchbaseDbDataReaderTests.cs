@@ -561,6 +561,94 @@ public class CouchbaseDbDataReaderTests
         Assert.NotNull(enumerator);
     }
 
+    [Fact]
+    public async Task FieldCount_BeforeRead_DoesNotSkipFirstRow()
+    {
+        var rows = new List<JsonElement>
+        {
+            JsonDocument.Parse("{\"id\": 1}").RootElement,
+            JsonDocument.Parse("{\"id\": 2}").RootElement
+        };
+        var reader = CreateReader(rows);
+
+        // Access FieldCount before Read() - this triggers schema discovery
+        var fieldCount = reader.FieldCount;
+        Assert.Equal(1, fieldCount);
+
+        // First Read() should return the first row, not skip it
+        Assert.True(await reader.ReadAsync(CancellationToken.None));
+        Assert.Equal(1L, reader.GetInt64(0));
+
+        // Second Read() should return the second row
+        Assert.True(await reader.ReadAsync(CancellationToken.None));
+        Assert.Equal(2L, reader.GetInt64(0));
+
+        // No more rows
+        Assert.False(await reader.ReadAsync(CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task GetName_BeforeRead_DoesNotSkipFirstRow()
+    {
+        var rows = new List<JsonElement>
+        {
+            JsonDocument.Parse("{\"name\": \"first\"}").RootElement,
+            JsonDocument.Parse("{\"name\": \"second\"}").RootElement
+        };
+        var reader = CreateReader(rows);
+
+        // Access GetName before Read() - this triggers schema discovery
+        var name = reader.GetName(0);
+        Assert.Equal("name", name);
+
+        // First Read() should return the first row
+        Assert.True(await reader.ReadAsync(CancellationToken.None));
+        Assert.Equal("first", reader.GetString(0));
+
+        // Second Read() should return the second row
+        Assert.True(await reader.ReadAsync(CancellationToken.None));
+        Assert.Equal("second", reader.GetString(0));
+    }
+
+    [Fact]
+    public async Task GetOrdinal_BeforeRead_DoesNotSkipFirstRow()
+    {
+        var rows = new List<JsonElement>
+        {
+            JsonDocument.Parse("{\"value\": 100}").RootElement
+        };
+        var reader = CreateReader(rows);
+
+        // Access GetOrdinal before Read()
+        var ordinal = reader.GetOrdinal("value");
+        Assert.Equal(0, ordinal);
+
+        // First Read() should still return the first (and only) row
+        Assert.True(await reader.ReadAsync(CancellationToken.None));
+        Assert.Equal(100L, reader.GetInt64(0));
+
+        Assert.False(await reader.ReadAsync(CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task GetSchemaTable_BeforeRead_DoesNotSkipFirstRow()
+    {
+        var rows = new List<JsonElement>
+        {
+            JsonDocument.Parse("{\"col1\": 1, \"col2\": 2}").RootElement
+        };
+        var reader = CreateReader(rows);
+
+        // Access schema before Read()
+        var schema = reader.GetSchemaTable();
+        Assert.Equal(2, schema.Rows.Count);
+
+        // First Read() should return the first row
+        Assert.True(await reader.ReadAsync(CancellationToken.None));
+        Assert.Equal(1L, reader.GetInt64(0));
+        Assert.Equal(2L, reader.GetInt64(1));
+    }
+
     private static CouchbaseDbDataReader<JsonElement> CreateReader(List<JsonElement> rows)
     {
         var mockQueryResult = new Mock<IQueryResult<JsonElement>>();
