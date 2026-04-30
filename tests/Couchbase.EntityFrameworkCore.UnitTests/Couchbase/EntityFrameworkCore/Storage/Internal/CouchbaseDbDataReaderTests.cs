@@ -149,12 +149,12 @@ public class CouchbaseDbDataReaderTests
     }
 
     [Fact]
-    public void GetValue_OnEmptyResult_ThrowsIndexOutOfRangeException()
+    public void GetValue_BeforeRead_ThrowsInvalidOperationException()
     {
         var reader = CreateReader(new List<JsonElement>());
 
-        // EnsureFieldInfo will try to read, find no rows, so field count is 0
-        Assert.Throws<IndexOutOfRangeException>(() => reader.GetValue(0));
+        // GetValue requires a current row, which requires calling Read() first
+        Assert.Throws<InvalidOperationException>(() => reader.GetValue(0));
     }
 
     [Fact]
@@ -413,8 +413,7 @@ public class CouchbaseDbDataReaderTests
         var mockQueryResult = new Mock<IQueryResult<JsonElement>>();
         var metaData = new QueryMetaData { Status = QueryStatus.Success };
         mockQueryResult.Setup(q => q.MetaData).Returns(metaData);
-        mockQueryResult.Setup(q => q.GetAsyncEnumerator(It.IsAny<CancellationToken>()))
-            .Returns(new List<JsonElement>().ToAsyncEnumerable().GetAsyncEnumerator());
+        mockQueryResult.Setup(q => q.Rows).Returns(new List<JsonElement>().ToAsyncEnumerable());
 
         var reader = new CouchbaseDbDataReader<JsonElement>(mockQueryResult.Object);
 
@@ -427,8 +426,7 @@ public class CouchbaseDbDataReaderTests
         var mockQueryResult = new Mock<IQueryResult<JsonElement>>();
         var metaData = new QueryMetaData { Status = QueryStatus.Errors };
         mockQueryResult.Setup(q => q.MetaData).Returns(metaData);
-        mockQueryResult.Setup(q => q.GetAsyncEnumerator(It.IsAny<CancellationToken>()))
-            .Returns(new List<JsonElement>().ToAsyncEnumerable().GetAsyncEnumerator());
+        mockQueryResult.Setup(q => q.Rows).Returns(new List<JsonElement>().ToAsyncEnumerable());
 
         var reader = new CouchbaseDbDataReader<JsonElement>(mockQueryResult.Object);
 
@@ -649,13 +647,237 @@ public class CouchbaseDbDataReaderTests
         Assert.Equal(2L, reader.GetInt64(1));
     }
 
+    #region Value-Type Row Tracking Tests
+
+    [Fact]
+    public void GetValue_BeforeAnyRead_ThrowsInvalidOperationException()
+    {
+        // JsonElement is a value type - this tests that we track row availability
+        // with a boolean flag, not by checking _currentRow == null
+        var rows = new List<JsonElement> { JsonDocument.Parse("{\"id\": 1}").RootElement };
+        var reader = CreateReader(rows);
+
+        var ex = Assert.Throws<InvalidOperationException>(() => reader.GetValue(0));
+        Assert.Contains("No current row", ex.Message);
+    }
+
+    [Fact]
+    public async Task GetValue_AfterReadReturnsFalse_ThrowsInvalidOperationException()
+    {
+        // After exhausting all rows, GetValue should throw even though
+        // _currentRow (being a value type) is not null but default(JsonElement)
+        var rows = new List<JsonElement> { JsonDocument.Parse("{\"id\": 1}").RootElement };
+        var reader = CreateReader(rows);
+
+        Assert.True(await reader.ReadAsync(CancellationToken.None));
+        Assert.Equal(1L, reader.GetValue(0)); // This should work
+
+        Assert.False(await reader.ReadAsync(CancellationToken.None)); // No more rows
+
+        var ex = Assert.Throws<InvalidOperationException>(() => reader.GetValue(0));
+        Assert.Contains("No current row", ex.Message);
+    }
+
+    [Fact]
+    public async Task GetBoolean_AfterReadReturnsFalse_ThrowsInvalidOperationException()
+    {
+        var rows = new List<JsonElement> { JsonDocument.Parse("{\"flag\": true}").RootElement };
+        var reader = CreateReader(rows);
+
+        Assert.True(await reader.ReadAsync(CancellationToken.None));
+        Assert.True(reader.GetBoolean(0));
+
+        Assert.False(await reader.ReadAsync(CancellationToken.None));
+
+        Assert.Throws<InvalidOperationException>(() => reader.GetBoolean(0));
+    }
+
+    [Fact]
+    public async Task GetString_AfterReadReturnsFalse_ThrowsInvalidOperationException()
+    {
+        var rows = new List<JsonElement> { JsonDocument.Parse("{\"name\": \"test\"}").RootElement };
+        var reader = CreateReader(rows);
+
+        Assert.True(await reader.ReadAsync(CancellationToken.None));
+        Assert.Equal("test", reader.GetString(0));
+
+        Assert.False(await reader.ReadAsync(CancellationToken.None));
+
+        Assert.Throws<InvalidOperationException>(() => reader.GetString(0));
+    }
+
+    [Fact]
+    public async Task GetInt64_AfterReadReturnsFalse_ThrowsInvalidOperationException()
+    {
+        var rows = new List<JsonElement> { JsonDocument.Parse("{\"num\": 42}").RootElement };
+        var reader = CreateReader(rows);
+
+        Assert.True(await reader.ReadAsync(CancellationToken.None));
+        Assert.Equal(42L, reader.GetInt64(0));
+
+        Assert.False(await reader.ReadAsync(CancellationToken.None));
+
+        Assert.Throws<InvalidOperationException>(() => reader.GetInt64(0));
+    }
+
+    [Fact]
+    public async Task IsDBNull_AfterReadReturnsFalse_ThrowsInvalidOperationException()
+    {
+        var rows = new List<JsonElement> { JsonDocument.Parse("{\"val\": null}").RootElement };
+        var reader = CreateReader(rows);
+
+        Assert.True(await reader.ReadAsync(CancellationToken.None));
+        Assert.True(reader.IsDBNull(0));
+
+        Assert.False(await reader.ReadAsync(CancellationToken.None));
+
+        Assert.Throws<InvalidOperationException>(() => reader.IsDBNull(0));
+    }
+
+    [Fact]
+    public async Task GetValues_AfterReadReturnsFalse_ThrowsInvalidOperationException()
+    {
+        var rows = new List<JsonElement> { JsonDocument.Parse("{\"a\": 1, \"b\": 2}").RootElement };
+        var reader = CreateReader(rows);
+
+        Assert.True(await reader.ReadAsync(CancellationToken.None));
+        var values = new object[2];
+        Assert.Equal(2, reader.GetValues(values));
+
+        Assert.False(await reader.ReadAsync(CancellationToken.None));
+
+        Assert.Throws<InvalidOperationException>(() => reader.GetValues(values));
+    }
+
+    [Fact]
+    public async Task Indexer_ByOrdinal_AfterReadReturnsFalse_ThrowsInvalidOperationException()
+    {
+        var rows = new List<JsonElement> { JsonDocument.Parse("{\"x\": 1}").RootElement };
+        var reader = CreateReader(rows);
+
+        Assert.True(await reader.ReadAsync(CancellationToken.None));
+        Assert.Equal(1L, reader[0]);
+
+        Assert.False(await reader.ReadAsync(CancellationToken.None));
+
+        Assert.Throws<InvalidOperationException>(() => _ = reader[0]);
+    }
+
+    [Fact]
+    public async Task Indexer_ByName_AfterReadReturnsFalse_ThrowsInvalidOperationException()
+    {
+        var rows = new List<JsonElement> { JsonDocument.Parse("{\"x\": 1}").RootElement };
+        var reader = CreateReader(rows);
+
+        Assert.True(await reader.ReadAsync(CancellationToken.None));
+        Assert.Equal(1L, reader["x"]);
+
+        Assert.False(await reader.ReadAsync(CancellationToken.None));
+
+        Assert.Throws<InvalidOperationException>(() => _ = reader["x"]);
+    }
+
+    [Fact]
+    public async Task ValueTypeRow_MultipleReadCycles_TracksStateCorrectly()
+    {
+        var rows = new List<JsonElement>
+        {
+            JsonDocument.Parse("{\"id\": 1}").RootElement,
+            JsonDocument.Parse("{\"id\": 2}").RootElement,
+            JsonDocument.Parse("{\"id\": 3}").RootElement
+        };
+        var reader = CreateReader(rows);
+
+        // Before first read - no current row
+        Assert.Throws<InvalidOperationException>(() => reader.GetValue(0));
+
+        // Read row 1
+        Assert.True(await reader.ReadAsync(CancellationToken.None));
+        Assert.Equal(1L, reader.GetInt64(0));
+
+        // Read row 2
+        Assert.True(await reader.ReadAsync(CancellationToken.None));
+        Assert.Equal(2L, reader.GetInt64(0));
+
+        // Read row 3
+        Assert.True(await reader.ReadAsync(CancellationToken.None));
+        Assert.Equal(3L, reader.GetInt64(0));
+
+        // No more rows - should throw again
+        Assert.False(await reader.ReadAsync(CancellationToken.None));
+        Assert.Throws<InvalidOperationException>(() => reader.GetValue(0));
+    }
+
+    #endregion
+
+    #region Cancellation Token Tests
+
+    [Fact]
+    public async Task ReadAsync_WithCancelledToken_ThrowsOperationCanceledException()
+    {
+        var rows = new List<JsonElement> { JsonDocument.Parse("{\"id\": 1}").RootElement };
+        var reader = CreateReader(rows);
+
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        await Assert.ThrowsAsync<OperationCanceledException>(
+            () => reader.ReadAsync(cts.Token));
+    }
+
+    [Fact]
+    public async Task ReadAsync_TokenCancelledDuringIteration_ThrowsOnNextRead()
+    {
+        var rows = new List<JsonElement>
+        {
+            JsonDocument.Parse("{\"id\": 1}").RootElement,
+            JsonDocument.Parse("{\"id\": 2}").RootElement
+        };
+        var reader = CreateReader(rows);
+
+        using var cts = new CancellationTokenSource();
+
+        // First read should succeed
+        Assert.True(await reader.ReadAsync(cts.Token));
+        Assert.Equal(1L, reader.GetInt64(0));
+
+        // Cancel after first read
+        cts.Cancel();
+
+        // Next read should throw
+        await Assert.ThrowsAsync<OperationCanceledException>(
+            () => reader.ReadAsync(cts.Token));
+    }
+
+    [Fact]
+    public async Task ReadAsync_CancellationTokenCapturedOnFirstRead()
+    {
+        var rows = new List<JsonElement>
+        {
+            JsonDocument.Parse("{\"id\": 1}").RootElement,
+            JsonDocument.Parse("{\"id\": 2}").RootElement
+        };
+        var reader = CreateReader(rows);
+
+        using var cts = new CancellationTokenSource();
+
+        // First read captures the token
+        Assert.True(await reader.ReadAsync(cts.Token));
+
+        // Subsequent reads with different token still work (enumerator already created)
+        Assert.True(await reader.ReadAsync(CancellationToken.None));
+
+        Assert.False(await reader.ReadAsync(CancellationToken.None));
+    }
+
+    #endregion
+
     private static CouchbaseDbDataReader<JsonElement> CreateReader(List<JsonElement> rows)
     {
         var mockQueryResult = new Mock<IQueryResult<JsonElement>>();
         var metaData = new QueryMetaData { Status = QueryStatus.Success };
         mockQueryResult.Setup(q => q.MetaData).Returns(metaData);
-        mockQueryResult.Setup(q => q.GetAsyncEnumerator(It.IsAny<CancellationToken>()))
-            .Returns(rows.ToAsyncEnumerable().GetAsyncEnumerator());
+        mockQueryResult.Setup(q => q.Rows).Returns(rows.ToAsyncEnumerable());
 
         return new CouchbaseDbDataReader<JsonElement>(mockQueryResult.Object);
     }
