@@ -40,7 +40,18 @@ public class CouchbaseOptionsExtension: RelationalOptionsExtension
         {
             options.WithLogging(_couchbaseDbContextOptionsBuilder.ClusterOptions.Logging);
             options.WithConnectionString(_couchbaseDbContextOptionsBuilder.ClusterOptions.ConnectionString);
-            options.WithSerializer(SystemTextJsonSerializer.Create());
+
+            // Use existing serializer if configured, otherwise default to System.Text.Json
+            var existingSerializer = _couchbaseDbContextOptionsBuilder.ClusterOptions.Serializer;
+            if (existingSerializer is null || existingSerializer is DefaultSerializer)
+            {
+                options.WithSerializer(SystemTextJsonSerializer.Create());
+            }
+            else
+            {
+                options.WithSerializer(existingSerializer);
+            }
+
             if (_couchbaseDbContextOptionsBuilder.ClusterOptions.Authenticator == null)
             {
                 options.WithCredentials(_couchbaseDbContextOptionsBuilder.ClusterOptions.UserName, _couchbaseDbContextOptionsBuilder.ClusterOptions.Password);
