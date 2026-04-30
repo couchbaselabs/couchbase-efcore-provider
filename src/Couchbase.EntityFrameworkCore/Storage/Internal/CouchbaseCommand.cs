@@ -73,11 +73,24 @@ public class CouchbaseCommand : DbCommand
         {
         }
 
-        // Return mutation count from metrics if available, otherwise -1
+        // Per ADO.NET spec: return rows affected for UPDATE/INSERT/DELETE, -1 for other statements
+        if (!IsDmlStatement(CommandText))
+        {
+            return -1;
+        }
+
         var metrics = result.MetaData?.Metrics;
         if (metrics != null)
         {
-            return (int)metrics.MutationCount;
+            var mutationCount = metrics.MutationCount;
+
+            // ADO.NET ExecuteNonQuery returns int, so clamp to int.MaxValue if exceeded
+            if (mutationCount > int.MaxValue)
+            {
+                return int.MaxValue;
+            }
+
+            return (int)mutationCount;
         }
 
         return -1;
@@ -243,6 +256,16 @@ public class CouchbaseCommand : DbCommand
         return externalToken.CanBeCanceled
             ? CancellationTokenSource.CreateLinkedTokenSource(_cancellationTokenSource.Token, externalToken)
             : CancellationTokenSource.CreateLinkedTokenSource(_cancellationTokenSource.Token);
+    }
+
+    private static bool IsDmlStatement(string commandText)
+    {
+        var trimmed = commandText.AsSpan().TrimStart();
+        return trimmed.StartsWith("INSERT", StringComparison.OrdinalIgnoreCase) ||
+               trimmed.StartsWith("UPDATE", StringComparison.OrdinalIgnoreCase) ||
+               trimmed.StartsWith("DELETE", StringComparison.OrdinalIgnoreCase) ||
+               trimmed.StartsWith("UPSERT", StringComparison.OrdinalIgnoreCase) ||
+               trimmed.StartsWith("MERGE", StringComparison.OrdinalIgnoreCase);
     }
 }
 
