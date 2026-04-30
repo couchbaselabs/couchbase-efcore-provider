@@ -1000,6 +1000,194 @@ public class CouchbaseDbDataReaderTests
 
     #endregion
 
+    #region GetBytes/GetChars Bounds Validation Tests
+
+    [Fact]
+    public async Task GetBytes_WithNegativeDataOffset_ThrowsArgumentOutOfRangeException()
+    {
+        var rows = new List<JsonElement> { JsonDocument.Parse("{\"data\": \"SGVsbG8=\"}").RootElement }; // "Hello" in base64
+        var reader = CreateReader(rows);
+
+        await reader.ReadAsync(CancellationToken.None);
+        var buffer = new byte[10];
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => reader.GetBytes(0, -1, buffer, 0, 5));
+    }
+
+    [Fact]
+    public async Task GetBytes_WithNegativeBufferOffset_ThrowsArgumentOutOfRangeException()
+    {
+        var rows = new List<JsonElement> { JsonDocument.Parse("{\"data\": \"SGVsbG8=\"}").RootElement };
+        var reader = CreateReader(rows);
+
+        await reader.ReadAsync(CancellationToken.None);
+        var buffer = new byte[10];
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => reader.GetBytes(0, 0, buffer, -1, 5));
+    }
+
+    [Fact]
+    public async Task GetBytes_WithBufferOffsetExceedingBufferLength_ThrowsArgumentOutOfRangeException()
+    {
+        var rows = new List<JsonElement> { JsonDocument.Parse("{\"data\": \"SGVsbG8=\"}").RootElement };
+        var reader = CreateReader(rows);
+
+        await reader.ReadAsync(CancellationToken.None);
+        var buffer = new byte[10];
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => reader.GetBytes(0, 0, buffer, 10, 5));
+    }
+
+    [Fact]
+    public async Task GetBytes_WithNegativeLength_ThrowsArgumentOutOfRangeException()
+    {
+        var rows = new List<JsonElement> { JsonDocument.Parse("{\"data\": \"SGVsbG8=\"}").RootElement };
+        var reader = CreateReader(rows);
+
+        await reader.ReadAsync(CancellationToken.None);
+        var buffer = new byte[10];
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => reader.GetBytes(0, 0, buffer, 0, -1));
+    }
+
+    [Fact]
+    public async Task GetBytes_WithDataOffsetBeyondSourceLength_ReturnsZero()
+    {
+        var rows = new List<JsonElement> { JsonDocument.Parse("{\"data\": \"SGVsbG8=\"}").RootElement }; // 5 bytes
+        var reader = CreateReader(rows);
+
+        await reader.ReadAsync(CancellationToken.None);
+        var buffer = new byte[10];
+
+        var result = reader.GetBytes(0, 100, buffer, 0, 5);
+
+        Assert.Equal(0, result);
+    }
+
+    [Fact]
+    public async Task GetBytes_WithNullBuffer_ReturnsTotalLength()
+    {
+        var rows = new List<JsonElement> { JsonDocument.Parse("{\"data\": \"SGVsbG8=\"}").RootElement }; // "Hello" = 5 bytes
+        var reader = CreateReader(rows);
+
+        await reader.ReadAsync(CancellationToken.None);
+
+        var result = reader.GetBytes(0, 0, null, 0, 0);
+
+        Assert.Equal(5, result);
+    }
+
+    [Fact]
+    public async Task GetBytes_WithValidParameters_CopiesCorrectData()
+    {
+        var rows = new List<JsonElement> { JsonDocument.Parse("{\"data\": \"SGVsbG8=\"}").RootElement }; // "Hello"
+        var reader = CreateReader(rows);
+
+        await reader.ReadAsync(CancellationToken.None);
+        var buffer = new byte[10];
+
+        var result = reader.GetBytes(0, 1, buffer, 2, 3);
+
+        Assert.Equal(3, result);
+        Assert.Equal((byte)'e', buffer[2]);
+        Assert.Equal((byte)'l', buffer[3]);
+        Assert.Equal((byte)'l', buffer[4]);
+    }
+
+    [Fact]
+    public async Task GetChars_WithNegativeDataOffset_ThrowsArgumentOutOfRangeException()
+    {
+        var rows = new List<JsonElement> { JsonDocument.Parse("{\"text\": \"Hello\"}").RootElement };
+        var reader = CreateReader(rows);
+
+        await reader.ReadAsync(CancellationToken.None);
+        var buffer = new char[10];
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => reader.GetChars(0, -1, buffer, 0, 5));
+    }
+
+    [Fact]
+    public async Task GetChars_WithNegativeBufferOffset_ThrowsArgumentOutOfRangeException()
+    {
+        var rows = new List<JsonElement> { JsonDocument.Parse("{\"text\": \"Hello\"}").RootElement };
+        var reader = CreateReader(rows);
+
+        await reader.ReadAsync(CancellationToken.None);
+        var buffer = new char[10];
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => reader.GetChars(0, 0, buffer, -1, 5));
+    }
+
+    [Fact]
+    public async Task GetChars_WithBufferOffsetExceedingBufferLength_ThrowsArgumentOutOfRangeException()
+    {
+        var rows = new List<JsonElement> { JsonDocument.Parse("{\"text\": \"Hello\"}").RootElement };
+        var reader = CreateReader(rows);
+
+        await reader.ReadAsync(CancellationToken.None);
+        var buffer = new char[10];
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => reader.GetChars(0, 0, buffer, 10, 5));
+    }
+
+    [Fact]
+    public async Task GetChars_WithNegativeLength_ThrowsArgumentOutOfRangeException()
+    {
+        var rows = new List<JsonElement> { JsonDocument.Parse("{\"text\": \"Hello\"}").RootElement };
+        var reader = CreateReader(rows);
+
+        await reader.ReadAsync(CancellationToken.None);
+        var buffer = new char[10];
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => reader.GetChars(0, 0, buffer, 0, -1));
+    }
+
+    [Fact]
+    public async Task GetChars_WithDataOffsetBeyondSourceLength_ReturnsZero()
+    {
+        var rows = new List<JsonElement> { JsonDocument.Parse("{\"text\": \"Hello\"}").RootElement }; // 5 chars
+        var reader = CreateReader(rows);
+
+        await reader.ReadAsync(CancellationToken.None);
+        var buffer = new char[10];
+
+        var result = reader.GetChars(0, 100, buffer, 0, 5);
+
+        Assert.Equal(0, result);
+    }
+
+    [Fact]
+    public async Task GetChars_WithNullBuffer_ReturnsTotalLength()
+    {
+        var rows = new List<JsonElement> { JsonDocument.Parse("{\"text\": \"Hello\"}").RootElement };
+        var reader = CreateReader(rows);
+
+        await reader.ReadAsync(CancellationToken.None);
+
+        var result = reader.GetChars(0, 0, null, 0, 0);
+
+        Assert.Equal(5, result);
+    }
+
+    [Fact]
+    public async Task GetChars_WithValidParameters_CopiesCorrectData()
+    {
+        var rows = new List<JsonElement> { JsonDocument.Parse("{\"text\": \"Hello\"}").RootElement };
+        var reader = CreateReader(rows);
+
+        await reader.ReadAsync(CancellationToken.None);
+        var buffer = new char[10];
+
+        var result = reader.GetChars(0, 1, buffer, 2, 3);
+
+        Assert.Equal(3, result);
+        Assert.Equal('e', buffer[2]);
+        Assert.Equal('l', buffer[3]);
+        Assert.Equal('l', buffer[4]);
+    }
+
+    #endregion
+
     private static CouchbaseDbDataReader<JsonElement> CreateReader(List<JsonElement> rows)
     {
         var mockQueryResult = new Mock<IQueryResult<JsonElement>>();

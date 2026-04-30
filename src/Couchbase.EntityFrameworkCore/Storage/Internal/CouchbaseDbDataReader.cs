@@ -255,6 +255,11 @@ public class CouchbaseDbDataReader<T> : DbDataReader
 
     public override long GetBytes(int ordinal, long dataOffset, byte[]? buffer, int bufferOffset, int length)
     {
+        if (dataOffset < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(dataOffset), dataOffset, "Data offset cannot be negative.");
+        }
+
         var value = GetValue(ordinal);
         byte[] bytes = value switch
         {
@@ -269,7 +274,31 @@ public class CouchbaseDbDataReader<T> : DbDataReader
             return bytes.Length;
         }
 
-        var bytesToCopy = Math.Min(length, bytes.Length - (int)dataOffset);
+        if (bufferOffset < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(bufferOffset), bufferOffset, "Buffer offset cannot be negative.");
+        }
+
+        if (bufferOffset >= buffer.Length)
+        {
+            throw new ArgumentOutOfRangeException(nameof(bufferOffset), bufferOffset, "Buffer offset exceeds buffer length.");
+        }
+
+        if (length < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(length), length, "Length cannot be negative.");
+        }
+
+        // If dataOffset is beyond the source data, return 0 (ADO.NET behavior)
+        if (dataOffset >= bytes.Length)
+        {
+            return 0;
+        }
+
+        var availableBytes = bytes.Length - (int)dataOffset;
+        var availableBuffer = buffer.Length - bufferOffset;
+        var bytesToCopy = Math.Min(length, Math.Min(availableBytes, availableBuffer));
+
         Array.Copy(bytes, dataOffset, buffer, bufferOffset, bytesToCopy);
         return bytesToCopy;
     }
@@ -288,6 +317,11 @@ public class CouchbaseDbDataReader<T> : DbDataReader
 
     public override long GetChars(int ordinal, long dataOffset, char[]? buffer, int bufferOffset, int length)
     {
+        if (dataOffset < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(dataOffset), dataOffset, "Data offset cannot be negative.");
+        }
+
         var str = GetString(ordinal);
 
         if (buffer == null)
@@ -295,7 +329,31 @@ public class CouchbaseDbDataReader<T> : DbDataReader
             return str.Length;
         }
 
-        var charsToCopy = Math.Min(length, str.Length - (int)dataOffset);
+        if (bufferOffset < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(bufferOffset), bufferOffset, "Buffer offset cannot be negative.");
+        }
+
+        if (bufferOffset >= buffer.Length)
+        {
+            throw new ArgumentOutOfRangeException(nameof(bufferOffset), bufferOffset, "Buffer offset exceeds buffer length.");
+        }
+
+        if (length < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(length), length, "Length cannot be negative.");
+        }
+
+        // If dataOffset is beyond the source data, return 0 (ADO.NET behavior)
+        if (dataOffset >= str.Length)
+        {
+            return 0;
+        }
+
+        var availableChars = str.Length - (int)dataOffset;
+        var availableBuffer = buffer.Length - bufferOffset;
+        var charsToCopy = Math.Min(length, Math.Min(availableChars, availableBuffer));
+
         str.CopyTo((int)dataOffset, buffer, bufferOffset, charsToCopy);
         return charsToCopy;
     }
