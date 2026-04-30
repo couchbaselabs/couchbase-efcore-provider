@@ -121,6 +121,7 @@ public class CouchbaseCommandTests(
         var result = await command.ExecuteNonQueryAsync(CancellationToken.None);
 
         // SELECT queries don't mutate, so result should be 0 or -1
+        Assert.True(result is 0 or -1, $"Expected ExecuteNonQueryAsync to return 0 or -1 for a SELECT query, but got {result}.");
         outputHelper.WriteLine($"ExecuteNonQueryAsync result: {result}");
     }
 
@@ -288,7 +289,7 @@ public class CouchbaseCommandTests(
     }
 
     [Fact]
-    public async Task Cancel_DuringExecution_DoesNotThrowImmediately()
+    public async Task Cancel_BeforeExecution_DoesNotThrow()
     {
         await using var context = bloggingFixture.GetDbContext();
         var connection = context.Database.GetDbConnection();
