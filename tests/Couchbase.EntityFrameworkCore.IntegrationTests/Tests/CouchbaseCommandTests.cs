@@ -136,6 +136,7 @@ public class CouchbaseCommandTests(
 
         var result = command.ExecuteNonQuery();
 
+        Assert.True(result is 0 or -1, $"Expected ExecuteNonQuery to return 0 or -1 for a SELECT query, but got {result}.");
         outputHelper.WriteLine($"ExecuteNonQuery result: {result}");
     }
 
