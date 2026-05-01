@@ -6,10 +6,14 @@ namespace Couchbase.EntityFrameworkCore.Storage.Internal;
 public sealed class CouchbaseParameterCollection : DbParameterCollection
 {
     private readonly List<CouchbaseParameter> _parameters = new();
+    private readonly object _syncRoot = new();
 
-    public CouchbaseParameter AddWithValue(string? parameterName, object? value)
-        => Add(new CouchbaseParameter(parameterName, value));
+    public CouchbaseParameter AddWithValue(string parameterName, object? value)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(parameterName);
 
+        return Add(new CouchbaseParameter(parameterName, value));
+    }
     public CouchbaseParameter Add(CouchbaseParameter value)
     {
         _parameters.Add(value);
@@ -80,7 +84,7 @@ public sealed class CouchbaseParameterCollection : DbParameterCollection
 
     public override int Count => _parameters.Count;
 
-    public override object SyncRoot { get; }
+    public override object SyncRoot => _syncRoot;
 
     public override int IndexOf(string parameterName)
     {

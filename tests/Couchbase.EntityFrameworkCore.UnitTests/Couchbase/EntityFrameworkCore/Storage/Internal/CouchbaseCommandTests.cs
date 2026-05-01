@@ -474,11 +474,235 @@ public class CouchbaseCommandTests
         Assert.Null(exception);
     }
 
+    [Fact]
+    public async Task ExecuteNonQueryAsync_WithNullMetrics_ReturnsNegativeOne()
+    {
+        var mockQueryResult = CreateMockQueryResultWithRows<object>(new List<object>());
+        _mockCluster.Setup(c => c.QueryAsync<object>(It.IsAny<string>(), It.IsAny<QueryOptions>()))
+            .ReturnsAsync(mockQueryResult);
+
+        var command = new CouchbaseCommand
+        {
+            Cluster = _mockCluster.Object,
+            CommandText = "UPDATE bucket SET x = 1"
+        };
+
+        var result = await command.ExecuteNonQueryAsync(CancellationToken.None);
+
+        Assert.Equal(-1, result);
+    }
+
+    [Fact]
+    public async Task ExecuteNonQueryAsync_WithMutationCount_ReturnsMutationCount()
+    {
+        var mockQueryResult = CreateMockQueryResultWithMetrics<object>(new List<object>(), mutationCount: 42);
+        _mockCluster.Setup(c => c.QueryAsync<object>(It.IsAny<string>(), It.IsAny<QueryOptions>()))
+            .ReturnsAsync(mockQueryResult);
+
+        var command = new CouchbaseCommand
+        {
+            Cluster = _mockCluster.Object,
+            CommandText = "UPDATE bucket SET x = 1"
+        };
+
+        var result = await command.ExecuteNonQueryAsync(CancellationToken.None);
+
+        Assert.Equal(42, result);
+    }
+
+    [Fact]
+    public async Task ExecuteNonQueryAsync_WithMutationCountExceedingIntMax_ReturnsIntMax()
+    {
+        var largeMutationCount = (uint)int.MaxValue + 1000;
+        var mockQueryResult = CreateMockQueryResultWithMetrics<object>(new List<object>(), mutationCount: largeMutationCount);
+        _mockCluster.Setup(c => c.QueryAsync<object>(It.IsAny<string>(), It.IsAny<QueryOptions>()))
+            .ReturnsAsync(mockQueryResult);
+
+        var command = new CouchbaseCommand
+        {
+            Cluster = _mockCluster.Object,
+            CommandText = "UPDATE bucket SET x = 1"
+        };
+
+        var result = await command.ExecuteNonQueryAsync(CancellationToken.None);
+
+        Assert.Equal(int.MaxValue, result);
+    }
+
+    [Fact]
+    public async Task ExecuteNonQueryAsync_WithZeroMutationCount_ReturnsZero()
+    {
+        var mockQueryResult = CreateMockQueryResultWithMetrics<object>(new List<object>(), mutationCount: 0);
+        _mockCluster.Setup(c => c.QueryAsync<object>(It.IsAny<string>(), It.IsAny<QueryOptions>()))
+            .ReturnsAsync(mockQueryResult);
+
+        var command = new CouchbaseCommand
+        {
+            Cluster = _mockCluster.Object,
+            CommandText = "UPDATE bucket SET x = 1 WHERE false"
+        };
+
+        var result = await command.ExecuteNonQueryAsync(CancellationToken.None);
+
+        Assert.Equal(0, result);
+    }
+
+    [Fact]
+    public async Task ExecuteNonQueryAsync_WithSelectStatement_ReturnsNegativeOne()
+    {
+        var mockQueryResult = CreateMockQueryResultWithMetrics<object>(new List<object>(), mutationCount: 5);
+        _mockCluster.Setup(c => c.QueryAsync<object>(It.IsAny<string>(), It.IsAny<QueryOptions>()))
+            .ReturnsAsync(mockQueryResult);
+
+        var command = new CouchbaseCommand
+        {
+            Cluster = _mockCluster.Object,
+            CommandText = "SELECT * FROM bucket"
+        };
+
+        var result = await command.ExecuteNonQueryAsync(CancellationToken.None);
+
+        Assert.Equal(-1, result);
+    }
+
+    [Fact]
+    public async Task ExecuteNonQueryAsync_WithMaxIntMutationCount_ReturnsMaxInt()
+    {
+        var mockQueryResult = CreateMockQueryResultWithMetrics<object>(new List<object>(), mutationCount: (uint)int.MaxValue);
+        _mockCluster.Setup(c => c.QueryAsync<object>(It.IsAny<string>(), It.IsAny<QueryOptions>()))
+            .ReturnsAsync(mockQueryResult);
+
+        var command = new CouchbaseCommand
+        {
+            Cluster = _mockCluster.Object,
+            CommandText = "UPDATE bucket SET x = 1"
+        };
+
+        var result = await command.ExecuteNonQueryAsync(CancellationToken.None);
+
+        Assert.Equal(int.MaxValue, result);
+    }
+
+    [Fact]
+    public async Task ExecuteReaderAsync_WithCloseConnectionBehavior_ClosesConnectionWhenReaderClosed()
+    {
+        var mockQueryResult = CreateMockQueryResultWithRows<object>(new List<object>());
+        _mockCluster.Setup(c => c.QueryAsync<object>(It.IsAny<string>(), It.IsAny<QueryOptions>()))
+            .ReturnsAsync(mockQueryResult);
+
+        var mockConnection = new Mock<DbConnection>();
+        mockConnection.Setup(c => c.CloseAsync()).Returns(Task.CompletedTask);
+
+        var command = new CouchbaseCommand
+        {
+            Cluster = _mockCluster.Object,
+            Connection = mockConnection.Object,
+            CommandText = "SELECT * FROM bucket"
+        };
+
+        var reader = await command.ExecuteReaderAsync(CommandBehavior.CloseConnection);
+        await reader.CloseAsync();
+
+        mockConnection.Verify(c => c.CloseAsync(), Times.Once);
+    }
+
+    [Fact]
+    public async Task ExecuteReaderAsync_WithCloseConnectionBehavior_ClosesConnectionWhenReaderDisposed()
+    {
+        var mockQueryResult = CreateMockQueryResultWithRows<object>(new List<object>());
+        _mockCluster.Setup(c => c.QueryAsync<object>(It.IsAny<string>(), It.IsAny<QueryOptions>()))
+            .ReturnsAsync(mockQueryResult);
+
+        var mockConnection = new Mock<DbConnection>();
+        mockConnection.Setup(c => c.CloseAsync()).Returns(Task.CompletedTask);
+
+        var command = new CouchbaseCommand
+        {
+            Cluster = _mockCluster.Object,
+            Connection = mockConnection.Object,
+            CommandText = "SELECT * FROM bucket"
+        };
+
+        var reader = await command.ExecuteReaderAsync(CommandBehavior.CloseConnection);
+        await reader.DisposeAsync();
+
+        mockConnection.Verify(c => c.CloseAsync(), Times.Once);
+    }
+
+    [Fact]
+    public async Task ExecuteReaderAsync_WithDefaultBehavior_DoesNotCloseConnection()
+    {
+        var mockQueryResult = CreateMockQueryResultWithRows<object>(new List<object>());
+        _mockCluster.Setup(c => c.QueryAsync<object>(It.IsAny<string>(), It.IsAny<QueryOptions>()))
+            .ReturnsAsync(mockQueryResult);
+
+        var mockConnection = new Mock<DbConnection>();
+
+        var command = new CouchbaseCommand
+        {
+            Cluster = _mockCluster.Object,
+            Connection = mockConnection.Object,
+            CommandText = "SELECT * FROM bucket"
+        };
+
+        var reader = await command.ExecuteReaderAsync(CommandBehavior.Default);
+        await reader.CloseAsync();
+
+        mockConnection.Verify(c => c.Close(), Times.Never);
+        mockConnection.Verify(c => c.CloseAsync(), Times.Never);
+    }
+
+    [Fact]
+    public async Task ExecuteReaderAsync_WithNoConnection_DoesNotThrowOnClose()
+    {
+        var mockQueryResult = CreateMockQueryResultWithRows<object>(new List<object>());
+        _mockCluster.Setup(c => c.QueryAsync<object>(It.IsAny<string>(), It.IsAny<QueryOptions>()))
+            .ReturnsAsync(mockQueryResult);
+
+        var command = new CouchbaseCommand
+        {
+            Cluster = _mockCluster.Object,
+            CommandText = "SELECT * FROM bucket"
+        };
+
+        var reader = await command.ExecuteReaderAsync(CommandBehavior.CloseConnection);
+
+        // Should not throw even with CloseConnection and no connection
+        var exception = await Record.ExceptionAsync(async () => await reader.CloseAsync());
+        Assert.Null(exception);
+    }
+
     private static IQueryResult<T> CreateMockQueryResultWithRows<T>(List<T> rows)
     {
         var mockResult = new Mock<IQueryResult<T>>();
-        mockResult.Setup(r => r.Rows).Returns(rows.ToAsyncEnumerable());
+        var asyncEnumerable = rows.ToAsyncEnumerable();
+        mockResult.Setup(r => r.Rows).Returns(asyncEnumerable);
+        mockResult.As<IAsyncEnumerable<T>>()
+            .Setup(r => r.GetAsyncEnumerator(It.IsAny<CancellationToken>()))
+            .Returns((CancellationToken ct) => asyncEnumerable.GetAsyncEnumerator(ct));
         mockResult.Setup(r => r.MetaData).Returns((QueryMetaData?)null);
+
+        return mockResult.Object;
+    }
+
+    private static IQueryResult<T> CreateMockQueryResultWithMetrics<T>(List<T> rows, uint mutationCount)
+    {
+        var mockResult = new Mock<IQueryResult<T>>();
+        var asyncEnumerable = rows.ToAsyncEnumerable();
+        mockResult.Setup(r => r.Rows).Returns(asyncEnumerable);
+        mockResult.As<IAsyncEnumerable<T>>()
+            .Setup(r => r.GetAsyncEnumerator(It.IsAny<CancellationToken>()))
+            .Returns((CancellationToken ct) => asyncEnumerable.GetAsyncEnumerator(ct));
+
+        var metrics = new QueryMetrics
+        {
+            MutationCount = mutationCount
+        };
+        var metaData = new QueryMetaData
+        {
+            Metrics = metrics
+        };
+        mockResult.Setup(r => r.MetaData).Returns(metaData);
 
         return mockResult.Object;
     }

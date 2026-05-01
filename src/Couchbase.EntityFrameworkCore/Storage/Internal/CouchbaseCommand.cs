@@ -73,11 +73,24 @@ public class CouchbaseCommand : DbCommand
         {
         }
 
-        // Return mutation count from metrics if available, otherwise -1
+        // Per ADO.NET spec: return rows affected for UPDATE/INSERT/DELETE, -1 for other statements
+        if (!IsDmlStatement(CommandText))
+        {
+            return -1;
+        }
+
         var metrics = result.MetaData?.Metrics;
         if (metrics != null)
         {
-            return (int)metrics.MutationCount;
+            var mutationCount = metrics.MutationCount;
+
+            // ADO.NET ExecuteNonQuery returns int, so clamp to int.MaxValue if exceeded
+            if (mutationCount > int.MaxValue)
+            {
+                return int.MaxValue;
+            }
+
+            return (int)mutationCount;
         }
 
         return -1;
@@ -177,7 +190,9 @@ public class CouchbaseCommand : DbCommand
         var cluster = ResolveCluster();
         var queryResult = await cluster.QueryAsync<object>(CommandText, options).ConfigureAwait(false);
 
-        return new CouchbaseDbDataReader<object>(queryResult);
+        // Pass connection, behavior, and cancellation token to reader
+        // The token is used for schema discovery if FieldCount/HasRows/etc. are accessed before ReadAsync
+        return new CouchbaseDbDataReader<object>(queryResult, DbConnection, behavior, cancellationToken);
     }
 
     protected override void Dispose(bool disposing)
@@ -228,7 +243,15 @@ public class CouchbaseCommand : DbCommand
         {
             if (dbParameter is CouchbaseParameter parameter)
             {
-                options.Parameter(parameter.ParameterName, parameter.Value!);
+                if (string.IsNullOrEmpty(parameter.ParameterName))
+                {
+                    throw new InvalidOperationException(
+                        "Parameter name cannot be null or empty. Use AddWithValue or set ParameterName before executing.");
+                }
+
+                // Convert DBNull.Value to null for Couchbase SDK compatibility
+                var value = parameter.Value == DBNull.Value ? null : parameter.Value;
+                options.Parameter(parameter.ParameterName, value);
             }
         }
 
@@ -242,7 +265,17 @@ public class CouchbaseCommand : DbCommand
 
         return externalToken.CanBeCanceled
             ? CancellationTokenSource.CreateLinkedTokenSource(_cancellationTokenSource.Token, externalToken)
-            : _cancellationTokenSource;
+            : CancellationTokenSource.CreateLinkedTokenSource(_cancellationTokenSource.Token);
+    }
+
+    private static bool IsDmlStatement(string commandText)
+    {
+        var trimmed = commandText.AsSpan().TrimStart();
+        return trimmed.StartsWith("INSERT", StringComparison.OrdinalIgnoreCase) ||
+               trimmed.StartsWith("UPDATE", StringComparison.OrdinalIgnoreCase) ||
+               trimmed.StartsWith("DELETE", StringComparison.OrdinalIgnoreCase) ||
+               trimmed.StartsWith("UPSERT", StringComparison.OrdinalIgnoreCase) ||
+               trimmed.StartsWith("MERGE", StringComparison.OrdinalIgnoreCase);
     }
 }
 
