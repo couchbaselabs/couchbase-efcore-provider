@@ -1,3 +1,4 @@
+using System.Data;
 using System.Text.Json;
 using Couchbase.EntityFrameworkCore.Storage.Internal;
 using Couchbase.Query;
@@ -1244,6 +1245,91 @@ public class CouchbaseDbDataReaderTests
 
     #endregion
 
+    #region Initial Cancellation Token Tests
+
+    [Fact]
+    public void FieldCount_WithCancelledToken_ThrowsOperationCancelledException()
+    {
+        var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        var reader = CreateReaderWithCancellationToken(
+            new List<JsonElement> { JsonDocument.Parse("{\"id\": 1}").RootElement },
+            cts.Token);
+
+        Assert.Throws<OperationCanceledException>(() => _ = reader.FieldCount);
+    }
+
+    [Fact]
+    public void HasRows_WithCancelledToken_ThrowsOperationCancelledException()
+    {
+        var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        var reader = CreateReaderWithCancellationToken(
+            new List<JsonElement> { JsonDocument.Parse("{\"id\": 1}").RootElement },
+            cts.Token);
+
+        Assert.Throws<OperationCanceledException>(() => _ = reader.HasRows);
+    }
+
+    [Fact]
+    public void GetName_WithCancelledToken_ThrowsOperationCancelledException()
+    {
+        var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        var reader = CreateReaderWithCancellationToken(
+            new List<JsonElement> { JsonDocument.Parse("{\"id\": 1}").RootElement },
+            cts.Token);
+
+        Assert.Throws<OperationCanceledException>(() => reader.GetName(0));
+    }
+
+    [Fact]
+    public void GetOrdinal_WithCancelledToken_ThrowsOperationCancelledException()
+    {
+        var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        var reader = CreateReaderWithCancellationToken(
+            new List<JsonElement> { JsonDocument.Parse("{\"id\": 1}").RootElement },
+            cts.Token);
+
+        Assert.Throws<OperationCanceledException>(() => reader.GetOrdinal("id"));
+    }
+
+    [Fact]
+    public async Task SchemaDiscovery_WithValidToken_AllowsSubsequentReads()
+    {
+        // This test verifies that accessing schema properties before ReadAsync
+        // uses the initial token and doesn't prevent subsequent reads
+        var cts = new CancellationTokenSource();
+        var rows = new List<JsonElement>
+        {
+            JsonDocument.Parse("{\"id\": 1}").RootElement,
+            JsonDocument.Parse("{\"id\": 2}").RootElement
+        };
+
+        var reader = CreateReaderWithCancellationToken(rows, cts.Token);
+
+        // Access schema before ReadAsync - this triggers enumerator creation with initial token
+        Assert.Equal(1, reader.FieldCount);
+
+        // First read should work (buffered row from schema discovery)
+        Assert.True(await reader.ReadAsync(CancellationToken.None));
+        Assert.Equal(1L, reader.GetInt64(0));
+
+        // Second read should also work
+        Assert.True(await reader.ReadAsync(CancellationToken.None));
+        Assert.Equal(2L, reader.GetInt64(0));
+
+        // No more rows
+        Assert.False(await reader.ReadAsync(CancellationToken.None));
+    }
+
+    #endregion
+
     private static CouchbaseDbDataReader<JsonElement> CreateReader(List<JsonElement> rows)
     {
         var mockQueryResult = new Mock<IQueryResult<JsonElement>>();
@@ -1252,5 +1338,21 @@ public class CouchbaseDbDataReaderTests
         mockQueryResult.Setup(q => q.Rows).Returns(rows.ToAsyncEnumerable());
 
         return new CouchbaseDbDataReader<JsonElement>(mockQueryResult.Object);
+    }
+
+    private static CouchbaseDbDataReader<JsonElement> CreateReaderWithCancellationToken(
+        List<JsonElement> rows,
+        CancellationToken cancellationToken)
+    {
+        var mockQueryResult = new Mock<IQueryResult<JsonElement>>();
+        var metaData = new QueryMetaData { Status = QueryStatus.Success };
+        mockQueryResult.Setup(q => q.MetaData).Returns(metaData);
+        mockQueryResult.Setup(q => q.Rows).Returns(rows.ToAsyncEnumerable());
+
+        return new CouchbaseDbDataReader<JsonElement>(
+            mockQueryResult.Object,
+            connection: null,
+            CommandBehavior.Default,
+            cancellationToken);
     }
 }

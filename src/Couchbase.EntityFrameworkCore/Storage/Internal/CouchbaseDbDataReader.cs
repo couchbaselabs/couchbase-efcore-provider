@@ -11,6 +11,7 @@ public class CouchbaseDbDataReader<T> : DbDataReader
     private readonly IQueryResult<T> _queryResult;
     private readonly DbConnection? _connection;
     private readonly CommandBehavior _behavior;
+    private readonly CancellationToken _initialCancellationToken;
     private IAsyncEnumerator<T>? _enumerator;
     private CancellationToken _cancellationToken;
     private T? _currentRow;
@@ -24,15 +25,16 @@ public class CouchbaseDbDataReader<T> : DbDataReader
     private bool _schemaInitialized;
 
     public CouchbaseDbDataReader(IQueryResult<T> queryResult)
-        : this(queryResult, null, CommandBehavior.Default)
+        : this(queryResult, null, CommandBehavior.Default, CancellationToken.None)
     {
     }
 
-    public CouchbaseDbDataReader(IQueryResult<T> queryResult, DbConnection? connection, CommandBehavior behavior)
+    public CouchbaseDbDataReader(IQueryResult<T> queryResult, DbConnection? connection, CommandBehavior behavior, CancellationToken cancellationToken)
     {
         _queryResult = queryResult ?? throw new ArgumentNullException(nameof(queryResult));
         _connection = connection;
         _behavior = behavior;
+        _initialCancellationToken = cancellationToken;
     }
 
     public override int FieldCount
@@ -602,8 +604,11 @@ public class CouchbaseDbDataReader<T> : DbDataReader
             return;
         }
 
-        // Create enumerator if needed (with no cancellation for schema discovery)
-        EnsureEnumerator(CancellationToken.None);
+        // Check for cancellation before starting schema discovery
+        _initialCancellationToken.ThrowIfCancellationRequested();
+
+        // Create enumerator using initial cancellation token so schema discovery can be cancelled
+        EnsureEnumerator(_initialCancellationToken);
 
         // Read the first row to discover schema, but buffer it so it's not lost
         var hasRow = _enumerator!.MoveNextAsync().AsTask().GetAwaiter().GetResult();

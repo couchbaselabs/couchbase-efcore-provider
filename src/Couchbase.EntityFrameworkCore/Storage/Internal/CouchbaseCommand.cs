@@ -190,8 +190,9 @@ public class CouchbaseCommand : DbCommand
         var cluster = ResolveCluster();
         var queryResult = await cluster.QueryAsync<object>(CommandText, options).ConfigureAwait(false);
 
-        // Pass connection and behavior to reader so it can honor CloseConnection
-        return new CouchbaseDbDataReader<object>(queryResult, DbConnection, behavior);
+        // Pass connection, behavior, and cancellation token to reader
+        // The token is used for schema discovery if FieldCount/HasRows/etc. are accessed before ReadAsync
+        return new CouchbaseDbDataReader<object>(queryResult, DbConnection, behavior, cancellationToken);
     }
 
     protected override void Dispose(bool disposing)
