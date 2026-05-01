@@ -2,9 +2,8 @@
 // Copyright 2025 Couchbase, Inc.
 // This file is under an MIT license as granted under license from the .NET Foundation
 
-using System.Text;
-using Couchbase.Core.Utils;
 using Couchbase.EntityFrameworkCore.Infrastructure;
+using Couchbase.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 
@@ -27,23 +26,17 @@ public static class CouchbaseModelBuilderExtensions
 
             var tableName = entityType.GetTableName();
             if (tableName is null) continue;
-            if (toLowerCaseNaming.HasValue &&
-                toLowerCaseNaming.Value)
+            if (toLowerCaseNaming.HasValue && toLowerCaseNaming.Value)
             {
                 tableName = tableName.ToLower();
             }
 
-            var splitTableName = tableName.Split('.');
-            if(splitTableName.Length == 3) continue;
+            // Skip if already a full keyspace (Bucket.Scope.Collection)
+            if (CouchbaseKeyspace.TryParse(tableName, out _)) continue;
 
-            var keyspaceBuilder = new StringBuilder();
-            keyspaceBuilder.Append(tableName);
-            keyspaceBuilder.Append('.');
-            keyspaceBuilder.Append(dbContextOptions.Bucket);
-            keyspaceBuilder.Append('.');
-            keyspaceBuilder.Append(dbContextOptions.Scope);
-
-            entityType.SetTableName(keyspaceBuilder.ToString());
+            // tableName is just the collection name, add bucket and scope
+            var keyspace = new CouchbaseKeyspace(dbContextOptions.Bucket, dbContextOptions.Scope, tableName);
+            entityType.SetTableName(keyspace.ToString());
         }
         return modelBuilder;
     }

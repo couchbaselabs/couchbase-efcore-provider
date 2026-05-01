@@ -157,20 +157,14 @@ public class CouchbaseClientWrapper : ICouchbaseClientWrapper
     }
 
     /// <summary>
-    /// Parses the internal keyspace format (Collection.Bucket.Scope) into its components and display format.
+    /// Parses the keyspace format (Bucket.Scope.Collection) into its components.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// The internal format is used for alias generation (first letter of collection), but differs
-    /// from the standard Couchbase keyspace format (Bucket.Scope.Collection).
-    /// </para>
-    /// <para>
     /// Results are cached for performance since the same keyspace may be parsed multiple times.
-    /// </para>
     /// </remarks>
-    private CachedKeyspace ParseKeyspace(string internalKeyspace)
+    private CachedKeyspace ParseKeyspace(string keyspace)
     {
-        return _keyspaceCache.GetOrAdd(internalKeyspace, static key =>
+        return _keyspaceCache.GetOrAdd(keyspace, static key =>
         {
             var parts = key.Split('.');
             if (parts.Length != 3)
@@ -178,10 +172,10 @@ public class CouchbaseClientWrapper : ICouchbaseClientWrapper
                 return new CachedKeyspace(key, key, key, key, null);
             }
 
-            // Internal format: Collection.Bucket.Scope
-            var collectionName = parts[0].Trim('`');
-            var bucket = parts[1].Trim('`');
-            var scope = parts[2].Trim('`');
+            // Standard format: Bucket.Scope.Collection
+            var bucket = parts[0].Trim('`');
+            var scope = parts[1].Trim('`');
+            var collectionName = parts[2].Trim('`');
             var displayKeyspace = $"`{bucket}`.`{scope}`.`{collectionName}`";
 
             return new CachedKeyspace(collectionName, bucket, scope, displayKeyspace, null);

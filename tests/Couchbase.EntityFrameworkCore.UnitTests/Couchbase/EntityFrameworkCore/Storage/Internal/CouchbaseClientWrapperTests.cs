@@ -35,8 +35,8 @@ public class CouchbaseClientWrapperTests
     [Fact]
     public async Task GetCollectionAsync_WithInvalidKeyspace_ThrowsExceptionWithCorrectFormat()
     {
-        // Arrange: Internal format is Collection.Bucket.Scope
-        var internalKeyspace = "MyCollection.MyBucket.MyScope";
+        // Arrange: Standard format is Bucket.Scope.Collection
+        var keyspace = "MyBucket.MyScope.MyCollection";
 
         _mockBucket.Setup(b => b.Scope("MyScope")).Returns(_mockScope.Object);
         _mockScope.Setup(s => s.Collection("MyCollection"))
@@ -49,18 +49,17 @@ public class CouchbaseClientWrapperTests
 
         // Act & Assert
         var exception = await Assert.ThrowsAsync<CollectionNotFoundException>(
-            () => wrapper.GetCollectionAsync(internalKeyspace));
+            () => wrapper.GetCollectionAsync(keyspace));
 
         // The exception message should contain the display format with backticks: `Bucket`.`Scope`.`Collection`
         Assert.Contains("`MyBucket`.`MyScope`.`MyCollection`", exception.Message);
-        Assert.DoesNotContain("MyCollection.MyBucket.MyScope", exception.Message);
     }
 
     [Fact]
     public async Task GetCollectionAsync_WithBackticksInKeyspace_FormatsDisplayKeyspaceCorrectly()
     {
-        // Arrange: Internal format with backticks
-        var internalKeyspace = "`MyCollection`.`MyBucket`.`MyScope`";
+        // Arrange: Standard format with backticks
+        var keyspace = "`MyBucket`.`MyScope`.`MyCollection`";
 
         _mockBucket.Setup(b => b.Scope("MyScope")).Returns(_mockScope.Object);
         _mockScope.Setup(s => s.Collection("MyCollection"))
@@ -73,7 +72,7 @@ public class CouchbaseClientWrapperTests
 
         // Act & Assert
         var exception = await Assert.ThrowsAsync<CollectionNotFoundException>(
-            () => wrapper.GetCollectionAsync(internalKeyspace));
+            () => wrapper.GetCollectionAsync(keyspace));
 
         // The exception message should have proper backtick format (no double backticks)
         Assert.Contains("`MyBucket`.`MyScope`.`MyCollection`", exception.Message);
@@ -83,8 +82,8 @@ public class CouchbaseClientWrapperTests
     [Fact]
     public async Task GetCollectionAsync_WithValidCollection_ReturnsCollection()
     {
-        // Arrange
-        var internalKeyspace = "MyCollection.MyBucket.MyScope";
+        // Arrange: Standard format is Bucket.Scope.Collection
+        var keyspace = "MyBucket.MyScope.MyCollection";
         var mockCollection = new Mock<ICouchbaseCollection>();
 
         _mockBucket.Setup(b => b.Scope("MyScope")).Returns(_mockScope.Object);
@@ -96,7 +95,7 @@ public class CouchbaseClientWrapperTests
             _mockLogger.Object);
 
         // Act
-        var collection = await wrapper.GetCollectionAsync(internalKeyspace);
+        var collection = await wrapper.GetCollectionAsync(keyspace);
 
         // Assert
         Assert.Same(mockCollection.Object, collection);
@@ -105,8 +104,8 @@ public class CouchbaseClientWrapperTests
     [Fact]
     public async Task GetCollectionAsync_CalledTwice_UsesCachedCollection()
     {
-        // Arrange
-        var internalKeyspace = "MyCollection.MyBucket.MyScope";
+        // Arrange: Standard format is Bucket.Scope.Collection
+        var keyspace = "MyBucket.MyScope.MyCollection";
         var mockCollection = new Mock<ICouchbaseCollection>();
 
         _mockBucket.Setup(b => b.Scope("MyScope")).Returns(_mockScope.Object);
@@ -118,8 +117,8 @@ public class CouchbaseClientWrapperTests
             _mockLogger.Object);
 
         // Act
-        var collection1 = await wrapper.GetCollectionAsync(internalKeyspace);
-        var collection2 = await wrapper.GetCollectionAsync(internalKeyspace);
+        var collection1 = await wrapper.GetCollectionAsync(keyspace);
+        var collection2 = await wrapper.GetCollectionAsync(keyspace);
 
         // Assert - Collection should only be retrieved once from scope
         Assert.Same(collection1, collection2);
