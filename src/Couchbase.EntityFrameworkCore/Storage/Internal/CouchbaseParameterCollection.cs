@@ -8,17 +8,9 @@ public sealed class CouchbaseParameterCollection : DbParameterCollection
     private readonly List<CouchbaseParameter> _parameters = new();
     private readonly object _syncRoot = new();
 
-    public CouchbaseParameter AddWithValue(string? parameterName, object? value)
+    public CouchbaseParameter AddWithValue(string parameterName, object? value)
     {
-        if (parameterName is null)
-        {
-            throw new ArgumentNullException(nameof(parameterName));
-        }
-
-        if (parameterName.Length == 0)
-        {
-            throw new ArgumentException("Parameter name cannot be empty.", nameof(parameterName));
-        }
+        ArgumentException.ThrowIfNullOrEmpty(parameterName);
 
         return Add(new CouchbaseParameter(parameterName, value));
     }
