@@ -1,43 +1,59 @@
-using System.Text;
-using Couchbase.Core.Utils;
-
 namespace Couchbase.EntityFrameworkCore.Metadata;
 
 /// <summary>
-/// Maps an entity to a Scope and Collection. The other part of the keyspace,
-/// the Bucket name, is pulled from the ClusterOptions that is injected via DI
+/// Maps an entity to a Scope and Collection. The Bucket name is pulled from the 
+/// DbContext configuration that is injected via DI.
 /// </summary>
+/// <remarks>
+/// Use this attribute to specify the collection (and optionally scope) where an entity's
+/// documents are stored. The full keyspace (Bucket.Scope.Collection) is constructed at
+/// runtime by combining this with the bucket from <see cref="Infrastructure.ICouchbaseDbContextOptionsBuilder"/>.
+/// </remarks>
 [AttributeUsage(AttributeTargets.Class)]
 public class CouchbaseKeyspaceAttribute : Attribute
 {
-    private string _keyspace;
-    
-    public CouchbaseKeyspaceAttribute(string? collection)
+    /// <summary>
+    /// Initializes a new instance with the specified collection name.
+    /// The scope defaults to "_default".
+    /// </summary>
+    /// <param name="collection">The collection name.</param>
+    public CouchbaseKeyspaceAttribute(string collection)
     {
-        Collection = collection ?? throw new ArgumentNullException(nameof(collection));
+        ArgumentException.ThrowIfNullOrEmpty(collection);
+        Collection = collection;
     }
-    
-    public CouchbaseKeyspaceAttribute(string? scope, string? collection)
+
+    /// <summary>
+    /// Initializes a new instance with the specified scope and collection names.
+    /// </summary>
+    /// <param name="scope">The scope name.</param>
+    /// <param name="collection">The collection name.</param>
+    public CouchbaseKeyspaceAttribute(string scope, string collection)
     {
-        Scope = scope ?? throw new ArgumentNullException(nameof(scope));
-        Collection = collection ?? throw new ArgumentNullException(nameof(collection));
+        ArgumentException.ThrowIfNullOrEmpty(scope);
+        ArgumentException.ThrowIfNullOrEmpty(collection);
+        Scope = scope;
+        Collection = collection;
     }
-    
-    public string? Scope { get; } = "_default";
 
-    public string? Collection { get; } = "_default";
+    /// <summary>
+    /// Gets the scope name. Defaults to "_default".
+    /// </summary>
+    public string Scope { get; } = "_default";
 
-    public string GetKeySpace()
-    {
-        if (_keyspace == null)
-        {
-            var keyspaceBuilder = new StringBuilder();
-            keyspaceBuilder.Append(Collection);
-            _keyspace = keyspaceBuilder.ToString();
-        }
+    /// <summary>
+    /// Gets the collection name.
+    /// </summary>
+    public string Collection { get; }
 
-        return _keyspace;
-    }
+    /// <summary>
+    /// Gets the collection name (without bucket, which is added at runtime).
+    /// </summary>
+    /// <remarks>
+    /// The full keyspace is constructed by <see cref="Extensions.CouchbaseModelBuilderExtensions.ConfigureToCouchbase"/>
+    /// which adds the bucket and scope from the DbContext configuration.
+    /// </remarks>
+    public string GetKeySpace() => Collection;
 }
 
 /* ************************************************************
