@@ -679,7 +679,7 @@ public class CouchbaseCommandTests
         mockResult.Setup(r => r.Rows).Returns(asyncEnumerable);
         mockResult.As<IAsyncEnumerable<T>>()
             .Setup(r => r.GetAsyncEnumerator(It.IsAny<CancellationToken>()))
-            .Returns(() => asyncEnumerable.GetAsyncEnumerator());
+            .Returns((CancellationToken ct) => asyncEnumerable.GetAsyncEnumerator(ct));
         mockResult.Setup(r => r.MetaData).Returns((QueryMetaData?)null);
 
         return mockResult.Object;
@@ -692,7 +692,7 @@ public class CouchbaseCommandTests
         mockResult.Setup(r => r.Rows).Returns(asyncEnumerable);
         mockResult.As<IAsyncEnumerable<T>>()
             .Setup(r => r.GetAsyncEnumerator(It.IsAny<CancellationToken>()))
-            .Returns(() => asyncEnumerable.GetAsyncEnumerator());
+            .Returns((CancellationToken ct) => asyncEnumerable.GetAsyncEnumerator(ct));
 
         var metrics = new QueryMetrics
         {
