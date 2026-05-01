@@ -6,6 +6,29 @@ using Couchbase.Query;
 
 namespace Couchbase.EntityFrameworkCore.Storage.Internal;
 
+/// <summary>
+/// A <see cref="DbDataReader"/> implementation for reading Couchbase N1QL query results.
+/// </summary>
+/// <remarks>
+/// <para>
+/// This reader wraps an <see cref="IQueryResult{T}"/> and provides ADO.NET-compatible access to query results.
+/// Couchbase N1QL queries return rows as JSON objects with named properties (e.g., <c>SELECT id, name FROM bucket</c>
+/// returns rows like <c>{"id": 1, "name": "Alice"}</c>).
+/// </para>
+/// <para>
+/// <b>Schema Discovery:</b> Field metadata (names and ordinals) is captured from the first row and reused for all
+/// subsequent rows. If the first row has fields <c>["id", "name"]</c>, those become ordinals 0 and 1 respectively.
+/// Later rows with different fields will have missing fields return <see cref="DBNull.Value"/> and extra fields
+/// will be inaccessible by ordinal.
+/// </para>
+/// <para>
+/// <b>Value Extraction:</b> When accessing values by ordinal, nested JSON objects and arrays are automatically
+/// unwrapped to extract the first property/element value. This enables typed getters (e.g., <see cref="GetInt64"/>)
+/// to work with Couchbase's row format. Use <see cref="GetFieldValue{T}"/> with <see cref="JsonElement"/> to
+/// access raw JSON structures.
+/// </para>
+/// </remarks>
+/// <typeparam name="T">The type of rows in the query result.</typeparam>
 public class CouchbaseDbDataReader<T> : DbDataReader
 {
     private readonly IQueryResult<T> _queryResult;
@@ -24,11 +47,24 @@ public class CouchbaseDbDataReader<T> : DbDataReader
     private bool _isClosed;
     private bool _schemaInitialized;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="CouchbaseDbDataReader{T}"/> class.
+    /// </summary>
+    /// <param name="queryResult">The Couchbase query result to read from.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="queryResult"/> is null.</exception>
     public CouchbaseDbDataReader(IQueryResult<T> queryResult)
         : this(queryResult, null, CommandBehavior.Default, CancellationToken.None)
     {
     }
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="CouchbaseDbDataReader{T}"/> class with connection and behavior options.
+    /// </summary>
+    /// <param name="queryResult">The Couchbase query result to read from.</param>
+    /// <param name="connection">The connection to close when the reader is closed (if <see cref="CommandBehavior.CloseConnection"/> is specified).</param>
+    /// <param name="behavior">The command behavior flags.</param>
+    /// <param name="cancellationToken">The cancellation token used for schema discovery and initial row iteration.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="queryResult"/> is null.</exception>
     public CouchbaseDbDataReader(IQueryResult<T> queryResult, DbConnection? connection, CommandBehavior behavior, CancellationToken cancellationToken)
     {
         _queryResult = queryResult ?? throw new ArgumentNullException(nameof(queryResult));
@@ -37,6 +73,13 @@ public class CouchbaseDbDataReader<T> : DbDataReader
         _initialCancellationToken = cancellationToken;
     }
 
+    /// <summary>
+    /// Gets the number of fields in the current row.
+    /// </summary>
+    /// <remarks>
+    /// Accessing this property before calling <see cref="Read"/> will trigger schema discovery,
+    /// which reads and buffers the first row. The buffered row is returned on the next <see cref="Read"/> call.
+    /// </remarks>
     public override int FieldCount
     {
         get
@@ -46,8 +89,28 @@ public class CouchbaseDbDataReader<T> : DbDataReader
         }
     }
 
+    /// <summary>
+    /// Gets the number of rows changed, inserted, or deleted. Always returns -1 for Couchbase queries.
+    /// </summary>
+    /// <remarks>
+    /// For SELECT queries, this always returns -1. Use <see cref="CouchbaseCommand.ExecuteNonQueryAsync"/>
+    /// to get mutation counts for INSERT, UPDATE, DELETE, UPSERT, and MERGE statements.
+    /// </remarks>
     public override int RecordsAffected => -1;
 
+    /// <summary>
+    /// Gets a value indicating whether the result set contains one or more rows.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Accessing this property before calling <see cref="Read"/> will trigger schema discovery,
+    /// which peeks at the first row to determine availability. The peeked row is buffered and
+    /// returned on the next <see cref="Read"/> call, so no data is lost.
+    /// </para>
+    /// <para>
+    /// Once determined, the value is cached and remains constant even after all rows are read.
+    /// </para>
+    /// </remarks>
     public override bool HasRows
     {
         get
@@ -63,19 +126,54 @@ public class CouchbaseDbDataReader<T> : DbDataReader
         }
     }
 
+    /// <summary>
+    /// Gets a value indicating whether the reader is closed.
+    /// </summary>
     public override bool IsClosed => _isClosed;
 
+    /// <summary>
+    /// Gets the nesting depth of the current row. Always returns 0 for Couchbase (no nested result sets).
+    /// </summary>
     public override int Depth => 0;
 
+    /// <summary>
+    /// Gets the value of the specified column by ordinal.
+    /// </summary>
+    /// <param name="ordinal">The zero-based column ordinal.</param>
+    /// <returns>The value of the column.</returns>
     public override object this[int ordinal] => GetValue(ordinal);
 
+    /// <summary>
+    /// Gets the value of the specified column by name.
+    /// </summary>
+    /// <param name="name">The column name (case-insensitive).</param>
+    /// <returns>The value of the column.</returns>
     public override object this[string name] => GetValue(GetOrdinal(name));
 
+    /// <summary>
+    /// Advances the reader to the next row synchronously.
+    /// </summary>
+    /// <returns><c>true</c> if there are more rows; otherwise, <c>false</c>.</returns>
     public override bool Read()
     {
         return ReadAsync(CancellationToken.None).GetAwaiter().GetResult();
     }
 
+    /// <summary>
+    /// Asynchronously advances the reader to the next row.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// If schema discovery (via <see cref="FieldCount"/>, <see cref="HasRows"/>, etc.) has already buffered
+    /// the first row, that row is returned immediately without advancing the underlying enumerator.
+    /// </para>
+    /// <para>
+    /// The cancellation token is checked before each iteration. If the enumerator was created during
+    /// schema discovery, it uses the initial cancellation token provided to the constructor.
+    /// </para>
+    /// </remarks>
+    /// <param name="cancellationToken">A token to cancel the asynchronous operation.</param>
+    /// <returns><c>true</c> if there are more rows; otherwise, <c>false</c>.</returns>
     public override async Task<bool> ReadAsync(CancellationToken cancellationToken)
     {
         if (_isClosed)
@@ -137,17 +235,39 @@ public class CouchbaseDbDataReader<T> : DbDataReader
         }
     }
 
+    /// <summary>
+    /// Advances the reader to the next result set. Always returns <c>false</c> for Couchbase.
+    /// </summary>
+    /// <remarks>
+    /// Couchbase N1QL queries return a single result set. This method always returns <c>false</c>.
+    /// </remarks>
+    /// <returns>Always <c>false</c>.</returns>
     public override bool NextResult()
     {
         // Couchbase queries return a single result set
         return false;
     }
 
+    /// <summary>
+    /// Asynchronously advances the reader to the next result set. Always returns <c>false</c> for Couchbase.
+    /// </summary>
+    /// <remarks>
+    /// Couchbase N1QL queries return a single result set. This method always returns <c>false</c>.
+    /// </remarks>
+    /// <param name="cancellationToken">Ignored. Couchbase does not support multiple result sets.</param>
+    /// <returns>Always <c>false</c>.</returns>
     public override async Task<bool> NextResultAsync(CancellationToken cancellationToken)
     {
         return false;
     }
 
+    /// <summary>
+    /// Closes the reader and releases resources.
+    /// </summary>
+    /// <remarks>
+    /// If <see cref="CommandBehavior.CloseConnection"/> was specified when creating the reader,
+    /// the associated connection is also closed.
+    /// </remarks>
     public override void Close()
     {
         if (!_isClosed)
@@ -163,6 +283,13 @@ public class CouchbaseDbDataReader<T> : DbDataReader
         }
     }
 
+    /// <summary>
+    /// Asynchronously closes the reader and releases resources.
+    /// </summary>
+    /// <remarks>
+    /// If <see cref="CommandBehavior.CloseConnection"/> was specified when creating the reader,
+    /// the associated connection is also closed asynchronously.
+    /// </remarks>
     public override async Task CloseAsync()
     {
         if (!_isClosed)
@@ -196,6 +323,16 @@ public class CouchbaseDbDataReader<T> : DbDataReader
         await base.DisposeAsync().ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Gets the name of the field at the specified ordinal.
+    /// </summary>
+    /// <remarks>
+    /// Field names are captured from the first row during schema discovery. Accessing this method
+    /// before calling <see cref="Read"/> will trigger schema discovery.
+    /// </remarks>
+    /// <param name="ordinal">The zero-based column ordinal.</param>
+    /// <returns>The name of the field.</returns>
+    /// <exception cref="IndexOutOfRangeException">Thrown when <paramref name="ordinal"/> is out of range.</exception>
     public override string GetName(int ordinal)
     {
         EnsureFieldInfo();
@@ -203,6 +340,17 @@ public class CouchbaseDbDataReader<T> : DbDataReader
         return _fieldNames![ordinal];
     }
 
+    /// <summary>
+    /// Gets the ordinal of the field with the specified name.
+    /// </summary>
+    /// <remarks>
+    /// Field name lookup is case-insensitive. Accessing this method before calling <see cref="Read"/>
+    /// will trigger schema discovery.
+    /// </remarks>
+    /// <param name="name">The name of the field.</param>
+    /// <returns>The zero-based ordinal of the field.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="name"/> is null.</exception>
+    /// <exception cref="IndexOutOfRangeException">Thrown when the field is not found.</exception>
     public override int GetOrdinal(string name)
     {
         if (name == null)
@@ -219,18 +367,53 @@ public class CouchbaseDbDataReader<T> : DbDataReader
         throw new IndexOutOfRangeException($"Field '{name}' not found.");
     }
 
+    /// <summary>
+    /// Gets the data type name of the field at the specified ordinal.
+    /// </summary>
+    /// <remarks>
+    /// Returns the CLR type name of the current value. Since Couchbase is schemaless,
+    /// the type may vary between rows for the same field.
+    /// </remarks>
+    /// <param name="ordinal">The zero-based column ordinal.</param>
+    /// <returns>The CLR type name of the value, or "Object" if null.</returns>
     public override string GetDataTypeName(int ordinal)
     {
         var value = GetValue(ordinal);
         return value?.GetType().Name ?? "Object";
     }
 
+    /// <summary>
+    /// Gets the CLR type of the field at the specified ordinal.
+    /// </summary>
+    /// <remarks>
+    /// Returns the runtime type of the current value. Since Couchbase is schemaless,
+    /// the type may vary between rows for the same field.
+    /// </remarks>
+    /// <param name="ordinal">The zero-based column ordinal.</param>
+    /// <returns>The CLR type of the value, or <see cref="object"/> if null.</returns>
     public override Type GetFieldType(int ordinal)
     {
         var value = GetValue(ordinal);
         return value?.GetType() ?? typeof(object);
     }
 
+    /// <summary>
+    /// Gets the value of the field at the specified ordinal.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// For JSON object values, this method extracts the first property's value to enable
+    /// typed getter methods (e.g., <see cref="GetInt64"/>) to work with Couchbase's row format
+    /// where each row is a JSON object like <c>{"fieldName": value}</c>.
+    /// </para>
+    /// <para>
+    /// Use <see cref="GetFieldValue{T}"/> with <see cref="JsonElement"/> to access the raw JSON structure.
+    /// </para>
+    /// </remarks>
+    /// <param name="ordinal">The zero-based column ordinal.</param>
+    /// <returns>The value of the field, or <see cref="DBNull.Value"/> if null.</returns>
+    /// <exception cref="InvalidOperationException">Thrown when no current row exists (call <see cref="Read"/> first).</exception>
+    /// <exception cref="IndexOutOfRangeException">Thrown when <paramref name="ordinal"/> is out of range.</exception>
     public override object GetValue(int ordinal)
     {
         EnsureCurrentRow();
@@ -240,6 +423,13 @@ public class CouchbaseDbDataReader<T> : DbDataReader
         return GetFieldValue(fieldName);
     }
 
+    /// <summary>
+    /// Populates an array with the values of all fields in the current row.
+    /// </summary>
+    /// <param name="values">The array to populate with field values.</param>
+    /// <returns>The number of values copied (minimum of array length and field count).</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="values"/> is null.</exception>
+    /// <exception cref="InvalidOperationException">Thrown when no current row exists.</exception>
     public override int GetValues(object[] values)
     {
         if (values == null)
@@ -259,17 +449,34 @@ public class CouchbaseDbDataReader<T> : DbDataReader
         return count;
     }
 
+    /// <summary>
+    /// Determines whether the field at the specified ordinal is null or <see cref="DBNull.Value"/>.
+    /// </summary>
+    /// <param name="ordinal">The zero-based column ordinal.</param>
+    /// <returns><c>true</c> if the field is null or DBNull; otherwise, <c>false</c>.</returns>
     public override bool IsDBNull(int ordinal)
     {
         var value = GetValue(ordinal);
         return value == null || value == DBNull.Value;
     }
 
+    /// <summary>
+    /// Asynchronously determines whether the field at the specified ordinal is null.
+    /// </summary>
+    /// <param name="ordinal">The zero-based column ordinal.</param>
+    /// <param name="cancellationToken">Ignored. The operation is synchronous.</param>
+    /// <returns><c>true</c> if the field is null or DBNull; otherwise, <c>false</c>.</returns>
     public override async Task<bool> IsDBNullAsync(int ordinal, CancellationToken cancellationToken)
     {
         return IsDBNull(ordinal);
     }
 
+    /// <summary>
+    /// Gets the boolean value of the field at the specified ordinal.
+    /// </summary>
+    /// <param name="ordinal">The zero-based column ordinal.</param>
+    /// <returns>The boolean value of the field.</returns>
+    /// <exception cref="InvalidCastException">Thrown when the value cannot be converted to boolean.</exception>
     public override bool GetBoolean(int ordinal)
     {
         var value = GetValue(ordinal);
@@ -283,6 +490,13 @@ public class CouchbaseDbDataReader<T> : DbDataReader
         };
     }
 
+    /// <summary>
+    /// Gets the byte value of the field at the specified ordinal.
+    /// </summary>
+    /// <param name="ordinal">The zero-based column ordinal.</param>
+    /// <returns>The byte value of the field.</returns>
+    /// <exception cref="InvalidCastException">Thrown when the value cannot be converted to byte.</exception>
+    /// <exception cref="OverflowException">Thrown when the value is outside the byte range (0-255).</exception>
     public override byte GetByte(int ordinal)
     {
         var value = GetValue(ordinal);
@@ -297,6 +511,26 @@ public class CouchbaseDbDataReader<T> : DbDataReader
         };
     }
 
+    /// <summary>
+    /// Reads bytes from the field at the specified ordinal into a buffer.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The field value must be a byte array or a base64-encoded string. If <paramref name="buffer"/>
+    /// is null, returns the total length of the byte data without copying.
+    /// </para>
+    /// <para>
+    /// If <paramref name="dataOffset"/> is beyond the source data length, returns 0 (ADO.NET behavior).
+    /// </para>
+    /// </remarks>
+    /// <param name="ordinal">The zero-based column ordinal.</param>
+    /// <param name="dataOffset">The offset within the source data to start reading from.</param>
+    /// <param name="buffer">The buffer to copy bytes into, or null to query the total length.</param>
+    /// <param name="bufferOffset">The offset within the buffer to start writing to.</param>
+    /// <param name="length">The maximum number of bytes to copy.</param>
+    /// <returns>The number of bytes copied, or the total length if buffer is null.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown for negative offsets or lengths, or buffer overflow.</exception>
+    /// <exception cref="InvalidCastException">Thrown when the value cannot be converted to bytes.</exception>
     public override long GetBytes(int ordinal, long dataOffset, byte[]? buffer, int bufferOffset, int length)
     {
         if (dataOffset < 0)
@@ -353,6 +587,15 @@ public class CouchbaseDbDataReader<T> : DbDataReader
         return bytesToCopy;
     }
 
+    /// <summary>
+    /// Gets the character value of the field at the specified ordinal.
+    /// </summary>
+    /// <remarks>
+    /// For string values, returns the first character. Throws if the string is empty.
+    /// </remarks>
+    /// <param name="ordinal">The zero-based column ordinal.</param>
+    /// <returns>The character value of the field.</returns>
+    /// <exception cref="InvalidCastException">Thrown when the value cannot be converted to char.</exception>
     public override char GetChar(int ordinal)
     {
         var value = GetValue(ordinal);
@@ -365,6 +608,24 @@ public class CouchbaseDbDataReader<T> : DbDataReader
         };
     }
 
+    /// <summary>
+    /// Reads characters from the field at the specified ordinal into a buffer.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// If <paramref name="buffer"/> is null, returns the total length of the string without copying.
+    /// </para>
+    /// <para>
+    /// If <paramref name="dataOffset"/> is beyond the source string length, returns 0 (ADO.NET behavior).
+    /// </para>
+    /// </remarks>
+    /// <param name="ordinal">The zero-based column ordinal.</param>
+    /// <param name="dataOffset">The offset within the source string to start reading from.</param>
+    /// <param name="buffer">The buffer to copy characters into, or null to query the total length.</param>
+    /// <param name="bufferOffset">The offset within the buffer to start writing to.</param>
+    /// <param name="length">The maximum number of characters to copy.</param>
+    /// <returns>The number of characters copied, or the total length if buffer is null.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown for negative offsets or lengths, or buffer overflow.</exception>
     public override long GetChars(int ordinal, long dataOffset, char[]? buffer, int bufferOffset, int length)
     {
         if (dataOffset < 0)
@@ -414,6 +675,16 @@ public class CouchbaseDbDataReader<T> : DbDataReader
         return charsToCopy;
     }
 
+    /// <summary>
+    /// Gets the DateTime value of the field at the specified ordinal.
+    /// </summary>
+    /// <remarks>
+    /// Supports ISO 8601 date strings, <see cref="DateTime"/>, and <see cref="DateTimeOffset"/> values.
+    /// </remarks>
+    /// <param name="ordinal">The zero-based column ordinal.</param>
+    /// <returns>The DateTime value of the field.</returns>
+    /// <exception cref="InvalidCastException">Thrown when the value cannot be converted to DateTime.</exception>
+    /// <exception cref="FormatException">Thrown when a string value is not a valid date format.</exception>
     public override DateTime GetDateTime(int ordinal)
     {
         var value = GetValue(ordinal);
@@ -427,6 +698,13 @@ public class CouchbaseDbDataReader<T> : DbDataReader
         };
     }
 
+    /// <summary>
+    /// Gets the decimal value of the field at the specified ordinal.
+    /// </summary>
+    /// <param name="ordinal">The zero-based column ordinal.</param>
+    /// <returns>The decimal value of the field.</returns>
+    /// <exception cref="InvalidCastException">Thrown when the value cannot be converted to decimal.</exception>
+    /// <exception cref="OverflowException">Thrown when the value is outside the decimal range.</exception>
     public override decimal GetDecimal(int ordinal)
     {
         var value = GetValue(ordinal);
@@ -442,6 +720,12 @@ public class CouchbaseDbDataReader<T> : DbDataReader
         };
     }
 
+    /// <summary>
+    /// Gets the double value of the field at the specified ordinal.
+    /// </summary>
+    /// <param name="ordinal">The zero-based column ordinal.</param>
+    /// <returns>The double value of the field.</returns>
+    /// <exception cref="InvalidCastException">Thrown when the value cannot be converted to double.</exception>
     public override double GetDouble(int ordinal)
     {
         var value = GetValue(ordinal);
@@ -456,6 +740,15 @@ public class CouchbaseDbDataReader<T> : DbDataReader
         };
     }
 
+    /// <summary>
+    /// Gets the float value of the field at the specified ordinal.
+    /// </summary>
+    /// <remarks>
+    /// Values exceeding float range may return <see cref="float.PositiveInfinity"/> or <see cref="float.NegativeInfinity"/>.
+    /// </remarks>
+    /// <param name="ordinal">The zero-based column ordinal.</param>
+    /// <returns>The float value of the field.</returns>
+    /// <exception cref="InvalidCastException">Thrown when the value cannot be converted to float.</exception>
     public override float GetFloat(int ordinal)
     {
         var value = GetValue(ordinal);
@@ -471,6 +764,16 @@ public class CouchbaseDbDataReader<T> : DbDataReader
         };
     }
 
+    /// <summary>
+    /// Gets the GUID value of the field at the specified ordinal.
+    /// </summary>
+    /// <remarks>
+    /// Supports GUID strings in standard formats (e.g., "d85b1407-351d-4694-9392-03acc5870eb1").
+    /// </remarks>
+    /// <param name="ordinal">The zero-based column ordinal.</param>
+    /// <returns>The GUID value of the field.</returns>
+    /// <exception cref="InvalidCastException">Thrown when the value cannot be converted to GUID.</exception>
+    /// <exception cref="FormatException">Thrown when a string value is not a valid GUID format.</exception>
     public override Guid GetGuid(int ordinal)
     {
         var value = GetValue(ordinal);
@@ -483,6 +786,13 @@ public class CouchbaseDbDataReader<T> : DbDataReader
         };
     }
 
+    /// <summary>
+    /// Gets the 16-bit signed integer value of the field at the specified ordinal.
+    /// </summary>
+    /// <param name="ordinal">The zero-based column ordinal.</param>
+    /// <returns>The Int16 value of the field.</returns>
+    /// <exception cref="InvalidCastException">Thrown when the value cannot be converted to Int16.</exception>
+    /// <exception cref="OverflowException">Thrown when the value is outside the Int16 range (-32768 to 32767).</exception>
     public override short GetInt16(int ordinal)
     {
         var value = GetValue(ordinal);
@@ -497,6 +807,13 @@ public class CouchbaseDbDataReader<T> : DbDataReader
         };
     }
 
+    /// <summary>
+    /// Gets the 32-bit signed integer value of the field at the specified ordinal.
+    /// </summary>
+    /// <param name="ordinal">The zero-based column ordinal.</param>
+    /// <returns>The Int32 value of the field.</returns>
+    /// <exception cref="InvalidCastException">Thrown when the value cannot be converted to Int32.</exception>
+    /// <exception cref="OverflowException">Thrown when the value is outside the Int32 range.</exception>
     public override int GetInt32(int ordinal)
     {
         var value = GetValue(ordinal);
@@ -510,6 +827,13 @@ public class CouchbaseDbDataReader<T> : DbDataReader
         };
     }
 
+    /// <summary>
+    /// Gets the 64-bit signed integer value of the field at the specified ordinal.
+    /// </summary>
+    /// <param name="ordinal">The zero-based column ordinal.</param>
+    /// <returns>The Int64 value of the field.</returns>
+    /// <exception cref="InvalidCastException">Thrown when the value cannot be converted to Int64.</exception>
+    /// <exception cref="OverflowException">Thrown when the value is outside the Int64 range.</exception>
     public override long GetInt64(int ordinal)
     {
         var value = GetValue(ordinal);
@@ -523,6 +847,15 @@ public class CouchbaseDbDataReader<T> : DbDataReader
         };
     }
 
+    /// <summary>
+    /// Gets the string value of the field at the specified ordinal.
+    /// </summary>
+    /// <remarks>
+    /// For non-string JSON values, returns the raw JSON text representation.
+    /// </remarks>
+    /// <param name="ordinal">The zero-based column ordinal.</param>
+    /// <returns>The string value of the field.</returns>
+    /// <exception cref="InvalidCastException">Thrown when the value is null.</exception>
     public override string GetString(int ordinal)
     {
         var value = GetValue(ordinal);
@@ -536,6 +869,23 @@ public class CouchbaseDbDataReader<T> : DbDataReader
         };
     }
 
+    /// <summary>
+    /// Gets the value of the field at the specified ordinal as the specified type.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// This method can deserialize JSON objects and arrays to complex types using <see cref="System.Text.Json"/>.
+    /// Use this to access nested document structures that would otherwise be extracted/flattened by <see cref="GetValue"/>.
+    /// </para>
+    /// <para>
+    /// Example: <c>reader.GetFieldValue&lt;JsonElement&gt;(0)</c> returns the raw JSON element,
+    /// or <c>reader.GetFieldValue&lt;MyClass&gt;(0)</c> deserializes to a custom type.
+    /// </para>
+    /// </remarks>
+    /// <typeparam name="T1">The type to return.</typeparam>
+    /// <param name="ordinal">The zero-based column ordinal.</param>
+    /// <returns>The value cast or deserialized to the specified type.</returns>
+    /// <exception cref="InvalidCastException">Thrown when conversion fails.</exception>
     public override T1 GetFieldValue<T1>(int ordinal)
     {
         var value = GetValue(ordinal);
@@ -553,6 +903,19 @@ public class CouchbaseDbDataReader<T> : DbDataReader
         return (T1)Convert.ChangeType(value, typeof(T1))!;
     }
 
+    /// <summary>
+    /// Returns a <see cref="DataTable"/> that describes the column metadata of the result set.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The schema is derived from the first row. Since Couchbase is schemaless, all columns are
+    /// reported as <see cref="object"/> type with <c>AllowDBNull = true</c>.
+    /// </para>
+    /// <para>
+    /// Accessing this method before calling <see cref="Read"/> will trigger schema discovery.
+    /// </para>
+    /// </remarks>
+    /// <returns>A DataTable with ColumnName, ColumnOrdinal, DataType, and AllowDBNull columns.</returns>
     public override DataTable GetSchemaTable()
     {
         EnsureFieldInfo();
@@ -579,6 +942,10 @@ public class CouchbaseDbDataReader<T> : DbDataReader
         return schemaTable;
     }
 
+    /// <summary>
+    /// Returns an enumerator that iterates through the rows of the result set.
+    /// </summary>
+    /// <returns>An <see cref="IEnumerator"/> for the rows.</returns>
     public override IEnumerator GetEnumerator()
     {
         return new DbEnumerator(this, closeReader: false);
@@ -706,6 +1073,27 @@ public class CouchbaseDbDataReader<T> : DbDataReader
         return DBNull.Value;
     }
 
+    /// <summary>
+    /// Converts a <see cref="JsonElement"/> to a CLR object suitable for ADO.NET typed getter methods.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Couchbase N1QL queries return each row as a JSON object with named properties. For example,
+    /// <c>SELECT COUNT(*) as cnt FROM bucket</c> returns <c>{"cnt": 42}</c>.
+    /// </para>
+    /// <para>
+    /// When accessing values by ordinal (e.g., <c>GetInt64(0)</c>), the reader must extract the
+    /// first property's value from the object wrapper. Without this extraction, typed getter methods
+    /// would fail with <see cref="InvalidCastException"/> because they receive a JsonElement of kind
+    /// Object instead of the expected primitive value.
+    /// </para>
+    /// <para>
+    /// Callers who need the entire JSON object or array can use <see cref="GetFieldValue{T}"/>
+    /// with <see cref="JsonElement"/> to retrieve the raw element before conversion.
+    /// </para>
+    /// </remarks>
+    /// <param name="element">The JSON element to convert.</param>
+    /// <returns>A CLR object representing the element's value.</returns>
     private static object ConvertJsonElement(JsonElement element)
     {
         return element.ValueKind switch
@@ -723,6 +1111,16 @@ public class CouchbaseDbDataReader<T> : DbDataReader
         };
     }
 
+    /// <summary>
+    /// Extracts the first property value from a JSON object.
+    /// </summary>
+    /// <remarks>
+    /// Couchbase N1QL returns rows as objects with named properties (e.g., <c>{"cnt": 42}</c>).
+    /// This method extracts the value of the first property so that ordinal-based access
+    /// (e.g., <c>GetInt64(0)</c>) returns the expected scalar value rather than the wrapper object.
+    /// </remarks>
+    /// <param name="element">A JSON element of kind <see cref="JsonValueKind.Object"/>.</param>
+    /// <returns>The converted value of the first property, or <see cref="DBNull.Value"/> if empty.</returns>
     private static object ExtractFirstValueFromObject(JsonElement element)
     {
         using var enumerator = element.EnumerateObject();
@@ -733,6 +1131,15 @@ public class CouchbaseDbDataReader<T> : DbDataReader
         return DBNull.Value;
     }
 
+    /// <summary>
+    /// Extracts the first element from a JSON array.
+    /// </summary>
+    /// <remarks>
+    /// For JSON arrays, this method extracts and converts the first element so that
+    /// ordinal-based access returns a usable scalar value rather than the array itself.
+    /// </remarks>
+    /// <param name="element">A JSON element of kind <see cref="JsonValueKind.Array"/>.</param>
+    /// <returns>The converted value of the first array element, or <see cref="DBNull.Value"/> if empty.</returns>
     private static object ExtractFirstValueFromArray(JsonElement element)
     {
         using var enumerator = element.EnumerateArray();
