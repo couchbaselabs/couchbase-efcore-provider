@@ -21,7 +21,7 @@ public class CouchbaseClientWrapper : ICouchbaseClientWrapper
     private readonly IBucketProvider _bucketProvider;
     private readonly ICouchbaseDbContextOptionsBuilder _couchbaseDbContextOptionsBuilder;
     private readonly ILogger<CouchbaseClientWrapper> _logger;
-    private readonly ConcurrentDictionary<string, ICouchbaseCollection> _collectionCache = new();
+    private readonly ConcurrentDictionary<string, CachedKeyspace> _keyspaceCache = new();
     private readonly SemaphoreSlim _semaphore = new(1);
 
     public CouchbaseClientWrapper(IBucketProvider bucketProvider,
@@ -122,34 +122,78 @@ public class CouchbaseClientWrapper : ICouchbaseClientWrapper
 
     private async Task<ICouchbaseCollection> GetCollection(string keyspace)
     {
-        if(_collectionCache.TryGetValue(keyspace, out var collection)) return collection;
+        if (_keyspaceCache.TryGetValue(keyspace, out var cached) && cached.Collection != null)
+        {
+            return cached.Collection;
+        }
 
         await _semaphore.WaitAsync().ConfigureAwait(false);
         try
         {
+            // Double-check after acquiring lock
+            if (_keyspaceCache.TryGetValue(keyspace, out cached) && cached.Collection != null)
+            {
+                return cached.Collection;
+            }
+
             _bucket = await _bucketProvider.GetBucketAsync(_couchbaseDbContextOptionsBuilder.Bucket).ConfigureAwait(false);
 
-            //Note that the keyspace is stored as Collection.Bucket.Scope in the entity
-            //this is done so that the correct alias is chosen as the first letter of the
-            //collection that the entity is mapped to and so that we can reuse the sealed
-            //TableExpression class instead of bringing it into this project and subclassing
-            //it. We may want to take this approach in the future as this can be confusing.
-            var splitKeyspace = keyspace.Split('.');
-            collection = _bucket.Scope(splitKeyspace[2].TrimEnd('`').TrimStart('`')).Collection(splitKeyspace[0].TrimEnd('`').TrimStart('`'));
+            var parsed = ParseKeyspace(keyspace);
+            var collection = _bucket.Scope(parsed.Scope).Collection(parsed.CollectionName);
 
-            _collectionCache.TryAdd(keyspace, collection);
+            _keyspaceCache[keyspace] = parsed with { Collection = collection };
             return collection;
         }
         catch (Exception e)
         {
-            _logger.LogError(e, "Could not find collection for keypace {Keyspace}", keyspace);
-            throw ExceptionHelper.InvalidKeyspaceFormatOrMissingCollection(keyspace, e);
+            var parsed = ParseKeyspace(keyspace);
+            _logger.LogError(e, "Could not find collection for keyspace {Keyspace}", parsed.DisplayKeyspace);
+            throw ExceptionHelper.InvalidKeyspaceFormatOrMissingCollection(parsed.DisplayKeyspace, e);
         }
         finally
         {
             _semaphore.Release();
         }
     }
+
+    /// <summary>
+    /// Parses the internal keyspace format (Collection.Bucket.Scope) into its components and display format.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The internal format is used for alias generation (first letter of collection), but differs
+    /// from the standard Couchbase keyspace format (Bucket.Scope.Collection).
+    /// </para>
+    /// <para>
+    /// Results are cached for performance since the same keyspace may be parsed multiple times.
+    /// </para>
+    /// </remarks>
+    private CachedKeyspace ParseKeyspace(string internalKeyspace)
+    {
+        return _keyspaceCache.GetOrAdd(internalKeyspace, static key =>
+        {
+            var parts = key.Split('.');
+            if (parts.Length != 3)
+            {
+                return new CachedKeyspace(key, key, key, key, null);
+            }
+
+            // Internal format: Collection.Bucket.Scope
+            var collectionName = parts[0].Trim('`');
+            var bucket = parts[1].Trim('`');
+            var scope = parts[2].Trim('`');
+            var displayKeyspace = $"`{bucket}`.`{scope}`.`{collectionName}`";
+
+            return new CachedKeyspace(collectionName, bucket, scope, displayKeyspace, null);
+        });
+    }
+
+    private readonly record struct CachedKeyspace(
+        string CollectionName,
+        string Bucket,
+        string Scope,
+        string DisplayKeyspace,
+        ICouchbaseCollection? Collection);
 }
 
 /* ************************************************************

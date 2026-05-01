@@ -10,12 +10,6 @@ public class CouchbaseRelationalCommand : RelationalCommand
     : base(dependencies, commandText, logCommandText, parameters)
   {
   }
-
-  public override DbCommand CreateDbCommand(RelationalCommandParameterObject parameterObject, Guid commandId,
-    DbCommandMethod commandMethod)
-  {
-    return base.CreateDbCommand(parameterObject, commandId, commandMethod);
-  }
 }
 
 /* ************************************************************
