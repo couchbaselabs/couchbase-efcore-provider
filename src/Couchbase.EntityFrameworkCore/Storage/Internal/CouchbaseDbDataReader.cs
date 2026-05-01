@@ -256,9 +256,9 @@ public class CouchbaseDbDataReader<T> : DbDataReader
     /// </remarks>
     /// <param name="cancellationToken">Ignored. Couchbase does not support multiple result sets.</param>
     /// <returns>Always <c>false</c>.</returns>
-    public override async Task<bool> NextResultAsync(CancellationToken cancellationToken)
+    public override Task<bool> NextResultAsync(CancellationToken cancellationToken)
     {
-        return false;
+        return Task.FromResult(false);
     }
 
     /// <summary>
