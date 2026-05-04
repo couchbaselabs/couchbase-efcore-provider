@@ -5,28 +5,48 @@ namespace Couchbase.EntityFrameworkCore.Metadata;
 /// DbContext configuration that is injected via DI.
 /// </summary>
 /// <remarks>
+/// <para>
 /// Use this attribute to specify the collection (and optionally scope) where an entity's
 /// documents are stored. The full keyspace (Bucket.Scope.Collection) is constructed at
 /// runtime by combining this with the bucket from <see cref="Infrastructure.ICouchbaseDbContextOptionsBuilder"/>.
+/// </para>
+/// <para>
+/// If only a collection is specified, the scope from the DbContext configuration is used.
+/// If both scope and collection are specified, the scope from this attribute overrides
+/// the DbContext-level scope for this entity.
+/// </para>
 /// </remarks>
+/// <example>
+/// <code>
+/// // Uses DbContext-level scope
+/// [CouchbaseKeyspace("users")]
+/// public class User { }
+///
+/// // Overrides to use "analytics" scope instead of DbContext-level scope
+/// [CouchbaseKeyspace("analytics", "metrics")]
+/// public class Metric { }
+/// </code>
+/// </example>
 [AttributeUsage(AttributeTargets.Class)]
 public class CouchbaseKeyspaceAttribute : Attribute
 {
     /// <summary>
     /// Initializes a new instance with the specified collection name.
-    /// The scope defaults to "_default".
+    /// The scope will be inherited from the DbContext configuration.
     /// </summary>
     /// <param name="collection">The collection name.</param>
     public CouchbaseKeyspaceAttribute(string collection)
     {
         ArgumentException.ThrowIfNullOrEmpty(collection);
         Collection = collection;
+        HasScopeOverride = false;
     }
 
     /// <summary>
     /// Initializes a new instance with the specified scope and collection names.
+    /// The scope specified here overrides the DbContext-level scope for this entity.
     /// </summary>
-    /// <param name="scope">The scope name.</param>
+    /// <param name="scope">The scope name (overrides DbContext-level scope).</param>
     /// <param name="collection">The collection name.</param>
     public CouchbaseKeyspaceAttribute(string scope, string collection)
     {
@@ -34,12 +54,13 @@ public class CouchbaseKeyspaceAttribute : Attribute
         ArgumentException.ThrowIfNullOrEmpty(collection);
         Scope = scope;
         Collection = collection;
+        HasScopeOverride = true;
     }
 
     /// <summary>
-    /// Gets the scope name. Defaults to "_default".
+    /// Gets the scope name, or <c>null</c> if the scope should be inherited from DbContext configuration.
     /// </summary>
-    public string Scope { get; } = "_default";
+    public string? Scope { get; }
 
     /// <summary>
     /// Gets the collection name.
@@ -47,13 +68,10 @@ public class CouchbaseKeyspaceAttribute : Attribute
     public string Collection { get; }
 
     /// <summary>
-    /// Gets the collection name (without bucket, which is added at runtime).
+    /// Gets a value indicating whether this attribute explicitly overrides the scope.
+    /// When <c>false</c>, the scope from DbContext configuration should be used.
     /// </summary>
-    /// <remarks>
-    /// The full keyspace is constructed by <see cref="Extensions.CouchbaseModelBuilderExtensions.ConfigureToCouchbase"/>
-    /// which adds the bucket and scope from the DbContext configuration.
-    /// </remarks>
-    public string GetKeySpace() => Collection;
+    public bool HasScopeOverride { get; }
 }
 
 /* ************************************************************
