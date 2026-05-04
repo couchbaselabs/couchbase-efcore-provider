@@ -71,6 +71,22 @@ public class KeyspaceMappingTests
     }
 
     [Fact]
+    public void CouchbaseKeyspace_TryParse_ReturnsFalseForEmptyParts()
+    {
+        // Empty bucket
+        Assert.False(CouchbaseKeyspace.TryParse(".scope.collection", out _));
+        // Empty scope
+        Assert.False(CouchbaseKeyspace.TryParse("bucket..collection", out _));
+        // Empty collection
+        Assert.False(CouchbaseKeyspace.TryParse("bucket.scope.", out _));
+        // Multiple empty parts
+        Assert.False(CouchbaseKeyspace.TryParse("..", out _));
+        // Backticks only (empty after trim)
+        Assert.False(CouchbaseKeyspace.TryParse("`.`.``.collection", out _));
+        Assert.False(CouchbaseKeyspace.TryParse("bucket.``.collection", out _));
+    }
+
+    [Fact]
     public void CouchbaseKeyspace_Constructor_ThrowsOnNullOrEmpty()
     {
         Assert.ThrowsAny<ArgumentException>(() => new CouchbaseKeyspace(null!, "scope", "collection"));
