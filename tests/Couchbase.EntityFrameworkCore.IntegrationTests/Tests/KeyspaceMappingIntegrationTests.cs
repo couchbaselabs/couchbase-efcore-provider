@@ -106,33 +106,50 @@ public class KeyspaceMappingIntegrationTests
     #region CouchbaseKeyspaceAttribute Tests
 
     [Fact]
-    public void CouchbaseKeyspaceAttribute_WithCollectionOnly_UsesAttributeCollection()
+    public void CouchbaseKeyspaceAttribute_WithCollectionOnly_UsesDbContextScope()
     {
         // Arrange & Act
         using var context = CreateContext<AttributeEntityContext>();
         var entityType = context.Model.FindEntityType(typeof(EntityWithAttribute))!;
 
-        // Assert
+        // Assert - Should use DbContext scope since attribute doesn't specify scope
         var tableName = entityType.GetTableName();
         Assert.NotNull(tableName);
         
         Assert.True(CouchbaseKeyspace.TryParse(tableName, out var keyspace));
         Assert.Equal("users-from-attribute", keyspace!.Value.Collection);
+        Assert.Equal(_fixture.ScopeName, keyspace.Value.Scope); // Uses DbContext scope
     }
 
     [Fact]
-    public void CouchbaseKeyspaceAttribute_WithScopeAndCollection_UsesAttributeCollection()
+    public void CouchbaseKeyspaceAttribute_WithScopeAndCollection_UsesScopeOverride()
     {
         // Arrange & Act
         using var context = CreateContext<AttributeWithScopeEntityContext>();
         var entityType = context.Model.FindEntityType(typeof(EntityWithScopeAttribute))!;
 
-        // Assert - Currently only collection is used from attribute
+        // Assert - Should use the scope from the attribute, not DbContext
         var tableName = entityType.GetTableName();
         Assert.NotNull(tableName);
         
         Assert.True(CouchbaseKeyspace.TryParse(tableName, out var keyspace));
         Assert.Equal("products-collection", keyspace!.Value.Collection);
+        Assert.Equal("custom-scope-attr", keyspace.Value.Scope); // Uses attribute scope override
+    }
+
+    [Fact]
+    public void CouchbaseKeyspaceAttribute_ScopeOverride_DifferentFromDbContextScope()
+    {
+        // Arrange & Act
+        using var context = CreateContext<AttributeWithScopeEntityContext>();
+        var entityType = context.Model.FindEntityType(typeof(EntityWithScopeAttribute))!;
+
+        // Assert - Scope from attribute should be different from DbContext scope
+        var tableName = entityType.GetTableName();
+        Assert.True(CouchbaseKeyspace.TryParse(tableName!, out var keyspace));
+
+        Assert.NotEqual(_fixture.ScopeName, keyspace!.Value.Scope);
+        Assert.Equal("custom-scope-attr", keyspace.Value.Scope);
     }
 
     #endregion

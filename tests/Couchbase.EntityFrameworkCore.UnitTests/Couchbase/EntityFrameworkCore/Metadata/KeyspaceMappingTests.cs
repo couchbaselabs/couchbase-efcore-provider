@@ -95,33 +95,41 @@ public class KeyspaceMappingTests
     #region CouchbaseKeyspaceAttribute Tests
 
     [Fact]
-    public void CouchbaseKeyspaceAttribute_WithCollectionOnly_SetsCollectionAndDefaultScope()
+    public void CouchbaseKeyspaceAttribute_WithCollectionOnly_SetsCollectionWithNoScopeOverride()
     {
         var attribute = new CouchbaseKeyspaceAttribute("users");
 
         Assert.Equal("users", attribute.Collection);
-        Assert.Equal("_default", attribute.Scope);
-        Assert.Equal("users", attribute.GetKeySpace());
+        Assert.Null(attribute.Scope);
+        Assert.False(attribute.HasScopeOverride);
     }
 
     [Fact]
-    public void CouchbaseKeyspaceAttribute_WithScopeAndCollection_SetsBothValues()
+    public void CouchbaseKeyspaceAttribute_WithScopeAndCollection_SetsBothValuesWithScopeOverride()
     {
         var attribute = new CouchbaseKeyspaceAttribute("custom-scope", "products");
 
         Assert.Equal("products", attribute.Collection);
         Assert.Equal("custom-scope", attribute.Scope);
-        Assert.Equal("products", attribute.GetKeySpace()); // GetKeySpace returns only collection
+        Assert.True(attribute.HasScopeOverride);
     }
 
     [Fact]
-    public void CouchbaseKeyspaceAttribute_GetKeySpace_ReturnsCollectionOnly()
+    public void CouchbaseKeyspaceAttribute_HasScopeOverride_FalseForCollectionOnlyConstructor()
     {
-        // GetKeySpace returns just the collection name
-        // The full keyspace is constructed later by ConfigureToCouchbase
+        var attribute = new CouchbaseKeyspaceAttribute("my-collection");
+
+        Assert.False(attribute.HasScopeOverride);
+        Assert.Null(attribute.Scope);
+    }
+
+    [Fact]
+    public void CouchbaseKeyspaceAttribute_HasScopeOverride_TrueForScopeAndCollectionConstructor()
+    {
         var attribute = new CouchbaseKeyspaceAttribute("my-scope", "my-collection");
 
-        Assert.Equal("my-collection", attribute.GetKeySpace());
+        Assert.True(attribute.HasScopeOverride);
+        Assert.Equal("my-scope", attribute.Scope);
     }
 
     [Fact]
