@@ -48,7 +48,7 @@ public static class CouchbaseModelBuilderExtensions
             if (tableName is null) continue;
             if (toLowerCaseNaming.HasValue && toLowerCaseNaming.Value)
             {
-                tableName = tableName.ToLower();
+                tableName = tableName.ToLowerInvariant();
             }
 
             // Skip if already a full keyspace (Bucket.Scope.Collection)
@@ -61,7 +61,7 @@ public static class CouchbaseModelBuilderExtensions
             // Apply lowercase naming to scope override if specified
             if (toLowerCaseNaming.HasValue && toLowerCaseNaming.Value && scopeOverride != null)
             {
-                scope = scope.ToLower();
+                scope = scope.ToLowerInvariant();
             }
 
             // tableName is just the collection name, add bucket and scope
