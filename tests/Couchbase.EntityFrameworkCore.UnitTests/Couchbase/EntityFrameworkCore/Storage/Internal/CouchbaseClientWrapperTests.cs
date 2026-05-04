@@ -35,8 +35,8 @@ public class CouchbaseClientWrapperTests
     [Fact]
     public async Task GetCollectionAsync_WithInvalidKeyspace_ThrowsExceptionWithCorrectFormat()
     {
-        // Arrange: Standard format is Bucket.Scope.Collection
-        var keyspace = "MyBucket.MyScope.MyCollection";
+        // Arrange: Standard format is Bucket.Scope.Collection - use configured bucket
+        var keyspace = "test-bucket.MyScope.MyCollection";
 
         _mockBucket.Setup(b => b.Scope("MyScope")).Returns(_mockScope.Object);
         _mockScope.Setup(s => s.Collection("MyCollection"))
@@ -52,14 +52,14 @@ public class CouchbaseClientWrapperTests
             () => wrapper.GetCollectionAsync(keyspace));
 
         // The exception message should contain the display format with backticks: `Bucket`.`Scope`.`Collection`
-        Assert.Contains("`MyBucket`.`MyScope`.`MyCollection`", exception.Message);
+        Assert.Contains("`test-bucket`.`MyScope`.`MyCollection`", exception.Message);
     }
 
     [Fact]
     public async Task GetCollectionAsync_WithBackticksInKeyspace_FormatsDisplayKeyspaceCorrectly()
     {
-        // Arrange: Standard format with backticks
-        var keyspace = "`MyBucket`.`MyScope`.`MyCollection`";
+        // Arrange: Standard format with backticks - use configured bucket
+        var keyspace = "`test-bucket`.`MyScope`.`MyCollection`";
 
         _mockBucket.Setup(b => b.Scope("MyScope")).Returns(_mockScope.Object);
         _mockScope.Setup(s => s.Collection("MyCollection"))
@@ -75,15 +75,15 @@ public class CouchbaseClientWrapperTests
             () => wrapper.GetCollectionAsync(keyspace));
 
         // The exception message should have proper backtick format (no double backticks)
-        Assert.Contains("`MyBucket`.`MyScope`.`MyCollection`", exception.Message);
+        Assert.Contains("`test-bucket`.`MyScope`.`MyCollection`", exception.Message);
         Assert.DoesNotContain("``", exception.Message);
     }
 
     [Fact]
     public async Task GetCollectionAsync_WithValidCollection_ReturnsCollection()
     {
-        // Arrange: Standard format is Bucket.Scope.Collection
-        var keyspace = "MyBucket.MyScope.MyCollection";
+        // Arrange: Standard format is Bucket.Scope.Collection - use configured bucket
+        var keyspace = "test-bucket.MyScope.MyCollection";
         var mockCollection = new Mock<ICouchbaseCollection>();
 
         _mockBucket.Setup(b => b.Scope("MyScope")).Returns(_mockScope.Object);
@@ -102,10 +102,52 @@ public class CouchbaseClientWrapperTests
     }
 
     [Fact]
+    public async Task GetCollectionAsync_WithMismatchedBucket_ThrowsInvalidOperationException()
+    {
+        // Arrange: Keyspace bucket doesn't match configured bucket
+        var keyspace = "different-bucket.MyScope.MyCollection";
+
+        var wrapper = new CouchbaseClientWrapper(
+            _mockBucketProvider.Object,
+            _mockOptions.Object,
+            _mockLogger.Object);
+
+        // Act & Assert
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => wrapper.GetCollectionAsync(keyspace));
+
+        Assert.Contains("bucket mismatch", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("different-bucket", exception.Message);
+        Assert.Contains("test-bucket", exception.Message);
+    }
+
+    [Fact]
+    public async Task GetCollectionAsync_WithMatchingBucketDifferentCase_Succeeds()
+    {
+        // Arrange: Keyspace bucket matches configured bucket (case-insensitive)
+        var keyspace = "TEST-BUCKET.MyScope.MyCollection";
+        var mockCollection = new Mock<ICouchbaseCollection>();
+
+        _mockBucket.Setup(b => b.Scope("MyScope")).Returns(_mockScope.Object);
+        _mockScope.Setup(s => s.Collection("MyCollection")).Returns(mockCollection.Object);
+
+        var wrapper = new CouchbaseClientWrapper(
+            _mockBucketProvider.Object,
+            _mockOptions.Object,
+            _mockLogger.Object);
+
+        // Act
+        var collection = await wrapper.GetCollectionAsync(keyspace);
+
+        // Assert - Should succeed with case-insensitive bucket match
+        Assert.Same(mockCollection.Object, collection);
+    }
+
+    [Fact]
     public async Task GetCollectionAsync_CalledTwice_UsesCachedCollection()
     {
-        // Arrange: Standard format is Bucket.Scope.Collection
-        var keyspace = "MyBucket.MyScope.MyCollection";
+        // Arrange: Standard format is Bucket.Scope.Collection - use configured bucket
+        var keyspace = "test-bucket.MyScope.MyCollection";
         var mockCollection = new Mock<ICouchbaseCollection>();
 
         _mockBucket.Setup(b => b.Scope("MyScope")).Returns(_mockScope.Object);
@@ -126,24 +168,21 @@ public class CouchbaseClientWrapperTests
     }
 
     [Fact]
-    public async Task GetCollectionAsync_WithMalformedKeyspace_ThrowsExceptionWithOriginalKeyspace()
+    public async Task GetCollectionAsync_WithMalformedKeyspace_ThrowsInvalidOperationException()
     {
-        // Arrange: Malformed keyspace (not 3 parts)
+        // Arrange: Malformed keyspace (not 3 parts) - will fail bucket validation
         var malformedKeyspace = "InvalidKeyspace";
-
-        _mockBucketProvider.Setup(p => p.GetBucketAsync("test-bucket"))
-            .ThrowsAsync(new Exception("Bucket error"));
 
         var wrapper = new CouchbaseClientWrapper(
             _mockBucketProvider.Object,
             _mockOptions.Object,
             _mockLogger.Object);
 
-        // Act & Assert
-        var exception = await Assert.ThrowsAsync<CollectionNotFoundException>(
+        // Act & Assert - Malformed keyspace triggers bucket mismatch since parsed bucket won't match
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
             () => wrapper.GetCollectionAsync(malformedKeyspace));
 
-        // For malformed keyspace, it should return the original string
+        // For malformed keyspace, it should include the original string in the message
         Assert.Contains("InvalidKeyspace", exception.Message);
     }
 }
