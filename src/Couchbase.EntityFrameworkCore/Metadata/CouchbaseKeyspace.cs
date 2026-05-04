@@ -100,10 +100,16 @@ public readonly record struct CouchbaseKeyspace
             return false;
         }
 
-        result = new CouchbaseKeyspace(
-            parts[0].Trim('`'),
-            parts[1].Trim('`'),
-            parts[2].Trim('`'));
+        var bucket = parts[0].Trim('`');
+        var scope = parts[1].Trim('`');
+        var collection = parts[2].Trim('`');
+
+        if (string.IsNullOrEmpty(bucket) || string.IsNullOrEmpty(scope) || string.IsNullOrEmpty(collection))
+        {
+            return false;
+        }
+
+        result = new CouchbaseKeyspace(bucket, scope, collection);
         return true;
     }
 }

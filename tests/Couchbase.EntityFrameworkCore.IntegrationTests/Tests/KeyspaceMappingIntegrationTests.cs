@@ -131,7 +131,7 @@ public class KeyspaceMappingIntegrationTests
         // Assert - Should use the scope from the attribute, not DbContext
         var tableName = entityType.GetTableName();
         Assert.NotNull(tableName);
-        
+
         Assert.True(CouchbaseKeyspace.TryParse(tableName, out var keyspace));
         Assert.Equal("products-collection", keyspace!.Value.Collection);
         Assert.Equal("custom-scope-attr", keyspace.Value.Scope); // Uses attribute scope override
