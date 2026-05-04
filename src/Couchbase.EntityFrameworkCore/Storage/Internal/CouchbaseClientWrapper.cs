@@ -136,13 +136,29 @@ public class CouchbaseClientWrapper : ICouchbaseClientWrapper
                 return cached.Collection;
             }
 
-            _bucket = await _bucketProvider.GetBucketAsync(_couchbaseDbContextOptionsBuilder.Bucket).ConfigureAwait(false);
-
             var parsed = ParseKeyspace(keyspace);
+
+            // Validate that the keyspace bucket matches the configured bucket
+            // This prevents inconsistent behavior where queries target one bucket
+            // but KV operations target another
+            var configuredBucket = _couchbaseDbContextOptionsBuilder.Bucket;
+            if (!string.Equals(parsed.Bucket, configuredBucket, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException(
+                    $"Keyspace bucket mismatch: The keyspace {parsed.DisplayKeyspace} specifies bucket '{parsed.Bucket}', " +
+                    $"but the DbContext is configured to use bucket '{configuredBucket}'. " +
+                    $"Ensure the entity mapping matches the DbContext bucket configuration.");
+            }
+
+            _bucket = await _bucketProvider.GetBucketAsync(configuredBucket).ConfigureAwait(false);
             var collection = _bucket.Scope(parsed.Scope).Collection(parsed.CollectionName);
 
             _keyspaceCache[keyspace] = parsed with { Collection = collection };
             return collection;
+        }
+        catch (InvalidOperationException)
+        {
+            throw; // Re-throw bucket mismatch errors without wrapping
         }
         catch (Exception e)
         {
