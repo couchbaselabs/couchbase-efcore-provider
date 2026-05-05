@@ -609,6 +609,7 @@ public class CouchbaseTypeMappingSourceTests
         var boolMapping = _typeMappingSource.FindMapping(typeof(bool));
         var jsonObjMapping = _typeMappingSource.FindMapping(typeof(JsonObject));
         var jsonArrMapping = _typeMappingSource.FindMapping(typeof(JsonArray));
+        var byteArrMapping = _typeMappingSource.FindMapping(typeof(byte[]));
 
         // Build a WHERE clause with all types
         var stringLit = stringMapping!.GenerateSqlLiteral("test");
@@ -616,13 +617,60 @@ public class CouchbaseTypeMappingSourceTests
         var boolLit = boolMapping!.GenerateSqlLiteral(true);
         var jsonObjLit = jsonObjMapping!.GenerateSqlLiteral(new JsonObject { ["x"] = 1 });
         var jsonArrLit = jsonArrMapping!.GenerateSqlLiteral(new JsonArray { 1, 2 });
+        var byteArrLit = byteArrMapping!.GenerateSqlLiteral(new byte[] { 1, 2, 3 });
 
         // Assert each follows SQL++ grammar
-        Assert.Equal("'test'", stringLit);      // Single-quoted string
-        Assert.Equal("42", intLit);              // Unquoted number
-        Assert.Equal("TRUE", boolLit);           // TRUE keyword
-        Assert.Equal("{\"x\":1}", jsonObjLit);   // Raw JSON object
-        Assert.Equal("[1,2]", jsonArrLit);       // Raw JSON array
+        Assert.Equal("'test'", stringLit);       // Single-quoted string
+        Assert.Equal("42", intLit);               // Unquoted number
+        Assert.Equal("TRUE", boolLit);            // TRUE keyword
+        Assert.Equal("{\"x\":1}", jsonObjLit);    // Raw JSON object
+        Assert.Equal("[1,2]", jsonArrLit);        // Raw JSON array
+        Assert.Equal("'AQID'", byteArrLit);       // Base64 encoded in single quotes
+    }
+
+    [Fact]
+    public void ByteArrayMapping_ReturnsCouchbaseByteArrayTypeMapping()
+    {
+        // Arrange & Act
+        var mapping = _typeMappingSource.FindMapping(typeof(byte[]));
+
+        // Assert
+        Assert.IsType<CouchbaseByteArrayTypeMapping>(mapping);
+    }
+
+    [Fact]
+    public void ByteArrayLiteral_IsValidSqlPlusPlus_UsesBase64NotHex()
+    {
+        // Arrange
+        var mapping = _typeMappingSource.FindMapping(typeof(byte[]));
+        var bytes = new byte[] { 0x48, 0x65, 0x6C, 0x6C, 0x6F }; // "Hello"
+
+        // Act
+        var literal = mapping!.GenerateSqlLiteral(bytes);
+
+        // Assert - Should be Base64 in single quotes, NOT hex format
+        // Valid SQL++: 'SGVsbG8=' (Base64)
+        // Invalid: 0x48656C6C6F (hex - not valid SQL++ string)
+        Assert.Equal("'SGVsbG8='", literal);
+        Assert.DoesNotContain("0x", literal);
+        Assert.StartsWith("'", literal);
+        Assert.EndsWith("'", literal);
+    }
+
+    [Fact]
+    public void ByteArrayLiteral_RoundTripsCorrectly()
+    {
+        // Arrange
+        var mapping = _typeMappingSource.FindMapping(typeof(byte[]));
+        var originalBytes = new byte[] { 0x00, 0xFF, 0x7F, 0x80 };
+
+        // Act
+        var literal = mapping!.GenerateSqlLiteral(originalBytes);
+
+        // Assert - Verify the Base64 can be decoded back
+        var base64 = literal.Trim('\'');
+        var decodedBytes = Convert.FromBase64String(base64);
+        Assert.Equal(originalBytes, decodedBytes);
     }
 
     #endregion

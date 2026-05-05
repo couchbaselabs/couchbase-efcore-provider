@@ -58,7 +58,7 @@ public class CouchbaseTypeMappingSource : RelationalTypeMappingSource
 
             // Other types -> STRING
             { typeof(Guid), new GuidTypeMapping("STRING", DbType.Guid) },
-            { typeof(byte[]), new ByteArrayTypeMapping("STRING", DbType.Binary) },
+            { typeof(byte[]), new CouchbaseByteArrayTypeMapping() },
 
             // JSON types
             {
