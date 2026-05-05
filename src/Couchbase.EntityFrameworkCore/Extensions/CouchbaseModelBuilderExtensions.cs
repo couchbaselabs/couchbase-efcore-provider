@@ -39,6 +39,9 @@ public static class CouchbaseModelBuilderExtensions
         var dbContextOptions = (ICouchbaseDbContextOptionsBuilder)dbContext.
             Database.GetInfrastructure().GetService(typeof(ICouchbaseDbContextOptionsBuilder))!;
 
+        ArgumentException.ThrowIfNullOrEmpty(dbContextOptions.Bucket, "DbContext Bucket configuration");
+        ArgumentException.ThrowIfNullOrEmpty(dbContextOptions.Scope, "DbContext Scope configuration");
+
         foreach (var entityType in modelBuilder.Model.GetEntityTypes())
         {
             // Skip owned types - they are embedded in their owner's document

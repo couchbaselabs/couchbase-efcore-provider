@@ -221,4 +221,165 @@ public class CouchbaseClientWrapperTests
 
         Assert.Contains("Invalid keyspace format", exception.Message);
     }
+
+    [Fact]
+    public async Task GetCollectionAsync_DifferentKeyspaces_CachesEachSeparately()
+    {
+        // Arrange: Two different keyspaces
+        var keyspace1 = "test-bucket.Scope1.Collection1";
+        var keyspace2 = "test-bucket.Scope2.Collection2";
+        var mockCollection1 = new Mock<ICouchbaseCollection>();
+        var mockCollection2 = new Mock<ICouchbaseCollection>();
+        var mockScope1 = new Mock<IScope>();
+        var mockScope2 = new Mock<IScope>();
+
+        _mockBucket.Setup(b => b.Scope("Scope1")).Returns(mockScope1.Object);
+        _mockBucket.Setup(b => b.Scope("Scope2")).Returns(mockScope2.Object);
+        mockScope1.Setup(s => s.Collection("Collection1")).Returns(mockCollection1.Object);
+        mockScope2.Setup(s => s.Collection("Collection2")).Returns(mockCollection2.Object);
+
+        var wrapper = new CouchbaseClientWrapper(
+            _mockBucketProvider.Object,
+            _mockOptions.Object,
+            _mockLogger.Object);
+
+        // Act
+        var collection1a = await wrapper.GetCollectionAsync(keyspace1);
+        var collection2a = await wrapper.GetCollectionAsync(keyspace2);
+        var collection1b = await wrapper.GetCollectionAsync(keyspace1);
+        var collection2b = await wrapper.GetCollectionAsync(keyspace2);
+
+        // Assert - Each keyspace cached separately
+        Assert.Same(mockCollection1.Object, collection1a);
+        Assert.Same(mockCollection1.Object, collection1b);
+        Assert.Same(mockCollection2.Object, collection2a);
+        Assert.Same(mockCollection2.Object, collection2b);
+        mockScope1.Verify(s => s.Collection("Collection1"), Times.Once);
+        mockScope2.Verify(s => s.Collection("Collection2"), Times.Once);
+    }
+
+    [Fact]
+    public async Task GetCollectionAsync_ConcurrentCallsSameKeyspace_OnlyResolvesOnce()
+    {
+        // Arrange
+        var keyspace = "test-bucket.MyScope.MyCollection";
+        var mockCollection = new Mock<ICouchbaseCollection>();
+        var resolutionCount = 0;
+
+        _mockBucket.Setup(b => b.Scope("MyScope")).Returns(_mockScope.Object);
+        _mockScope.Setup(s => s.Collection("MyCollection"))
+            .Returns(() =>
+            {
+                Interlocked.Increment(ref resolutionCount);
+                return mockCollection.Object;
+            });
+
+        var wrapper = new CouchbaseClientWrapper(
+            _mockBucketProvider.Object,
+            _mockOptions.Object,
+            _mockLogger.Object);
+
+        // Act - Launch multiple concurrent requests
+        var tasks = Enumerable.Range(0, 10)
+            .Select(_ => wrapper.GetCollectionAsync(keyspace))
+            .ToList();
+
+        var collections = await Task.WhenAll(tasks);
+
+        // Assert - All should return same collection, resolved only once
+        Assert.All(collections, c => Assert.Same(mockCollection.Object, c));
+        Assert.Equal(1, resolutionCount);
+    }
+
+    [Fact]
+    public async Task GetCollectionAsync_ConcurrentCallsDifferentKeyspaces_ResolvesEachOnce()
+    {
+        // Arrange
+        var mockScope1 = new Mock<IScope>();
+        var mockScope2 = new Mock<IScope>();
+        var mockCollection1 = new Mock<ICouchbaseCollection>();
+        var mockCollection2 = new Mock<ICouchbaseCollection>();
+
+        _mockBucket.Setup(b => b.Scope("Scope1")).Returns(mockScope1.Object);
+        _mockBucket.Setup(b => b.Scope("Scope2")).Returns(mockScope2.Object);
+        mockScope1.Setup(s => s.Collection("Collection1")).Returns(mockCollection1.Object);
+        mockScope2.Setup(s => s.Collection("Collection2")).Returns(mockCollection2.Object);
+
+        var wrapper = new CouchbaseClientWrapper(
+            _mockBucketProvider.Object,
+            _mockOptions.Object,
+            _mockLogger.Object);
+
+        // Act - Launch concurrent requests for two keyspaces
+        var tasks = new List<Task<ICouchbaseCollection>>();
+        for (int i = 0; i < 5; i++)
+        {
+            tasks.Add(wrapper.GetCollectionAsync("test-bucket.Scope1.Collection1"));
+            tasks.Add(wrapper.GetCollectionAsync("test-bucket.Scope2.Collection2"));
+        }
+
+        var collections = await Task.WhenAll(tasks);
+
+        // Assert - Each collection resolved only once
+        mockScope1.Verify(s => s.Collection("Collection1"), Times.Once);
+        mockScope2.Verify(s => s.Collection("Collection2"), Times.Once);
+    }
+
+    [Fact]
+    public async Task GetCollectionAsync_AfterFailedResolution_CanRetrySuccessfully()
+    {
+        // Arrange: First call fails, second succeeds
+        var keyspace = "test-bucket.MyScope.MyCollection";
+        var mockCollection = new Mock<ICouchbaseCollection>();
+        var callCount = 0;
+
+        _mockBucket.Setup(b => b.Scope("MyScope")).Returns(_mockScope.Object);
+        _mockScope.Setup(s => s.Collection("MyCollection"))
+            .Returns(() =>
+            {
+                callCount++;
+                if (callCount == 1)
+                {
+                    throw new ManagementCollectionNotFoundException("Collection not found");
+                }
+                return mockCollection.Object;
+            });
+
+        var wrapper = new CouchbaseClientWrapper(
+            _mockBucketProvider.Object,
+            _mockOptions.Object,
+            _mockLogger.Object);
+
+        // Act & Assert - First call fails
+        await Assert.ThrowsAsync<CollectionNotFoundException>(
+            () => wrapper.GetCollectionAsync(keyspace));
+
+        // Second call should succeed (not cached because first failed)
+        var collection = await wrapper.GetCollectionAsync(keyspace);
+        Assert.Same(mockCollection.Object, collection);
+    }
+
+    [Fact]
+    public async Task GetCollectionAsync_BucketProviderCalledOncePerKeyspace()
+    {
+        // Arrange
+        var keyspace = "test-bucket.MyScope.MyCollection";
+        var mockCollection = new Mock<ICouchbaseCollection>();
+
+        _mockBucket.Setup(b => b.Scope("MyScope")).Returns(_mockScope.Object);
+        _mockScope.Setup(s => s.Collection("MyCollection")).Returns(mockCollection.Object);
+
+        var wrapper = new CouchbaseClientWrapper(
+            _mockBucketProvider.Object,
+            _mockOptions.Object,
+            _mockLogger.Object);
+
+        // Act
+        await wrapper.GetCollectionAsync(keyspace);
+        await wrapper.GetCollectionAsync(keyspace);
+        await wrapper.GetCollectionAsync(keyspace);
+
+        // Assert - Bucket provider should be called only once due to caching
+        _mockBucketProvider.Verify(p => p.GetBucketAsync("test-bucket"), Times.Once);
+    }
 }
