@@ -3,6 +3,7 @@ using Couchbase.Core.Exceptions;
 using Couchbase.Core.IO.Serializers;
 using Couchbase.Core.IO.Transcoders;
 using Couchbase.EntityFrameworkCore.Infrastructure;
+using Couchbase.EntityFrameworkCore.Metadata;
 using Couchbase.EntityFrameworkCore.Utils;
 using Couchbase.Extensions.DependencyInjection;
 using Couchbase.KeyValue;
@@ -21,7 +22,7 @@ public class CouchbaseClientWrapper : ICouchbaseClientWrapper
     private readonly IBucketProvider _bucketProvider;
     private readonly ICouchbaseDbContextOptionsBuilder _couchbaseDbContextOptionsBuilder;
     private readonly ILogger<CouchbaseClientWrapper> _logger;
-    private readonly ConcurrentDictionary<string, ICouchbaseCollection> _collectionCache = new();
+    private readonly ConcurrentDictionary<string, CachedKeyspace> _keyspaceCache = new();
     private readonly SemaphoreSlim _semaphore = new(1);
 
     public CouchbaseClientWrapper(IBucketProvider bucketProvider,
@@ -122,34 +123,92 @@ public class CouchbaseClientWrapper : ICouchbaseClientWrapper
 
     private async Task<ICouchbaseCollection> GetCollection(string keyspace)
     {
-        if(_collectionCache.TryGetValue(keyspace, out var collection)) return collection;
+        if (_keyspaceCache.TryGetValue(keyspace, out var cached))
+        {
+            return cached.Collection;
+        }
 
         await _semaphore.WaitAsync().ConfigureAwait(false);
         try
         {
-            _bucket = await _bucketProvider.GetBucketAsync(_couchbaseDbContextOptionsBuilder.Bucket).ConfigureAwait(false);
+            // Double-check after acquiring lock
+            if (_keyspaceCache.TryGetValue(keyspace, out cached))
+            {
+                return cached.Collection;
+            }
 
-            //Note that the keyspace is stored as Collection.Bucket.Scope in the entity
-            //this is done so that the correct alias is chosen as the first letter of the
-            //collection that the entity is mapped to and so that we can reuse the sealed
-            //TableExpression class instead of bringing it into this project and subclassing
-            //it. We may want to take this approach in the future as this can be confusing.
-            var splitKeyspace = keyspace.Split('.');
-            collection = _bucket.Scope(splitKeyspace[2].TrimEnd('`').TrimStart('`')).Collection(splitKeyspace[0].TrimEnd('`').TrimStart('`'));
+            var parsed = ParseKeyspace(keyspace);
 
-            _collectionCache.TryAdd(keyspace, collection);
+            // Validate that the keyspace bucket matches the configured bucket
+            // This prevents inconsistent behavior where queries target one bucket
+            // but KV operations target another
+            var configuredBucket = _couchbaseDbContextOptionsBuilder.Bucket;
+            if (!string.Equals(parsed.Bucket, configuredBucket, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException(
+                    $"Keyspace bucket mismatch: The keyspace {parsed.ToSqlString()} specifies bucket '{parsed.Bucket}', " +
+                    $"but the DbContext is configured to use bucket '{configuredBucket}'. " +
+                    $"Ensure the entity mapping matches the DbContext bucket configuration.");
+            }
+
+            _bucket = await _bucketProvider.GetBucketAsync(configuredBucket).ConfigureAwait(false);
+            var collection = _bucket.Scope(parsed.Scope).Collection(parsed.Collection);
+
+            _keyspaceCache[keyspace] = new CachedKeyspace(parsed.ToSqlString(), collection);
             return collection;
+        }
+        catch (InvalidOperationException)
+        {
+            throw; // Re-throw bucket mismatch errors without wrapping
+        }
+        catch (ArgumentException)
+        {
+            throw; // Re-throw invalid keyspace format errors without wrapping
         }
         catch (Exception e)
         {
-            _logger.LogError(e, "Could not find collection for keypace {Keyspace}", keyspace);
-            throw ExceptionHelper.InvalidKeyspaceFormatOrMissingCollection(keyspace, e);
+            // Try to get display keyspace for error message, but handle case where parsing itself failed
+            string displayKeyspace;
+            if (CouchbaseKeyspace.TryParse(keyspace, out var parsed))
+            {
+                displayKeyspace = parsed.Value.ToSqlString();
+            }
+            else
+            {
+                displayKeyspace = keyspace; // Fall back to raw keyspace string
+            }
+            _logger.LogError(e, "Could not find collection for keyspace {Keyspace}", displayKeyspace);
+            throw ExceptionHelper.InvalidKeyspaceFormatOrMissingCollection(displayKeyspace, e);
         }
         finally
         {
             _semaphore.Release();
         }
     }
+
+    /// <summary>
+    /// Parses the keyspace format (Bucket.Scope.Collection) into its components.
+    /// </summary>
+    /// <remarks>
+    /// Uses <see cref="CouchbaseKeyspace.TryParse"/> which validates that all parts are non-empty.
+    /// </remarks>
+    /// <exception cref="ArgumentException">Thrown when the keyspace format is invalid.</exception>
+    private static CouchbaseKeyspace ParseKeyspace(string keyspace)
+    {
+        if (!CouchbaseKeyspace.TryParse(keyspace, out var parsed))
+        {
+            throw new ArgumentException(
+                $"Invalid keyspace format: '{keyspace}'. Expected format: Bucket.Scope.Collection " +
+                $"where all parts are non-empty.",
+                nameof(keyspace));
+        }
+
+        return parsed.Value;
+    }
+
+    private readonly record struct CachedKeyspace(
+        string DisplayKeyspace,
+        ICouchbaseCollection Collection);
 }
 
 /* ************************************************************

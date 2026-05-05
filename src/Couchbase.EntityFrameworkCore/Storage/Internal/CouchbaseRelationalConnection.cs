@@ -16,7 +16,7 @@ namespace Couchbase.EntityFrameworkCore.Storage.Internal;
 /// A Couchbase implementation of IRelationalConnection that provides connection
 /// management and transaction support for Entity Framework Core.
 /// </summary>
-public class CouchbaseRelationalConnection : RelationalConnection, ICouchbaseConnection
+public class CouchbaseRelationalConnection : RelationalConnection
 {
     private readonly IBucketProvider _bucketProvider;
     private readonly ICouchbaseDbContextOptionsBuilder _couchbaseDbContextOptionsBuilder;

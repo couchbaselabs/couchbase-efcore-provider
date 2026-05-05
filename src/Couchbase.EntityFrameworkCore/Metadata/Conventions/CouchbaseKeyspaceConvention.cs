@@ -1,4 +1,3 @@
-using System.Runtime.InteropServices.ComTypes;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Microsoft.EntityFrameworkCore.Metadata.Conventions;
@@ -8,14 +7,28 @@ namespace Couchbase.EntityFrameworkCore.Metadata.Conventions;
 
 public class CouchbaseKeyspaceConvention : TypeAttributeConventionBase<CouchbaseKeyspaceAttribute>
 {
+    /// <summary>
+    /// Annotation key used to store the scope override for an entity.
+    /// </summary>
+    public const string ScopeOverrideAnnotation = "Couchbase:ScopeOverride";
+
     public CouchbaseKeyspaceConvention(ProviderConventionSetBuilderDependencies dependencies) : base(dependencies)
     {
     }
 
-    protected override void ProcessEntityTypeAdded(IConventionEntityTypeBuilder entityTypeBuilder, CouchbaseKeyspaceAttribute keyspaceAttribute,
+    protected override void ProcessEntityTypeAdded(
+        IConventionEntityTypeBuilder entityTypeBuilder,
+        CouchbaseKeyspaceAttribute keyspaceAttribute,
         IConventionContext<IConventionEntityTypeBuilder> context)
     {
-        entityTypeBuilder.ToTable(keyspaceAttribute.GetKeySpace());
+        // Set the collection name as the table name
+        entityTypeBuilder.ToTable(keyspaceAttribute.Collection);
+
+        // If the attribute has a scope override, store it as an annotation
+        if (keyspaceAttribute.HasScopeOverride)
+        {
+            entityTypeBuilder.HasAnnotation(ScopeOverrideAnnotation, keyspaceAttribute.Scope);
+        }
     }
 }
 
