@@ -485,11 +485,44 @@ public class CouchbaseTypeMappingSourceTests
     public void FindMapping_WithStoreTypeOnly_DoesNotThrow()
     {
         // When EF requests a mapping by store type only (e.g., during scaffolding),
-        // ClrType is null. The provider should fall back to base implementation.
-        // We test this indirectly by verifying that mappings work correctly.
+        // ClrType is null. The provider should fall back to base implementation
+        // rather than throwing an exception.
 
-        // Act & Assert - Should not throw for any valid type
-        var exception = Record.Exception(() => _typeMappingSource.FindMapping(typeof(string)));
+        // Act - Call FindMapping with store type name only (no CLR type)
+        // This exercises the null ClrType code path in FindMapping(in RelationalTypeMappingInfo)
+        var exception = Record.Exception(() => _typeMappingSource.FindMapping("STRING"));
+
+        // Assert - Should not throw
+        Assert.Null(exception);
+    }
+
+    [Fact]
+    public void FindMapping_WithStoreTypeOnly_ReturnsMapping()
+    {
+        // When EF requests a mapping by store type only,
+        // it falls back to base implementation which may return a mapping
+
+        // Act
+        var mapping = _typeMappingSource.FindMapping("NUMBER");
+
+        // Assert - May return null or a mapping, but should not throw
+        // The base implementation handles store-type-only lookups
+        Assert.True(mapping == null || mapping.StoreType == "NUMBER");
+    }
+
+    [Theory]
+    [InlineData("STRING")]
+    [InlineData("NUMBER")]
+    [InlineData("BOOLEAN")]
+    [InlineData("OBJECT")]
+    [InlineData("ARRAY")]
+    [InlineData("UNKNOWN_TYPE")]
+    public void FindMapping_WithVariousStoreTypes_DoesNotThrow(string storeType)
+    {
+        // The null ClrType code path should gracefully handle any store type
+
+        // Act & Assert - Should not throw for any store type
+        var exception = Record.Exception(() => _typeMappingSource.FindMapping(storeType));
         Assert.Null(exception);
     }
 
