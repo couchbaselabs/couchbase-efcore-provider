@@ -141,9 +141,11 @@ public class CouchbaseTypeMappingTests
         // Act
         var literal = mapping.GenerateSqlLiteral(jsonObject);
 
-        // Assert - Should be raw JSON, not quoted
+        // Assert - Should be raw JSON, not wrapped in outer quotes
         Assert.Equal("{\"name\":\"test\",\"value\":42}", literal);
-        Assert.DoesNotContain("\"{\\'", literal); // Not double-escaped
+        // Verify it's not string-wrapped (would start with ' or " before the brace)
+        Assert.StartsWith("{", literal);
+        Assert.EndsWith("}", literal);
     }
 
     [Fact]
