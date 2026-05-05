@@ -12,8 +12,6 @@ namespace Couchbase.EntityFrameworkCode.IntegrationTests.Tests;
 public class KeyspaceMappingIntegrationTests
 {
     private readonly BloggingFixture _fixture;
-    private const string TestBucket = "test-bucket";
-    private const string TestScope = "test-scope";
 
     public KeyspaceMappingIntegrationTests(BloggingFixture fixture)
     {
