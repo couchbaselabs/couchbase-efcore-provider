@@ -58,12 +58,6 @@ public static class CouchbaseModelBuilderExtensions
             var scopeOverride = entityType.FindAnnotation(CouchbaseKeyspaceConvention.ScopeOverrideAnnotation)?.Value as string;
             var scope = scopeOverride ?? dbContextOptions.Scope;
 
-            // Apply lowercase naming to scope override if specified
-            if (toLowerCaseNaming.HasValue && toLowerCaseNaming.Value && scopeOverride != null)
-            {
-                scope = scope.ToLowerInvariant();
-            }
-
             // tableName is just the collection name, add bucket and scope
             var keyspace = new CouchbaseKeyspace(dbContextOptions.Bucket, scope, tableName);
             entityType.SetTableName(keyspace.ToString());
