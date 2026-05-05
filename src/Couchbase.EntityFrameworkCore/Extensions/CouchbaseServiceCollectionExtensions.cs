@@ -64,10 +64,6 @@ public static class CouchbaseServiceCollectionExtensions
             .TryAdd<IProviderConventionSetBuilder, CouchbaseConventionSetBuilder>()
             .TryAddProviderSpecificServices(m => m
                 .TryAddScoped<QuerySqlGenerator, CouchbaseQuerySqlGenerator>()
-                //.TryAddScoped<IRelationalConnection, CouchbaseConnection>()
-                //.TryAddScoped<IQueryProvider, CouchbaseQueryProvider>()
-                .TryAddScoped<IRelationalCommand, CouchbaseRelationalCommand>()
-                //.TryAddScoped<QueryContext, RelationalQueryContext>()
                 .TryAddScoped<ICouchbaseClientWrapper, CouchbaseClientWrapper>()
                 .TryAddScoped<IRelationalCommandBuilder, RelationalCommandBuilder>()
                 .TryAddScoped<ICouchbaseDbContextOptionsBuilder,
