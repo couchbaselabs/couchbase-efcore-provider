@@ -3,6 +3,7 @@ using Couchbase.Core.Exceptions;
 using Couchbase.Core.IO.Serializers;
 using Couchbase.Core.IO.Transcoders;
 using Couchbase.EntityFrameworkCore.Infrastructure;
+using Couchbase.EntityFrameworkCore.Metadata;
 using Couchbase.EntityFrameworkCore.Utils;
 using Couchbase.Extensions.DependencyInjection;
 using Couchbase.KeyValue;
@@ -160,11 +161,25 @@ public class CouchbaseClientWrapper : ICouchbaseClientWrapper
         {
             throw; // Re-throw bucket mismatch errors without wrapping
         }
+        catch (ArgumentException)
+        {
+            throw; // Re-throw invalid keyspace format errors without wrapping
+        }
         catch (Exception e)
         {
-            var parsed = ParseKeyspace(keyspace);
-            _logger.LogError(e, "Could not find collection for keyspace {Keyspace}", parsed.DisplayKeyspace);
-            throw ExceptionHelper.InvalidKeyspaceFormatOrMissingCollection(parsed.DisplayKeyspace, e);
+            // Try to get display keyspace for error message, but handle case where parsing itself failed
+            string displayKeyspace;
+            try
+            {
+                var parsed = ParseKeyspace(keyspace);
+                displayKeyspace = parsed.DisplayKeyspace;
+            }
+            catch
+            {
+                displayKeyspace = keyspace; // Fall back to raw keyspace string
+            }
+            _logger.LogError(e, "Could not find collection for keyspace {Keyspace}", displayKeyspace);
+            throw ExceptionHelper.InvalidKeyspaceFormatOrMissingCollection(displayKeyspace, e);
         }
         finally
         {
@@ -177,24 +192,28 @@ public class CouchbaseClientWrapper : ICouchbaseClientWrapper
     /// </summary>
     /// <remarks>
     /// Results are cached for performance since the same keyspace may be parsed multiple times.
+    /// Uses <see cref="CouchbaseKeyspace.TryParse"/> which validates that all parts are non-empty.
     /// </remarks>
+    /// <exception cref="ArgumentException">Thrown when the keyspace format is invalid.</exception>
     private CachedKeyspace ParseKeyspace(string keyspace)
     {
         return _keyspaceCache.GetOrAdd(keyspace, static key =>
         {
-            var parts = key.Split('.');
-            if (parts.Length != 3)
+            if (!CouchbaseKeyspace.TryParse(key, out var parsed))
             {
-                return new CachedKeyspace(key, key, key, key, null);
+                throw new ArgumentException(
+                    $"Invalid keyspace format: '{key}'. Expected format: Bucket.Scope.Collection " +
+                    $"where all parts are non-empty.",
+                    nameof(keyspace));
             }
 
-            // Standard format: Bucket.Scope.Collection
-            var bucket = parts[0].Trim('`');
-            var scope = parts[1].Trim('`');
-            var collectionName = parts[2].Trim('`');
-            var displayKeyspace = $"`{bucket}`.`{scope}`.`{collectionName}`";
-
-            return new CachedKeyspace(collectionName, bucket, scope, displayKeyspace, null);
+            var displayKeyspace = parsed.Value.ToSqlString();
+            return new CachedKeyspace(
+                parsed.Value.Collection,
+                parsed.Value.Bucket,
+                parsed.Value.Scope,
+                displayKeyspace,
+                null);
         });
     }
 

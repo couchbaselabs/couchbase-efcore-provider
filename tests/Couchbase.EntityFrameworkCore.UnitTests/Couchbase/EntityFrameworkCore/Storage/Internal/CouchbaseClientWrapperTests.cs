@@ -168,9 +168,9 @@ public class CouchbaseClientWrapperTests
     }
 
     [Fact]
-    public async Task GetCollectionAsync_WithMalformedKeyspace_ThrowsInvalidOperationException()
+    public async Task GetCollectionAsync_WithMalformedKeyspace_ThrowsArgumentException()
     {
-        // Arrange: Malformed keyspace (not 3 parts) - will fail bucket validation
+        // Arrange: Malformed keyspace (not 3 parts)
         var malformedKeyspace = "InvalidKeyspace";
 
         var wrapper = new CouchbaseClientWrapper(
@@ -178,11 +178,47 @@ public class CouchbaseClientWrapperTests
             _mockOptions.Object,
             _mockLogger.Object);
 
-        // Act & Assert - Malformed keyspace triggers bucket mismatch since parsed bucket won't match
-        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+        // Act & Assert - Malformed keyspace throws ArgumentException
+        var exception = await Assert.ThrowsAsync<ArgumentException>(
             () => wrapper.GetCollectionAsync(malformedKeyspace));
 
-        // For malformed keyspace, it should include the original string in the message
+        Assert.Contains("Invalid keyspace format", exception.Message);
         Assert.Contains("InvalidKeyspace", exception.Message);
+    }
+
+    [Fact]
+    public async Task GetCollectionAsync_WithEmptyParts_ThrowsArgumentException()
+    {
+        // Arrange: Keyspace with empty scope
+        var keyspaceWithEmptyScope = "test-bucket..collection";
+
+        var wrapper = new CouchbaseClientWrapper(
+            _mockBucketProvider.Object,
+            _mockOptions.Object,
+            _mockLogger.Object);
+
+        // Act & Assert - Empty parts should be rejected
+        var exception = await Assert.ThrowsAsync<ArgumentException>(
+            () => wrapper.GetCollectionAsync(keyspaceWithEmptyScope));
+
+        Assert.Contains("Invalid keyspace format", exception.Message);
+    }
+
+    [Fact]
+    public async Task GetCollectionAsync_WithEmptyCollection_ThrowsArgumentException()
+    {
+        // Arrange: Keyspace with empty collection
+        var keyspaceWithEmptyCollection = "test-bucket.scope.";
+
+        var wrapper = new CouchbaseClientWrapper(
+            _mockBucketProvider.Object,
+            _mockOptions.Object,
+            _mockLogger.Object);
+
+        // Act & Assert - Empty collection should be rejected
+        var exception = await Assert.ThrowsAsync<ArgumentException>(
+            () => wrapper.GetCollectionAsync(keyspaceWithEmptyCollection));
+
+        Assert.Contains("Invalid keyspace format", exception.Message);
     }
 }
