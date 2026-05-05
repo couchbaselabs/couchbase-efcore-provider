@@ -1,3 +1,5 @@
+using System.Text;
+using System.Text.Json.Nodes;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.EntityFrameworkCore.Storage.Json;
@@ -8,6 +10,10 @@ namespace Couchbase.EntityFrameworkCore.Storage.Internal;
 /// <summary>
 /// Type mapping for Couchbase JSON types (OBJECT and ARRAY).
 /// </summary>
+/// <remarks>
+/// This mapping handles <see cref="JsonObject"/> and <see cref="JsonArray"/> types,
+/// generating valid SQL++ literals (raw JSON without string quoting).
+/// </remarks>
 public class CouchbaseTypeMapping : RelationalTypeMapping
 {
     /// <summary>
@@ -58,9 +64,21 @@ public class CouchbaseTypeMapping : RelationalTypeMapping
     }
 
     /// <summary>
-    /// SQL++ requires string literals to be enclosed in double quotes.
+    /// Generates a SQL++ literal for the given value.
     /// </summary>
-    protected override string SqlLiteralFormatString => "\"{0}\"";
+    /// <remarks>
+    /// For <see cref="JsonObject"/> and <see cref="JsonArray"/>, emits raw JSON (valid SQL++ object/array literals).
+    /// For other types, falls back to base implementation.
+    /// </remarks>
+    protected override string GenerateNonNullSqlLiteral(object value)
+    {
+        return value switch
+        {
+            JsonObject jsonObject => jsonObject.ToJsonString(),
+            JsonArray jsonArray => jsonArray.ToJsonString(),
+            _ => base.GenerateNonNullSqlLiteral(value)
+        };
+    }
 }
 
 /* ************************************************************

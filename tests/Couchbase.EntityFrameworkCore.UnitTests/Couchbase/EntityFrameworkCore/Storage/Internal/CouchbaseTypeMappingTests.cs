@@ -126,32 +126,139 @@ public class CouchbaseTypeMappingTests
 
     #endregion
 
-    #region SqlLiteralFormatString Tests
+    #region GenerateNonNullSqlLiteral Tests
 
     [Fact]
-    public void GenerateSqlLiteral_FormatsWithDoubleQuotes()
+    public void GenerateSqlLiteral_WithJsonObject_EmitsRawJson()
     {
         // Arrange
-        var mapping = new CouchbaseTypeMapping(typeof(string), "STRING");
+        var mapping = new CouchbaseTypeMapping(typeof(JsonObject), "OBJECT");
+        var jsonObject = new JsonObject
+        {
+            ["name"] = "test",
+            ["value"] = 42
+        };
 
         // Act
-        var literal = mapping.GenerateSqlLiteral("test");
+        var literal = mapping.GenerateSqlLiteral(jsonObject);
 
-        // Assert
-        Assert.Equal("\"test\"", literal);
+        // Assert - Should be raw JSON, not quoted
+        Assert.Equal("{\"name\":\"test\",\"value\":42}", literal);
+        Assert.DoesNotContain("\"{\\'", literal); // Not double-escaped
     }
 
     [Fact]
-    public void GenerateSqlLiteral_WithDiscriminatorValue_FormatsCorrectly()
+    public void GenerateSqlLiteral_WithJsonArray_EmitsRawJson()
     {
         // Arrange
-        var mapping = new CouchbaseTypeMapping(typeof(string), "STRING");
+        var mapping = new CouchbaseTypeMapping(typeof(JsonArray), "ARRAY");
+        var jsonArray = new JsonArray { 1, 2, 3 };
 
         // Act
-        var literal = mapping.GenerateSqlLiteral("MyEntityType");
+        var literal = mapping.GenerateSqlLiteral(jsonArray);
+
+        // Assert - Should be raw JSON array, not quoted
+        Assert.Equal("[1,2,3]", literal);
+    }
+
+    [Fact]
+    public void GenerateSqlLiteral_WithEmptyJsonObject_EmitsEmptyObject()
+    {
+        // Arrange
+        var mapping = new CouchbaseTypeMapping(typeof(JsonObject), "OBJECT");
+        var jsonObject = new JsonObject();
+
+        // Act
+        var literal = mapping.GenerateSqlLiteral(jsonObject);
 
         // Assert
-        Assert.Equal("\"MyEntityType\"", literal);
+        Assert.Equal("{}", literal);
+    }
+
+    [Fact]
+    public void GenerateSqlLiteral_WithEmptyJsonArray_EmitsEmptyArray()
+    {
+        // Arrange
+        var mapping = new CouchbaseTypeMapping(typeof(JsonArray), "ARRAY");
+        var jsonArray = new JsonArray();
+
+        // Act
+        var literal = mapping.GenerateSqlLiteral(jsonArray);
+
+        // Assert
+        Assert.Equal("[]", literal);
+    }
+
+    [Fact]
+    public void GenerateSqlLiteral_WithNestedJsonObject_EmitsValidJson()
+    {
+        // Arrange
+        var mapping = new CouchbaseTypeMapping(typeof(JsonObject), "OBJECT");
+        var jsonObject = new JsonObject
+        {
+            ["outer"] = new JsonObject
+            {
+                ["inner"] = "value"
+            }
+        };
+
+        // Act
+        var literal = mapping.GenerateSqlLiteral(jsonObject);
+
+        // Assert
+        Assert.Equal("{\"outer\":{\"inner\":\"value\"}}", literal);
+    }
+
+    [Fact]
+    public void GenerateSqlLiteral_WithJsonObjectContainingArray_EmitsValidJson()
+    {
+        // Arrange
+        var mapping = new CouchbaseTypeMapping(typeof(JsonObject), "OBJECT");
+        var jsonObject = new JsonObject
+        {
+            ["items"] = new JsonArray { "a", "b", "c" }
+        };
+
+        // Act
+        var literal = mapping.GenerateSqlLiteral(jsonObject);
+
+        // Assert
+        Assert.Equal("{\"items\":[\"a\",\"b\",\"c\"]}", literal);
+    }
+
+    [Fact]
+    public void GenerateSqlLiteral_WithNull_ReturnsNull()
+    {
+        // Arrange
+        var mapping = new CouchbaseTypeMapping(typeof(JsonObject), "OBJECT");
+
+        // Act
+        var literal = mapping.GenerateSqlLiteral(null);
+
+        // Assert
+        Assert.Equal("NULL", literal);
+    }
+
+    [Fact]
+    public void GenerateSqlLiteral_WithJsonObjectContainingSpecialChars_EmitsProperlyEscapedJson()
+    {
+        // Arrange
+        var mapping = new CouchbaseTypeMapping(typeof(JsonObject), "OBJECT");
+        var jsonObject = new JsonObject
+        {
+            ["text"] = "line1\nline2\ttab",
+            ["quote"] = "say \"hello\""
+        };
+
+        // Act
+        var literal = mapping.GenerateSqlLiteral(jsonObject);
+
+        // Assert - JSON escaping should be handled by System.Text.Json
+        // Newline and tab are escaped
+        Assert.Contains(@"\n", literal);
+        Assert.Contains(@"\t", literal);
+        // System.Text.Json escapes quotes as \u0022
+        Assert.Contains(@"\u0022", literal);
     }
 
     #endregion
