@@ -369,4 +369,103 @@ public class CouchbaseTypeMappingSourceTests
     }
 
     #endregion
+
+    #region SQL Literal Generation Tests
+
+    [Fact]
+    public void StringMapping_GenerateSqlLiteral_ProducesSingleQuotedLiteral()
+    {
+        // Arrange - Get the actual mapping used by the provider for strings
+        var mapping = _typeMappingSource.FindMapping(typeof(string));
+
+        // Act
+        var literal = mapping!.GenerateSqlLiteral("MyDiscriminator");
+
+        // Assert - EF Core's StringTypeMapping uses single quotes for SQL
+        Assert.Equal("'MyDiscriminator'", literal);
+    }
+
+    [Fact]
+    public void StringMapping_GenerateSqlLiteral_EscapesSingleQuotes()
+    {
+        // Arrange
+        var mapping = _typeMappingSource.FindMapping(typeof(string));
+
+        // Act
+        var literal = mapping!.GenerateSqlLiteral("It's a test");
+
+        // Assert - Single quotes should be escaped by doubling
+        Assert.Equal("'It''s a test'", literal);
+    }
+
+    [Fact]
+    public void StringMapping_GenerateSqlLiteral_WithNull_ReturnsNull()
+    {
+        // Arrange
+        var mapping = _typeMappingSource.FindMapping(typeof(string));
+
+        // Act
+        var literal = mapping!.GenerateSqlLiteral(null);
+
+        // Assert
+        Assert.Equal("NULL", literal);
+    }
+
+    [Fact]
+    public void BoolMapping_GenerateSqlLiteral_ProducesCorrectLiteral()
+    {
+        // Arrange
+        var mapping = _typeMappingSource.FindMapping(typeof(bool));
+
+        // Act
+        var trueLiteral = mapping!.GenerateSqlLiteral(true);
+        var falseLiteral = mapping!.GenerateSqlLiteral(false);
+
+        // Assert
+        Assert.Equal("1", trueLiteral);
+        Assert.Equal("0", falseLiteral);
+    }
+
+    [Fact]
+    public void IntMapping_GenerateSqlLiteral_ProducesUnquotedNumber()
+    {
+        // Arrange
+        var mapping = _typeMappingSource.FindMapping(typeof(int));
+
+        // Act
+        var literal = mapping!.GenerateSqlLiteral(42);
+
+        // Assert
+        Assert.Equal("42", literal);
+    }
+
+    [Fact]
+    public void JsonObjectMapping_GenerateSqlLiteral_ProducesRawJson()
+    {
+        // Arrange
+        var mapping = _typeMappingSource.FindMapping(typeof(JsonObject));
+        var jsonObject = new JsonObject { ["key"] = "value" };
+
+        // Act
+        var literal = mapping!.GenerateSqlLiteral(jsonObject);
+
+        // Assert - Should be raw JSON, not quoted
+        Assert.Equal("{\"key\":\"value\"}", literal);
+    }
+
+    [Fact]
+    public void JsonArrayMapping_GenerateSqlLiteral_ProducesRawJson()
+    {
+        // Arrange
+        var mapping = _typeMappingSource.FindMapping(typeof(JsonArray));
+        var jsonArray = new JsonArray { 1, 2, 3 };
+
+        // Act
+        var literal = mapping!.GenerateSqlLiteral(jsonArray);
+
+        // Assert - Should be raw JSON array, not quoted
+        Assert.Equal("[1,2,3]", literal);
+    }
+
+    #endregion
 }
