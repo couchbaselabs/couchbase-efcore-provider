@@ -412,7 +412,7 @@ public class CouchbaseTypeMappingSourceTests
     }
 
     [Fact]
-    public void BoolMapping_GenerateSqlLiteral_ProducesCorrectLiteral()
+    public void BoolMapping_GenerateSqlLiteral_ProducesTrueFalseLiterals()
     {
         // Arrange
         var mapping = _typeMappingSource.FindMapping(typeof(bool));
@@ -421,9 +421,19 @@ public class CouchbaseTypeMappingSourceTests
         var trueLiteral = mapping!.GenerateSqlLiteral(true);
         var falseLiteral = mapping!.GenerateSqlLiteral(false);
 
+        // Assert - Couchbase SQL++ uses TRUE/FALSE, not 1/0
+        Assert.Equal("TRUE", trueLiteral);
+        Assert.Equal("FALSE", falseLiteral);
+    }
+
+    [Fact]
+    public void BoolMapping_ReturnsCouchbaseBoolTypeMapping()
+    {
+        // Arrange & Act
+        var mapping = _typeMappingSource.FindMapping(typeof(bool));
+
         // Assert
-        Assert.Equal("1", trueLiteral);
-        Assert.Equal("0", falseLiteral);
+        Assert.IsType<CouchbaseBoolTypeMapping>(mapping);
     }
 
     [Fact]

@@ -42,8 +42,8 @@ public class CouchbaseTypeMappingSource : RelationalTypeMappingSource
             { typeof(double), new DoubleTypeMapping("NUMBER") },
             { typeof(decimal), new DecimalTypeMapping("NUMBER") },
 
-            // Boolean -> BOOLEAN
-            { typeof(bool), new BoolTypeMapping("BOOLEAN") },
+            // Boolean -> BOOLEAN (uses TRUE/FALSE literals, not 1/0)
+            { typeof(bool), new CouchbaseBoolTypeMapping() },
 
             // String types -> STRING
             { typeof(string), new StringTypeMapping("STRING", DbType.String) },
