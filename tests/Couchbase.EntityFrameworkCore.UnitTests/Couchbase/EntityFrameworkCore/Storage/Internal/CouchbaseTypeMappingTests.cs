@@ -1,6 +1,5 @@
 using System.Text.Json.Nodes;
 using Couchbase.EntityFrameworkCore.Storage.Internal;
-using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Xunit;
 
