@@ -478,4 +478,19 @@ public class CouchbaseTypeMappingSourceTests
     }
 
     #endregion
+
+    #region Null ClrType Handling
+
+    [Fact]
+    public void FindMapping_WithNullClrType_DoesNotThrow()
+    {
+        // Arrange - Create mapping info with null ClrType (e.g., when EF requests by store type)
+        var mappingInfo = new RelationalTypeMappingInfo(storeTypeName: "STRING");
+
+        // Act & Assert - Should not throw, should fall back to base implementation
+        var exception = Record.Exception(() => _typeMappingSource.FindMapping(mappingInfo));
+        Assert.Null(exception);
+    }
+
+    #endregion
 }
