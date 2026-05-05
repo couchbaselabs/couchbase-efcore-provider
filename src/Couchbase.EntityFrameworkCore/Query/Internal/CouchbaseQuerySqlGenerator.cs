@@ -411,17 +411,15 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
 
     private class Keyspace
     {
-        private readonly string _alias;
         private readonly string _sqlKeyspace;
 
-        public Keyspace(string originalName, string originalAlias)
+        public Keyspace(string originalName)
         {
             // Format is now standard: Bucket.Scope.Collection
             var splitName = originalName.Split('.');
             if (splitName.Length != 3)
             {
                 // This may be an owned type which doesn't have a full keyspace - use the name as-is
-                _alias = originalAlias;
                 _sqlKeyspace = originalName;
                 return;
             }
@@ -430,16 +428,6 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
             var scope = splitName[1].Trim('`');
             var collection = splitName[2].Trim('`');
 
-            // Generate alias from the first letter of the collection name
-            _alias = collection.FirstOrDefault().ToString().ToLowerInvariant();
-
-            // If the original alias has an ordinal index, add it to the alias
-            var splitAlias = originalAlias.ToArray();
-            if (splitAlias.Length == 2)
-            {
-                _alias += splitAlias[1].ToString().ToLowerInvariant();
-            }
-
             // Build the SQL keyspace: `bucket`.`scope`.`collection`
             _sqlKeyspace = $"{bucket.EscapeIfRequired()}.{scope.EscapeIfRequired()}.{collection.EscapeIfRequired()}";
         }
@@ -447,11 +435,6 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
         public string SqlKeyspace
         {
             [DebuggerStepThrough] get => _sqlKeyspace;
-        }
-
-        public string Alias
-        {
-            [DebuggerStepThrough] get => _alias;
         }
     }
 
@@ -471,7 +454,7 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
         }
 
         var keyspace = _tableNameCache.GetOrAdd(
-            tableExpression.Name, key => new Keyspace(key, tableExpression.Alias));
+            tableExpression.Name, key => new Keyspace(key));
 
         Sql.Append(keyspace.SqlKeyspace)
             .Append(AliasSeparator)
@@ -482,21 +465,8 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
 
     protected override Expression VisitColumn(ColumnExpression columnExpression)
     {
-        //NOTE: TableExpression is a sealed class so cannot be overridden without
-        //bring it inside this assembly which then requires the TableExpressionBase to
-        //be moved into this assembly as Alias field is internal.
-
-        string alias = columnExpression.TableAlias;
-       /* if (columnExpression.Table is TableExpression tableExpression)
-        {
-            tableExpression = (TableExpression)columnExpression.Table;
-            var keyspace = _tableNameCache.GetOrAdd(
-                tableExpression.Name, key => new Keyspace(key, tableExpression.Alias));
-            alias = keyspace.Alias;
-        }*/
-
         var helper = Dependencies.SqlGenerationHelper;
-        Sql.Append(helper.DelimitIdentifier(alias))
+        Sql.Append(helper.DelimitIdentifier(columnExpression.TableAlias))
             .Append(".")
             .Append(helper.DelimitIdentifier(columnExpression.Name));
 
