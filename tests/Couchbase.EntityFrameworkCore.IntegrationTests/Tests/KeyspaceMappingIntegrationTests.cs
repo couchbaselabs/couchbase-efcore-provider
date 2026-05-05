@@ -372,6 +372,66 @@ public class KeyspaceMappingIntegrationTests
 
     #endregion
 
+    #region DbContext Configuration Validation Tests
+
+    [Fact]
+    public void ConfigureToCouchbase_WithNullBucket_ThrowsArgumentException()
+    {
+        // Arrange
+        var context = CreateContextWithNullBucket<PlainEntityContext>();
+
+        // Act & Assert
+        var exception = Assert.ThrowsAny<ArgumentException>(() => context.Model);
+        Assert.Contains("Bucket", exception.Message);
+    }
+
+    [Fact]
+    public void ConfigureToCouchbase_WithEmptyBucket_ThrowsArgumentException()
+    {
+        // Arrange
+        var context = CreateContextWithEmptyBucket<PlainEntityContext>();
+
+        // Act & Assert
+        var exception = Assert.ThrowsAny<ArgumentException>(() => context.Model);
+        Assert.Contains("Bucket", exception.Message);
+    }
+
+    [Fact]
+    public void ConfigureToCouchbase_WithNullScope_ThrowsArgumentException()
+    {
+        // Arrange
+        var context = CreateContextWithNullScope<PlainEntityContext>();
+
+        // Act & Assert
+        var exception = Assert.ThrowsAny<ArgumentException>(() => context.Model);
+        Assert.Contains("Scope", exception.Message);
+    }
+
+    [Fact]
+    public void ConfigureToCouchbase_WithEmptyScope_ThrowsArgumentException()
+    {
+        // Arrange
+        var context = CreateContextWithEmptyScope<PlainEntityContext>();
+
+        // Act & Assert
+        var exception = Assert.ThrowsAny<ArgumentException>(() => context.Model);
+        Assert.Contains("Scope", exception.Message);
+    }
+
+    private class PlainEntityContext : DbContext
+    {
+        public PlainEntityContext(DbContextOptions options) : base(options) { }
+        public DbSet<PlainTestEntity> Entities { get; set; } = null!;
+
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            modelBuilder.Entity<PlainTestEntity>();
+            modelBuilder.ConfigureToCouchbase(this);
+        }
+    }
+
+    #endregion
+
     #region Test Infrastructure
 
     private TContext CreateContext<TContext>() where TContext : DbContext
@@ -391,6 +451,94 @@ public class KeyspaceMappingIntegrationTests
             {
                 couchbaseDbContextOptions.Bucket = _fixture.BucketName;
                 couchbaseDbContextOptions.Scope = _fixture.ScopeName;
+            });
+
+        return (TContext)Activator.CreateInstance(typeof(TContext), optionsBuilder.Options)!;
+    }
+
+    private TContext CreateContextWithNullBucket<TContext>() where TContext : DbContext
+    {
+        var loggerFactory = LoggerFactory.Create(builder =>
+        {
+            builder.AddFilter(level => level >= LogLevel.Debug);
+        });
+
+        var optionsBuilder = new DbContextOptionsBuilder<TContext>();
+        optionsBuilder.UseCouchbase(
+            new ClusterOptions()
+                .WithConnectionString(_fixture.Host)
+                .WithPasswordAuthentication(_fixture.Username, _fixture.Password)
+                .WithLogging(loggerFactory),
+            couchbaseDbContextOptions =>
+            {
+                couchbaseDbContextOptions.Bucket = null!;
+                couchbaseDbContextOptions.Scope = _fixture.ScopeName;
+            });
+
+        return (TContext)Activator.CreateInstance(typeof(TContext), optionsBuilder.Options)!;
+    }
+
+    private TContext CreateContextWithEmptyBucket<TContext>() where TContext : DbContext
+    {
+        var loggerFactory = LoggerFactory.Create(builder =>
+        {
+            builder.AddFilter(level => level >= LogLevel.Debug);
+        });
+
+        var optionsBuilder = new DbContextOptionsBuilder<TContext>();
+        optionsBuilder.UseCouchbase(
+            new ClusterOptions()
+                .WithConnectionString(_fixture.Host)
+                .WithPasswordAuthentication(_fixture.Username, _fixture.Password)
+                .WithLogging(loggerFactory),
+            couchbaseDbContextOptions =>
+            {
+                couchbaseDbContextOptions.Bucket = "";
+                couchbaseDbContextOptions.Scope = _fixture.ScopeName;
+            });
+
+        return (TContext)Activator.CreateInstance(typeof(TContext), optionsBuilder.Options)!;
+    }
+
+    private TContext CreateContextWithNullScope<TContext>() where TContext : DbContext
+    {
+        var loggerFactory = LoggerFactory.Create(builder =>
+        {
+            builder.AddFilter(level => level >= LogLevel.Debug);
+        });
+
+        var optionsBuilder = new DbContextOptionsBuilder<TContext>();
+        optionsBuilder.UseCouchbase(
+            new ClusterOptions()
+                .WithConnectionString(_fixture.Host)
+                .WithPasswordAuthentication(_fixture.Username, _fixture.Password)
+                .WithLogging(loggerFactory),
+            couchbaseDbContextOptions =>
+            {
+                couchbaseDbContextOptions.Bucket = _fixture.BucketName;
+                couchbaseDbContextOptions.Scope = null!;
+            });
+
+        return (TContext)Activator.CreateInstance(typeof(TContext), optionsBuilder.Options)!;
+    }
+
+    private TContext CreateContextWithEmptyScope<TContext>() where TContext : DbContext
+    {
+        var loggerFactory = LoggerFactory.Create(builder =>
+        {
+            builder.AddFilter(level => level >= LogLevel.Debug);
+        });
+
+        var optionsBuilder = new DbContextOptionsBuilder<TContext>();
+        optionsBuilder.UseCouchbase(
+            new ClusterOptions()
+                .WithConnectionString(_fixture.Host)
+                .WithPasswordAuthentication(_fixture.Username, _fixture.Password)
+                .WithLogging(loggerFactory),
+            couchbaseDbContextOptions =>
+            {
+                couchbaseDbContextOptions.Bucket = _fixture.BucketName;
+                couchbaseDbContextOptions.Scope = "";
             });
 
         return (TContext)Activator.CreateInstance(typeof(TContext), optionsBuilder.Options)!;

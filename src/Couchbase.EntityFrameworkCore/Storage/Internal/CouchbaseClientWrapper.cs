@@ -123,7 +123,7 @@ public class CouchbaseClientWrapper : ICouchbaseClientWrapper
 
     private async Task<ICouchbaseCollection> GetCollection(string keyspace)
     {
-        if (_keyspaceCache.TryGetValue(keyspace, out var cached) && cached.Collection != null)
+        if (_keyspaceCache.TryGetValue(keyspace, out var cached))
         {
             return cached.Collection;
         }
@@ -132,7 +132,7 @@ public class CouchbaseClientWrapper : ICouchbaseClientWrapper
         try
         {
             // Double-check after acquiring lock
-            if (_keyspaceCache.TryGetValue(keyspace, out cached) && cached.Collection != null)
+            if (_keyspaceCache.TryGetValue(keyspace, out cached))
             {
                 return cached.Collection;
             }
@@ -146,15 +146,15 @@ public class CouchbaseClientWrapper : ICouchbaseClientWrapper
             if (!string.Equals(parsed.Bucket, configuredBucket, StringComparison.OrdinalIgnoreCase))
             {
                 throw new InvalidOperationException(
-                    $"Keyspace bucket mismatch: The keyspace {parsed.DisplayKeyspace} specifies bucket '{parsed.Bucket}', " +
+                    $"Keyspace bucket mismatch: The keyspace {parsed.ToSqlString()} specifies bucket '{parsed.Bucket}', " +
                     $"but the DbContext is configured to use bucket '{configuredBucket}'. " +
                     $"Ensure the entity mapping matches the DbContext bucket configuration.");
             }
 
             _bucket = await _bucketProvider.GetBucketAsync(configuredBucket).ConfigureAwait(false);
-            var collection = _bucket.Scope(parsed.Scope).Collection(parsed.CollectionName);
+            var collection = _bucket.Scope(parsed.Scope).Collection(parsed.Collection);
 
-            _keyspaceCache[keyspace] = parsed with { Collection = collection };
+            _keyspaceCache[keyspace] = new CachedKeyspace(parsed.ToSqlString(), collection);
             return collection;
         }
         catch (InvalidOperationException)
@@ -169,12 +169,11 @@ public class CouchbaseClientWrapper : ICouchbaseClientWrapper
         {
             // Try to get display keyspace for error message, but handle case where parsing itself failed
             string displayKeyspace;
-            try
+            if (CouchbaseKeyspace.TryParse(keyspace, out var parsed))
             {
-                var parsed = ParseKeyspace(keyspace);
-                displayKeyspace = parsed.DisplayKeyspace;
+                displayKeyspace = parsed.Value.ToSqlString();
             }
-            catch
+            else
             {
                 displayKeyspace = keyspace; // Fall back to raw keyspace string
             }
@@ -191,38 +190,25 @@ public class CouchbaseClientWrapper : ICouchbaseClientWrapper
     /// Parses the keyspace format (Bucket.Scope.Collection) into its components.
     /// </summary>
     /// <remarks>
-    /// Results are cached for performance since the same keyspace may be parsed multiple times.
     /// Uses <see cref="CouchbaseKeyspace.TryParse"/> which validates that all parts are non-empty.
     /// </remarks>
     /// <exception cref="ArgumentException">Thrown when the keyspace format is invalid.</exception>
-    private CachedKeyspace ParseKeyspace(string keyspace)
+    private static CouchbaseKeyspace ParseKeyspace(string keyspace)
     {
-        return _keyspaceCache.GetOrAdd(keyspace, static key =>
+        if (!CouchbaseKeyspace.TryParse(keyspace, out var parsed))
         {
-            if (!CouchbaseKeyspace.TryParse(key, out var parsed))
-            {
-                throw new ArgumentException(
-                    $"Invalid keyspace format: '{key}'. Expected format: Bucket.Scope.Collection " +
-                    $"where all parts are non-empty.",
-                    nameof(keyspace));
-            }
+            throw new ArgumentException(
+                $"Invalid keyspace format: '{keyspace}'. Expected format: Bucket.Scope.Collection " +
+                $"where all parts are non-empty.",
+                nameof(keyspace));
+        }
 
-            var displayKeyspace = parsed.Value.ToSqlString();
-            return new CachedKeyspace(
-                parsed.Value.Collection,
-                parsed.Value.Bucket,
-                parsed.Value.Scope,
-                displayKeyspace,
-                null);
-        });
+        return parsed.Value;
     }
 
     private readonly record struct CachedKeyspace(
-        string CollectionName,
-        string Bucket,
-        string Scope,
         string DisplayKeyspace,
-        ICouchbaseCollection? Collection);
+        ICouchbaseCollection Collection);
 }
 
 /* ************************************************************
