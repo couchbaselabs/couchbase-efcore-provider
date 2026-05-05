@@ -80,13 +80,15 @@ public class CouchbaseTypeMappingSource : RelationalTypeMappingSource
 
     protected override RelationalTypeMapping? FindMapping(in RelationalTypeMappingInfo mappingInfo)
     {
-       var clrType = mappingInfo.ClrType;
-       if (clrType == null)
-       {
-           throw new InvalidOperationException($"Cannot map type {clrType}");
-       }
+        var clrType = mappingInfo.ClrType;
 
-       return _clrTypeMappings.TryGetValue(clrType, out var mapping) ? mapping : base.FindMapping(in mappingInfo);
+        // ClrType may be null when EF requests a mapping by store type (e.g., during scaffolding/migrations)
+        if (clrType == null)
+        {
+            return base.FindMapping(in mappingInfo);
+        }
+
+        return _clrTypeMappings.TryGetValue(clrType, out var mapping) ? mapping : base.FindMapping(in mappingInfo);
     }
 }
 
