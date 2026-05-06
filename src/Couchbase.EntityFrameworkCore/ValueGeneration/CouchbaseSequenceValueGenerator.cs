@@ -7,42 +7,47 @@ namespace Couchbase.EntityFrameworkCore.ValueGeneration;
 /// A value generator that generates sequential values using a Couchbase sequence.
 /// </summary>
 /// <remarks>
-/// This generator executes <c>SELECT NEXT VALUE FOR bucket.scope.sequence_name</c>
+/// This generator executes <c>SELECT NEXT VALUE FOR `bucket`.`scope`.`sequence_name`</c>
 /// to obtain the next value from a Couchbase sequence. Sequences must be created
 /// in the database before use.
 /// </remarks>
 public class CouchbaseSequenceValueGenerator : ValueGenerator<long>
 {
     private readonly string _sequenceName;
-    private readonly string _keyspace;
+    private readonly string _bucket;
+    private readonly string _scope;
     private readonly Func<string, Task<long>> _executeSequenceQuery;
 
     /// <summary>
     /// Creates a new instance of <see cref="CouchbaseSequenceValueGenerator"/>.
     /// </summary>
     /// <param name="sequenceName">The name of the sequence.</param>
-    /// <param name="keyspace">The keyspace containing the sequence (bucket.scope format).</param>
+    /// <param name="bucket">The bucket containing the sequence.</param>
+    /// <param name="scope">The scope containing the sequence.</param>
     /// <param name="executeSequenceQuery">
     /// A delegate that executes the sequence query and returns the next value.
     /// </param>
     public CouchbaseSequenceValueGenerator(
         string sequenceName,
-        string keyspace,
+        string bucket,
+        string scope,
         Func<string, Task<long>> executeSequenceQuery)
     {
         ArgumentException.ThrowIfNullOrEmpty(sequenceName);
-        ArgumentException.ThrowIfNullOrEmpty(keyspace);
+        ArgumentException.ThrowIfNullOrEmpty(bucket);
+        ArgumentException.ThrowIfNullOrEmpty(scope);
         ArgumentNullException.ThrowIfNull(executeSequenceQuery);
 
         _sequenceName = sequenceName;
-        _keyspace = keyspace;
+        _bucket = bucket;
+        _scope = scope;
         _executeSequenceQuery = executeSequenceQuery;
     }
 
     /// <summary>
     /// Gets the SQL++ query used to fetch the next sequence value.
     /// </summary>
-    public string SequenceQuery => $"SELECT NEXT VALUE FOR `{_keyspace}`.`{_sequenceName}`";
+    public string SequenceQuery => $"SELECT NEXT VALUE FOR `{_bucket}`.`{_scope}`.`{_sequenceName}`";
 
     /// <summary>
     /// Gets a value indicating whether values may be temporary (false for sequences).
