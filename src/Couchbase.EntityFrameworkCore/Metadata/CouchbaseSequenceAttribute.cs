@@ -10,8 +10,8 @@ namespace Couchbase.EntityFrameworkCore.Metadata;
 /// entity is added to the context.
 /// </para>
 /// <para>
-/// The sequence must already exist in the database. Use the Couchbase SQL++ statement
-/// <c>CREATE SEQUENCE bucket.scope.sequence_name</c> to create the sequence.
+/// If <see cref="AutoCreate"/> is true (default), the sequence will be created automatically
+/// when <see cref="Microsoft.EntityFrameworkCore.Infrastructure.DatabaseFacade.EnsureCreatedAsync"/> is called.
 /// </para>
 /// </remarks>
 /// <example>
@@ -62,4 +62,26 @@ public class CouchbaseSequenceAttribute : Attribute
     /// Gets the scope containing the sequence, or <c>null</c> to use the DbContext-level scope.
     /// </summary>
     public string? Scope { get; }
+
+    /// <summary>
+    /// Gets or sets the starting value of the sequence. Defaults to 1.
+    /// </summary>
+    public long StartWith { get; set; } = 1;
+
+    /// <summary>
+    /// Gets or sets the increment value for each call to NEXT VALUE FOR. Defaults to 1.
+    /// </summary>
+    public long IncrementBy { get; set; } = 1;
+
+    /// <summary>
+    /// Gets or sets whether the sequence should restart when the limit is reached.
+    /// Defaults to false.
+    /// </summary>
+    public bool Cycle { get; set; } = false;
+
+    /// <summary>
+    /// Gets or sets whether to automatically create the sequence on EnsureCreated.
+    /// Defaults to true.
+    /// </summary>
+    public bool AutoCreate { get; set; } = true;
 }

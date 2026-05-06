@@ -1,8 +1,6 @@
-using System.Runtime.CompilerServices;
 using Couchbase.EntityFrameworkCode.IntegrationTests.Fixtures;
 using Couchbase.EntityFrameworkCore;
 using Couchbase.EntityFrameworkCore.Extensions;
-using Couchbase.EntityFrameworkCore.Metadata;
 using Couchbase.EntityFrameworkCore.ValueGeneration;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -198,23 +196,23 @@ public class SequenceValueGenerationTests : IAsyncLifetime
     {
         // Diagnostic test to verify the model is configured correctly
         await using var context = CreateSequenceTestDbContext();
-        
+
         var entityType = context.Model.FindEntityType(typeof(SequenceTestEntity));
         Assert.NotNull(entityType);
-        
+
         var idProperty = entityType.FindProperty(nameof(SequenceTestEntity.Id));
         Assert.NotNull(idProperty);
-        
+
         // Check ValueGenerated
         _outputHelper.WriteLine($"ValueGenerated: {idProperty.ValueGenerated}");
         Assert.Equal(Microsoft.EntityFrameworkCore.Metadata.ValueGenerated.OnAdd, idProperty.ValueGenerated);
-        
+
         // Check for sequence annotation
         var sequenceAnnotation = idProperty.FindAnnotation(CouchbaseValueGeneratorSelector.SequenceNameAnnotation);
         _outputHelper.WriteLine($"SequenceAnnotation: {sequenceAnnotation?.Value}");
         Assert.NotNull(sequenceAnnotation);
         Assert.Equal(SequenceName, sequenceAnnotation.Value);
-        
+
         // Check that the value generator selector is our implementation
         var selector = context.GetService<IValueGeneratorSelector>();
         _outputHelper.WriteLine($"Selector type: {selector?.GetType().FullName}");
@@ -321,6 +319,46 @@ public class SequenceValueGenerationTests : IAsyncLifetime
             $"Expected cancellation-related exception but got: {exception.GetType().Name}");
     }
 
+    [Fact]
+    public async Task UseSequence_WithOptions_SetsAnnotationCorrectly()
+    {
+        // Arrange
+        await using var context = CreateSequenceTestDbContext();
+
+        // Create a test context with options
+        var optionsBuilder = new DbContextOptionsBuilder<AutoCreateSequenceDbContext>();
+        optionsBuilder.UseCouchbase(
+            new ClusterOptions()
+                .WithConnectionString(_fixture.Host)
+                .WithPasswordAuthentication(_fixture.Username, _fixture.Password),
+            couchbaseDbContextOptions =>
+            {
+                couchbaseDbContextOptions.Bucket = _fixture.BucketName;
+                couchbaseDbContextOptions.Scope = _fixture.ScopeName;
+            });
+
+        await using var testContext = new AutoCreateSequenceDbContext(optionsBuilder.Options);
+
+        // Act
+        var entityType = testContext.Model.FindEntityType(typeof(AutoCreateSequenceEntity))!;
+        var idProperty = entityType.FindProperty(nameof(AutoCreateSequenceEntity.Id))!;
+
+        // Assert
+        var sequenceAnnotation = idProperty.FindAnnotation(CouchbaseValueGeneratorSelector.SequenceNameAnnotation);
+        Assert.NotNull(sequenceAnnotation);
+        Assert.Equal("auto_seq", sequenceAnnotation.Value);
+
+        var optionsAnnotation = idProperty.FindAnnotation(CouchbaseValueGeneratorSelector.SequenceOptionsAnnotation);
+        Assert.NotNull(optionsAnnotation);
+
+        var options = optionsAnnotation.Value as CouchbaseSequenceOptions;
+        Assert.NotNull(options);
+        Assert.Equal(1000, options.StartWith);
+        Assert.Equal(10, options.IncrementBy);
+
+        _outputHelper.WriteLine($"Sequence options: StartWith={options.StartWith}, IncrementBy={options.IncrementBy}");
+    }
+
     /// <summary>
     /// Test entity with long Id using sequence value generation via fluent API.
     /// </summary>
@@ -328,6 +366,43 @@ public class SequenceValueGenerationTests : IAsyncLifetime
     {
         public long Id { get; set; }
         public string Name { get; set; } = string.Empty;
+    }
+
+    /// <summary>
+    /// Test entity for auto-create sequence tests.
+    /// </summary>
+    public class AutoCreateSequenceEntity
+    {
+        public long Id { get; set; }
+        public string Name { get; set; } = string.Empty;
+    }
+
+    /// <summary>
+    /// DbContext for testing sequence auto-creation with options.
+    /// </summary>
+    public class AutoCreateSequenceDbContext : DbContext
+    {
+        public AutoCreateSequenceDbContext(DbContextOptions<AutoCreateSequenceDbContext> options)
+            : base(options)
+        {
+        }
+
+        public DbSet<AutoCreateSequenceEntity> AutoCreateEntities { get; set; }
+
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            base.OnModelCreating(modelBuilder);
+
+            modelBuilder.Entity<AutoCreateSequenceEntity>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Id).UseSequence("auto_seq", new CouchbaseSequenceOptions
+                {
+                    StartWith = 1000,
+                    IncrementBy = 10
+                });
+            });
+        }
     }
 
     /// <summary>
