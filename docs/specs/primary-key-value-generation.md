@@ -1,8 +1,9 @@
 # Couchbase EF Core Primary Key Value Generation Specification
 
-**Status:** In Progress  
+**Status:** Complete (Phase 1-2)  
 **Created:** 2026-05-05  
-**Phases:** 1-2 (Active), 3-4 (Deferred)
+**Updated:** 2026-05-06  
+**Phases:** 1-2 (Complete), 3-4 (Deferred)
 
 ---
 
@@ -23,32 +24,46 @@ Documentation: https://docs.couchbase.com/server/current/n1ql/n1ql-language-refe
 
 ---
 
-## Phase 1: Core Infrastructure ✅ ACTIVE
+## Phase 1: Core Infrastructure ✅ COMPLETE
 
-### 1.1 Create `CouchbaseSequenceValueGenerator`
+### 1.1 `CouchbaseSequenceValueGenerator<T>`
 
 **Location:** `src/Couchbase.EntityFrameworkCore/ValueGeneration/CouchbaseSequenceValueGenerator.cs`
 
-- Implements `ValueGenerator<long>` 
-- Executes `SELECT NEXT VALUE FOR bucket.scope.sequence_name`
-- Caches sequence reference for performance
+- Generic value generator supporting `int`, `long`, `short`, `byte`, `uint`, `ulong`, `ushort`, `decimal`
+- Executes `SELECT NEXT VALUE FOR \`bucket\`.\`scope\`.\`sequence_name\``
+- Gets `IRelationalConnection` from `EntityEntry.Context` at runtime (avoids DI lifetime issues)
+- Properly escapes bucket, scope, and sequence names with backticks
 
-### 1.2 Create `CouchbaseSequenceValueGeneratorFactory`
+### 1.2 `CouchbaseValueGeneratorSelector`
 
-**Location:** `src/Couchbase.EntityFrameworkCore/ValueGeneration/CouchbaseSequenceValueGeneratorFactory.cs`
+**Location:** `src/Couchbase.EntityFrameworkCore/ValueGeneration/CouchbaseValueGeneratorSelector.cs`
 
-- Implements `IValueGeneratorSelector`
-- Creates appropriate generator based on property configuration
+- Extends `RelationalValueGeneratorSelector`
+- Checks for `Couchbase:SequenceName` annotation on properties
+- Creates appropriate generic `CouchbaseSequenceValueGenerator<T>` via reflection
+- Supports optional `Couchbase:SequenceScope` annotation for scope override
 
-### 1.3 Register in DI
+### 1.3 DI Registration
 
-- Add `IValueGeneratorSelector` registration in `CouchbaseServiceCollectionExtensions`
+- `IValueGeneratorSelector` registered in `CouchbaseServiceCollectionExtensions`
+- Registered AFTER `TryAddCoreServices()` to override the default selector
+- Existing selector is explicitly removed before adding ours
+
+### 1.4 Save Pipeline Integration
+
+- `CouchbaseSaveChangesInterceptor.GenerateSequenceValuesAsync()` generates values during `SavingChangesAsync`
+- Detects properties with sequence annotations and temporary/default values
+- Calls `IValueGeneratorSelector.Select()` to get generator, then `NextAsync()` to generate value
+- Uses `propertyEntry.IsTemporary` to detect EF Core's temporary negative values
 
 ---
 
-## Phase 2: Fluent API & Annotations ✅ ACTIVE
+## Phase 2: Fluent API & Annotations ✅ COMPLETE
 
 ### 2.1 Extension Method: `UseSequence()`
+
+**Location:** `src/Couchbase.EntityFrameworkCore/Extensions/CouchbasePropertyBuilderExtensions.cs`
 
 ```csharp
 // Usage
@@ -63,6 +78,8 @@ modelBuilder.Entity<Order>()
 
 ### 2.2 Data Annotation: `[CouchbaseSequence]`
 
+**Location:** `src/Couchbase.EntityFrameworkCore/Metadata/CouchbaseSequenceAttribute.cs`
+
 ```csharp
 public class Order
 {
@@ -71,9 +88,12 @@ public class Order
 }
 ```
 
-### 2.3 Convention for Auto-Detection
+### 2.3 Convention: `CouchbaseSequenceConvention`
 
-- Properties named `Id` or `{EntityName}Id` of type `long`/`int` with `ValueGeneratedOnAdd` could auto-use sequences
+**Location:** `src/Couchbase.EntityFrameworkCore/Metadata/Conventions/CouchbaseSequenceConvention.cs`
+
+- Processes `CouchbaseSequenceAttribute` during model building
+- Sets annotations based on attribute configuration
 
 ---
 
@@ -117,18 +137,19 @@ public class CouchbaseSequenceOptions
 
 ---
 
-## Files to Create/Modify
+## Files Created/Modified
 
-### Phase 1-2 (Active)
+### Phase 1-2 (Complete)
 
-| File | Action |
-|------|--------|
-| `ValueGeneration/CouchbaseSequenceValueGenerator.cs` | Create |
-| `ValueGeneration/CouchbaseSequenceValueGeneratorFactory.cs` | Create |
-| `Metadata/CouchbaseSequenceAttribute.cs` | Create |
-| `Extensions/CouchbasePropertyBuilderExtensions.cs` | Create |
-| `Metadata/Conventions/CouchbaseSequenceConvention.cs` | Create |
-| `Extensions/CouchbaseServiceCollectionExtensions.cs` | Modify |
+| File | Action | Description |
+|------|--------|-------------|
+| `ValueGeneration/CouchbaseSequenceValueGenerator.cs` | Created | Generic value generator for sequences |
+| `ValueGeneration/CouchbaseValueGeneratorSelector.cs` | Created | Selects generators based on property annotations |
+| `Metadata/CouchbaseSequenceAttribute.cs` | Created | Data annotation for sequence configuration |
+| `Extensions/CouchbasePropertyBuilderExtensions.cs` | Created | `UseSequence()` fluent API |
+| `Metadata/Conventions/CouchbaseSequenceConvention.cs` | Created | Processes sequence attributes |
+| `Extensions/CouchbaseServiceCollectionExtensions.cs` | Modified | Registers `CouchbaseValueGeneratorSelector` |
+| `Storage/Internal/CouchbaseSaveChangesInterceptor.cs` | Modified | Generates sequence values during save |
 
 ### Phase 3-4 (Deferred)
 
@@ -142,17 +163,25 @@ public class CouchbaseSequenceOptions
 
 ## Test Coverage
 
-### Unit Tests (Phase 1-2)
+### Unit Tests (Phase 1-2) ✅
 
-- Sequence value generator fetches values correctly
-- Fluent API configures sequence properly
-- Attribute is processed by convention
-- Invalid configurations throw appropriate exceptions
+| Test File | Tests | Description |
+|-----------|-------|-------------|
+| `CouchbaseSequenceValueGeneratorTests.cs` | 12 | Constructor validation, type support, query generation |
+| `CouchbaseSequenceAttributeTests.cs` | 10 | Attribute construction and properties |
+| `CouchbasePropertyBuilderExtensionsTests.cs` | 11 | Fluent API annotation setting, scope override |
 
-### Integration Tests (Phase 1-2)
+### Integration Tests (Phase 1-2) ✅
 
-- End-to-end insert with sequence-generated ID
-- Concurrent inserts get unique values
+| Test File | Tests | Description |
+|-----------|-------|-------------|
+| `SequenceValueGenerationTests.cs` | 6 | End-to-end DI/model/save pipeline verification |
+
+Key integration test: `EndToEnd_DIRegistration_SelectorUsedDuringSaveChanges` verifies:
+1. `IValueGeneratorSelector` resolves to `CouchbaseValueGeneratorSelector`
+2. Property has sequence annotation and `ValueGenerated.OnAdd`
+3. Selector creates `CouchbaseSequenceValueGenerator<T>`
+4. `SaveChangesAsync` assigns positive sequence value to entity
 
 ### Integration Tests (Phase 3-4, Deferred)
 
@@ -166,19 +195,19 @@ public class CouchbaseSequenceOptions
 
 - Requires Couchbase Server 7.0+
 - Sequences are scoped to bucket.scope
-- Initial implementation supports `long` keys only
-- Transaction support deferred to future iteration
+- Supports numeric types: `int`, `long`, `short`, `byte`, `uint`, `ulong`, `ushort`, `decimal`
+- Sequences must be created manually before use (Phase 3 will add auto-creation)
 
 ---
 
 ## Time Estimates (with Droid)
 
-| Phase | Estimate |
-|-------|----------|
-| Phase 1: Core Infrastructure | 2-4 hours |
-| Phase 2: Fluent API & Annotations | 1-2 hours |
-| Phase 3: Sequence Lifecycle | 1-2 hours |
-| Phase 4: Client-Side GUID | 30 min |
-| Testing | 2-3 hours |
+| Phase | Estimate | Actual |
+|-------|----------|--------|
+| Phase 1: Core Infrastructure | 2-4 hours | ~3 hours |
+| Phase 2: Fluent API & Annotations | 1-2 hours | ~1 hour |
+| Phase 3: Sequence Lifecycle | 1-2 hours | Deferred |
+| Phase 4: Client-Side GUID | 30 min | Deferred |
+| Testing | 2-3 hours | ~2 hours |
 
-**Phase 1-2 Total: ~4-6 hours**
+**Phase 1-2 Total: ~6 hours**
