@@ -1,5 +1,4 @@
 using Couchbase.EntityFrameworkCore.ValueGeneration;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace Couchbase.EntityFrameworkCore.Extensions;
@@ -90,6 +89,92 @@ public static class CouchbasePropertyBuilderExtensions
         propertyBuilder.HasAnnotation(
             CouchbaseValueGeneratorSelector.SequenceScopeAnnotation,
             scope);
+
+        propertyBuilder.ValueGeneratedOnAdd();
+
+        return propertyBuilder;
+    }
+
+    /// <summary>
+    /// Configures the property to have its value generated using a Couchbase sequence
+    /// with custom options.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// When using <see cref="Microsoft.EntityFrameworkCore.DbContext.Database"/>.<see cref="Microsoft.EntityFrameworkCore.Infrastructure.DatabaseFacade.EnsureCreatedAsync"/>,
+    /// the sequence will be automatically created with the specified options.
+    /// </para>
+    /// </remarks>
+    /// <param name="propertyBuilder">The property builder.</param>
+    /// <param name="sequenceName">The name of the sequence.</param>
+    /// <param name="options">The sequence options (start value, increment, etc.).</param>
+    /// <returns>The same property builder for method chaining.</returns>
+    /// <example>
+    /// <code>
+    /// modelBuilder.Entity&lt;Order&gt;()
+    ///     .Property(e => e.Id)
+    ///     .UseSequence("order_seq", new CouchbaseSequenceOptions
+    ///     {
+    ///         StartWith = 1000,
+    ///         IncrementBy = 10
+    ///     });
+    /// </code>
+    /// </example>
+    public static PropertyBuilder<TProperty> UseSequence<TProperty>(
+        this PropertyBuilder<TProperty> propertyBuilder,
+        string sequenceName,
+        CouchbaseSequenceOptions options)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(sequenceName);
+        ArgumentNullException.ThrowIfNull(options);
+
+        propertyBuilder.HasAnnotation(
+            CouchbaseValueGeneratorSelector.SequenceNameAnnotation,
+            sequenceName);
+
+        propertyBuilder.HasAnnotation(
+            CouchbaseValueGeneratorSelector.SequenceScopeAnnotation,
+            null);
+
+        propertyBuilder.HasAnnotation(
+            CouchbaseValueGeneratorSelector.SequenceOptionsAnnotation,
+            options);
+
+        propertyBuilder.ValueGeneratedOnAdd();
+
+        return propertyBuilder;
+    }
+
+    /// <summary>
+    /// Configures the property to have its value generated using a Couchbase sequence
+    /// in the specified scope with custom options.
+    /// </summary>
+    /// <param name="propertyBuilder">The property builder.</param>
+    /// <param name="scope">The scope containing the sequence.</param>
+    /// <param name="sequenceName">The name of the sequence.</param>
+    /// <param name="options">The sequence options (start value, increment, etc.).</param>
+    /// <returns>The same property builder for method chaining.</returns>
+    public static PropertyBuilder<TProperty> UseSequence<TProperty>(
+        this PropertyBuilder<TProperty> propertyBuilder,
+        string scope,
+        string sequenceName,
+        CouchbaseSequenceOptions options)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(scope);
+        ArgumentException.ThrowIfNullOrEmpty(sequenceName);
+        ArgumentNullException.ThrowIfNull(options);
+
+        propertyBuilder.HasAnnotation(
+            CouchbaseValueGeneratorSelector.SequenceNameAnnotation,
+            sequenceName);
+
+        propertyBuilder.HasAnnotation(
+            CouchbaseValueGeneratorSelector.SequenceScopeAnnotation,
+            scope);
+
+        propertyBuilder.HasAnnotation(
+            CouchbaseValueGeneratorSelector.SequenceOptionsAnnotation,
+            options);
 
         propertyBuilder.ValueGeneratedOnAdd();
 

@@ -1,9 +1,9 @@
 # Couchbase EF Core Primary Key Value Generation Specification
 
-**Status:** Complete (Phase 1-2)  
+**Status:** Complete (Phase 1-3)
 **Created:** 2026-05-05  
 **Updated:** 2026-05-06  
-**Phases:** 1-2 (Complete), 3-4 (Deferred)
+**Phases:** 1-3 (Complete), 4 (Deferred)
 
 ---
 
@@ -97,29 +97,60 @@ public class Order
 
 ---
 
-## Phase 3: Sequence Lifecycle Management 📋 DEFERRED
+## Phase 3: Sequence Lifecycle Management ✅ COMPLETE
 
-### 3.1 Update `CouchbaseDatabaseCreator.CreateTables()`
+### 3.1 `CouchbaseSequenceOptions` Record
 
-- Scan model for sequence configurations
-- Execute `CREATE SEQUENCE IF NOT EXISTS bucket.scope.sequence_name`
-- Support sequence options: `START WITH`, `INCREMENT BY`, `MAXVALUE`, `CYCLE`
-
-### 3.2 Sequence Options Model
+**Location:** `src/Couchbase.EntityFrameworkCore/ValueGeneration/CouchbaseSequenceOptions.cs`
 
 ```csharp
-public class CouchbaseSequenceOptions
+public sealed record CouchbaseSequenceOptions
 {
-    public long StartWith { get; set; } = 1;
-    public long IncrementBy { get; set; } = 1;
-    public long? MaxValue { get; set; }
-    public bool Cycle { get; set; } = false;
+    public long StartWith { get; init; } = 1;
+    public long IncrementBy { get; init; } = 1;
+    public long? MaxValue { get; init; }
+    public long? MinValue { get; init; }
+    public bool Cycle { get; init; } = false;
+    public int? CacheSize { get; init; }
 }
 ```
 
-### 3.3 Sequence Drop on Delete
+- Generates SQL++ `CREATE SEQUENCE` options clause via `ToSqlOptionsClause()`
+- Supports all Couchbase sequence options: START WITH, INCREMENT BY, MAXVALUE, MINVALUE, CYCLE, CACHE
 
-- Add sequence cleanup in `CouchbaseDatabaseCreator.Delete()`
+### 3.2 Fluent API with Options
+
+```csharp
+modelBuilder.Entity<Order>()
+    .Property(e => e.Id)
+    .UseSequence("order_seq", new CouchbaseSequenceOptions
+    {
+        StartWith = 1000,
+        IncrementBy = 10
+    });
+```
+
+### 3.3 Attribute with Options
+
+```csharp
+public class Order
+{
+    [CouchbaseSequence("order_seq", StartWith = 1000, IncrementBy = 10)]
+    public long Id { get; set; }
+}
+```
+
+### 3.4 Auto-Creation on EnsureCreatedAsync
+
+- `CouchbaseDatabaseCreator.CreateSequencesAsync()` scans model for sequence annotations
+- Executes `CREATE SEQUENCE IF NOT EXISTS bucket.scope.sequence_name {options}`
+- Called automatically during `EnsureCreatedAsync()`
+
+### 3.5 Sequence Drop on DeleteAsync
+
+- `CouchbaseDatabaseCreator.DropSequencesAsync()` drops all model sequences
+- Executes `DROP SEQUENCE IF EXISTS bucket.scope.sequence_name`
+- Called during `DeleteAsync()` before bucket deletion
 
 ---
 
@@ -139,55 +170,52 @@ public class CouchbaseSequenceOptions
 
 ## Files Created/Modified
 
-### Phase 1-2 (Complete)
+### Phase 1-3 (Complete)
 
 | File | Action | Description |
 |------|--------|-------------|
 | `ValueGeneration/CouchbaseSequenceValueGenerator.cs` | Created | Generic value generator for sequences |
 | `ValueGeneration/CouchbaseValueGeneratorSelector.cs` | Created | Selects generators based on property annotations |
-| `Metadata/CouchbaseSequenceAttribute.cs` | Created | Data annotation for sequence configuration |
-| `Extensions/CouchbasePropertyBuilderExtensions.cs` | Created | `UseSequence()` fluent API |
-| `Metadata/Conventions/CouchbaseSequenceConvention.cs` | Created | Processes sequence attributes |
+| `ValueGeneration/CouchbaseSequenceOptions.cs` | Created | Sequence configuration options (Phase 3) |
+| `Metadata/CouchbaseSequenceAttribute.cs` | Created | Data annotation with options support |
+| `Extensions/CouchbasePropertyBuilderExtensions.cs` | Created | `UseSequence()` fluent API with options overloads |
+| `Metadata/Conventions/CouchbaseSequenceConvention.cs` | Created | Processes sequence attributes with options |
 | `Extensions/CouchbaseServiceCollectionExtensions.cs` | Modified | Registers `CouchbaseValueGeneratorSelector` |
 | `Storage/Internal/CouchbaseSaveChangesInterceptor.cs` | Modified | Generates sequence values during save |
+| `Storage/Internal/CouchbaseDatabaseCreator.cs` | Modified | Auto-creates/drops sequences (Phase 3) |
 
-### Phase 3-4 (Deferred)
+### Phase 4 (Deferred)
 
 | File | Action |
 |------|--------|
-| `ValueGeneration/CouchbaseSequenceOptions.cs` | Create |
-| `Storage/Internal/CouchbaseDatabaseCreator.cs` | Modify |
-| `Extensions/CouchbasePropertyBuilderExtensions.cs` | Extend |
+| `Extensions/CouchbasePropertyBuilderExtensions.cs` | Extend with GUID/ULID support |
 
 ---
 
 ## Test Coverage
 
-### Unit Tests (Phase 1-2) ✅
+### Unit Tests (Phase 1-3) ✅
 
 | Test File | Tests | Description |
 |-----------|-------|-------------|
 | `CouchbaseSequenceValueGeneratorTests.cs` | 12 | Constructor validation, type support, query generation |
 | `CouchbaseSequenceAttributeTests.cs` | 10 | Attribute construction and properties |
 | `CouchbasePropertyBuilderExtensionsTests.cs` | 11 | Fluent API annotation setting, scope override |
+| `CouchbaseSequenceOptionsTests.cs` | 13 | Options record, SQL clause generation (Phase 3) |
 
-### Integration Tests (Phase 1-2) ✅
+### Integration Tests (Phase 1-3) ✅
 
 | Test File | Tests | Description |
 |-----------|-------|-------------|
-| `SequenceValueGenerationTests.cs` | 6 | End-to-end DI/model/save pipeline verification |
+| `SequenceValueGenerationTests.cs` | 7 | End-to-end DI/model/save pipeline, options verification |
 
-Key integration test: `EndToEnd_DIRegistration_SelectorUsedDuringSaveChanges` verifies:
-1. `IValueGeneratorSelector` resolves to `CouchbaseValueGeneratorSelector`
-2. Property has sequence annotation and `ValueGenerated.OnAdd`
-3. Selector creates `CouchbaseSequenceValueGenerator<T>`
-4. `SaveChangesAsync` assigns positive sequence value to entity
+Key integration tests:
+- `EndToEnd_DIRegistration_SelectorUsedDuringSaveChanges` - Full pipeline verification
+- `UseSequence_WithOptions_SetsAnnotationCorrectly` - Options annotation verification
 
-### Integration Tests (Phase 3-4, Deferred)
+### Integration Tests (Phase 4, Deferred)
 
-- Sequence auto-creation on EnsureCreated
-- Batch insert pre-fetches multiple values
-- Sequence options applied correctly
+- GUID/ULID key generation
 
 ---
 
@@ -196,7 +224,7 @@ Key integration test: `EndToEnd_DIRegistration_SelectorUsedDuringSaveChanges` ve
 - Requires Couchbase Server 7.0+
 - Sequences are scoped to bucket.scope
 - Supports numeric types: `int`, `long`, `short`, `byte`, `uint`, `ulong`, `ushort`, `decimal`
-- Sequences must be created manually before use (Phase 3 will add auto-creation)
+- Sequences are auto-created during `EnsureCreatedAsync()` with configured options
 
 ---
 
@@ -206,8 +234,8 @@ Key integration test: `EndToEnd_DIRegistration_SelectorUsedDuringSaveChanges` ve
 |-------|----------|--------|
 | Phase 1: Core Infrastructure | 2-4 hours | ~3 hours |
 | Phase 2: Fluent API & Annotations | 1-2 hours | ~1 hour |
-| Phase 3: Sequence Lifecycle | 1-2 hours | Deferred |
+| Phase 3: Sequence Lifecycle | 1-2 hours | ~1 hour |
 | Phase 4: Client-Side GUID | 30 min | Deferred |
-| Testing | 2-3 hours | ~2 hours |
+| Testing | 2-3 hours | ~2.5 hours |
 
-**Phase 1-2 Total: ~6 hours**
+**Phase 1-3 Total: ~7.5 hours**

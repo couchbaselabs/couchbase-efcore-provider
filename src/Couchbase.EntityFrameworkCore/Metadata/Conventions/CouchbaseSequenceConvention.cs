@@ -38,6 +38,23 @@ public class CouchbaseSequenceConvention : PropertyAttributeConventionBase<Couch
                 attribute.Scope);
         }
 
+        // Create sequence options from attribute properties
+        var options = new CouchbaseSequenceOptions
+        {
+            StartWith = attribute.StartWith,
+            IncrementBy = attribute.IncrementBy,
+            Cycle = attribute.Cycle
+        };
+
+        // Only set options annotation if not using defaults (to reduce annotation noise)
+        if (options != CouchbaseSequenceOptions.Default || !attribute.AutoCreate)
+        {
+            // Store auto-create flag with options by using a wrapper or separate annotation
+            propertyBuilder.HasAnnotation(
+                CouchbaseValueGeneratorSelector.SequenceOptionsAnnotation,
+                options);
+        }
+
         // Mark the property as ValueGeneratedOnAdd
         propertyBuilder.ValueGenerated(ValueGenerated.OnAdd);
     }

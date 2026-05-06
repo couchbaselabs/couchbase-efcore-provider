@@ -3,6 +3,7 @@ using Couchbase.Diagnostics;
 using Couchbase.EntityFrameworkCore.Extensions;
 using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.EntityFrameworkCore.Utils;
+using Couchbase.EntityFrameworkCore.ValueGeneration;
 using Couchbase.Extensions.DependencyInjection;
 using Couchbase.Management.Buckets;
 using Couchbase.Management.Collections;
@@ -147,6 +148,112 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
         }
     }
 
+    private async Task CreateSequencesAsync()
+    {
+        var bucket = await GetBucketAsync();
+        var scope = await bucket.ScopeAsync(_couchbaseDbContextOptionsBuilder.Scope);
+
+        // Collect all unique sequences from the model
+        var sequences = new Dictionary<string, (string Scope, CouchbaseSequenceOptions Options)>();
+
+        foreach (var entityType in _designTimeModel.Model.GetEntityTypes())
+        {
+            foreach (var property in entityType.GetProperties())
+            {
+                var sequenceName = property.FindAnnotation(CouchbaseValueGeneratorSelector.SequenceNameAnnotation)?.Value as string;
+                if (string.IsNullOrEmpty(sequenceName))
+                {
+                    continue;
+                }
+
+                // Get scope override or use default
+                var sequenceScope = property.FindAnnotation(CouchbaseValueGeneratorSelector.SequenceScopeAnnotation)?.Value as string
+                    ?? _couchbaseDbContextOptionsBuilder.Scope;
+
+                // Get options or use default
+                var options = property.FindAnnotation(CouchbaseValueGeneratorSelector.SequenceOptionsAnnotation)?.Value as CouchbaseSequenceOptions
+                    ?? CouchbaseSequenceOptions.Default;
+
+                // Use scope.sequenceName as key to handle sequences in different scopes
+                var key = $"{sequenceScope}.{sequenceName}";
+                if (!sequences.ContainsKey(key))
+                {
+                    sequences[key] = (sequenceScope, options);
+                }
+            }
+        }
+
+        // Create each sequence
+        foreach (var (key, (sequenceScope, options)) in sequences)
+        {
+            var sequenceName = key.Split('.').Last();
+            await CreateSequenceAsync(sequenceScope, sequenceName, options);
+        }
+    }
+
+    private async Task CreateSequenceAsync(string scope, string sequenceName, CouchbaseSequenceOptions options)
+    {
+        try
+        {
+            var bucket = await GetBucketAsync();
+            var scopeObj = await bucket.ScopeAsync(scope);
+
+            // Build CREATE SEQUENCE statement
+            var sql = $"CREATE SEQUENCE IF NOT EXISTS `{_couchbaseDbContextOptionsBuilder.Bucket}`.`{scope}`.`{sequenceName}` {options.ToSqlOptionsClause()}";
+
+            _logger.LogDebug("Creating sequence: {Sql}", sql);
+
+            await scopeObj.QueryAsync<dynamic>(sql);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to create sequence {SequenceName} in scope {Scope}", sequenceName, scope);
+        }
+    }
+
+    private async Task DropSequencesAsync()
+    {
+        var bucket = await GetBucketAsync();
+
+        // Collect all unique sequences from the model
+        var sequences = new HashSet<(string Scope, string Name)>();
+
+        foreach (var entityType in _designTimeModel.Model.GetEntityTypes())
+        {
+            foreach (var property in entityType.GetProperties())
+            {
+                var sequenceName = property.FindAnnotation(CouchbaseValueGeneratorSelector.SequenceNameAnnotation)?.Value as string;
+                if (string.IsNullOrEmpty(sequenceName))
+                {
+                    continue;
+                }
+
+                var sequenceScope = property.FindAnnotation(CouchbaseValueGeneratorSelector.SequenceScopeAnnotation)?.Value as string
+                    ?? _couchbaseDbContextOptionsBuilder.Scope;
+
+                sequences.Add((sequenceScope, sequenceName));
+            }
+        }
+
+        // Drop each sequence
+        foreach (var (scope, sequenceName) in sequences)
+        {
+            try
+            {
+                var scopeObj = await bucket.ScopeAsync(scope);
+                var sql = $"DROP SEQUENCE IF EXISTS `{_couchbaseDbContextOptionsBuilder.Bucket}`.`{scope}`.`{sequenceName}`";
+
+                _logger.LogDebug("Dropping sequence: {Sql}", sql);
+
+                await scopeObj.QueryAsync<dynamic>(sql);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to drop sequence {SequenceName} in scope {Scope}", sequenceName, scope);
+            }
+        }
+    }
+
     /// <summary>
     ///     Creates the physical database. Does not attempt to populate it with any schema.
     /// </summary>
@@ -232,10 +339,39 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
             await CreateAsync(cancellationToken).ConfigureAwait(false);
             await CreateScopeAsync();
             await CreateCollectionsAsync();
+            await CreateSequencesAsync();
             return true;
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Asynchronously deletes the database.
+    /// </summary>
+    public override async Task DeleteAsync(CancellationToken cancellationToken = new CancellationToken())
+    {
+        await InitializeAsync(cancellationToken);
+
+        // Drop sequences before deleting the bucket
+        try
+        {
+            await DropSequencesAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to drop sequences during delete.");
+        }
+
+        var manager = _cluster.Buckets;
+        try
+        {
+            await manager.DropBucketAsync(_couchbaseDbContextOptionsBuilder.Bucket);
+        }
+        catch (BucketNotFoundException)
+        {
+            _logger.LogWarning("Couchbase bucket not found during delete.");
+        }
     }
 }
 
