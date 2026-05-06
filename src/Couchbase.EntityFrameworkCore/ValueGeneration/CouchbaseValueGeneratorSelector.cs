@@ -100,16 +100,16 @@ public class CouchbaseValueGeneratorSelector : RelationalValueGeneratorSelector
             ExecuteSequenceQueryAsync);
     }
 
-    private async Task<long> ExecuteSequenceQueryAsync(string query)
+    private async Task<long> ExecuteSequenceQueryAsync(string query, CancellationToken cancellationToken)
     {
-        var opened = await _connection.OpenAsync(CancellationToken.None).ConfigureAwait(false);
+        var opened = await _connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             var dbConnection = _connection.DbConnection;
             using var command = dbConnection.CreateCommand();
             command.CommandText = query;
 
-            var result = await command.ExecuteScalarAsync().ConfigureAwait(false);
+            var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
 
             return result switch
             {

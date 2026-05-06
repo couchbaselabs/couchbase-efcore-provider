@@ -26,7 +26,10 @@ public class CouchbaseSequenceValueGenerator<T> : ValueGenerator<T>
         typeof(decimal)
     };
 
-    private readonly Func<string, Task<long>> _executeSequenceQuery;
+    private readonly string _sequenceName;
+    private readonly string _bucket;
+    private readonly string _scope;
+    private readonly Func<string, CancellationToken, Task<long>> _executeSequenceQuery;
 
     /// <summary>
     /// Creates a new instance of <see cref="CouchbaseSequenceValueGenerator{T}"/>.
@@ -44,7 +47,7 @@ public class CouchbaseSequenceValueGenerator<T> : ValueGenerator<T>
         string sequenceName,
         string bucket,
         string scope,
-        Func<string, Task<long>> executeSequenceQuery)
+        Func<string, CancellationToken, Task<long>> executeSequenceQuery)
     {
         ArgumentException.ThrowIfNullOrEmpty(sequenceName);
         ArgumentException.ThrowIfNullOrEmpty(bucket);
@@ -98,7 +101,7 @@ public class CouchbaseSequenceValueGenerator<T> : ValueGenerator<T>
         CancellationToken cancellationToken = default)
     {
         var query = SequenceQuery;
-        var longValue = await _executeSequenceQuery(query).ConfigureAwait(false);
+        var longValue = await _executeSequenceQuery(query, cancellationToken).ConfigureAwait(false);
         return ConvertToTargetType(longValue);
     }
 
