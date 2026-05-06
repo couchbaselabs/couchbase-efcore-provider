@@ -26,9 +26,6 @@ public class CouchbaseSequenceValueGenerator<T> : ValueGenerator<T>
         typeof(decimal)
     };
 
-    private readonly string _sequenceName;
-    private readonly string _bucket;
-    private readonly string _scope;
     private readonly Func<string, Task<long>> _executeSequenceQuery;
 
     /// <summary>

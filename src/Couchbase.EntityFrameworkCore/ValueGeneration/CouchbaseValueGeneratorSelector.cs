@@ -102,22 +102,31 @@ public class CouchbaseValueGeneratorSelector : RelationalValueGeneratorSelector
 
     private async Task<long> ExecuteSequenceQueryAsync(string query)
     {
-        await _connection.OpenAsync(CancellationToken.None).ConfigureAwait(false);
-
-        var dbConnection = _connection.DbConnection;
-        using var command = dbConnection.CreateCommand();
-        command.CommandText = query;
-
-        var result = await command.ExecuteScalarAsync().ConfigureAwait(false);
-
-        return result switch
+        var opened = await _connection.OpenAsync(CancellationToken.None).ConfigureAwait(false);
+        try
         {
-            long l => l,
-            int i => i,
-            double d => (long)d,
-            decimal dec => (long)dec,
-            _ => throw new InvalidOperationException(
-                $"Unexpected sequence value type: {result?.GetType().Name ?? "null"}")
-        };
+            var dbConnection = _connection.DbConnection;
+            using var command = dbConnection.CreateCommand();
+            command.CommandText = query;
+
+            var result = await command.ExecuteScalarAsync().ConfigureAwait(false);
+
+            return result switch
+            {
+                long l => l,
+                int i => i,
+                double d => (long)d,
+                decimal dec => (long)dec,
+                _ => throw new InvalidOperationException(
+                    $"Unexpected sequence value type: {result?.GetType().Name ?? "null"}")
+            };
+        }
+        finally
+        {
+            if (opened)
+            {
+                await _connection.CloseAsync().ConfigureAwait(false);
+            }
+        }
     }
 }
