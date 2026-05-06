@@ -64,11 +64,10 @@ public class CouchbaseValueGeneratorSelector : RelationalValueGeneratorSelector
         var scope = scopeOverride ?? _optionsBuilder.Scope;
         var bucket = _optionsBuilder.Bucket;
 
-        var keyspace = $"{bucket}.{scope}";
-
         return new CouchbaseSequenceValueGenerator(
             sequenceName,
-            keyspace,
+            bucket,
+            scope,
             ExecuteSequenceQueryAsync);
     }
 

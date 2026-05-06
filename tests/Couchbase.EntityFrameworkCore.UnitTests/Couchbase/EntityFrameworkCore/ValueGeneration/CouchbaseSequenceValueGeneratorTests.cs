@@ -11,7 +11,8 @@ public class CouchbaseSequenceValueGeneratorTests
         // Arrange & Act
         var generator = new CouchbaseSequenceValueGenerator(
             "test_seq",
-            "bucket.scope",
+            "bucket",
+            "scope",
             _ => Task.FromResult(1L));
 
         // Assert
@@ -24,7 +25,8 @@ public class CouchbaseSequenceValueGeneratorTests
         // Arrange & Act & Assert
         Assert.Throws<ArgumentNullException>(() => new CouchbaseSequenceValueGenerator(
             null!,
-            "bucket.scope",
+            "bucket",
+            "scope",
             _ => Task.FromResult(1L)));
     }
 
@@ -34,26 +36,51 @@ public class CouchbaseSequenceValueGeneratorTests
         // Arrange & Act & Assert
         Assert.Throws<ArgumentException>(() => new CouchbaseSequenceValueGenerator(
             "",
-            "bucket.scope",
+            "bucket",
+            "scope",
             _ => Task.FromResult(1L)));
     }
 
     [Fact]
-    public void Constructor_WithNullKeyspace_ThrowsArgumentNullException()
+    public void Constructor_WithNullBucket_ThrowsArgumentNullException()
     {
         // Arrange & Act & Assert
         Assert.Throws<ArgumentNullException>(() => new CouchbaseSequenceValueGenerator(
             "test_seq",
             null!,
+            "scope",
             _ => Task.FromResult(1L)));
     }
 
     [Fact]
-    public void Constructor_WithEmptyKeyspace_ThrowsArgumentException()
+    public void Constructor_WithEmptyBucket_ThrowsArgumentException()
     {
         // Arrange & Act & Assert
         Assert.Throws<ArgumentException>(() => new CouchbaseSequenceValueGenerator(
             "test_seq",
+            "",
+            "scope",
+            _ => Task.FromResult(1L)));
+    }
+
+    [Fact]
+    public void Constructor_WithNullScope_ThrowsArgumentNullException()
+    {
+        // Arrange & Act & Assert
+        Assert.Throws<ArgumentNullException>(() => new CouchbaseSequenceValueGenerator(
+            "test_seq",
+            "bucket",
+            null!,
+            _ => Task.FromResult(1L)));
+    }
+
+    [Fact]
+    public void Constructor_WithEmptyScope_ThrowsArgumentException()
+    {
+        // Arrange & Act & Assert
+        Assert.Throws<ArgumentException>(() => new CouchbaseSequenceValueGenerator(
+            "test_seq",
+            "bucket",
             "",
             _ => Task.FromResult(1L)));
     }
@@ -64,7 +91,8 @@ public class CouchbaseSequenceValueGeneratorTests
         // Arrange & Act & Assert
         Assert.Throws<ArgumentNullException>(() => new CouchbaseSequenceValueGenerator(
             "test_seq",
-            "bucket.scope",
+            "bucket",
+            "scope",
             null!));
     }
 
@@ -74,14 +102,15 @@ public class CouchbaseSequenceValueGeneratorTests
         // Arrange
         var generator = new CouchbaseSequenceValueGenerator(
             "order_seq",
-            "myBucket.myScope",
+            "myBucket",
+            "myScope",
             _ => Task.FromResult(1L));
 
         // Act
         var query = generator.SequenceQuery;
 
-        // Assert
-        Assert.Equal("SELECT NEXT VALUE FOR `myBucket.myScope`.`order_seq`", query);
+        // Assert - Each part should be separately escaped
+        Assert.Equal("SELECT NEXT VALUE FOR `myBucket`.`myScope`.`order_seq`", query);
     }
 
     [Fact]
@@ -90,7 +119,8 @@ public class CouchbaseSequenceValueGeneratorTests
         // Arrange
         var generator = new CouchbaseSequenceValueGenerator(
             "test_seq",
-            "bucket.scope",
+            "bucket",
+            "scope",
             _ => Task.FromResult(1L));
 
         // Act & Assert
@@ -105,7 +135,8 @@ public class CouchbaseSequenceValueGeneratorTests
         var expectedValue = 42L;
         var generator = new CouchbaseSequenceValueGenerator(
             "test_seq",
-            "bucket.scope",
+            "bucket",
+            "scope",
             query =>
             {
                 queryExecuted = true;
@@ -127,7 +158,8 @@ public class CouchbaseSequenceValueGeneratorTests
         string? capturedQuery = null;
         var generator = new CouchbaseSequenceValueGenerator(
             "my_sequence",
-            "testBucket.testScope",
+            "testBucket",
+            "testScope",
             query =>
             {
                 capturedQuery = query;
@@ -138,7 +170,7 @@ public class CouchbaseSequenceValueGeneratorTests
         await generator.NextAsync(null!);
 
         // Assert
-        Assert.Equal("SELECT NEXT VALUE FOR `testBucket.testScope`.`my_sequence`", capturedQuery);
+        Assert.Equal("SELECT NEXT VALUE FOR `testBucket`.`testScope`.`my_sequence`", capturedQuery);
     }
 
     [Fact]
@@ -148,7 +180,8 @@ public class CouchbaseSequenceValueGeneratorTests
         var counter = 0L;
         var generator = new CouchbaseSequenceValueGenerator(
             "test_seq",
-            "bucket.scope",
+            "bucket",
+            "scope",
             _ => Task.FromResult(++counter));
 
         // Act
@@ -160,5 +193,22 @@ public class CouchbaseSequenceValueGeneratorTests
         Assert.Equal(1L, value1);
         Assert.Equal(2L, value2);
         Assert.Equal(3L, value3);
+    }
+
+    [Fact]
+    public void SequenceQuery_WithSpecialCharactersInNames_EscapesCorrectly()
+    {
+        // Arrange - Names that would need escaping
+        var generator = new CouchbaseSequenceValueGenerator(
+            "order-seq",
+            "my-bucket",
+            "my-scope",
+            _ => Task.FromResult(1L));
+
+        // Act
+        var query = generator.SequenceQuery;
+
+        // Assert - Backticks protect special characters
+        Assert.Equal("SELECT NEXT VALUE FOR `my-bucket`.`my-scope`.`order-seq`", query);
     }
 }
