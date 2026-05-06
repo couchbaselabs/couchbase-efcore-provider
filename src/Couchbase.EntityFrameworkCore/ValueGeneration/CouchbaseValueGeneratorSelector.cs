@@ -1,7 +1,6 @@
 using System.Reflection;
 using Couchbase.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
-using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.EntityFrameworkCore.ValueGeneration;
 
 namespace Couchbase.EntityFrameworkCore.ValueGeneration;
@@ -15,7 +14,6 @@ namespace Couchbase.EntityFrameworkCore.ValueGeneration;
 /// </remarks>
 public class CouchbaseValueGeneratorSelector : RelationalValueGeneratorSelector
 {
-    private readonly IRelationalConnection _connection;
     private readonly ICouchbaseDbContextOptionsBuilder _optionsBuilder;
 
     /// <summary>
@@ -38,12 +36,25 @@ public class CouchbaseValueGeneratorSelector : RelationalValueGeneratorSelector
     /// </summary>
     public CouchbaseValueGeneratorSelector(
         ValueGeneratorSelectorDependencies dependencies,
-        IRelationalConnection connection,
         ICouchbaseDbContextOptionsBuilder optionsBuilder)
         : base(dependencies)
     {
-        _connection = connection;
         _optionsBuilder = optionsBuilder;
+    }
+
+    /// <summary>
+    /// Selects a value generator for the given property.
+    /// </summary>
+    public override ValueGenerator? Select(IProperty property, ITypeBase typeBase)
+    {
+        var sequenceName = property.FindAnnotation(SequenceNameAnnotation)?.Value as string;
+
+        if (!string.IsNullOrEmpty(sequenceName))
+        {
+            return CreateSequenceValueGenerator(property, sequenceName);
+        }
+
+        return base.Select(property, typeBase);
     }
 
     /// <summary>
@@ -96,37 +107,6 @@ public class CouchbaseValueGeneratorSelector : RelationalValueGeneratorSelector
         return new CouchbaseSequenceValueGenerator<T>(
             sequenceName,
             bucket,
-            scope,
-            ExecuteSequenceQueryAsync);
-    }
-
-    private async Task<long> ExecuteSequenceQueryAsync(string query, CancellationToken cancellationToken)
-    {
-        var opened = await _connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            var dbConnection = _connection.DbConnection;
-            using var command = dbConnection.CreateCommand();
-            command.CommandText = query;
-
-            var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-
-            return result switch
-            {
-                long l => l,
-                int i => i,
-                double d => (long)d,
-                decimal dec => (long)dec,
-                _ => throw new InvalidOperationException(
-                    $"Unexpected sequence value type: {result?.GetType().Name ?? "null"}")
-            };
-        }
-        finally
-        {
-            if (opened)
-            {
-                await _connection.CloseAsync().ConfigureAwait(false);
-            }
-        }
+            scope);
     }
 }

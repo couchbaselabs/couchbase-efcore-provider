@@ -1,7 +1,11 @@
 using System.Runtime.CompilerServices;
+using Couchbase.EntityFrameworkCore.ValueGeneration;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.ValueGeneration;
 
 namespace Couchbase.EntityFrameworkCore.Storage.Internal;
 
@@ -66,29 +70,99 @@ public class CouchbaseSaveChangesInterceptor : SaveChangesInterceptor
         state.TrackedEntities.Clear();
     }
 
-    public override ValueTask<InterceptionResult<int>> SavingChangesAsync(
+    public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(
         DbContextEventData eventData,
         InterceptionResult<int> result,
         CancellationToken cancellationToken = default)
     {
-        if (eventData.Context != null && IsTransactionActive(eventData.Context))
+
+        if (eventData.Context != null)
         {
-            CaptureEntityStates(eventData.Context);
+            await GenerateSequenceValuesAsync(eventData.Context, cancellationToken);
+
+            if (IsTransactionActive(eventData.Context))
+            {
+                CaptureEntityStates(eventData.Context);
+            }
         }
-        
-        return base.SavingChangesAsync(eventData, result, cancellationToken);
+
+        return await base.SavingChangesAsync(eventData, result, cancellationToken);
     }
 
     public override InterceptionResult<int> SavingChanges(
         DbContextEventData eventData,
         InterceptionResult<int> result)
     {
-        if (eventData.Context != null && IsTransactionActive(eventData.Context))
+        if (eventData.Context != null)
         {
-            CaptureEntityStates(eventData.Context);
+            GenerateSequenceValuesAsync(eventData.Context, CancellationToken.None)
+                .AsTask().GetAwaiter().GetResult();
+
+            if (IsTransactionActive(eventData.Context))
+            {
+                CaptureEntityStates(eventData.Context);
+            }
         }
-        
+
         return base.SavingChanges(eventData, result);
+    }
+
+    private static async ValueTask GenerateSequenceValuesAsync(DbContext context, CancellationToken cancellationToken)
+    {
+        var selector = context.GetService<IValueGeneratorSelector>();
+
+        foreach (var entry in context.ChangeTracker.Entries())
+        {
+            if (entry.State != EntityState.Added)
+            {
+                continue;
+            }
+
+            var entityType = entry.Metadata;
+
+            foreach (var property in entityType.GetProperties())
+            {
+                // Check if this property uses a Couchbase sequence
+                var sequenceName = property.FindAnnotation(CouchbaseValueGeneratorSelector.SequenceNameAnnotation)?.Value as string;
+
+                if (string.IsNullOrEmpty(sequenceName))
+                {
+                    continue;
+                }
+
+                // Check if the property needs a value generated
+                // EF Core may have already assigned a temporary negative value for tracking purposes
+                var propertyEntry = entry.Property(property.Name);
+
+                // Skip if the value was explicitly set by the user (not temporary and not default)
+                if (!propertyEntry.IsTemporary)
+                {
+                    var currentValue = propertyEntry.CurrentValue;
+                    var clrType = property.ClrType;
+                    var defaultValue = clrType.IsValueType ? Activator.CreateInstance(clrType) : null;
+
+                    if (currentValue != null && !currentValue.Equals(defaultValue))
+                    {
+                        // Value was explicitly set by user, skip generation
+                        continue;
+                    }
+                }
+
+                // Get the value generator from the selector
+                var generator = selector.Select(property, entityType);
+
+                if (generator == null)
+                {
+                    throw new InvalidOperationException(
+                        $"Could not create value generator for property '{property.Name}' on entity '{entityType.ClrType.Name}'. " +
+                        $"Selector type: {selector?.GetType().FullName}");
+                }
+
+                // Generate the value
+                var value = await generator.NextAsync(entry, cancellationToken);
+                entry.Property(property.Name).CurrentValue = value;
+            }
+        }
     }
 
     public override async ValueTask<int> SavedChangesAsync(
@@ -100,7 +174,7 @@ public class CouchbaseSaveChangesInterceptor : SaveChangesInterceptor
         {
             RestoreEntityStates(eventData.Context);
         }
-        
+
         return await base.SavedChangesAsync(eventData, result, cancellationToken);
     }
 
@@ -112,7 +186,7 @@ public class CouchbaseSaveChangesInterceptor : SaveChangesInterceptor
         {
             RestoreEntityStates(eventData.Context);
         }
-        
+
         return base.SavedChanges(eventData, result);
     }
 
@@ -124,7 +198,7 @@ public class CouchbaseSaveChangesInterceptor : SaveChangesInterceptor
     private static void CaptureEntityStates(DbContext context)
     {
         var state = _contextStates.GetOrCreateValue(context);
-        
+
         foreach (var entry in context.ChangeTracker.Entries())
         {
             if (entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
