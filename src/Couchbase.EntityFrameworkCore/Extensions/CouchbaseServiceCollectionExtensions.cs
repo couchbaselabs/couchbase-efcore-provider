@@ -8,6 +8,7 @@ using Couchbase.EntityFrameworkCore.Query;
 using Couchbase.EntityFrameworkCore.Query.Internal;
 using Couchbase.EntityFrameworkCore.Query.Internal.Translators;
 using Couchbase.EntityFrameworkCore.Storage.Internal;
+using Couchbase.EntityFrameworkCore.ValueGeneration;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -17,6 +18,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Query;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.EntityFrameworkCore.Update;
+using Microsoft.EntityFrameworkCore.ValueGeneration;
 using Microsoft.Extensions.DependencyInjection;
 using Couchbase.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore.Query.Internal;
@@ -71,6 +73,15 @@ public static class CouchbaseServiceCollectionExtensions
             );
 
         builder.TryAddCoreServices();
+
+        // Register our value generator selector AFTER core services to override the default
+        // Use a ServiceDescriptor to replace any existing registration
+        var existingSelector = serviceCollection.FirstOrDefault(d => d.ServiceType == typeof(IValueGeneratorSelector));
+        if (existingSelector != null)
+        {
+            serviceCollection.Remove(existingSelector);
+        }
+        serviceCollection.AddScoped<IValueGeneratorSelector, CouchbaseValueGeneratorSelector>();
 
         serviceCollection
             //.AddScoped<IQueryContextFactory, CouchbaseQueryContextFactory>()
