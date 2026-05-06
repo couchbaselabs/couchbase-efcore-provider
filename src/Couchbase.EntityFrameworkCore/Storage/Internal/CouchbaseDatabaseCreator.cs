@@ -153,7 +153,7 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
         var bucket = await GetBucketAsync();
         var scope = await bucket.ScopeAsync(_couchbaseDbContextOptionsBuilder.Scope);
 
-        // Collect all unique sequences from the model
+        // Collect all unique sequences from the model that should be auto-created
         var sequences = new Dictionary<string, (string Scope, CouchbaseSequenceOptions Options)>();
 
         foreach (var entityType in _designTimeModel.Model.GetEntityTypes())
@@ -163,6 +163,15 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
                 var sequenceName = property.FindAnnotation(CouchbaseValueGeneratorSelector.SequenceNameAnnotation)?.Value as string;
                 if (string.IsNullOrEmpty(sequenceName))
                 {
+                    continue;
+                }
+
+                // Check if auto-create is disabled (defaults to true if annotation not present)
+                var autoCreateAnnotation = property.FindAnnotation(CouchbaseValueGeneratorSelector.SequenceAutoCreateAnnotation);
+                var autoCreate = autoCreateAnnotation?.Value as bool? ?? true;
+                if (!autoCreate)
+                {
+                    _logger.LogDebug("Skipping auto-creation of sequence {SequenceName} (AutoCreate = false)", sequenceName);
                     continue;
                 }
 

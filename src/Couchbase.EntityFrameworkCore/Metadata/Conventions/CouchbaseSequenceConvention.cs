@@ -47,12 +47,19 @@ public class CouchbaseSequenceConvention : PropertyAttributeConventionBase<Couch
         };
 
         // Only set options annotation if not using defaults (to reduce annotation noise)
-        if (options != CouchbaseSequenceOptions.Default || !attribute.AutoCreate)
+        if (options != CouchbaseSequenceOptions.Default)
         {
-            // Store auto-create flag with options by using a wrapper or separate annotation
             propertyBuilder.HasAnnotation(
                 CouchbaseValueGeneratorSelector.SequenceOptionsAnnotation,
                 options);
+        }
+
+        // Store auto-create flag (only if false, since true is the default)
+        if (!attribute.AutoCreate)
+        {
+            propertyBuilder.HasAnnotation(
+                CouchbaseValueGeneratorSelector.SequenceAutoCreateAnnotation,
+                false);
         }
 
         // Mark the property as ValueGeneratedOnAdd
