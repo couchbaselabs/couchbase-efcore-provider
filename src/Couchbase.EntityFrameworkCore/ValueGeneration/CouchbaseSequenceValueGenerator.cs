@@ -11,15 +11,28 @@ namespace Couchbase.EntityFrameworkCore.ValueGeneration;
 /// to obtain the next value from a Couchbase sequence. Sequences must be created
 /// in the database before use.
 /// </remarks>
-public class CouchbaseSequenceValueGenerator : ValueGenerator<long>
+public class CouchbaseSequenceValueGenerator<T> : ValueGenerator<T>
+    where T : struct
 {
+    private static readonly HashSet<Type> SupportedTypes = new()
+    {
+        typeof(int),
+        typeof(long),
+        typeof(short),
+        typeof(byte),
+        typeof(uint),
+        typeof(ulong),
+        typeof(ushort),
+        typeof(decimal)
+    };
+
     private readonly string _sequenceName;
     private readonly string _bucket;
     private readonly string _scope;
     private readonly Func<string, Task<long>> _executeSequenceQuery;
 
     /// <summary>
-    /// Creates a new instance of <see cref="CouchbaseSequenceValueGenerator"/>.
+    /// Creates a new instance of <see cref="CouchbaseSequenceValueGenerator{T}"/>.
     /// </summary>
     /// <param name="sequenceName">The name of the sequence.</param>
     /// <param name="bucket">The bucket containing the sequence.</param>
@@ -27,6 +40,9 @@ public class CouchbaseSequenceValueGenerator : ValueGenerator<long>
     /// <param name="executeSequenceQuery">
     /// A delegate that executes the sequence query and returns the next value.
     /// </param>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when <typeparamref name="T"/> is not a supported numeric type.
+    /// </exception>
     public CouchbaseSequenceValueGenerator(
         string sequenceName,
         string bucket,
@@ -37,6 +53,13 @@ public class CouchbaseSequenceValueGenerator : ValueGenerator<long>
         ArgumentException.ThrowIfNullOrEmpty(bucket);
         ArgumentException.ThrowIfNullOrEmpty(scope);
         ArgumentNullException.ThrowIfNull(executeSequenceQuery);
+
+        if (!SupportedTypes.Contains(typeof(T)))
+        {
+            throw new InvalidOperationException(
+                $"Couchbase sequence value generation is not supported for type '{typeof(T).Name}'. " +
+                $"Supported types are: {string.Join(", ", SupportedTypes.Select(t => t.Name))}.");
+        }
 
         _sequenceName = sequenceName;
         _bucket = bucket;
@@ -59,13 +82,13 @@ public class CouchbaseSequenceValueGenerator : ValueGenerator<long>
     /// </summary>
     protected override object NextValue(EntityEntry entry)
     {
-        return Next(entry);
+        return Next(entry)!;
     }
 
     /// <summary>
     /// Generates the next value for the sequence.
     /// </summary>
-    public override long Next(EntityEntry entry)
+    public override T Next(EntityEntry entry)
     {
         return NextAsync(entry).GetAwaiter().GetResult();
     }
@@ -73,11 +96,24 @@ public class CouchbaseSequenceValueGenerator : ValueGenerator<long>
     /// <summary>
     /// Generates the next value for the sequence asynchronously.
     /// </summary>
-    public override async ValueTask<long> NextAsync(
+    public override async ValueTask<T> NextAsync(
         EntityEntry entry,
         CancellationToken cancellationToken = default)
     {
         var query = SequenceQuery;
-        return await _executeSequenceQuery(query).ConfigureAwait(false);
+        var longValue = await _executeSequenceQuery(query).ConfigureAwait(false);
+        return ConvertToTargetType(longValue);
     }
+
+    private static T ConvertToTargetType(long value)
+    {
+        // Convert the long value to the target type
+        // This will throw OverflowException if the value is out of range for the target type
+        return (T)Convert.ChangeType(value, typeof(T));
+    }
+
+    /// <summary>
+    /// Checks if a CLR type is supported for sequence value generation.
+    /// </summary>
+    public static bool IsTypeSupported(Type type) => SupportedTypes.Contains(type);
 }
