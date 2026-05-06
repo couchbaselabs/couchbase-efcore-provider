@@ -362,14 +362,18 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
     {
         await InitializeAsync(cancellationToken);
 
-        // Drop sequences before deleting the bucket
-        try
+        // Only attempt to drop sequences if the bucket exists
+        // GetBucketAsync retries indefinitely, so we check existence first
+        if (await ExistsAsync(cancellationToken).ConfigureAwait(false))
         {
-            await DropSequencesAsync();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to drop sequences during delete.");
+            try
+            {
+                await DropSequencesAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to drop sequences during delete.");
+            }
         }
 
         var manager = _cluster.Buckets;
