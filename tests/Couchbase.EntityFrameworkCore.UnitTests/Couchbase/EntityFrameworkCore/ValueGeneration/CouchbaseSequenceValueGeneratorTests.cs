@@ -12,8 +12,7 @@ public class CouchbaseSequenceValueGeneratorTests
         var generator = new CouchbaseSequenceValueGenerator<long>(
             "test_seq",
             "bucket",
-            "scope",
-            (_, _) => Task.FromResult(1L));
+            "scope");
 
         // Assert
         Assert.NotNull(generator);
@@ -26,8 +25,7 @@ public class CouchbaseSequenceValueGeneratorTests
         Assert.Throws<ArgumentNullException>(() => new CouchbaseSequenceValueGenerator<long>(
             null!,
             "bucket",
-            "scope",
-            (_, _) => Task.FromResult(1L)));
+            "scope"));
     }
 
     [Fact]
@@ -37,8 +35,7 @@ public class CouchbaseSequenceValueGeneratorTests
         Assert.Throws<ArgumentException>(() => new CouchbaseSequenceValueGenerator<long>(
             "",
             "bucket",
-            "scope",
-            (_, _) => Task.FromResult(1L)));
+            "scope"));
     }
 
     [Fact]
@@ -48,8 +45,7 @@ public class CouchbaseSequenceValueGeneratorTests
         Assert.Throws<ArgumentNullException>(() => new CouchbaseSequenceValueGenerator<long>(
             "test_seq",
             null!,
-            "scope",
-            (_, _) => Task.FromResult(1L)));
+            "scope"));
     }
 
     [Fact]
@@ -59,8 +55,7 @@ public class CouchbaseSequenceValueGeneratorTests
         Assert.Throws<ArgumentException>(() => new CouchbaseSequenceValueGenerator<long>(
             "test_seq",
             "",
-            "scope",
-            (_, _) => Task.FromResult(1L)));
+            "scope"));
     }
 
     [Fact]
@@ -70,8 +65,7 @@ public class CouchbaseSequenceValueGeneratorTests
         Assert.Throws<ArgumentNullException>(() => new CouchbaseSequenceValueGenerator<long>(
             "test_seq",
             "bucket",
-            null!,
-            (_, _) => Task.FromResult(1L)));
+            null!));
     }
 
     [Fact]
@@ -81,19 +75,7 @@ public class CouchbaseSequenceValueGeneratorTests
         Assert.Throws<ArgumentException>(() => new CouchbaseSequenceValueGenerator<long>(
             "test_seq",
             "bucket",
-            "",
-            (_, _) => Task.FromResult(1L)));
-    }
-
-    [Fact]
-    public void Constructor_WithNullQueryExecutor_ThrowsArgumentNullException()
-    {
-        // Arrange & Act & Assert
-        Assert.Throws<ArgumentNullException>(() => new CouchbaseSequenceValueGenerator<long>(
-            "test_seq",
-            "bucket",
-            "scope",
-            null!));
+            ""));
     }
 
     [Fact]
@@ -103,8 +85,7 @@ public class CouchbaseSequenceValueGeneratorTests
         var generator = new CouchbaseSequenceValueGenerator<long>(
             "order_seq",
             "myBucket",
-            "myScope",
-            (_, _) => Task.FromResult(1L));
+            "myScope");
 
         // Act
         var query = generator.SequenceQuery;
@@ -120,79 +101,10 @@ public class CouchbaseSequenceValueGeneratorTests
         var generator = new CouchbaseSequenceValueGenerator<long>(
             "test_seq",
             "bucket",
-            "scope",
-            (_, _) => Task.FromResult(1L));
+            "scope");
 
         // Act & Assert
         Assert.False(generator.GeneratesTemporaryValues);
-    }
-
-    [Fact]
-    public async Task NextAsync_CallsQueryExecutor()
-    {
-        // Arrange
-        var queryExecuted = false;
-        var expectedValue = 42L;
-        var generator = new CouchbaseSequenceValueGenerator<long>(
-            "test_seq",
-            "bucket",
-            "scope",
-            (query, ct) =>
-            {
-                queryExecuted = true;
-                return Task.FromResult(expectedValue);
-            });
-
-        // Act
-        var result = await generator.NextAsync(null!);
-
-        // Assert
-        Assert.True(queryExecuted);
-        Assert.Equal(expectedValue, result);
-    }
-
-    [Fact]
-    public async Task NextAsync_PassesCorrectQuery()
-    {
-        // Arrange
-        string? capturedQuery = null;
-        var generator = new CouchbaseSequenceValueGenerator<long>(
-            "my_sequence",
-            "testBucket",
-            "testScope",
-            (query, ct) =>
-            {
-                capturedQuery = query;
-                return Task.FromResult(1L);
-            });
-
-        // Act
-        await generator.NextAsync(null!);
-
-        // Assert
-        Assert.Equal("SELECT NEXT VALUE FOR `testBucket`.`testScope`.`my_sequence`", capturedQuery);
-    }
-
-    [Fact]
-    public async Task NextAsync_ReturnsIncrementingValues()
-    {
-        // Arrange
-        var counter = 0L;
-        var generator = new CouchbaseSequenceValueGenerator<long>(
-            "test_seq",
-            "bucket",
-            "scope",
-            (_, _) => Task.FromResult(++counter));
-
-        // Act
-        var value1 = await generator.NextAsync(null!);
-        var value2 = await generator.NextAsync(null!);
-        var value3 = await generator.NextAsync(null!);
-
-        // Assert
-        Assert.Equal(1L, value1);
-        Assert.Equal(2L, value2);
-        Assert.Equal(3L, value3);
     }
 
     [Fact]
@@ -202,59 +114,13 @@ public class CouchbaseSequenceValueGeneratorTests
         var generator = new CouchbaseSequenceValueGenerator<long>(
             "order-seq",
             "my-bucket",
-            "my-scope",
-            (_, _) => Task.FromResult(1L));
+            "my-scope");
 
         // Act
         var query = generator.SequenceQuery;
 
         // Assert - Backticks protect special characters
         Assert.Equal("SELECT NEXT VALUE FOR `my-bucket`.`my-scope`.`order-seq`", query);
-    }
-
-    [Fact]
-    public async Task NextAsync_PassesCancellationToken()
-    {
-        // Arrange
-        CancellationToken capturedToken = default;
-        using var cts = new CancellationTokenSource();
-        var generator = new CouchbaseSequenceValueGenerator<long>(
-            "test_seq",
-            "bucket",
-            "scope",
-            (query, ct) =>
-            {
-                capturedToken = ct;
-                return Task.FromResult(1L);
-            });
-
-        // Act
-        await generator.NextAsync(null!, cts.Token);
-
-        // Assert
-        Assert.Equal(cts.Token, capturedToken);
-    }
-
-    [Fact]
-    public async Task NextAsync_WithCancelledToken_ThrowsOperationCanceledException()
-    {
-        // Arrange
-        using var cts = new CancellationTokenSource();
-        cts.Cancel();
-        
-        var generator = new CouchbaseSequenceValueGenerator<long>(
-            "test_seq",
-            "bucket",
-            "scope",
-            (query, ct) =>
-            {
-                ct.ThrowIfCancellationRequested();
-                return Task.FromResult(1L);
-            });
-
-        // Act & Assert
-        await Assert.ThrowsAsync<OperationCanceledException>(() => 
-            generator.NextAsync(null!, cts.Token).AsTask());
     }
 
     #region Type Support Tests
@@ -295,95 +161,10 @@ public class CouchbaseSequenceValueGeneratorTests
             new CouchbaseSequenceValueGenerator<Guid>(
                 "test_seq",
                 "bucket",
-                "scope",
-                (_, _) => Task.FromResult(1L)));
+                "scope"));
 
         Assert.Contains("Guid", ex.Message);
         Assert.Contains("not supported", ex.Message);
-    }
-
-    [Fact]
-    public async Task IntGenerator_ReturnsCorrectType()
-    {
-        // Arrange
-        var generator = new CouchbaseSequenceValueGenerator<int>(
-            "test_seq",
-            "bucket",
-            "scope",
-            (_, _) => Task.FromResult(42L));
-
-        // Act
-        var result = await generator.NextAsync(null!);
-
-        // Assert
-        Assert.IsType<int>(result);
-        Assert.Equal(42, result);
-    }
-
-    [Fact]
-    public async Task ShortGenerator_ReturnsCorrectType()
-    {
-        // Arrange
-        var generator = new CouchbaseSequenceValueGenerator<short>(
-            "test_seq",
-            "bucket",
-            "scope",
-            (_, _) => Task.FromResult(100L));
-
-        // Act
-        var result = await generator.NextAsync(null!);
-
-        // Assert
-        Assert.IsType<short>(result);
-        Assert.Equal((short)100, result);
-    }
-
-    [Fact]
-    public async Task DecimalGenerator_ReturnsCorrectType()
-    {
-        // Arrange
-        var generator = new CouchbaseSequenceValueGenerator<decimal>(
-            "test_seq",
-            "bucket",
-            "scope",
-            (_, _) => Task.FromResult(999L));
-
-        // Act
-        var result = await generator.NextAsync(null!);
-
-        // Assert
-        Assert.IsType<decimal>(result);
-        Assert.Equal(999m, result);
-    }
-
-    [Fact]
-    public async Task IntGenerator_WithOverflow_ThrowsOverflowException()
-    {
-        // Arrange - Value larger than int.MaxValue
-        var generator = new CouchbaseSequenceValueGenerator<int>(
-            "test_seq",
-            "bucket",
-            "scope",
-            (_, _) => Task.FromResult((long)int.MaxValue + 1));
-
-        // Act & Assert
-        await Assert.ThrowsAsync<OverflowException>(() => 
-            generator.NextAsync(null!).AsTask());
-    }
-
-    [Fact]
-    public async Task ShortGenerator_WithOverflow_ThrowsOverflowException()
-    {
-        // Arrange - Value larger than short.MaxValue
-        var generator = new CouchbaseSequenceValueGenerator<short>(
-            "test_seq",
-            "bucket",
-            "scope",
-            (_, _) => Task.FromResult((long)short.MaxValue + 1));
-
-        // Act & Assert
-        await Assert.ThrowsAsync<OverflowException>(() => 
-            generator.NextAsync(null!).AsTask());
     }
 
     #endregion

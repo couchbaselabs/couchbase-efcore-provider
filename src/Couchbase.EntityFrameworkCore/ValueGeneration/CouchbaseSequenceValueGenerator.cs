@@ -1,4 +1,7 @@
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.EntityFrameworkCore.ValueGeneration;
 
 namespace Couchbase.EntityFrameworkCore.ValueGeneration;
@@ -29,7 +32,6 @@ public class CouchbaseSequenceValueGenerator<T> : ValueGenerator<T>
     private readonly string _sequenceName;
     private readonly string _bucket;
     private readonly string _scope;
-    private readonly Func<string, CancellationToken, Task<long>> _executeSequenceQuery;
 
     /// <summary>
     /// Creates a new instance of <see cref="CouchbaseSequenceValueGenerator{T}"/>.
@@ -37,22 +39,17 @@ public class CouchbaseSequenceValueGenerator<T> : ValueGenerator<T>
     /// <param name="sequenceName">The name of the sequence.</param>
     /// <param name="bucket">The bucket containing the sequence.</param>
     /// <param name="scope">The scope containing the sequence.</param>
-    /// <param name="executeSequenceQuery">
-    /// A delegate that executes the sequence query and returns the next value.
-    /// </param>
     /// <exception cref="InvalidOperationException">
     /// Thrown when <typeparamref name="T"/> is not a supported numeric type.
     /// </exception>
     public CouchbaseSequenceValueGenerator(
         string sequenceName,
         string bucket,
-        string scope,
-        Func<string, CancellationToken, Task<long>> executeSequenceQuery)
+        string scope)
     {
         ArgumentException.ThrowIfNullOrEmpty(sequenceName);
         ArgumentException.ThrowIfNullOrEmpty(bucket);
         ArgumentException.ThrowIfNullOrEmpty(scope);
-        ArgumentNullException.ThrowIfNull(executeSequenceQuery);
 
         if (!SupportedTypes.Contains(typeof(T)))
         {
@@ -64,7 +61,6 @@ public class CouchbaseSequenceValueGenerator<T> : ValueGenerator<T>
         _sequenceName = sequenceName;
         _bucket = bucket;
         _scope = scope;
-        _executeSequenceQuery = executeSequenceQuery;
     }
 
     /// <summary>
@@ -101,8 +97,44 @@ public class CouchbaseSequenceValueGenerator<T> : ValueGenerator<T>
         CancellationToken cancellationToken = default)
     {
         var query = SequenceQuery;
-        var longValue = await _executeSequenceQuery(query, cancellationToken).ConfigureAwait(false);
+        var longValue = await ExecuteSequenceQueryAsync(entry, query, cancellationToken).ConfigureAwait(false);
         return ConvertToTargetType(longValue);
+    }
+
+    private static async Task<long> ExecuteSequenceQueryAsync(
+        EntityEntry entry,
+        string query,
+        CancellationToken cancellationToken)
+    {
+        var context = entry.Context;
+        var connection = context.GetService<IRelationalConnection>();
+
+        var opened = await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var dbConnection = connection.DbConnection;
+            using var command = dbConnection.CreateCommand();
+            command.CommandText = query;
+
+            var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+
+            return result switch
+            {
+                long l => l,
+                int i => i,
+                double d => (long)d,
+                decimal dec => (long)dec,
+                _ => throw new InvalidOperationException(
+                    $"Unexpected sequence value type: {result?.GetType().Name ?? "null"}")
+            };
+        }
+        finally
+        {
+            if (opened)
+            {
+                await connection.CloseAsync().ConfigureAwait(false);
+            }
+        }
     }
 
     private static T ConvertToTargetType(long value)

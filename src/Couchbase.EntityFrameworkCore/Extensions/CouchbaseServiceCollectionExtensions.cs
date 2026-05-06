@@ -59,7 +59,6 @@ public static class CouchbaseServiceCollectionExtensions
             .TryAdd<IHistoryRepository, CouchbaseHistoryRepository>()//not used but required by ASP.NET
             .TryAdd<IModificationCommandBatchFactory, CouchbaseModificationCommandBatchFactory>()
             .TryAdd<IMethodCallTranslatorProvider, CouchbaseMethodCallTranslatorProvider>()
-            .TryAdd<IValueGeneratorSelector, CouchbaseValueGeneratorSelector>()
 
             //Found that this was necessary, because the default convention of determining a
             //Model's primary key automatically based off of properties that have 'Id' in their`
@@ -74,6 +73,15 @@ public static class CouchbaseServiceCollectionExtensions
             );
 
         builder.TryAddCoreServices();
+
+        // Register our value generator selector AFTER core services to override the default
+        // Use a ServiceDescriptor to replace any existing registration
+        var existingSelector = serviceCollection.FirstOrDefault(d => d.ServiceType == typeof(IValueGeneratorSelector));
+        if (existingSelector != null)
+        {
+            serviceCollection.Remove(existingSelector);
+        }
+        serviceCollection.AddScoped<IValueGeneratorSelector, CouchbaseValueGeneratorSelector>();
 
         serviceCollection
             //.AddScoped<IQueryContextFactory, CouchbaseQueryContextFactory>()
