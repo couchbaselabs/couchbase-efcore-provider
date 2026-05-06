@@ -8,6 +8,7 @@ using Couchbase.EntityFrameworkCore.Query;
 using Couchbase.EntityFrameworkCore.Query.Internal;
 using Couchbase.EntityFrameworkCore.Query.Internal.Translators;
 using Couchbase.EntityFrameworkCore.Storage.Internal;
+using Couchbase.EntityFrameworkCore.ValueGeneration;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -17,6 +18,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Query;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.EntityFrameworkCore.Update;
+using Microsoft.EntityFrameworkCore.ValueGeneration;
 using Microsoft.Extensions.DependencyInjection;
 using Couchbase.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore.Query.Internal;
@@ -57,6 +59,7 @@ public static class CouchbaseServiceCollectionExtensions
             .TryAdd<IHistoryRepository, CouchbaseHistoryRepository>()//not used but required by ASP.NET
             .TryAdd<IModificationCommandBatchFactory, CouchbaseModificationCommandBatchFactory>()
             .TryAdd<IMethodCallTranslatorProvider, CouchbaseMethodCallTranslatorProvider>()
+            .TryAdd<IValueGeneratorSelector, CouchbaseValueGeneratorSelector>()
 
             //Found that this was necessary, because the default convention of determining a
             //Model's primary key automatically based off of properties that have 'Id' in their`
