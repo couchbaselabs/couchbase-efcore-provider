@@ -15,6 +15,7 @@ public class CouchbaseConventionSetBuilder : RelationalConventionSetBuilder
     {
         var conventionSet = base.CreateConventionSet();
         conventionSet.Add(new CouchbaseKeyspaceConvention(Dependencies));
+        conventionSet.Add(new CouchbaseSequenceConvention(Dependencies));
         conventionSet.Add(new JsonPropertyNameConvention(Dependencies));
         conventionSet.Add(new JsonPropertyConvention(Dependencies));
         return conventionSet;
