@@ -149,6 +149,54 @@ public class CouchbasePropertyBuilderExtensionsTests
         Assert.Equal("order_seq", sequenceName);
     }
 
+    [Fact]
+    public void UseSequence_WithoutScope_ClearsPreviousScopeOverride()
+    {
+        // Arrange
+        var modelBuilder = new ModelBuilder();
+        var entityBuilder = modelBuilder.Entity<TestEntity>();
+
+        // Act - First configure with scope, then override without scope
+        entityBuilder.Property(e => e.Id)
+            .UseSequence("custom_scope", "order_seq")
+            .UseSequence("order_seq"); // Should clear the scope
+
+        // Assert
+        var model = modelBuilder.Model;
+        var entityType = model.FindEntityType(typeof(TestEntity));
+        var property = entityType!.FindProperty(nameof(TestEntity.Id));
+        
+        var sequenceName = property!.FindAnnotation(CouchbaseValueGeneratorSelector.SequenceNameAnnotation)?.Value;
+        var scopeName = property!.FindAnnotation(CouchbaseValueGeneratorSelector.SequenceScopeAnnotation)?.Value;
+        
+        Assert.Equal("order_seq", sequenceName);
+        Assert.Null(scopeName); // Scope should be cleared
+    }
+
+    [Fact]
+    public void UseSequence_NonGeneric_WithoutScope_ClearsPreviousScopeOverride()
+    {
+        // Arrange
+        var modelBuilder = new ModelBuilder();
+        var entityBuilder = modelBuilder.Entity<TestEntity>();
+
+        // Act - First configure with scope, then override without scope
+        entityBuilder.Property(nameof(TestEntity.Id))
+            .UseSequence("custom_scope", "order_seq")
+            .UseSequence("order_seq"); // Should clear the scope
+
+        // Assert
+        var model = modelBuilder.Model;
+        var entityType = model.FindEntityType(typeof(TestEntity));
+        var property = entityType!.FindProperty(nameof(TestEntity.Id));
+        
+        var sequenceName = property!.FindAnnotation(CouchbaseValueGeneratorSelector.SequenceNameAnnotation)?.Value;
+        var scopeName = property!.FindAnnotation(CouchbaseValueGeneratorSelector.SequenceScopeAnnotation)?.Value;
+        
+        Assert.Equal("order_seq", sequenceName);
+        Assert.Null(scopeName); // Scope should be cleared
+    }
+
     private class TestEntity
     {
         public long Id { get; set; }

@@ -41,6 +41,11 @@ public static class CouchbasePropertyBuilderExtensions
             CouchbaseValueGeneratorSelector.SequenceNameAnnotation,
             sequenceName);
 
+        // Clear any previous scope override to revert to DbContext-level scope
+        propertyBuilder.HasAnnotation(
+            CouchbaseValueGeneratorSelector.SequenceScopeAnnotation,
+            null);
+
         propertyBuilder.ValueGeneratedOnAdd();
 
         return propertyBuilder;
@@ -106,6 +111,11 @@ public static class CouchbasePropertyBuilderExtensions
         propertyBuilder.HasAnnotation(
             CouchbaseValueGeneratorSelector.SequenceNameAnnotation,
             sequenceName);
+
+        // Clear any previous scope override to revert to DbContext-level scope
+        propertyBuilder.HasAnnotation(
+            CouchbaseValueGeneratorSelector.SequenceScopeAnnotation,
+            null);
 
         propertyBuilder.ValueGeneratedOnAdd();
 
