@@ -154,7 +154,8 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
     private async Task CreateSequencesAsync()
     {
         // Collect all unique sequences from the model that should be auto-created
-        var sequences = new Dictionary<string, (string Scope, CouchbaseSequenceOptions Options)>();
+        // Use tuple key (scope, name) to avoid delimiter parsing issues
+        var sequences = new Dictionary<(string Scope, string Name), CouchbaseSequenceOptions>();
 
         foreach (var entityType in _designTimeModel.Model.GetEntityTypes())
         {
@@ -195,33 +196,31 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
                 var options = property.FindAnnotation(CouchbaseValueGeneratorSelector.SequenceOptionsAnnotation)?.Value as CouchbaseSequenceOptions
                     ?? CouchbaseSequenceOptions.Default;
 
-                // Use scope.sequenceName as key to handle sequences in different scopes
-                var key = $"{sequenceScope}.{sequenceName}";
-                if (sequences.TryGetValue(key, out var existing))
+                var key = (sequenceScope, sequenceName);
+                if (sequences.TryGetValue(key, out var existingOptions))
                 {
                     // Check for conflicting options
-                    if (existing.Options != options)
+                    if (existingOptions != options)
                     {
                         var propertyPath = $"{property.DeclaringType.ClrType.Name}.{property.Name}";
                         throw new InvalidOperationException(
                             $"Conflicting sequence options detected for sequence '{sequenceName}' in scope '{sequenceScope}'. " +
                             $"Property '{propertyPath}' specifies different options than a previously configured property. " +
-                            $"Existing: {existing.Options.ToSqlOptionsClause()}, Conflicting: {options.ToSqlOptionsClause()}. " +
+                            $"Existing: {existingOptions.ToSqlOptionsClause()}, Conflicting: {options.ToSqlOptionsClause()}. " +
                             $"Ensure all properties using the same sequence have identical options.");
                     }
                 }
                 else
                 {
-                    sequences[key] = (sequenceScope, options);
+                    sequences[key] = options;
                 }
             }
         }
 
         // Create each sequence
-        foreach (var (key, (sequenceScope, options)) in sequences)
+        foreach (var ((scope, name), options) in sequences)
         {
-            var sequenceName = key.Split('.').Last();
-            await CreateSequenceAsync(sequenceScope, sequenceName, options);
+            await CreateSequenceAsync(scope, name, options);
         }
     }
 
