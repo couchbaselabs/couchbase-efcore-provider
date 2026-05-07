@@ -191,8 +191,9 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
                 }
 
                 // Check if auto-create is disabled (defaults to true if annotation not present)
+                // Note: Use pattern matching for unboxing; 'as bool?' doesn't work for boxed value types
                 var autoCreateAnnotation = property.FindAnnotation(CouchbaseValueGeneratorSelector.SequenceAutoCreateAnnotation);
-                var autoCreate = autoCreateAnnotation?.Value as bool? ?? true;
+                var autoCreate = autoCreateAnnotation?.Value is bool b ? b : true;
                 if (!autoCreate)
                 {
                     _logger.LogDebug("Skipping auto-creation of sequence {SequenceName} (AutoCreate = false)", sequenceName);
