@@ -60,7 +60,10 @@ public sealed record CouchbaseSequenceOptions
     /// <summary>
     /// Generates the SQL++ options clause for CREATE SEQUENCE.
     /// </summary>
-    internal string ToSqlOptionsClause()
+    /// <returns>
+    /// A string containing the SQL++ options (e.g., "START WITH 1 INCREMENT BY 1 NO CYCLE").
+    /// </returns>
+    public string ToSqlOptionsClause()
     {
         var parts = new List<string>
         {
