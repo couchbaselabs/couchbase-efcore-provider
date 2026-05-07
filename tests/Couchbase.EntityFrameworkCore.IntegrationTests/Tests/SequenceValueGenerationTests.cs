@@ -323,9 +323,6 @@ public class SequenceValueGenerationTests : IAsyncLifetime
     public async Task UseSequence_WithOptions_SetsAnnotationCorrectly()
     {
         // Arrange
-        await using var context = CreateSequenceTestDbContext();
-
-        // Create a test context with options
         var optionsBuilder = new DbContextOptionsBuilder<AutoCreateSequenceDbContext>();
         optionsBuilder.UseCouchbase(
             new ClusterOptions()
