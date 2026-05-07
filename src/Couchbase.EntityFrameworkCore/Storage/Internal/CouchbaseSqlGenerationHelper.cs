@@ -15,9 +15,39 @@ public class CouchbaseSqlGenerationHelper : RelationalSqlGenerationHelper
         EscapeIdentifier(builder, identifier);
         builder.Append('`');
     }
-    
-   public override string DelimitIdentifier(string identifier)
+
+    public override string DelimitIdentifier(string identifier)
         => $"`{EscapeIdentifier(identifier)}`";
+
+    /// <summary>
+    /// Escapes backticks in identifiers by doubling them.
+    /// This is necessary because Couchbase SQL++ uses backticks as identifier delimiters.
+    /// </summary>
+    public override string EscapeIdentifier(string identifier)
+        => identifier.Replace("`", "``");
+
+    /// <summary>
+    /// Escapes backticks in identifiers by doubling them.
+    /// This is necessary because Couchbase SQL++ uses backticks as identifier delimiters.
+    /// </summary>
+    public override void EscapeIdentifier(StringBuilder builder, string identifier)
+    {
+        var start = 0;
+        for (var i = 0; i < identifier.Length; i++)
+        {
+            if (identifier[i] == '`')
+            {
+                builder.Append(identifier, start, i - start);
+                builder.Append("``");
+                start = i + 1;
+            }
+        }
+
+        if (start < identifier.Length)
+        {
+            builder.Append(identifier, start, identifier.Length - start);
+        }
+    }
 
    public override string GenerateParameterName(string name) =>
        name.StartsWith("$", StringComparison.Ordinal)
