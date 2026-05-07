@@ -45,6 +45,11 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
 
     private async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
+        if (_cluster != null)
+        {
+            return;
+        }
+
         var clusterProvider = _serviceProvider.GetRequiredService<IClusterProvider>();
         _cluster = await clusterProvider.GetClusterAsync();
     }
