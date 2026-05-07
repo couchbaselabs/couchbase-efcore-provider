@@ -176,8 +176,20 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
                 }
 
                 // Get scope override or use default
-                var sequenceScope = property.FindAnnotation(CouchbaseValueGeneratorSelector.SequenceScopeAnnotation)?.Value as string
-                    ?? _couchbaseDbContextOptionsBuilder.Scope;
+                var scopeOverride = property.FindAnnotation(CouchbaseValueGeneratorSelector.SequenceScopeAnnotation)?.Value as string;
+                var sequenceScope = scopeOverride ?? _couchbaseDbContextOptionsBuilder.Scope;
+
+                // Skip auto-creation for sequences in non-default scopes (scope may not exist)
+                if (scopeOverride != null && scopeOverride != _couchbaseDbContextOptionsBuilder.Scope)
+                {
+                    var propertyPath = $"{property.DeclaringType.ClrType.Name}.{property.Name}";
+                    _logger.LogWarning(
+                        "Sequence '{SequenceName}' for property '{PropertyPath}' targets non-default scope '{SequenceScope}' " +
+                        "and will not be auto-created. The scope may not exist. " +
+                        "Create the scope and sequence manually, or use the default scope, or set AutoCreate = false to suppress this warning.",
+                        sequenceName, propertyPath, sequenceScope);
+                    continue;
+                }
 
                 // Get options or use default
                 var options = property.FindAnnotation(CouchbaseValueGeneratorSelector.SequenceOptionsAnnotation)?.Value as CouchbaseSequenceOptions
