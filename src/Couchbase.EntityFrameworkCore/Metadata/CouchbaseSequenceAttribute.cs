@@ -11,7 +11,10 @@ namespace Couchbase.EntityFrameworkCore.Metadata;
 /// </para>
 /// <para>
 /// If <see cref="AutoCreate"/> is true (default), the sequence will be created automatically
-/// when <see cref="Microsoft.EntityFrameworkCore.Infrastructure.DatabaseFacade.EnsureCreatedAsync"/> is called.
+/// when <see cref="Microsoft.EntityFrameworkCore.Infrastructure.DatabaseFacade.EnsureCreatedAsync"/> is called,
+/// provided the sequence uses the DbContext-level scope. Sequences targeting a non-default scope
+/// (via the <see cref="Scope"/> property) will not be auto-created, as the scope may not exist.
+/// A warning will be logged in this case; create the scope and sequence manually or use the default scope.
 /// </para>
 /// </remarks>
 /// <example>
@@ -80,8 +83,14 @@ public class CouchbaseSequenceAttribute : Attribute
     public bool Cycle { get; set; } = false;
 
     /// <summary>
-    /// Gets or sets whether to automatically create the sequence on EnsureCreated.
+    /// Gets or sets whether to automatically create the sequence when
+    /// <see cref="Microsoft.EntityFrameworkCore.Infrastructure.DatabaseFacade.EnsureCreatedAsync"/> is called.
     /// Defaults to true.
     /// </summary>
+    /// <remarks>
+    /// Auto-creation only applies to sequences using the DbContext-level scope.
+    /// Sequences targeting a non-default scope (via <see cref="Scope"/>) will not be
+    /// auto-created even if this property is true, as the scope may not exist.
+    /// </remarks>
     public bool AutoCreate { get; set; } = true;
 }
