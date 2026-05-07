@@ -31,6 +31,8 @@ public class CouchbaseDbContextOptionsBuilder : ICouchbaseDbContextOptionsBuilde
 
     public string Scope { get; set; }
 
+    public bool AutoCreateScopes { get; set; }
+
     DbContextOptionsBuilder ICouchbaseDbContextOptionsBuilder.OptionsBuilder => OptionsBuilder;
 }
 
@@ -45,6 +47,17 @@ public interface ICouchbaseDbContextOptionsBuilder
     public string Bucket { get; set; }
 
     public string Scope { get; set; }
+
+    /// <summary>
+    /// Gets or sets whether to automatically create non-default scopes referenced by entity mappings
+    /// when <see cref="Microsoft.EntityFrameworkCore.Infrastructure.DatabaseFacade.EnsureCreatedAsync"/> is called.
+    /// Defaults to false.
+    /// </summary>
+    /// <remarks>
+    /// When false, collections mapped to non-default scopes will be skipped with a warning.
+    /// When true, any scopes referenced in entity keyspace mappings will be created automatically.
+    /// </remarks>
+    public bool AutoCreateScopes { get; set; }
 }
 
 /* ************************************************************
