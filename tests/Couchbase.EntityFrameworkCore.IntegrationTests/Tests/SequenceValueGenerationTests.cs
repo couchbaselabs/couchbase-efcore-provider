@@ -360,6 +360,139 @@ public class SequenceValueGenerationTests : IAsyncLifetime
     }
 
     /// <summary>
+    /// Integration test verifying that EnsureCreatedAsync auto-creates sequences.
+    /// Tests the full lifecycle:
+    /// 1. Drop sequence if exists (clean slate)
+    /// 2. Call EnsureCreatedAsync (should create sequence with specified options)
+    /// 3. Verify sequence works via NEXT VALUE FOR
+    /// 4. Verify sequence options were applied (StartWith, IncrementBy)
+    /// </summary>
+    [Fact]
+    public async Task EnsureCreatedAsync_AutoCreatesSequence_WithOptions()
+    {
+        const string autoCreateSeqName = "ensure_created_test_seq";
+
+        // Step 1: Clean up any existing sequence
+        await DropSequenceIfExistsAsync(autoCreateSeqName);
+        _outputHelper.WriteLine("Step 1: Dropped sequence if existed");
+
+        // Step 2: Create context with auto-create sequence configuration
+        var optionsBuilder = new DbContextOptionsBuilder<EnsureCreatedSequenceDbContext>();
+        optionsBuilder.UseCouchbase(
+            new ClusterOptions()
+                .WithConnectionString(_fixture.Host)
+                .WithPasswordAuthentication(_fixture.Username, _fixture.Password),
+            couchbaseDbContextOptions =>
+            {
+                couchbaseDbContextOptions.Bucket = _fixture.BucketName;
+                couchbaseDbContextOptions.Scope = _fixture.ScopeName;
+            });
+
+        await using var context = new EnsureCreatedSequenceDbContext(optionsBuilder.Options);
+
+        // Step 3: Call EnsureCreatedAsync - this should create the sequence
+        await context.Database.EnsureCreatedAsync();
+        _outputHelper.WriteLine("Step 2: EnsureCreatedAsync completed");
+
+        // Step 4: Verify sequence was created by fetching next value
+        var connection = context.Database.GetDbConnection();
+        await connection.OpenAsync();
+
+        using var command = connection.CreateCommand();
+        command.CommandText = $"SELECT NEXT VALUE FOR `{_fixture.BucketName}`.`{_fixture.ScopeName}`.`{autoCreateSeqName}`";
+        _outputHelper.WriteLine($"Step 3: Executing query: {command.CommandText}");
+
+        var result = await command.ExecuteScalarAsync();
+        Assert.NotNull(result);
+        var firstValue = Convert.ToInt64(result);
+        _outputHelper.WriteLine($"Step 3: First sequence value = {firstValue}");
+
+        // Verify StartWith option was applied (should start at 100)
+        Assert.Equal(100, firstValue);
+
+        // Step 5: Fetch another value to verify IncrementBy
+        result = await command.ExecuteScalarAsync();
+        var secondValue = Convert.ToInt64(result);
+        _outputHelper.WriteLine($"Step 4: Second sequence value = {secondValue}");
+
+        // Verify IncrementBy option was applied (should increment by 5)
+        Assert.Equal(105, secondValue);
+
+        // Cleanup
+        await DropSequenceIfExistsAsync(autoCreateSeqName);
+        _outputHelper.WriteLine("Cleanup: Dropped test sequence");
+
+        _outputHelper.WriteLine("TEST PASSED: EnsureCreatedAsync auto-created sequence with correct options");
+    }
+
+    /// <summary>
+    /// Integration test verifying that SaveChangesAsync works with auto-created sequences.
+    /// Full end-to-end: EnsureCreatedAsync creates sequence, then SaveChanges uses it.
+    /// </summary>
+    [Fact]
+    public async Task EnsureCreatedAsync_ThenSaveChanges_UsesAutoCreatedSequence()
+    {
+        const string autoCreateSeqName = "e2e_auto_seq";
+
+        // Clean up
+        await DropSequenceIfExistsAsync(autoCreateSeqName);
+
+        var optionsBuilder = new DbContextOptionsBuilder<E2EAutoCreateSequenceDbContext>();
+        optionsBuilder.UseCouchbase(
+            new ClusterOptions()
+                .WithConnectionString(_fixture.Host)
+                .WithPasswordAuthentication(_fixture.Username, _fixture.Password),
+            couchbaseDbContextOptions =>
+            {
+                couchbaseDbContextOptions.Bucket = _fixture.BucketName;
+                couchbaseDbContextOptions.Scope = _fixture.ScopeName;
+            });
+
+        await using var context = new E2EAutoCreateSequenceDbContext(optionsBuilder.Options);
+
+        // Create collection and sequence via EnsureCreatedAsync
+        await context.Database.EnsureCreatedAsync();
+        _outputHelper.WriteLine("EnsureCreatedAsync completed");
+
+        // Create entity with default Id (0)
+        var entity = new E2EAutoCreateEntity { Name = "Auto-created sequence test" };
+        Assert.Equal(0, entity.Id);
+
+        // Add and save - should use the auto-created sequence
+        context.Entities.Add(entity);
+        await context.SaveChangesAsync();
+
+        // Verify Id was assigned from sequence (starts at 1)
+        Assert.True(entity.Id > 0, $"Expected positive Id from sequence, got {entity.Id}");
+        _outputHelper.WriteLine($"Entity saved with Id = {entity.Id}");
+
+        // Cleanup
+        context.Entities.Remove(entity);
+        await context.SaveChangesAsync();
+        await DropSequenceIfExistsAsync(autoCreateSeqName);
+
+        _outputHelper.WriteLine("TEST PASSED: End-to-end auto-create sequence workflow verified");
+    }
+
+    private async Task DropSequenceIfExistsAsync(string sequenceName)
+    {
+        try
+        {
+            await using var context = CreateSequenceTestDbContext();
+            var connection = context.Database.GetDbConnection();
+            await connection.OpenAsync();
+
+            using var command = connection.CreateCommand();
+            command.CommandText = $"DROP SEQUENCE IF EXISTS `{_fixture.BucketName}`.`{_fixture.ScopeName}`.`{sequenceName}`";
+            await command.ExecuteNonQueryAsync();
+        }
+        catch (Exception ex)
+        {
+            _outputHelper.WriteLine($"Note: Could not drop sequence {sequenceName}: {ex.Message}");
+        }
+    }
+
+    /// <summary>
     /// Test entity with long Id using sequence value generation via fluent API.
     /// </summary>
     public class SequenceTestEntity
@@ -447,6 +580,84 @@ public class SequenceValueGenerationTests : IAsyncLifetime
                 entity.HasKey(e => e.Id);
                 entity.Property(e => e.Id).UseSequence(_sequenceName);
                 entity.ToCouchbaseCollection(this, "sequence_test_int_entities");
+            });
+
+            modelBuilder.ConfigureToCouchbase(this, true);
+        }
+    }
+
+    /// <summary>
+    /// Entity for EnsureCreatedAsync sequence auto-creation test.
+    /// </summary>
+    public class EnsureCreatedSequenceEntity
+    {
+        public long Id { get; set; }
+        public string Name { get; set; } = string.Empty;
+    }
+
+    /// <summary>
+    /// DbContext for testing EnsureCreatedAsync sequence auto-creation with custom options.
+    /// </summary>
+    public class EnsureCreatedSequenceDbContext : DbContext
+    {
+        public EnsureCreatedSequenceDbContext(DbContextOptions<EnsureCreatedSequenceDbContext> options)
+            : base(options)
+        {
+        }
+
+        public DbSet<EnsureCreatedSequenceEntity> Entities { get; set; }
+
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            base.OnModelCreating(modelBuilder);
+
+            modelBuilder.Entity<EnsureCreatedSequenceEntity>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+                // Configure sequence with specific options to verify they're applied
+                entity.Property(e => e.Id).UseSequence("ensure_created_test_seq", new CouchbaseSequenceOptions
+                {
+                    StartWith = 100,
+                    IncrementBy = 5
+                });
+                entity.ToCouchbaseCollection(this, "ensure_created_test_entities");
+            });
+
+            modelBuilder.ConfigureToCouchbase(this, true);
+        }
+    }
+
+    /// <summary>
+    /// Entity for end-to-end auto-create sequence test.
+    /// </summary>
+    public class E2EAutoCreateEntity
+    {
+        public long Id { get; set; }
+        public string Name { get; set; } = string.Empty;
+    }
+
+    /// <summary>
+    /// DbContext for end-to-end auto-create sequence test.
+    /// </summary>
+    public class E2EAutoCreateSequenceDbContext : DbContext
+    {
+        public E2EAutoCreateSequenceDbContext(DbContextOptions<E2EAutoCreateSequenceDbContext> options)
+            : base(options)
+        {
+        }
+
+        public DbSet<E2EAutoCreateEntity> Entities { get; set; }
+
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            base.OnModelCreating(modelBuilder);
+
+            modelBuilder.Entity<E2EAutoCreateEntity>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+                // Default options (StartWith = 1, IncrementBy = 1)
+                entity.Property(e => e.Id).UseSequence("e2e_auto_seq");
+                entity.ToCouchbaseCollection(this, "e2e_auto_create_entities");
             });
 
             modelBuilder.ConfigureToCouchbase(this, true);
