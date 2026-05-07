@@ -9,15 +9,16 @@ namespace Couchbase.EntityFrameworkCore.Extensions;
 public static class CouchbasePropertyBuilderExtensions
 {
     /// <summary>
-    /// Configures the property to have its value generated using a Couchbase sequence.
+    /// Configures the property to have its value generated using a Couchbase sequence
+    /// with default options.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// The sequence must already exist in the database. Use the Couchbase SQL++ statement
-    /// <c>CREATE SEQUENCE bucket.scope.sequence_name</c> to create the sequence.
+    /// The sequence will be looked up in the bucket and scope configured on the DbContext.
     /// </para>
     /// <para>
-    /// The sequence will be looked up in the bucket and scope configured on the DbContext.
+    /// This overload clears any previously configured scope override, custom options, or
+    /// auto-create settings, reverting to default behavior.
     /// </para>
     /// </remarks>
     /// <param name="propertyBuilder">The property builder.</param>
@@ -40,9 +41,15 @@ public static class CouchbasePropertyBuilderExtensions
             CouchbaseValueGeneratorSelector.SequenceNameAnnotation,
             sequenceName);
 
-        // Clear any previous scope override to revert to DbContext-level scope
+        // Clear any previous overrides to revert to defaults
         propertyBuilder.HasAnnotation(
             CouchbaseValueGeneratorSelector.SequenceScopeAnnotation,
+            null);
+        propertyBuilder.HasAnnotation(
+            CouchbaseValueGeneratorSelector.SequenceOptionsAnnotation,
+            null);
+        propertyBuilder.HasAnnotation(
+            CouchbaseValueGeneratorSelector.SequenceAutoCreateAnnotation,
             null);
 
         propertyBuilder.ValueGeneratedOnAdd();
@@ -52,15 +59,15 @@ public static class CouchbasePropertyBuilderExtensions
 
     /// <summary>
     /// Configures the property to have its value generated using a Couchbase sequence
-    /// in the specified scope.
+    /// in the specified scope with default options.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// The sequence must already exist in the database. Use the Couchbase SQL++ statement
-    /// <c>CREATE SEQUENCE bucket.scope.sequence_name</c> to create the sequence.
+    /// The scope specified here overrides the DbContext-level scope for this sequence.
     /// </para>
     /// <para>
-    /// The scope specified here overrides the DbContext-level scope for this sequence.
+    /// This overload clears any previously configured custom options or auto-create settings,
+    /// reverting to default behavior.
     /// </para>
     /// </remarks>
     /// <param name="propertyBuilder">The property builder.</param>
@@ -89,6 +96,14 @@ public static class CouchbasePropertyBuilderExtensions
         propertyBuilder.HasAnnotation(
             CouchbaseValueGeneratorSelector.SequenceScopeAnnotation,
             scope);
+
+        // Clear any previous options/auto-create overrides to revert to defaults
+        propertyBuilder.HasAnnotation(
+            CouchbaseValueGeneratorSelector.SequenceOptionsAnnotation,
+            null);
+        propertyBuilder.HasAnnotation(
+            CouchbaseValueGeneratorSelector.SequenceAutoCreateAnnotation,
+            null);
 
         propertyBuilder.ValueGeneratedOnAdd();
 
@@ -182,8 +197,13 @@ public static class CouchbasePropertyBuilderExtensions
     }
 
     /// <summary>
-    /// Configures the property to have its value generated using a Couchbase sequence.
+    /// Configures the property to have its value generated using a Couchbase sequence
+    /// with default options.
     /// </summary>
+    /// <remarks>
+    /// This overload clears any previously configured scope override, custom options, or
+    /// auto-create settings, reverting to default behavior.
+    /// </remarks>
     /// <param name="propertyBuilder">The property builder.</param>
     /// <param name="sequenceName">The name of the sequence.</param>
     /// <returns>The same property builder for method chaining.</returns>
@@ -197,9 +217,15 @@ public static class CouchbasePropertyBuilderExtensions
             CouchbaseValueGeneratorSelector.SequenceNameAnnotation,
             sequenceName);
 
-        // Clear any previous scope override to revert to DbContext-level scope
+        // Clear any previous overrides to revert to defaults
         propertyBuilder.HasAnnotation(
             CouchbaseValueGeneratorSelector.SequenceScopeAnnotation,
+            null);
+        propertyBuilder.HasAnnotation(
+            CouchbaseValueGeneratorSelector.SequenceOptionsAnnotation,
+            null);
+        propertyBuilder.HasAnnotation(
+            CouchbaseValueGeneratorSelector.SequenceAutoCreateAnnotation,
             null);
 
         propertyBuilder.ValueGeneratedOnAdd();
@@ -209,8 +235,12 @@ public static class CouchbasePropertyBuilderExtensions
 
     /// <summary>
     /// Configures the property to have its value generated using a Couchbase sequence
-    /// in the specified scope.
+    /// in the specified scope with default options.
     /// </summary>
+    /// <remarks>
+    /// This overload clears any previously configured custom options or auto-create settings,
+    /// reverting to default behavior.
+    /// </remarks>
     /// <param name="propertyBuilder">The property builder.</param>
     /// <param name="scope">The scope containing the sequence.</param>
     /// <param name="sequenceName">The name of the sequence.</param>
@@ -230,6 +260,14 @@ public static class CouchbasePropertyBuilderExtensions
         propertyBuilder.HasAnnotation(
             CouchbaseValueGeneratorSelector.SequenceScopeAnnotation,
             scope);
+
+        // Clear any previous options/auto-create overrides to revert to defaults
+        propertyBuilder.HasAnnotation(
+            CouchbaseValueGeneratorSelector.SequenceOptionsAnnotation,
+            null);
+        propertyBuilder.HasAnnotation(
+            CouchbaseValueGeneratorSelector.SequenceAutoCreateAnnotation,
+            null);
 
         propertyBuilder.ValueGeneratedOnAdd();
 
