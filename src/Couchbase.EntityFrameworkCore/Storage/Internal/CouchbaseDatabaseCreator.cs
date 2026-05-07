@@ -2,12 +2,14 @@ using System.Diagnostics;
 using Couchbase.Diagnostics;
 using Couchbase.EntityFrameworkCore.Extensions;
 using Couchbase.EntityFrameworkCore.Infrastructure;
+using Couchbase.EntityFrameworkCore.Metadata;
 using Couchbase.EntityFrameworkCore.Utils;
 using Couchbase.EntityFrameworkCore.ValueGeneration;
 using Couchbase.Extensions.DependencyInjection;
 using Couchbase.Management.Buckets;
 using Couchbase.Management.Collections;
 using Google.Api;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
@@ -141,8 +143,29 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
         {
             try
             {
-               await manager.CreateCollectionAsync(_couchbaseDbContextOptionsBuilder.Scope, 
-                   entityType.Name.Split('+')[1], new CreateCollectionSettings());
+                // Get the collection name from the keyspace (bucket.scope.collection format)
+                var tableName = entityType.GetTableName();
+                if (string.IsNullOrEmpty(tableName))
+                {
+                    continue;
+                }
+
+                string collectionName;
+                string scopeName;
+
+                if (CouchbaseKeyspace.TryParse(tableName, out var keyspace))
+                {
+                    collectionName = keyspace!.Value.Collection;
+                    scopeName = keyspace.Value.Scope;
+                }
+                else
+                {
+                    // Fallback: use table name as collection name in default scope
+                    collectionName = tableName;
+                    scopeName = _couchbaseDbContextOptionsBuilder.Scope;
+                }
+
+                await manager.CreateCollectionAsync(scopeName, collectionName, new CreateCollectionSettings());
             }
             catch (CollectionExistsException)
             {
@@ -382,16 +405,21 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
     /// <returns></returns>
     public override async Task<bool> EnsureCreatedAsync(CancellationToken cancellationToken = new CancellationToken())
     {
+        var created = false;
+
         if (!await ExistsAsync(cancellationToken).ConfigureAwait(false))
         {
             await CreateAsync(cancellationToken).ConfigureAwait(false);
-            await CreateScopeAsync();
-            await CreateCollectionsAsync();
-            await CreateSequencesAsync();
-            return true;
+            created = true;
         }
 
-        return false;
+        // Always ensure scope, collections, and sequences exist
+        // even if bucket already existed (they use IF NOT EXISTS / catch-exists patterns)
+        await CreateScopeAsync();
+        await CreateCollectionsAsync();
+        await CreateSequencesAsync();
+
+        return created;
     }
 
     /// <summary>

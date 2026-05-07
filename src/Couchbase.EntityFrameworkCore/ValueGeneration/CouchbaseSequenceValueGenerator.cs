@@ -66,7 +66,14 @@ public class CouchbaseSequenceValueGenerator<T> : ValueGenerator<T>
     /// <summary>
     /// Gets the SQL++ query used to fetch the next sequence value.
     /// </summary>
-    public string SequenceQuery => $"SELECT NEXT VALUE FOR `{_bucket}`.`{_scope}`.`{_sequenceName}`";
+    /// <remarks>
+    /// Uses backtick-delimited identifiers for bucket, scope, and sequence name.
+    /// Backticks within identifiers are escaped by doubling them.
+    /// </remarks>
+    public string SequenceQuery => $"SELECT NEXT VALUE FOR `{EscapeIdentifier(_bucket)}`.`{EscapeIdentifier(_scope)}`.`{EscapeIdentifier(_sequenceName)}`";
+
+    private static string EscapeIdentifier(string identifier)
+        => identifier.Replace("`", "``");
 
     /// <summary>
     /// Gets a value indicating whether values may be temporary (false for sequences).
