@@ -22,6 +22,7 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
     private readonly ILogger<CouchbaseDatabaseCreator> _logger;
     private readonly IServiceProvider _serviceProvider;
     private readonly ICouchbaseDbContextOptionsBuilder _couchbaseDbContextOptionsBuilder;
+    private readonly ISqlGenerationHelper _sqlGenerationHelper;
     private ICluster _cluster;
 
     public CouchbaseDatabaseCreator(RelationalDatabaseCreatorDependencies dependencies,
@@ -29,13 +30,15 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
         IServiceProvider serviceProvider,
         IDesignTimeModel designTimeModel,
         ILogger<CouchbaseDatabaseCreator> logger,
-        ICouchbaseDbContextOptionsBuilder couchbaseDbContextOptionsBuilder) : base(dependencies)
+        ICouchbaseDbContextOptionsBuilder couchbaseDbContextOptionsBuilder,
+        ISqlGenerationHelper sqlGenerationHelper) : base(dependencies)
     {
         _database = database;
         _designTimeModel = designTimeModel;
         _logger = logger;
         _serviceProvider = serviceProvider;
         _couchbaseDbContextOptionsBuilder = couchbaseDbContextOptionsBuilder;
+        _sqlGenerationHelper = sqlGenerationHelper;
     }
 
     private async Task InitializeAsync(CancellationToken cancellationToken = default)
@@ -207,8 +210,12 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
             var bucket = await GetBucketAsync();
             var scopeObj = await bucket.ScopeAsync(scope);
 
-            // Build CREATE SEQUENCE statement
-            var sql = $"CREATE SEQUENCE IF NOT EXISTS `{_couchbaseDbContextOptionsBuilder.Bucket}`.`{scope}`.`{sequenceName}` {options.ToSqlOptionsClause()}";
+            // Build CREATE SEQUENCE statement using proper identifier escaping
+            var bucketIdentifier = _sqlGenerationHelper.DelimitIdentifier(_couchbaseDbContextOptionsBuilder.Bucket);
+            var scopeIdentifier = _sqlGenerationHelper.DelimitIdentifier(scope);
+            var sequenceIdentifier = _sqlGenerationHelper.DelimitIdentifier(sequenceName);
+
+            var sql = $"CREATE SEQUENCE IF NOT EXISTS {bucketIdentifier}.{scopeIdentifier}.{sequenceIdentifier} {options.ToSqlOptionsClause()}";
 
             _logger.LogDebug("Creating sequence: {Sql}", sql);
 
@@ -250,7 +257,13 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
             try
             {
                 var scopeObj = await bucket.ScopeAsync(scope);
-                var sql = $"DROP SEQUENCE IF EXISTS `{_couchbaseDbContextOptionsBuilder.Bucket}`.`{scope}`.`{sequenceName}`";
+
+                // Use proper identifier escaping
+                var bucketIdentifier = _sqlGenerationHelper.DelimitIdentifier(_couchbaseDbContextOptionsBuilder.Bucket);
+                var scopeIdentifier = _sqlGenerationHelper.DelimitIdentifier(scope);
+                var sequenceIdentifier = _sqlGenerationHelper.DelimitIdentifier(sequenceName);
+
+                var sql = $"DROP SEQUENCE IF EXISTS {bucketIdentifier}.{scopeIdentifier}.{sequenceIdentifier}";
 
                 _logger.LogDebug("Dropping sequence: {Sql}", sql);
 
