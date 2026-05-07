@@ -153,9 +153,6 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
 
     private async Task CreateSequencesAsync()
     {
-        var bucket = await GetBucketAsync();
-        var scope = await bucket.ScopeAsync(_couchbaseDbContextOptionsBuilder.Scope);
-
         // Collect all unique sequences from the model that should be auto-created
         var sequences = new Dictionary<string, (string Scope, CouchbaseSequenceOptions Options)>();
 
@@ -219,7 +216,12 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
 
             _logger.LogDebug("Creating sequence: {Sql}", sql);
 
-            await scopeObj.QueryAsync<dynamic>(sql);
+            using var result = await scopeObj.QueryAsync<dynamic>(sql);
+
+            // Drain all rows to ensure query completes
+            await foreach (var _ in result.Rows)
+            {
+            }
         }
         catch (Exception ex)
         {
@@ -267,7 +269,12 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
 
                 _logger.LogDebug("Dropping sequence: {Sql}", sql);
 
-                await scopeObj.QueryAsync<dynamic>(sql);
+                using var result = await scopeObj.QueryAsync<dynamic>(sql);
+
+                // Drain all rows to ensure query completes
+                await foreach (var _ in result.Rows)
+                {
+                }
             }
             catch (Exception ex)
             {
