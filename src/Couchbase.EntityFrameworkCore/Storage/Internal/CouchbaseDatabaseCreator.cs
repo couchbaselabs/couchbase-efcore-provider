@@ -185,7 +185,20 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
 
                 // Use scope.sequenceName as key to handle sequences in different scopes
                 var key = $"{sequenceScope}.{sequenceName}";
-                if (!sequences.ContainsKey(key))
+                if (sequences.TryGetValue(key, out var existing))
+                {
+                    // Check for conflicting options
+                    if (existing.Options != options)
+                    {
+                        var propertyPath = $"{property.DeclaringType.ClrType.Name}.{property.Name}";
+                        throw new InvalidOperationException(
+                            $"Conflicting sequence options detected for sequence '{sequenceName}' in scope '{sequenceScope}'. " +
+                            $"Property '{propertyPath}' specifies different options than a previously configured property. " +
+                            $"Existing: {existing.Options.ToSqlOptionsClause()}, Conflicting: {options.ToSqlOptionsClause()}. " +
+                            $"Ensure all properties using the same sequence have identical options.");
+                    }
+                }
+                else
                 {
                     sequences[key] = (sequenceScope, options);
                 }
