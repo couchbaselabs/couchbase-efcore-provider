@@ -139,32 +139,75 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
     private async Task CreateCollectionsAsync()
     {
         var manager = (await GetBucketAsync()).Collections;
+
+        // Collect all collections and their scopes from the model
+        var collections = new List<(string Scope, string Collection, string EntityName)>();
+        var nonDefaultScopes = new HashSet<string>();
+
         foreach (var entityType in _designTimeModel.Model.GetEntityTypes())
         {
+            var tableName = entityType.GetTableName();
+            if (string.IsNullOrEmpty(tableName))
+            {
+                continue;
+            }
+
+            string collectionName;
+            string scopeName;
+
+            if (CouchbaseKeyspace.TryParse(tableName, out var keyspace))
+            {
+                collectionName = keyspace!.Value.Collection;
+                scopeName = keyspace.Value.Scope;
+            }
+            else
+            {
+                // Fallback: use table name as collection name in default scope
+                collectionName = tableName;
+                scopeName = _couchbaseDbContextOptionsBuilder.Scope;
+            }
+
+            collections.Add((scopeName, collectionName, entityType.ClrType.Name));
+
+            if (scopeName != _couchbaseDbContextOptionsBuilder.Scope)
+            {
+                nonDefaultScopes.Add(scopeName);
+            }
+        }
+
+        // Create non-default scopes if AutoCreateScopes is enabled
+        if (_couchbaseDbContextOptionsBuilder.AutoCreateScopes && nonDefaultScopes.Count > 0)
+        {
+            foreach (var scope in nonDefaultScopes)
+            {
+                try
+                {
+                    await manager.CreateScopeAsync(scope);
+                    _logger.LogDebug("Created scope {ScopeName}", scope);
+                }
+                catch (ScopeExistsException)
+                {
+                    // Scope already exists, continue
+                }
+            }
+        }
+
+        // Create collections
+        foreach (var (scopeName, collectionName, entityName) in collections)
+        {
+            // Skip non-default scope collections if AutoCreateScopes is disabled
+            if (scopeName != _couchbaseDbContextOptionsBuilder.Scope && !_couchbaseDbContextOptionsBuilder.AutoCreateScopes)
+            {
+                _logger.LogWarning(
+                    "Collection '{CollectionName}' for entity '{EntityName}' targets non-default scope '{ScopeName}' " +
+                    "and will not be auto-created. The scope may not exist. " +
+                    "Create the scope and collection manually, or enable AutoCreateScopes in DbContext options.",
+                    collectionName, entityName, scopeName);
+                continue;
+            }
+
             try
             {
-                // Get the collection name from the keyspace (bucket.scope.collection format)
-                var tableName = entityType.GetTableName();
-                if (string.IsNullOrEmpty(tableName))
-                {
-                    continue;
-                }
-
-                string collectionName;
-                string scopeName;
-
-                if (CouchbaseKeyspace.TryParse(tableName, out var keyspace))
-                {
-                    collectionName = keyspace!.Value.Collection;
-                    scopeName = keyspace.Value.Scope;
-                }
-                else
-                {
-                    // Fallback: use table name as collection name in default scope
-                    collectionName = tableName;
-                    scopeName = _couchbaseDbContextOptionsBuilder.Scope;
-                }
-
                 await manager.CreateCollectionAsync(scopeName, collectionName, new CreateCollectionSettings());
             }
             catch (CollectionExistsException)
