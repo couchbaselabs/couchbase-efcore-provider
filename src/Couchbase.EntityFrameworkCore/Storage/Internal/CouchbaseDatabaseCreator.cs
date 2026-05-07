@@ -397,12 +397,16 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
     }
 
     /// <summary>
-    /// Asynchronously ensures that the database for the context exists. If it exists, no action is taken.
-    /// If it does not exist then the database and all its schema are created. If the database exists, then
-    /// no effort is made to ensure it is compatible with the model for this context.
+    /// Asynchronously ensures that the database for the context exists.
+    /// If the bucket does not exist, it is created.
+    /// Scopes, collections, and sequences are always created if they don't exist,
+    /// regardless of whether the bucket already existed.
     /// </summary>
-    /// <param name="cancellationToken"></param>
-    /// <returns></returns>
+    /// <param name="cancellationToken">A cancellation token.</param>
+    /// <returns>
+    /// <see langword="true"/> if the bucket was created; <see langword="false"/> if it already existed.
+    /// Note: scopes, collections, and sequences are created in both cases.
+    /// </returns>
     public override async Task<bool> EnsureCreatedAsync(CancellationToken cancellationToken = new CancellationToken())
     {
         var created = false;
