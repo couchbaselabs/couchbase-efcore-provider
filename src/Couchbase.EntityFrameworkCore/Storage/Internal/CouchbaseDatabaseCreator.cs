@@ -226,30 +226,23 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
 
     private async Task CreateSequenceAsync(string scope, string sequenceName, CouchbaseSequenceOptions options)
     {
-        try
+        var bucket = await GetBucketAsync();
+        var scopeObj = await bucket.ScopeAsync(scope);
+
+        // Build CREATE SEQUENCE statement using proper identifier escaping
+        var bucketIdentifier = _sqlGenerationHelper.DelimitIdentifier(_couchbaseDbContextOptionsBuilder.Bucket);
+        var scopeIdentifier = _sqlGenerationHelper.DelimitIdentifier(scope);
+        var sequenceIdentifier = _sqlGenerationHelper.DelimitIdentifier(sequenceName);
+
+        var sql = $"CREATE SEQUENCE IF NOT EXISTS {bucketIdentifier}.{scopeIdentifier}.{sequenceIdentifier} {options.ToSqlOptionsClause()}";
+
+        _logger.LogDebug("Creating sequence: {Sql}", sql);
+
+        using var result = await scopeObj.QueryAsync<dynamic>(sql);
+
+        // Drain all rows to ensure query completes
+        await foreach (var _ in result.Rows)
         {
-            var bucket = await GetBucketAsync();
-            var scopeObj = await bucket.ScopeAsync(scope);
-
-            // Build CREATE SEQUENCE statement using proper identifier escaping
-            var bucketIdentifier = _sqlGenerationHelper.DelimitIdentifier(_couchbaseDbContextOptionsBuilder.Bucket);
-            var scopeIdentifier = _sqlGenerationHelper.DelimitIdentifier(scope);
-            var sequenceIdentifier = _sqlGenerationHelper.DelimitIdentifier(sequenceName);
-
-            var sql = $"CREATE SEQUENCE IF NOT EXISTS {bucketIdentifier}.{scopeIdentifier}.{sequenceIdentifier} {options.ToSqlOptionsClause()}";
-
-            _logger.LogDebug("Creating sequence: {Sql}", sql);
-
-            using var result = await scopeObj.QueryAsync<dynamic>(sql);
-
-            // Drain all rows to ensure query completes
-            await foreach (var _ in result.Rows)
-            {
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to create sequence {SequenceName} in scope {Scope}", sequenceName, scope);
         }
     }
 
@@ -302,6 +295,8 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
             }
             catch (Exception ex)
             {
+                // Suppress during cleanup - sequence/scope may not exist, bucket may be deleted next.
+                // Log at Warning so unexpected failures are visible.
                 _logger.LogWarning(ex, "Failed to drop sequence {SequenceName} in scope {Scope}", sequenceName, scope);
             }
         }
