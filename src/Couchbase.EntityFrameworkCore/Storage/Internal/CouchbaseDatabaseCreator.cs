@@ -1,6 +1,4 @@
 using System.Diagnostics;
-using Couchbase.Diagnostics;
-using Couchbase.EntityFrameworkCore.Extensions;
 using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.EntityFrameworkCore.Metadata;
 using Couchbase.EntityFrameworkCore.Utils;
@@ -8,7 +6,6 @@ using Couchbase.EntityFrameworkCore.ValueGeneration;
 using Couchbase.Extensions.DependencyInjection;
 using Couchbase.Management.Buckets;
 using Couchbase.Management.Collections;
-using Google.Api;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Storage;
