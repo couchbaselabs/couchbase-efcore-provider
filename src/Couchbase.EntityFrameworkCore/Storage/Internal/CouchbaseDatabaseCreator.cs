@@ -87,54 +87,6 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
         throw new UnreachableException();
     }
 
-    private async Task<bool> ScopeExistsAsync()
-    {
-        var manager = (await GetBucketAsync()).Collections;
-        try
-        {
-            var scopes = await manager.GetAllScopesAsync();
-            return scopes.Contains(new ScopeSpec(_couchbaseDbContextOptionsBuilder.Scope));
-        }
-        catch (Exception e)
-        {
-            _logger.LogWarning(e, "Failed to check if scope '{ScopeName}' exists", _couchbaseDbContextOptionsBuilder.Scope);
-            return false;
-        }
-    }
-
-    private async Task<bool> CollectionsExistsAsync()
-    {
-        var manager = (await GetBucketAsync()).Collections;
-
-        try
-        {
-            var scopes = await manager.GetAllScopesAsync();
-            var scope = scopes.FirstOrDefault(x => x.Name == _couchbaseDbContextOptionsBuilder.Scope);
-
-            if (scope == null)
-            {
-                _logger.LogDebug("Scope '{ScopeName}' not found when checking for collections", _couchbaseDbContextOptionsBuilder.Scope);
-                return false;
-            }
-
-            var entityTypes = _designTimeModel.Model.GetEntityTypes();
-            foreach (var entityType in entityTypes)
-            {
-                var collectionName = entityType.Name.Split('+')[1];
-                if (scope.Collections.Contains(new CollectionSpec(scope.Name, collectionName)))
-                {
-                    return true;
-                }
-            }
-        }
-        catch (Exception e)
-        {
-            _logger.LogWarning(e, "Failed to check if collections exist in scope '{ScopeName}'", _couchbaseDbContextOptionsBuilder.Scope);
-        }
-
-        return false;
-    }
-
     public override bool HasTables()
     {
         return true;
