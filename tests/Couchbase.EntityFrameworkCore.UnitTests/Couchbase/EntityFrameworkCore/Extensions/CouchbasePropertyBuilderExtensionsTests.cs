@@ -442,9 +442,145 @@ public class CouchbasePropertyBuilderExtensionsTests
             entityBuilder.Property(e => e.Id).UseSequence("analytics", "order_seq", null!));
     }
 
+    #region UseGuid Tests
+
+    [Fact]
+    public void UseGuid_SetsValueGeneratedOnAdd()
+    {
+        // Arrange
+        var modelBuilder = new ModelBuilder();
+        var entityBuilder = modelBuilder.Entity<GuidEntity>();
+
+        // Act
+        entityBuilder.Property(e => e.Id).UseGuid();
+
+        // Assert
+        var model = modelBuilder.Model;
+        var entityType = model.FindEntityType(typeof(GuidEntity));
+        var property = entityType!.FindProperty(nameof(GuidEntity.Id));
+
+        Assert.Equal(ValueGenerated.OnAdd, property!.ValueGenerated);
+    }
+
+    [Fact]
+    public void UseGuid_ClearsSequenceAnnotations()
+    {
+        // Arrange
+        var modelBuilder = new ModelBuilder();
+        var entityBuilder = modelBuilder.Entity<GuidEntity>();
+
+        // First set a sequence, then switch to GUID
+        entityBuilder.Property(e => e.Id)
+            .HasAnnotation(CouchbaseValueGeneratorSelector.SequenceNameAnnotation, "old_seq")
+            .HasAnnotation(CouchbaseValueGeneratorSelector.SequenceScopeAnnotation, "old_scope");
+
+        // Act
+        entityBuilder.Property(e => e.Id).UseGuid();
+
+        // Assert
+        var model = modelBuilder.Model;
+        var entityType = model.FindEntityType(typeof(GuidEntity));
+        var property = entityType!.FindProperty(nameof(GuidEntity.Id));
+
+        Assert.Null(property!.FindAnnotation(CouchbaseValueGeneratorSelector.SequenceNameAnnotation)?.Value);
+        Assert.Null(property!.FindAnnotation(CouchbaseValueGeneratorSelector.SequenceScopeAnnotation)?.Value);
+    }
+
+    [Fact]
+    public void UseGuidString_SetsFormatAnnotation()
+    {
+        // Arrange
+        var modelBuilder = new ModelBuilder();
+        var entityBuilder = modelBuilder.Entity<StringIdEntity>();
+
+        // Act
+        entityBuilder.Property(e => e.Id).UseGuidString("N");
+
+        // Assert
+        var model = modelBuilder.Model;
+        var entityType = model.FindEntityType(typeof(StringIdEntity));
+        var property = entityType!.FindProperty(nameof(StringIdEntity.Id));
+
+        var format = property!.FindAnnotation(CouchbaseValueGeneratorSelector.GuidStringFormatAnnotation)?.Value;
+        Assert.Equal("N", format);
+    }
+
+    [Fact]
+    public void UseGuidString_DefaultFormat_UsesD()
+    {
+        // Arrange
+        var modelBuilder = new ModelBuilder();
+        var entityBuilder = modelBuilder.Entity<StringIdEntity>();
+
+        // Act
+        entityBuilder.Property(e => e.Id).UseGuidString();
+
+        // Assert
+        var model = modelBuilder.Model;
+        var entityType = model.FindEntityType(typeof(StringIdEntity));
+        var property = entityType!.FindProperty(nameof(StringIdEntity.Id));
+
+        var format = property!.FindAnnotation(CouchbaseValueGeneratorSelector.GuidStringFormatAnnotation)?.Value;
+        Assert.Equal("D", format);
+    }
+
+    [Fact]
+    public void UseGuidString_SetsValueGeneratedOnAdd()
+    {
+        // Arrange
+        var modelBuilder = new ModelBuilder();
+        var entityBuilder = modelBuilder.Entity<StringIdEntity>();
+
+        // Act
+        entityBuilder.Property(e => e.Id).UseGuidString();
+
+        // Assert
+        var model = modelBuilder.Model;
+        var entityType = model.FindEntityType(typeof(StringIdEntity));
+        var property = entityType!.FindProperty(nameof(StringIdEntity.Id));
+
+        Assert.Equal(ValueGenerated.OnAdd, property!.ValueGenerated);
+    }
+
+    [Fact]
+    public void UseGuidString_ClearsSequenceAnnotations()
+    {
+        // Arrange
+        var modelBuilder = new ModelBuilder();
+        var entityBuilder = modelBuilder.Entity<StringIdEntity>();
+
+        // First set a sequence, then switch to GUID string
+        entityBuilder.Property(e => e.Id)
+            .HasAnnotation(CouchbaseValueGeneratorSelector.SequenceNameAnnotation, "old_seq");
+
+        // Act
+        entityBuilder.Property(e => e.Id).UseGuidString();
+
+        // Assert
+        var model = modelBuilder.Model;
+        var entityType = model.FindEntityType(typeof(StringIdEntity));
+        var property = entityType!.FindProperty(nameof(StringIdEntity.Id));
+
+        Assert.Null(property!.FindAnnotation(CouchbaseValueGeneratorSelector.SequenceNameAnnotation)?.Value);
+    }
+
+    #endregion
+
     private class TestEntity
     {
         public long Id { get; set; }
+        public string? Name { get; set; }
+    }
+
+    private class GuidEntity
+    {
+        public Guid Id { get; set; }
+        public string? Name { get; set; }
+    }
+
+    private class StringIdEntity
+    {
+        public string Id { get; set; } = null!;
         public string? Name { get; set; }
     }
 }
