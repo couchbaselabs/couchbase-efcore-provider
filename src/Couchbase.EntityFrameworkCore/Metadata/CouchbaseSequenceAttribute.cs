@@ -10,8 +10,11 @@ namespace Couchbase.EntityFrameworkCore.Metadata;
 /// entity is added to the context.
 /// </para>
 /// <para>
-/// The sequence must already exist in the database. Use the Couchbase SQL++ statement
-/// <c>CREATE SEQUENCE bucket.scope.sequence_name</c> to create the sequence.
+/// If <see cref="AutoCreate"/> is true (default), the sequence will be created automatically
+/// when <see cref="Microsoft.EntityFrameworkCore.Infrastructure.DatabaseFacade.EnsureCreatedAsync"/> is called,
+/// provided the sequence uses the DbContext-level scope. Sequences targeting a non-default scope
+/// (via the <see cref="Scope"/> property) will not be auto-created, as the scope may not exist.
+/// A warning will be logged in this case; create the scope and sequence manually or use the default scope.
 /// </para>
 /// </remarks>
 /// <example>
@@ -62,4 +65,32 @@ public class CouchbaseSequenceAttribute : Attribute
     /// Gets the scope containing the sequence, or <c>null</c> to use the DbContext-level scope.
     /// </summary>
     public string? Scope { get; }
+
+    /// <summary>
+    /// Gets or sets the starting value of the sequence. Defaults to 1.
+    /// </summary>
+    public long StartWith { get; set; } = 1;
+
+    /// <summary>
+    /// Gets or sets the increment value for each call to NEXT VALUE FOR. Defaults to 1.
+    /// </summary>
+    public long IncrementBy { get; set; } = 1;
+
+    /// <summary>
+    /// Gets or sets whether the sequence should restart when the limit is reached.
+    /// Defaults to false.
+    /// </summary>
+    public bool Cycle { get; set; } = false;
+
+    /// <summary>
+    /// Gets or sets whether to automatically create the sequence when
+    /// <see cref="Microsoft.EntityFrameworkCore.Infrastructure.DatabaseFacade.EnsureCreatedAsync"/> is called.
+    /// Defaults to true.
+    /// </summary>
+    /// <remarks>
+    /// Auto-creation only applies to sequences using the DbContext-level scope.
+    /// Sequences targeting a non-default scope (via <see cref="Scope"/>) will not be
+    /// auto-created even if this property is true, as the scope may not exist.
+    /// </remarks>
+    public bool AutoCreate { get; set; } = true;
 }

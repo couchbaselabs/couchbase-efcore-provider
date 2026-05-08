@@ -26,6 +26,17 @@ public class CouchbaseValueGeneratorSelector : RelationalValueGeneratorSelector
     /// </summary>
     public const string SequenceScopeAnnotation = "Couchbase:SequenceScope";
 
+    /// <summary>
+    /// The annotation key for sequence options (start value, increment, etc.).
+    /// </summary>
+    public const string SequenceOptionsAnnotation = "Couchbase:SequenceOptions";
+
+    /// <summary>
+    /// The annotation key for whether to auto-create the sequence on EnsureCreatedAsync.
+    /// Defaults to true if not present.
+    /// </summary>
+    public const string SequenceAutoCreateAnnotation = "Couchbase:SequenceAutoCreate";
+
     private static readonly MethodInfo CreateSequenceGeneratorMethod =
         typeof(CouchbaseValueGeneratorSelector).GetMethod(
             nameof(CreateSequenceValueGeneratorOfType),

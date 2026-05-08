@@ -1,4 +1,3 @@
-using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -64,14 +63,22 @@ public class CouchbaseSequenceValueGenerator<T> : ValueGenerator<T>
     }
 
     /// <summary>
-    /// Gets the SQL++ query used to fetch the next sequence value.
-    /// </summary>
-    public string SequenceQuery => $"SELECT NEXT VALUE FOR `{_bucket}`.`{_scope}`.`{_sequenceName}`";
-
-    /// <summary>
     /// Gets a value indicating whether values may be temporary (false for sequences).
     /// </summary>
     public override bool GeneratesTemporaryValues => false;
+
+    /// <summary>
+    /// Builds the SQL++ query to fetch the next sequence value using the provided SQL generation helper.
+    /// </summary>
+    /// <param name="sqlGenerationHelper">The SQL generation helper for proper identifier escaping.</param>
+    /// <returns>The SQL++ query string.</returns>
+    public string BuildSequenceQuery(ISqlGenerationHelper sqlGenerationHelper)
+    {
+        var bucket = sqlGenerationHelper.DelimitIdentifier(_bucket);
+        var scope = sqlGenerationHelper.DelimitIdentifier(_scope);
+        var sequence = sqlGenerationHelper.DelimitIdentifier(_sequenceName);
+        return $"SELECT NEXT VALUE FOR {bucket}.{scope}.{sequence}";
+    }
 
     /// <summary>
     /// Generates the next value for the sequence synchronously.
@@ -96,7 +103,8 @@ public class CouchbaseSequenceValueGenerator<T> : ValueGenerator<T>
         EntityEntry entry,
         CancellationToken cancellationToken = default)
     {
-        var query = SequenceQuery;
+        var sqlGenerationHelper = entry.Context.GetService<ISqlGenerationHelper>();
+        var query = BuildSequenceQuery(sqlGenerationHelper);
         var longValue = await ExecuteSequenceQueryAsync(entry, query, cancellationToken).ConfigureAwait(false);
         return ConvertToTargetType(longValue);
     }

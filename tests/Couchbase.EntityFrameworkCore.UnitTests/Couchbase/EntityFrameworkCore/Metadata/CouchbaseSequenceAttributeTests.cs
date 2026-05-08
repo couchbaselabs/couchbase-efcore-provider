@@ -100,6 +100,79 @@ public class CouchbaseSequenceAttributeTests
         Assert.Equal("counters", attribute.Scope);
     }
 
+    [Fact]
+    public void StartWith_DefaultsToOne()
+    {
+        // Arrange & Act
+        var attribute = new CouchbaseSequenceAttribute("test_seq");
+
+        // Assert
+        Assert.Equal(1, attribute.StartWith);
+    }
+
+    [Fact]
+    public void IncrementBy_DefaultsToOne()
+    {
+        // Arrange & Act
+        var attribute = new CouchbaseSequenceAttribute("test_seq");
+
+        // Assert
+        Assert.Equal(1, attribute.IncrementBy);
+    }
+
+    [Fact]
+    public void Cycle_DefaultsToFalse()
+    {
+        // Arrange & Act
+        var attribute = new CouchbaseSequenceAttribute("test_seq");
+
+        // Assert
+        Assert.False(attribute.Cycle);
+    }
+
+    [Fact]
+    public void AutoCreate_DefaultsToTrue()
+    {
+        // Arrange & Act
+        var attribute = new CouchbaseSequenceAttribute("test_seq");
+
+        // Assert
+        Assert.True(attribute.AutoCreate);
+    }
+
+    [Fact]
+    public void AutoCreate_CanBeSetToFalse()
+    {
+        // Arrange & Act
+        var attribute = new CouchbaseSequenceAttribute("test_seq")
+        {
+            AutoCreate = false
+        };
+
+        // Assert
+        Assert.False(attribute.AutoCreate);
+    }
+
+    [Fact]
+    public void AllProperties_CanBeCustomized()
+    {
+        // Arrange & Act
+        var attribute = new CouchbaseSequenceAttribute("test_seq")
+        {
+            StartWith = 100,
+            IncrementBy = 5,
+            Cycle = true,
+            AutoCreate = false
+        };
+
+        // Assert
+        Assert.Equal("test_seq", attribute.SequenceName);
+        Assert.Equal(100, attribute.StartWith);
+        Assert.Equal(5, attribute.IncrementBy);
+        Assert.True(attribute.Cycle);
+        Assert.False(attribute.AutoCreate);
+    }
+
     private class TestEntity
     {
         [CouchbaseSequence("test_seq")]

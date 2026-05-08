@@ -1,10 +1,15 @@
+using Couchbase.EntityFrameworkCore.Storage.Internal;
 using Couchbase.EntityFrameworkCore.ValueGeneration;
+using Microsoft.EntityFrameworkCore.Storage;
 using Xunit;
 
 namespace Couchbase.EntityFrameworkCore.UnitTests.Couchbase.EntityFrameworkCore.ValueGeneration;
 
 public class CouchbaseSequenceValueGeneratorTests
 {
+    private readonly ISqlGenerationHelper _sqlGenerationHelper = new CouchbaseSqlGenerationHelper(
+        new RelationalSqlGenerationHelperDependencies());
+
     [Fact]
     public void Constructor_WithValidArguments_Succeeds()
     {
@@ -79,7 +84,7 @@ public class CouchbaseSequenceValueGeneratorTests
     }
 
     [Fact]
-    public void SequenceQuery_ReturnsCorrectSqlPlusPlus()
+    public void BuildSequenceQuery_ReturnsCorrectSqlPlusPlus()
     {
         // Arrange
         var generator = new CouchbaseSequenceValueGenerator<long>(
@@ -88,9 +93,9 @@ public class CouchbaseSequenceValueGeneratorTests
             "myScope");
 
         // Act
-        var query = generator.SequenceQuery;
+        var query = generator.BuildSequenceQuery(_sqlGenerationHelper);
 
-        // Assert - Each part should be separately escaped
+        // Assert - Each part should be separately escaped with backticks
         Assert.Equal("SELECT NEXT VALUE FOR `myBucket`.`myScope`.`order_seq`", query);
     }
 
@@ -108,7 +113,7 @@ public class CouchbaseSequenceValueGeneratorTests
     }
 
     [Fact]
-    public void SequenceQuery_WithSpecialCharactersInNames_EscapesCorrectly()
+    public void BuildSequenceQuery_WithSpecialCharactersInNames_EscapesCorrectly()
     {
         // Arrange - Names that would need escaping
         var generator = new CouchbaseSequenceValueGenerator<long>(
@@ -117,10 +122,28 @@ public class CouchbaseSequenceValueGeneratorTests
             "my-scope");
 
         // Act
-        var query = generator.SequenceQuery;
+        var query = generator.BuildSequenceQuery(_sqlGenerationHelper);
 
         // Assert - Backticks protect special characters
         Assert.Equal("SELECT NEXT VALUE FOR `my-bucket`.`my-scope`.`order-seq`", query);
+    }
+
+    [Fact]
+    public void BuildSequenceQuery_UsesSqlGenerationHelper()
+    {
+        // Arrange
+        var generator = new CouchbaseSequenceValueGenerator<long>(
+            "test_seq",
+            "bucket",
+            "scope");
+
+        // Act
+        var query = generator.BuildSequenceQuery(_sqlGenerationHelper);
+
+        // Assert - Verify the query uses the helper's delimiter format (backticks for Couchbase)
+        Assert.StartsWith("SELECT NEXT VALUE FOR `", query);
+        Assert.Contains("`.`", query); // Helper delimits each part
+        Assert.EndsWith("`", query);
     }
 
     #region Type Support Tests
