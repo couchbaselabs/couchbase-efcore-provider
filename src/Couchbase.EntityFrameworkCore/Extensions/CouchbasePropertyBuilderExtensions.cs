@@ -375,6 +375,8 @@ public static class CouchbasePropertyBuilderExtensions
         return propertyBuilder;
     }
 
+    private static readonly HashSet<string> ValidGuidFormats = new() { "D", "N", "B", "P" };
+
     /// <summary>
     /// Configures the property to have its value generated as a new GUID string when an entity is added.
     /// </summary>
@@ -403,8 +405,6 @@ public static class CouchbasePropertyBuilderExtensions
     ///     .UseGuidString("N"); // No hyphens
     /// </code>
     /// </example>
-    private static readonly HashSet<string> ValidGuidFormats = new() { "D", "N", "B", "P" };
-
     public static PropertyBuilder<string> UseGuidString(
         this PropertyBuilder<string> propertyBuilder,
         string? format = "D")
