@@ -37,6 +37,11 @@ public class CouchbaseValueGeneratorSelector : RelationalValueGeneratorSelector
     /// </summary>
     public const string SequenceAutoCreateAnnotation = "Couchbase:SequenceAutoCreate";
 
+    /// <summary>
+    /// The annotation key for GUID string format (e.g., "D", "N", "B", "P").
+    /// </summary>
+    public const string GuidStringFormatAnnotation = "Couchbase:GuidStringFormat";
+
     private static readonly MethodInfo CreateSequenceGeneratorMethod =
         typeof(CouchbaseValueGeneratorSelector).GetMethod(
             nameof(CreateSequenceValueGeneratorOfType),
@@ -58,11 +63,18 @@ public class CouchbaseValueGeneratorSelector : RelationalValueGeneratorSelector
     /// </summary>
     public override ValueGenerator? Select(IProperty property, ITypeBase typeBase)
     {
+        // Check for sequence-based generation
         var sequenceName = property.FindAnnotation(SequenceNameAnnotation)?.Value as string;
-
         if (!string.IsNullOrEmpty(sequenceName))
         {
             return CreateSequenceValueGenerator(property, sequenceName);
+        }
+
+        // Check for GUID string generation
+        var guidStringFormat = property.FindAnnotation(GuidStringFormatAnnotation)?.Value as string;
+        if (guidStringFormat != null && property.ClrType == typeof(string))
+        {
+            return new CouchbaseGuidStringValueGenerator(guidStringFormat);
         }
 
         return base.Select(property, typeBase);
@@ -73,11 +85,18 @@ public class CouchbaseValueGeneratorSelector : RelationalValueGeneratorSelector
     /// </summary>
     public override ValueGenerator Create(IProperty property, ITypeBase typeBase)
     {
+        // Check for sequence-based generation
         var sequenceName = property.FindAnnotation(SequenceNameAnnotation)?.Value as string;
-
         if (!string.IsNullOrEmpty(sequenceName))
         {
             return CreateSequenceValueGenerator(property, sequenceName);
+        }
+
+        // Check for GUID string generation
+        var guidStringFormat = property.FindAnnotation(GuidStringFormatAnnotation)?.Value as string;
+        if (guidStringFormat != null && property.ClrType == typeof(string))
+        {
+            return new CouchbaseGuidStringValueGenerator(guidStringFormat);
         }
 
         return base.Create(property, typeBase);
