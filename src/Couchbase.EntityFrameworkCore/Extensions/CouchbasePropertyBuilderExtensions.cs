@@ -119,6 +119,10 @@ public static class CouchbasePropertyBuilderExtensions
     /// When using <see cref="Microsoft.EntityFrameworkCore.DbContext.Database"/>.<see cref="Microsoft.EntityFrameworkCore.Infrastructure.DatabaseFacade.EnsureCreatedAsync"/>,
     /// the sequence will be automatically created with the specified options.
     /// </para>
+    /// <para>
+    /// This overload clears any previously configured scope override or auto-create settings,
+    /// reverting to default behavior (auto-create enabled).
+    /// </para>
     /// </remarks>
     /// <param name="propertyBuilder">The property builder.</param>
     /// <param name="sequenceName">The name of the sequence.</param>
@@ -147,6 +151,7 @@ public static class CouchbasePropertyBuilderExtensions
             CouchbaseValueGeneratorSelector.SequenceNameAnnotation,
             sequenceName);
 
+        // Clear any previous scope override to revert to default
         propertyBuilder.HasAnnotation(
             CouchbaseValueGeneratorSelector.SequenceScopeAnnotation,
             null);
@@ -154,6 +159,11 @@ public static class CouchbasePropertyBuilderExtensions
         propertyBuilder.HasAnnotation(
             CouchbaseValueGeneratorSelector.SequenceOptionsAnnotation,
             options);
+
+        // Clear any previous auto-create override to revert to default (true)
+        propertyBuilder.HasAnnotation(
+            CouchbaseValueGeneratorSelector.SequenceAutoCreateAnnotation,
+            null);
 
         propertyBuilder.ValueGeneratedOnAdd();
 
@@ -164,6 +174,15 @@ public static class CouchbasePropertyBuilderExtensions
     /// Configures the property to have its value generated using a Couchbase sequence
     /// in the specified scope with custom options.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The scope specified here overrides the DbContext-level scope for this sequence.
+    /// </para>
+    /// <para>
+    /// This overload clears any previously configured auto-create settings,
+    /// reverting to default behavior (auto-create enabled).
+    /// </para>
+    /// </remarks>
     /// <param name="propertyBuilder">The property builder.</param>
     /// <param name="scope">The scope containing the sequence.</param>
     /// <param name="sequenceName">The name of the sequence.</param>
@@ -190,6 +209,11 @@ public static class CouchbasePropertyBuilderExtensions
         propertyBuilder.HasAnnotation(
             CouchbaseValueGeneratorSelector.SequenceOptionsAnnotation,
             options);
+
+        // Clear any previous auto-create override to revert to default (true)
+        propertyBuilder.HasAnnotation(
+            CouchbaseValueGeneratorSelector.SequenceAutoCreateAnnotation,
+            null);
 
         propertyBuilder.ValueGeneratedOnAdd();
 
