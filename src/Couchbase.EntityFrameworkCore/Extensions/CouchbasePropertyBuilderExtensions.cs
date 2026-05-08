@@ -403,18 +403,37 @@ public static class CouchbasePropertyBuilderExtensions
     ///     .UseGuidString("N"); // No hyphens
     /// </code>
     /// </example>
+    private static readonly HashSet<string> ValidGuidFormats = new() { "D", "N", "B", "P" };
+
     public static PropertyBuilder<string> UseGuidString(
         this PropertyBuilder<string> propertyBuilder,
-        string format = "D")
+        string? format = "D")
     {
-        // Clear any sequence annotations
+        // Normalize and validate the format
+        var normalizedFormat = format ?? "D";
+
+        if (string.IsNullOrEmpty(normalizedFormat))
+        {
+            throw new ArgumentException(
+                "GUID format cannot be empty. Valid formats are: D, N, B, P.",
+                nameof(format));
+        }
+
+        if (!ValidGuidFormats.Contains(normalizedFormat))
+        {
+            throw new ArgumentException(
+                $"Invalid GUID format '{normalizedFormat}'. Valid formats are: D (hyphenated), N (no hyphens), B (braces), P (parentheses).",
+                nameof(format));
+        }
+
+        // Clear any previous value generation annotations
         propertyBuilder.HasAnnotation(CouchbaseValueGeneratorSelector.SequenceNameAnnotation, null);
         propertyBuilder.HasAnnotation(CouchbaseValueGeneratorSelector.SequenceScopeAnnotation, null);
         propertyBuilder.HasAnnotation(CouchbaseValueGeneratorSelector.SequenceOptionsAnnotation, null);
         propertyBuilder.HasAnnotation(CouchbaseValueGeneratorSelector.SequenceAutoCreateAnnotation, null);
 
-        // Store the format for the value generator
-        propertyBuilder.HasAnnotation(CouchbaseValueGeneratorSelector.GuidStringFormatAnnotation, format);
+        // Store the validated format for the value generator
+        propertyBuilder.HasAnnotation(CouchbaseValueGeneratorSelector.GuidStringFormatAnnotation, normalizedFormat);
 
         propertyBuilder.ValueGeneratedOnAdd();
 

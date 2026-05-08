@@ -617,6 +617,82 @@ public class CouchbasePropertyBuilderExtensionsTests
         Assert.Null(property!.FindAnnotation(CouchbaseValueGeneratorSelector.GuidStringFormatAnnotation)?.Value);
     }
 
+    [Fact]
+    public void UseGuidString_NullFormat_DefaultsToD()
+    {
+        // Arrange
+        var modelBuilder = new ModelBuilder();
+        var entityBuilder = modelBuilder.Entity<StringIdEntity>();
+
+        // Act
+        entityBuilder.Property(e => e.Id).UseGuidString(null);
+
+        // Assert
+        var model = modelBuilder.Model;
+        var entityType = model.FindEntityType(typeof(StringIdEntity));
+        var property = entityType!.FindProperty(nameof(StringIdEntity.Id));
+
+        var format = property!.FindAnnotation(CouchbaseValueGeneratorSelector.GuidStringFormatAnnotation)?.Value;
+        Assert.Equal("D", format);
+    }
+
+    [Fact]
+    public void UseGuidString_EmptyFormat_ThrowsArgumentException()
+    {
+        // Arrange
+        var modelBuilder = new ModelBuilder();
+        var entityBuilder = modelBuilder.Entity<StringIdEntity>();
+
+        // Act & Assert
+        var exception = Assert.Throws<ArgumentException>(() =>
+            entityBuilder.Property(e => e.Id).UseGuidString(""));
+
+        Assert.Contains("cannot be empty", exception.Message);
+    }
+
+    [Theory]
+    [InlineData("X")]
+    [InlineData("d")]
+    [InlineData("n")]
+    [InlineData("invalid")]
+    [InlineData("DD")]
+    public void UseGuidString_InvalidFormat_ThrowsArgumentException(string format)
+    {
+        // Arrange
+        var modelBuilder = new ModelBuilder();
+        var entityBuilder = modelBuilder.Entity<StringIdEntity>();
+
+        // Act & Assert
+        var exception = Assert.Throws<ArgumentException>(() =>
+            entityBuilder.Property(e => e.Id).UseGuidString(format));
+
+        Assert.Contains("Invalid GUID format", exception.Message);
+        Assert.Contains(format, exception.Message);
+    }
+
+    [Theory]
+    [InlineData("D")]
+    [InlineData("N")]
+    [InlineData("B")]
+    [InlineData("P")]
+    public void UseGuidString_ValidFormats_Succeeds(string format)
+    {
+        // Arrange
+        var modelBuilder = new ModelBuilder();
+        var entityBuilder = modelBuilder.Entity<StringIdEntity>();
+
+        // Act
+        entityBuilder.Property(e => e.Id).UseGuidString(format);
+
+        // Assert
+        var model = modelBuilder.Model;
+        var entityType = model.FindEntityType(typeof(StringIdEntity));
+        var property = entityType!.FindProperty(nameof(StringIdEntity.Id));
+
+        var storedFormat = property!.FindAnnotation(CouchbaseValueGeneratorSelector.GuidStringFormatAnnotation)?.Value;
+        Assert.Equal(format, storedFormat);
+    }
+
     #endregion
 
     private class TestEntity
