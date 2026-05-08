@@ -326,11 +326,12 @@ public static class CouchbasePropertyBuilderExtensions
     /// </example>
     public static PropertyBuilder<Guid> UseGuid(this PropertyBuilder<Guid> propertyBuilder)
     {
-        // Clear any sequence annotations that might have been set previously
+        // Clear any previous value generation annotations
         propertyBuilder.HasAnnotation(CouchbaseValueGeneratorSelector.SequenceNameAnnotation, null);
         propertyBuilder.HasAnnotation(CouchbaseValueGeneratorSelector.SequenceScopeAnnotation, null);
         propertyBuilder.HasAnnotation(CouchbaseValueGeneratorSelector.SequenceOptionsAnnotation, null);
         propertyBuilder.HasAnnotation(CouchbaseValueGeneratorSelector.SequenceAutoCreateAnnotation, null);
+        propertyBuilder.HasAnnotation(CouchbaseValueGeneratorSelector.GuidStringFormatAnnotation, null);
 
         // EF Core will automatically use GuidValueGenerator for Guid properties marked as ValueGeneratedOnAdd
         propertyBuilder.ValueGeneratedOnAdd();
@@ -343,16 +344,30 @@ public static class CouchbasePropertyBuilderExtensions
     /// </summary>
     /// <remarks>
     /// This uses EF Core's built-in client-side GUID generation.
+    /// The property must be of type <see cref="Guid"/>.
     /// </remarks>
     /// <param name="propertyBuilder">The property builder.</param>
     /// <returns>The same property builder for method chaining.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when the property type is not <see cref="Guid"/>.
+    /// </exception>
     public static PropertyBuilder UseGuid(this PropertyBuilder propertyBuilder)
     {
-        // Clear any sequence annotations that might have been set previously
+        var clrType = propertyBuilder.Metadata.ClrType;
+        if (clrType != typeof(Guid))
+        {
+            throw new InvalidOperationException(
+                $"UseGuid() can only be used on properties of type Guid, but property " +
+                $"'{propertyBuilder.Metadata.DeclaringType.ClrType.Name}.{propertyBuilder.Metadata.Name}' " +
+                $"is of type '{clrType.Name}'. For string properties, use UseGuidString() instead.");
+        }
+
+        // Clear any previous value generation annotations
         propertyBuilder.HasAnnotation(CouchbaseValueGeneratorSelector.SequenceNameAnnotation, null);
         propertyBuilder.HasAnnotation(CouchbaseValueGeneratorSelector.SequenceScopeAnnotation, null);
         propertyBuilder.HasAnnotation(CouchbaseValueGeneratorSelector.SequenceOptionsAnnotation, null);
         propertyBuilder.HasAnnotation(CouchbaseValueGeneratorSelector.SequenceAutoCreateAnnotation, null);
+        propertyBuilder.HasAnnotation(CouchbaseValueGeneratorSelector.GuidStringFormatAnnotation, null);
 
         // EF Core will automatically use GuidValueGenerator for Guid properties marked as ValueGeneratedOnAdd
         propertyBuilder.ValueGeneratedOnAdd();
