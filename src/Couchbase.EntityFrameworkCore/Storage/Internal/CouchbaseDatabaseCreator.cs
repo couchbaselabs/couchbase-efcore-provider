@@ -451,7 +451,7 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
         await InitializeAsync(cancellationToken);
 
         // Only attempt to drop sequences if the bucket exists
-        // GetBucketAsync retries indefinitely, so we check existence first
+        // GetBucketAsync retries up to 10 times, so we check existence first to fail fast
         if (await ExistsAsync(cancellationToken).ConfigureAwait(false))
         {
             try
