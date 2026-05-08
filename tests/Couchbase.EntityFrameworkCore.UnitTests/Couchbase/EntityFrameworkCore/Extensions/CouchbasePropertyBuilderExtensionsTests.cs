@@ -564,6 +564,59 @@ public class CouchbasePropertyBuilderExtensionsTests
         Assert.Null(property!.FindAnnotation(CouchbaseValueGeneratorSelector.SequenceNameAnnotation)?.Value);
     }
 
+    [Fact]
+    public void UseGuid_NonGeneric_OnNonGuidProperty_ThrowsInvalidOperationException()
+    {
+        // Arrange
+        var modelBuilder = new ModelBuilder();
+        var entityBuilder = modelBuilder.Entity<StringIdEntity>();
+
+        // Act & Assert - Using non-generic Property() with string type should throw
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            entityBuilder.Property(nameof(StringIdEntity.Id)).UseGuid());
+
+        Assert.Contains("UseGuid()", exception.Message);
+        Assert.Contains("Guid", exception.Message);
+        Assert.Contains("UseGuidString()", exception.Message);
+    }
+
+    [Fact]
+    public void UseGuid_NonGeneric_OnIntProperty_ThrowsInvalidOperationException()
+    {
+        // Arrange
+        var modelBuilder = new ModelBuilder();
+        var entityBuilder = modelBuilder.Entity<TestEntity>();
+
+        // Act & Assert - Using non-generic Property() with long type should throw
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            entityBuilder.Property(nameof(TestEntity.Id)).UseGuid());
+
+        Assert.Contains("UseGuid()", exception.Message);
+        Assert.Contains("Guid", exception.Message);
+    }
+
+    [Fact]
+    public void UseGuid_ClearsGuidStringFormatAnnotation()
+    {
+        // Arrange
+        var modelBuilder = new ModelBuilder();
+        var entityBuilder = modelBuilder.Entity<GuidEntity>();
+
+        // First set a GUID string format, then switch to plain GUID
+        entityBuilder.Property(e => e.Id)
+            .HasAnnotation(CouchbaseValueGeneratorSelector.GuidStringFormatAnnotation, "N");
+
+        // Act
+        entityBuilder.Property(e => e.Id).UseGuid();
+
+        // Assert
+        var model = modelBuilder.Model;
+        var entityType = model.FindEntityType(typeof(GuidEntity));
+        var property = entityType!.FindProperty(nameof(GuidEntity.Id));
+
+        Assert.Null(property!.FindAnnotation(CouchbaseValueGeneratorSelector.GuidStringFormatAnnotation)?.Value);
+    }
+
     #endregion
 
     private class TestEntity
