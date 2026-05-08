@@ -1,9 +1,9 @@
 # Couchbase EF Core Primary Key Value Generation Specification
 
-**Status:** Complete (Phase 1-3)  
+**Status:** Complete (Phase 1-4)  
 **Created:** 2026-05-05  
 **Updated:** 2026-05-07  
-**Phases:** 1-3 (Complete), 4 (Deferred)
+**Phases:** 1-4 (Complete)
 
 ---
 
@@ -217,31 +217,67 @@ optionsBuilder.UseCouchbase(clusterOptions, opts =>
 
 ---
 
-## Phase 4: Client-Side GUID Support 📋 DEFERRED
+## Phase 4: Client-Side GUID Support ✅ COMPLETE
 
-### 4.1 Built-in GUID Generator
+### 4.1 `UseGuid()` Extension Method
 
-- Use EF Core's existing `GuidValueGenerator`
-- Add `UseGuidKeys()` convenience method
+**Location:** `src/Couchbase.EntityFrameworkCore/Extensions/CouchbasePropertyBuilderExtensions.cs`
 
-### 4.2 ULID Support (Optional)
+```csharp
+// For Guid properties - uses EF Core's built-in GuidValueGenerator
+modelBuilder.Entity<Order>()
+    .Property(e => e.Id)
+    .UseGuid();
+```
 
-- Add `UseUlidKeys()` for time-sortable unique IDs
-- Requires `Ulid` NuGet package
+- Uses EF Core's built-in `GuidValueGenerator` for `Guid` properties
+- Client-side generation - GUID available immediately after `Add()`
+- Clears any previously set sequence annotations
+
+### 4.2 `UseGuidString()` Extension Method
+
+```csharp
+// For string properties that should contain GUIDs
+modelBuilder.Entity<Order>()
+    .Property(e => e.Id)
+    .UseGuidString("N");  // No hyphens
+```
+
+**Supported formats:**
+- `"D"` (default): `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx` (36 chars)
+- `"N"`: `xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx` (32 chars, no hyphens)
+- `"B"`: `{xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}` (38 chars, braces)
+- `"P"`: `(xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)` (38 chars, parentheses)
+
+### 4.3 `CouchbaseGuidStringValueGenerator`
+
+**Location:** `src/Couchbase.EntityFrameworkCore/ValueGeneration/CouchbaseGuidStringValueGenerator.cs`
+
+- Custom value generator for string properties
+- Generates GUIDs and formats them according to the specified format
+- Returns permanent values (`GeneratesTemporaryValues = false`)
+
+### 4.4 ULID Support (Deferred)
+
+ULID support was not implemented as it requires an external package (`Ulid`). Users who need time-sortable unique IDs can:
+1. Add the `Ulid` package themselves
+2. Create a custom `ValueGenerator<string>` that generates ULIDs
+3. Use `HasValueGenerator<CustomUlidGenerator>()` in their model configuration
 
 ---
 
 ## Files Created/Modified
 
-### Phase 1-3 (Complete)
+### Phase 1-4 (Complete)
 
 | File | Action | Description |
 |------|--------|-------------|
 | `ValueGeneration/CouchbaseSequenceValueGenerator.cs` | Created | Generic value generator using `BuildSequenceQuery(ISqlGenerationHelper)` |
+| `ValueGeneration/CouchbaseGuidStringValueGenerator.cs` | Created | GUID string generator with format support (Phase 4) |
 | `ValueGeneration/CouchbaseValueGeneratorSelector.cs` | Created | Selects generators, defines annotation keys |
 | `ValueGeneration/CouchbaseSequenceOptions.cs` | Created | Sequence options with public `ToSqlOptionsClause()` |
 | `Metadata/CouchbaseSequenceAttribute.cs` | Created | Data annotation with `StartWith`, `IncrementBy`, `Cycle`, `AutoCreate` |
-| `Extensions/CouchbasePropertyBuilderExtensions.cs` | Created | `UseSequence()` fluent API (all overloads clear auto-create annotation) |
+| `Extensions/CouchbasePropertyBuilderExtensions.cs` | Created | `UseSequence()`, `UseGuid()`, `UseGuidString()` fluent APIs |
 | `Metadata/Conventions/CouchbaseSequenceConvention.cs` | Created | Processes attributes, stores options/auto-create annotations |
 | `Extensions/CouchbaseServiceCollectionExtensions.cs` | Modified | Registers selector after `TryAddCoreServices()` |
 | `Storage/Internal/CouchbaseSaveChangesInterceptor.cs` | Modified | Generates sequence values using `IsTemporary` check |
@@ -250,11 +286,7 @@ optionsBuilder.UseCouchbase(clusterOptions, opts =>
 | `Infrastructure/CouchbaseDbContextOptionsBuilder.cs` | Modified | Added `AutoCreateScopes` property |
 | `Infrastructure/ICouchbaseDbContextOptionsBuilder.cs` | Modified | Added `AutoCreateScopes` to interface |
 
-### Phase 4 (Deferred)
 
-| File | Action |
-|------|--------|
-| `Extensions/CouchbasePropertyBuilderExtensions.cs` | Extend with GUID/ULID support |
 
 ---
 
@@ -290,9 +322,14 @@ Key integration tests:
 
 `CouchbaseDatabaseCreatorTests.EnsureCreatedAsync_ChecksForCorrectScopeNotBucket` specifically tests the scenario where bucket name matches a scope name but the configured scope doesn't exist. This would have caught the original bug where `CreateScopeAsync()` was checking `Bucket` instead of `Scope`.
 
-### Integration Tests (Phase 4, Deferred)
+### Unit Tests (Phase 4) ✅
 
-- GUID/ULID key generation
+| Test File | Tests | Description |
+|-----------|-------|-------------|
+| `CouchbaseGuidStringValueGeneratorTests.cs` | 11 | Format validation, uniqueness, GUID parsing |
+| `CouchbasePropertyBuilderExtensionsTests.cs` | +7 | UseGuid, UseGuidString extension methods |
+
+**Total Unit Tests:** 472
 
 ---
 
@@ -328,7 +365,7 @@ Key integration tests:
 | Phase 1: Core Infrastructure | 2-4 hours | ~3 hours |
 | Phase 2: Fluent API & Annotations | 1-2 hours | ~1 hour |
 | Phase 3: Sequence Lifecycle | 1-2 hours | ~2 hours |
-| Phase 4: Client-Side GUID | 30 min | Deferred |
+| Phase 4: Client-Side GUID | 30 min | ~30 min |
 | Testing & Bug Fixes | 2-3 hours | ~3 hours |
 
-**Phase 1-3 Total: ~9 hours**
+**Phase 1-4 Total: ~9.5 hours**

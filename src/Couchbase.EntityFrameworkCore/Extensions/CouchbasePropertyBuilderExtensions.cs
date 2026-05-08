@@ -1,4 +1,5 @@
 using Couchbase.EntityFrameworkCore.ValueGeneration;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace Couchbase.EntityFrameworkCore.Extensions;
@@ -297,4 +298,147 @@ public static class CouchbasePropertyBuilderExtensions
 
         return propertyBuilder;
     }
+
+    #region GUID Value Generation
+
+    /// <summary>
+    /// Configures the property to have its value generated as a new GUID when an entity is added.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// This uses EF Core's built-in client-side GUID generation. The GUID is generated
+    /// before the entity is saved to the database, making it available immediately after
+    /// calling <c>Add</c> or <c>AddAsync</c>.
+    /// </para>
+    /// <para>
+    /// GUIDs are suitable for distributed systems where coordination between nodes for
+    /// sequential ID generation is impractical.
+    /// </para>
+    /// </remarks>
+    /// <param name="propertyBuilder">The property builder.</param>
+    /// <returns>The same property builder for method chaining.</returns>
+    /// <example>
+    /// <code>
+    /// modelBuilder.Entity&lt;Order&gt;()
+    ///     .Property(e => e.Id)
+    ///     .UseGuid();
+    /// </code>
+    /// </example>
+    public static PropertyBuilder<Guid> UseGuid(this PropertyBuilder<Guid> propertyBuilder)
+    {
+        // Clear any previous value generation annotations
+        propertyBuilder.HasAnnotation(CouchbaseValueGeneratorSelector.SequenceNameAnnotation, null);
+        propertyBuilder.HasAnnotation(CouchbaseValueGeneratorSelector.SequenceScopeAnnotation, null);
+        propertyBuilder.HasAnnotation(CouchbaseValueGeneratorSelector.SequenceOptionsAnnotation, null);
+        propertyBuilder.HasAnnotation(CouchbaseValueGeneratorSelector.SequenceAutoCreateAnnotation, null);
+        propertyBuilder.HasAnnotation(CouchbaseValueGeneratorSelector.GuidStringFormatAnnotation, null);
+
+        // EF Core will automatically use GuidValueGenerator for Guid properties marked as ValueGeneratedOnAdd
+        propertyBuilder.ValueGeneratedOnAdd();
+
+        return propertyBuilder;
+    }
+
+    /// <summary>
+    /// Configures the property to have its value generated as a new GUID when an entity is added.
+    /// </summary>
+    /// <remarks>
+    /// This uses EF Core's built-in client-side GUID generation.
+    /// The property must be of type <see cref="Guid"/>.
+    /// </remarks>
+    /// <param name="propertyBuilder">The property builder.</param>
+    /// <returns>The same property builder for method chaining.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when the property type is not <see cref="Guid"/>.
+    /// </exception>
+    public static PropertyBuilder UseGuid(this PropertyBuilder propertyBuilder)
+    {
+        var clrType = propertyBuilder.Metadata.ClrType;
+        if (clrType != typeof(Guid))
+        {
+            throw new InvalidOperationException(
+                $"UseGuid() can only be used on properties of type Guid, but property " +
+                $"'{propertyBuilder.Metadata.DeclaringType.ClrType.Name}.{propertyBuilder.Metadata.Name}' " +
+                $"is of type '{clrType.Name}'. For string properties, use UseGuidString() instead.");
+        }
+
+        // Clear any previous value generation annotations
+        propertyBuilder.HasAnnotation(CouchbaseValueGeneratorSelector.SequenceNameAnnotation, null);
+        propertyBuilder.HasAnnotation(CouchbaseValueGeneratorSelector.SequenceScopeAnnotation, null);
+        propertyBuilder.HasAnnotation(CouchbaseValueGeneratorSelector.SequenceOptionsAnnotation, null);
+        propertyBuilder.HasAnnotation(CouchbaseValueGeneratorSelector.SequenceAutoCreateAnnotation, null);
+        propertyBuilder.HasAnnotation(CouchbaseValueGeneratorSelector.GuidStringFormatAnnotation, null);
+
+        // EF Core will automatically use GuidValueGenerator for Guid properties marked as ValueGeneratedOnAdd
+        propertyBuilder.ValueGeneratedOnAdd();
+
+        return propertyBuilder;
+    }
+
+    private static readonly HashSet<string> ValidGuidFormats = new() { "D", "N", "B", "P" };
+
+    /// <summary>
+    /// Configures the property to have its value generated as a new GUID string when an entity is added.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// This generates a GUID and converts it to a string format. Useful when the property type
+    /// is <c>string</c> but you want GUID-based unique identifiers.
+    /// </para>
+    /// <para>
+    /// The format parameter controls how the GUID is formatted:
+    /// <list type="bullet">
+    /// <item><c>"D"</c> (default): 32 digits with hyphens (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)</item>
+    /// <item><c>"N"</c>: 32 digits without hyphens</item>
+    /// <item><c>"B"</c>: 32 digits with hyphens, enclosed in braces</item>
+    /// <item><c>"P"</c>: 32 digits with hyphens, enclosed in parentheses</item>
+    /// </list>
+    /// </para>
+    /// </remarks>
+    /// <param name="propertyBuilder">The property builder.</param>
+    /// <param name="format">The GUID string format (default: "D").</param>
+    /// <returns>The same property builder for method chaining.</returns>
+    /// <example>
+    /// <code>
+    /// modelBuilder.Entity&lt;Order&gt;()
+    ///     .Property(e => e.Id)
+    ///     .UseGuidString("N"); // No hyphens
+    /// </code>
+    /// </example>
+    public static PropertyBuilder<string> UseGuidString(
+        this PropertyBuilder<string> propertyBuilder,
+        string? format = "D")
+    {
+        // Normalize and validate the format
+        var normalizedFormat = format ?? "D";
+
+        if (string.IsNullOrEmpty(normalizedFormat))
+        {
+            throw new ArgumentException(
+                "GUID format cannot be empty. Valid formats are: D, N, B, P.",
+                nameof(format));
+        }
+
+        if (!ValidGuidFormats.Contains(normalizedFormat))
+        {
+            throw new ArgumentException(
+                $"Invalid GUID format '{normalizedFormat}'. Valid formats are: D (hyphenated), N (no hyphens), B (braces), P (parentheses).",
+                nameof(format));
+        }
+
+        // Clear any previous value generation annotations
+        propertyBuilder.HasAnnotation(CouchbaseValueGeneratorSelector.SequenceNameAnnotation, null);
+        propertyBuilder.HasAnnotation(CouchbaseValueGeneratorSelector.SequenceScopeAnnotation, null);
+        propertyBuilder.HasAnnotation(CouchbaseValueGeneratorSelector.SequenceOptionsAnnotation, null);
+        propertyBuilder.HasAnnotation(CouchbaseValueGeneratorSelector.SequenceAutoCreateAnnotation, null);
+
+        // Store the validated format for the value generator
+        propertyBuilder.HasAnnotation(CouchbaseValueGeneratorSelector.GuidStringFormatAnnotation, normalizedFormat);
+
+        propertyBuilder.ValueGeneratedOnAdd();
+
+        return propertyBuilder;
+    }
+
+    #endregion
 }
