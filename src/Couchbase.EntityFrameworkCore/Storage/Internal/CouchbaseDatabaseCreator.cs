@@ -54,66 +54,82 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
         _cluster = await clusterProvider.GetClusterAsync();
     }
 
-    private async Task<IBucket> GetBucketAsync(TimeSpan? timeout = null, CancellationToken cancellationToken = default)
+    private async Task<IBucket> GetBucketAsync(CancellationToken cancellationToken = default)
     {
-        IBucket bucket = null;
-        var exists = false;
-        do
+        const int maxRetries = 10;
+        const int delayMs = 500;
+
+        for (var attempt = 1; attempt <= maxRetries; attempt++)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             try
             {
-                bucket = await _cluster.BucketAsync(_couchbaseDbContextOptionsBuilder.Bucket);
-                exists = true;
+                return await _cluster.BucketAsync(_couchbaseDbContextOptionsBuilder.Bucket);
             }
             catch (Exception e)
             {
-                _logger.LogWarning("Couchbase bucket could not be retrieved. {0}", e);
-            }
-        }while (!exists);
+                if (attempt == maxRetries)
+                {
+                    _logger.LogError(e, "Failed to retrieve Couchbase bucket '{BucketName}' after {MaxRetries} attempts",
+                        _couchbaseDbContextOptionsBuilder.Bucket, maxRetries);
+                    throw;
+                }
 
-        Debug.Assert(bucket != null, nameof(bucket) + " != null");
-        return bucket;
+                _logger.LogWarning(e, "Couchbase bucket '{BucketName}' could not be retrieved (attempt {Attempt}/{MaxRetries}). Retrying...",
+                    _couchbaseDbContextOptionsBuilder.Bucket, attempt, maxRetries);
+
+                await Task.Delay(delayMs, cancellationToken);
+            }
+        }
+
+        // Unreachable, but required for compiler
+        throw new UnreachableException();
     }
 
     private async Task<bool> ScopeExistsAsync()
     {
-        var exists = false;
         var manager = (await GetBucketAsync()).Collections;
         try
         {
             var scopes = await manager.GetAllScopesAsync();
-            if (scopes.Contains(new ScopeSpec(_couchbaseDbContextOptionsBuilder.Scope)))
-            {
-                exists = true;
-            }
+            return scopes.Contains(new ScopeSpec(_couchbaseDbContextOptionsBuilder.Scope));
         }
         catch (Exception e)
         {
-            Console.WriteLine(e);
+            _logger.LogWarning(e, "Failed to check if scope '{ScopeName}' exists", _couchbaseDbContextOptionsBuilder.Scope);
+            return false;
         }
-        return exists;
     }
 
     private async Task<bool> CollectionsExistsAsync()
     {
         var manager = (await GetBucketAsync()).Collections;
-        var scopes = await manager.GetAllScopesAsync();
 
         try
         {
+            var scopes = await manager.GetAllScopesAsync();
             var scope = scopes.FirstOrDefault(x => x.Name == _couchbaseDbContextOptionsBuilder.Scope);
+
+            if (scope == null)
+            {
+                _logger.LogDebug("Scope '{ScopeName}' not found when checking for collections", _couchbaseDbContextOptionsBuilder.Scope);
+                return false;
+            }
+
             var entityTypes = _designTimeModel.Model.GetEntityTypes();
             foreach (var entityType in entityTypes)
             {
-                if (scope!.Collections.Contains(new CollectionSpec(scope.Name, entityType.Name.Split('+')[1])))
+                var collectionName = entityType.Name.Split('+')[1];
+                if (scope.Collections.Contains(new CollectionSpec(scope.Name, collectionName)))
                 {
                     return true;
                 }
             }
         }
-        catch (Exception)
+        catch (Exception e)
         {
-            _logger.LogWarning("Couchbase collection could not be retrieved.");
+            _logger.LogWarning(e, "Failed to check if collections exist in scope '{ScopeName}'", _couchbaseDbContextOptionsBuilder.Scope);
         }
 
         return false;
@@ -128,7 +144,7 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
     {
         var manager = (await GetBucketAsync()).Collections;
         var scopes = await manager.GetAllScopesAsync();
-        if(!scopes.Contains(new ScopeSpec(_couchbaseDbContextOptionsBuilder.Bucket)))
+        if(!scopes.Contains(new ScopeSpec(_couchbaseDbContextOptionsBuilder.Scope)))
         {
             try
             {
