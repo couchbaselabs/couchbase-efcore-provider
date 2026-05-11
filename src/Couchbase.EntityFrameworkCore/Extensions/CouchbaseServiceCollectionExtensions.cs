@@ -48,7 +48,6 @@ public static class CouchbaseServiceCollectionExtensions
 
         var builder = new EntityFrameworkRelationalServicesBuilder(serviceCollection)
             .TryAdd<IRelationalTypeMappingSource, CouchbaseTypeMappingSource>()
-            .TryAdd<IDatabase, CouchbaseDatabaseWrapper>()
             .TryAdd<IDatabaseProvider, DatabaseProvider<CouchbaseOptionsExtension>>()
             .TryAdd<LoggingDefinitions, CouchbaseLoggingDefinitions>()
             .TryAdd<IModificationCommandBatchFactory, CouchbaseModificationCommandBatchFactory>()
