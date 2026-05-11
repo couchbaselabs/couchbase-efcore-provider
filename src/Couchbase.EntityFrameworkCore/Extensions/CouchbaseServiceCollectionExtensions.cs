@@ -1,4 +1,3 @@
-using System.Collections.Immutable;
 using Couchbase.EntityFrameworkCore.Diagnostics.Internal;
 using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.EntityFrameworkCore.Infrastructure.Internal;
@@ -81,8 +80,8 @@ public static class CouchbaseServiceCollectionExtensions
         // Removing and re-adding with AddScoped guarantees our implementation is the one resolved.
         foreach (var type in new[] { typeof(IDatabase), typeof(IValueGeneratorSelector) })
         {
-            var existing = serviceCollection.FirstOrDefault(d => d.ServiceType == type);
-            if (existing != null) serviceCollection.Remove(existing);
+            var existing = serviceCollection.Where(d => d.ServiceType == type).ToList();
+            foreach (var descriptor in existing) serviceCollection.Remove(descriptor);
         }
         serviceCollection.AddScoped<IDatabase, CouchbaseDatabaseWrapper>();
         serviceCollection.AddScoped<IValueGeneratorSelector, CouchbaseValueGeneratorSelector>();
