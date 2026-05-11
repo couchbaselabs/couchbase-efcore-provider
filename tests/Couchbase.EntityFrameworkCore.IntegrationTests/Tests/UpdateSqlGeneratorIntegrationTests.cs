@@ -23,12 +23,12 @@ namespace Couchbase.EntityFrameworkCode.IntegrationTests.Tests;
 ///
 ///   2. SQL shape: the generator — as resolved through real DI — produces valid SQL++
 ///      syntax for sequence operations, confirming that the real
-///      <see cref="Storage.Internal.CouchbaseSqlGenerationHelper"/> (not a mock) is
+///      <see cref="CouchbaseSqlGenerationHelper"/> (not a mock) is
 ///      injected and used for identifier quoting.
 ///
-/// Note: <see cref="Storage.Internal.CouchbaseDatabaseWrapper"/> handles SaveChanges via the
+/// Note: <see cref="CouchbaseDatabaseWrapper"/> handles SaveChanges via the
 /// Couchbase document SDK directly (it does not call the SQL generator). Sequence execution
-/// end-to-end is covered by <see cref="SequenceValueGenerationTests"/>.
+/// end-to-end is covered by <c>SequenceValueGenerationTests</c>.
 /// </summary>
 [Collection(CouchbaseTestingCollection.Name)]
 public class UpdateSqlGeneratorIntegrationTests(BloggingFixture fixture, ITestOutputHelper output)
