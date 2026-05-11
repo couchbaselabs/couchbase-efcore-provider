@@ -1,9 +1,6 @@
-using Couchbase.Core.IO.Serializers;
-using Couchbase.Core.IO.Transcoders;
 using Couchbase.EntityFrameworkCore.Extensions;
 using Couchbase.EntityFrameworkCore.Utils;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.ChangeTracking.Internal;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.EntityFrameworkCore.Update;
 using Database = Microsoft.EntityFrameworkCore.Storage.Database;
@@ -65,7 +62,7 @@ public class CouchbaseDatabaseWrapper : Database
                     if (transaction != null)
                     {
                         await _couchbaseClient.EnqueueTransactionalRemove(transaction, primaryKey, keyspace).ConfigureAwait(false);
-                        updateCount++; // Count enqueued operations to match EF Core semantics
+                        updateCount++;
                     }
                     else
                     {
@@ -81,7 +78,7 @@ public class CouchbaseDatabaseWrapper : Database
                     if (transaction != null)
                     {
                         await _couchbaseClient.EnqueueTransactionalUpsert(transaction, primaryKey, keyspace, modifiedDocument).ConfigureAwait(false);
-                        updateCount++; // Count enqueued operations to match EF Core semantics
+                        updateCount++;
                     }
                     else
                     {
@@ -97,7 +94,7 @@ public class CouchbaseDatabaseWrapper : Database
                     if (transaction != null)
                     {
                         await _couchbaseClient.EnqueueTransactionalInsert(transaction, primaryKey, keyspace, newDocument).ConfigureAwait(false);
-                        updateCount++; // Count enqueued operations to match EF Core semantics
+                        updateCount++;
                     }
                     else
                     {
@@ -125,8 +122,6 @@ public class CouchbaseDatabaseWrapper : Database
         return null;
     }
 
-    private readonly ITypeTranscoder _transcoder = new JsonTranscoder(new DefaultSerializer());
-
     private static object HydrateObjectFromEntity(IUpdateEntry updateEntry)
     {
         var entityType = updateEntry.EntityType;
@@ -135,17 +130,10 @@ public class CouchbaseDatabaseWrapper : Database
 
         foreach (var property in entityType.GetProperties())
         {
-            //Shadow properties are properties that aren't defined in your .NET entity
-            //class but are defined for that entity type in the EF Core model. The
-            //value and state of these properties are maintained purely in the Change
-            //Tracker. Shadow properties are useful when there's data in the database
-            //that shouldn't be exposed on the mapped entity types.
-            //https://learn.microsoft.com/en-us/ef/core/modeling/shadow-properties
             if (!property.IsShadowProperty())
             {
                 var propertyInfo = type.GetProperty(property.Name);
-                propertyInfo.SetValue(
-                    obj, updateEntry.GetCurrentValue(property));
+                propertyInfo.SetValue(obj, updateEntry.GetCurrentValue(property));
             }
         }
 

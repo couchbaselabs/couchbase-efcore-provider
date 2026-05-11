@@ -2,12 +2,24 @@ using Microsoft.EntityFrameworkCore.Update;
 
 namespace Couchbase.EntityFrameworkCore.Update.Internal;
 
+/// <summary>
+/// Creates <see cref="SingularModificationCommandBatch"/> instances for Couchbase.
+/// Each batch holds exactly one DML command, matching the Couchbase SQL++ execution model.
+/// </summary>
+/// <remarks>
+/// Mirrors <c>SqliteModificationCommandBatchFactory</c> from EF Core:
+/// one command per batch lets <see cref="AffectedCountModificationCommandBatch"/> read back
+/// RETURNING values and apply them to the entity before moving to the next command.
+/// </remarks>
 public class CouchbaseModificationCommandBatchFactory : IModificationCommandBatchFactory
 {
-    public ModificationCommandBatch Create()
-    {
-        return new CouchbaseModificationCommandBatch();
-    }
+    public CouchbaseModificationCommandBatchFactory(ModificationCommandBatchFactoryDependencies dependencies)
+        => Dependencies = dependencies;
+
+    protected virtual ModificationCommandBatchFactoryDependencies Dependencies { get; }
+
+    public virtual ModificationCommandBatch Create()
+        => new SingularModificationCommandBatch(Dependencies);
 }
 
 /* ************************************************************

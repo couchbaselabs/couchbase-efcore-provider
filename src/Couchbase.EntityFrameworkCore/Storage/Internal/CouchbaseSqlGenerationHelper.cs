@@ -9,15 +9,40 @@ public class CouchbaseSqlGenerationHelper : RelationalSqlGenerationHelper
     {
     }
 
+    /// <summary>
+    /// Wraps each dot-separated part of <paramref name="identifier"/> in backticks.
+    /// Couchbase uses three-part keyspace notation (bucket.scope.collection) stored as a
+    /// single dotted string in EF Core's table-name slot, so each segment must be quoted
+    /// individually: `default.blogs.personphoto` → `default`.`blogs`.`personphoto`.
+    /// </summary>
     public override void DelimitIdentifier(StringBuilder builder, string identifier)
     {
-        builder.Append('`');
-        EscapeIdentifier(builder, identifier);
-        builder.Append('`');
+        var parts = identifier.AsSpan();
+        var first = true;
+        while (true)
+        {
+            var dot = parts.IndexOf('.');
+            var segment = dot < 0 ? parts : parts[..dot];
+            if (!first) builder.Append('.');
+            first = false;
+            builder.Append('`');
+            EscapeIdentifier(builder, segment.ToString());
+            builder.Append('`');
+            if (dot < 0) break;
+            parts = parts[(dot + 1)..];
+        }
     }
 
     public override string DelimitIdentifier(string identifier)
-        => $"`{EscapeIdentifier(identifier)}`";
+    {
+        if (!identifier.Contains('.'))
+        {
+            return $"`{EscapeIdentifier(identifier)}`";
+        }
+        var sb = new StringBuilder();
+        DelimitIdentifier(sb, identifier);
+        return sb.ToString();
+    }
 
     /// <summary>
     /// Escapes backticks in identifiers by doubling them.

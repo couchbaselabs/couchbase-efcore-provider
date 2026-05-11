@@ -180,4 +180,79 @@ public class CouchbaseSqlGenerationHelperTests
         // Assert
         Assert.Equal("$param", builder.ToString());
     }
+
+    // -----------------------------------------------------------------------
+    // Dotted (multi-part) identifier splitting — Couchbase keyspace names
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public void DelimitIdentifier_TwoPart_SplitsEachSegment()
+    {
+        var result = _helper.DelimitIdentifier("bucket.scope");
+
+        Assert.Equal("`bucket`.`scope`", result);
+    }
+
+    [Fact]
+    public void DelimitIdentifier_ThreePart_SplitsAllThreeSegments()
+    {
+        var result = _helper.DelimitIdentifier("default.blogs.personphoto");
+
+        Assert.Equal("`default`.`blogs`.`personphoto`", result);
+    }
+
+    [Fact]
+    public void DelimitIdentifier_ThreePart_WithCamelCaseSegments()
+    {
+        var result = _helper.DelimitIdentifier("myBucket.myScope.myCollection");
+
+        Assert.Equal("`myBucket`.`myScope`.`myCollection`", result);
+    }
+
+    [Fact]
+    public void DelimitIdentifier_DottedWithBacktickInSegment_EscapesWithinSegment()
+    {
+        var result = _helper.DelimitIdentifier("bucket.sc`ope.collection");
+
+        Assert.Equal("`bucket`.`sc``ope`.`collection`", result);
+    }
+
+    [Fact]
+    public void DelimitIdentifier_StringBuilder_TwoPart_SplitsEachSegment()
+    {
+        var builder = new StringBuilder();
+
+        _helper.DelimitIdentifier(builder, "bucket.scope");
+
+        Assert.Equal("`bucket`.`scope`", builder.ToString());
+    }
+
+    [Fact]
+    public void DelimitIdentifier_StringBuilder_ThreePart_SplitsAllThreeSegments()
+    {
+        var builder = new StringBuilder();
+
+        _helper.DelimitIdentifier(builder, "default.blogs.personphoto");
+
+        Assert.Equal("`default`.`blogs`.`personphoto`", builder.ToString());
+    }
+
+    [Fact]
+    public void DelimitIdentifier_StringBuilder_DottedWithBacktick_EscapesWithinSegment()
+    {
+        var builder = new StringBuilder();
+
+        _helper.DelimitIdentifier(builder, "bucket.sc`ope");
+
+        Assert.Equal("`bucket`.`sc``ope`", builder.ToString());
+    }
+
+    [Fact]
+    public void DelimitIdentifier_WithSchema_TwoPart_SplitsSchema()
+    {
+        // Two-argument overload: schema + name both dotted
+        var result = _helper.DelimitIdentifier("collection", "bucket.scope");
+
+        Assert.Equal("`bucket`.`scope`.`collection`", result);
+    }
 }
