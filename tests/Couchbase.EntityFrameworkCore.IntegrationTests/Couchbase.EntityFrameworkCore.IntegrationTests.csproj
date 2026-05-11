@@ -12,14 +12,14 @@
   <ItemGroup>
     <PackageReference Include="Aspire.Hosting.Testing" />
     <PackageReference Include="Couchbase.Aspire.Client" />
-    <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="coverlet.collector" PrivateAssets="all" />
     <PackageReference Include="EFCore.NamingConventions" />
     <PackageReference Include="JetBrains.Annotations" />
     <PackageReference Include="Microsoft.EntityFrameworkCore" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="Serilog.Extensions.Logging.File" />
     <PackageReference Include="xunit" />
-    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="xunit.runner.visualstudio" PrivateAssets="all" />
   </ItemGroup>
 
   <ItemGroup>
