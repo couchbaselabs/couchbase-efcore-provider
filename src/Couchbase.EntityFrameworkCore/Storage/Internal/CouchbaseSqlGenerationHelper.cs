@@ -17,20 +17,46 @@ public class CouchbaseSqlGenerationHelper : RelationalSqlGenerationHelper
     /// </summary>
     public override void DelimitIdentifier(StringBuilder builder, string identifier)
     {
-        var parts = identifier.AsSpan();
+        var span = identifier.AsSpan();
+        var dot = span.IndexOf('.');
+        if (dot < 0)
+        {
+            // Fast path: single segment — no allocation needed.
+            builder.Append('`');
+            EscapeIdentifier(builder, identifier);
+            builder.Append('`');
+            return;
+        }
+
         var first = true;
         while (true)
         {
-            var dot = parts.IndexOf('.');
-            var segment = dot < 0 ? parts : parts[..dot];
+            dot = span.IndexOf('.');
+            var segment = dot < 0 ? span : span[..dot];
             if (!first) builder.Append('.');
             first = false;
             builder.Append('`');
-            EscapeIdentifier(builder, segment.ToString());
+            EscapeIdentifierSpan(builder, segment);
             builder.Append('`');
             if (dot < 0) break;
-            parts = parts[(dot + 1)..];
+            span = span[(dot + 1)..];
         }
+    }
+
+    private static void EscapeIdentifierSpan(StringBuilder builder, ReadOnlySpan<char> identifier)
+    {
+        var start = 0;
+        for (var i = 0; i < identifier.Length; i++)
+        {
+            if (identifier[i] == '`')
+            {
+                builder.Append(identifier[start..i]);
+                builder.Append("``");
+                start = i + 1;
+            }
+        }
+        if (start < identifier.Length)
+            builder.Append(identifier[start..]);
     }
 
     public override string DelimitIdentifier(string identifier)
