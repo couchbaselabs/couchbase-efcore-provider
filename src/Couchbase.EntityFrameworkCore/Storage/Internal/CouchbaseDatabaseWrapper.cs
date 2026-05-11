@@ -125,15 +125,20 @@ public class CouchbaseDatabaseWrapper : Database
     private static object HydrateObjectFromEntity(IUpdateEntry updateEntry)
     {
         var entityType = updateEntry.EntityType;
-        var type = entityType.ClrType;
-        var obj = Activator.CreateInstance(type);
+        var obj = Activator.CreateInstance(entityType.ClrType)!;
 
         foreach (var property in entityType.GetProperties())
         {
-            if (!property.IsShadowProperty())
+            if (property.IsShadowProperty()) continue;
+
+            var value = updateEntry.GetCurrentValue(property);
+            if (property.PropertyInfo?.GetSetMethod(nonPublic: true) != null)
             {
-                var propertyInfo = type.GetProperty(property.Name);
-                propertyInfo.SetValue(obj, updateEntry.GetCurrentValue(property));
+                property.PropertyInfo.SetValue(obj, value);
+            }
+            else if (property.FieldInfo != null)
+            {
+                property.FieldInfo.SetValue(obj, value);
             }
         }
 
