@@ -871,7 +871,7 @@ public class CouchbaseDbDataReader<T> : DbDataReader
             long l => Convert.ToInt32(l),
             JsonElement je when je.ValueKind == JsonValueKind.Number => je.GetInt32(),
             JsonElement je => throw new InvalidCastException($"Cannot convert JsonElement of kind {je.ValueKind} to Int32."),
-            _ => throw new InvalidCastException($"Cannot convert {value?.GetType().Name} to Int32.")
+            _ => Convert.ToInt32(value)
         };
     }
 
