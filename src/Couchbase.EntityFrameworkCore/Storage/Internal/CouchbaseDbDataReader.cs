@@ -35,6 +35,9 @@ public class CouchbaseDbDataReader<T> : DbDataReader
     private readonly DbConnection? _connection;
     private readonly CommandBehavior _behavior;
     private readonly CancellationToken _initialCancellationToken;
+    // Ordered SELECT projection aliases supplied by the caller (one per shaper ordinal).
+    // Used in GetValue to translate shaper ordinal → JSON property via _fieldOrdinals.
+    private readonly string?[]? _columnNames;
     private IAsyncEnumerator<T>? _enumerator;
     private CancellationToken _cancellationToken;
     private T? _currentRow;
@@ -55,6 +58,17 @@ public class CouchbaseDbDataReader<T> : DbDataReader
     public CouchbaseDbDataReader(IQueryResult<T> queryResult)
         : this(queryResult, null, CommandBehavior.Default, CancellationToken.None)
     {
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="CouchbaseDbDataReader{T}"/> class with a column-name mapping.
+    /// The <paramref name="columnNames"/> array should contain the SELECT-clause alias for each EF Core
+    /// <c>readerColumn</c> in order; <c>null</c> elements fall back to positional mapping.
+    /// </summary>
+    public CouchbaseDbDataReader(IQueryResult<T> queryResult, string?[]? columnNames)
+        : this(queryResult, null, CommandBehavior.Default, CancellationToken.None)
+    {
+        _columnNames = columnNames;
     }
 
     /// <summary>
@@ -364,6 +378,13 @@ public class CouchbaseDbDataReader<T> : DbDataReader
             return ordinal;
         }
 
+        // For scalar SELECT RAW results the single synthetic field has an empty name.
+        // Any column name lookup on a scalar result maps to ordinal 0.
+        if (_fieldNames?.Count == 1 && _fieldNames[0] == string.Empty)
+        {
+            return 0;
+        }
+
         throw new IndexOutOfRangeException($"Field '{name}' not found.");
     }
 
@@ -417,10 +438,27 @@ public class CouchbaseDbDataReader<T> : DbDataReader
     public override object GetValue(int ordinal)
     {
         EnsureCurrentRow();
-        ValidateOrdinal(ordinal);
 
-        var fieldName = _fieldNames![ordinal];
-        return GetFieldValue(fieldName);
+        // When the caller supplied column names (projection aliases from the SELECT clause), use
+        // _fieldOrdinals to translate each shaper ordinal to the correct JSON property.
+        // N1QL returns response fields in document-storage order, which differs from the SELECT
+        // clause order, so positional access is incorrect without this mapping.
+        // _fieldOrdinals uses OrdinalIgnoreCase, so camelCase aliases match camelCase JSON keys.
+        if (_columnNames != null && (uint)ordinal < (uint)_columnNames.Length)
+        {
+            var colName = _columnNames[ordinal];
+            if (colName != null && _fieldOrdinals != null && _fieldOrdinals.TryGetValue(colName, out var jsonOrdinal))
+            {
+                return GetFieldValue(_fieldNames![jsonOrdinal]);
+            }
+            // Field not in response (naming mismatch between model and document) — treat as null.
+            return DBNull.Value;
+        }
+
+        // No column names available: fall back to positional access (works when N1QL happens to
+        // return columns in SELECT clause order, e.g. scalar COUNT queries).
+        ValidateOrdinal(ordinal);
+        return GetFieldValue(_fieldNames![ordinal]);
     }
 
     /// <summary>
@@ -823,7 +861,7 @@ public class CouchbaseDbDataReader<T> : DbDataReader
             long l => Convert.ToInt32(l),
             JsonElement je when je.ValueKind == JsonValueKind.Number => je.GetInt32(),
             JsonElement je => throw new InvalidCastException($"Cannot convert JsonElement of kind {je.ValueKind} to Int32."),
-            _ => Convert.ToInt32(value)
+            _ => throw new InvalidCastException($"Cannot convert {value?.GetType().Name} to Int32.")
         };
     }
 
@@ -1026,6 +1064,12 @@ public class CouchbaseDbDataReader<T> : DbDataReader
                 _fieldOrdinals[property.Name] = ordinal++;
             }
         }
+        else if (_currentRow is JsonElement)
+        {
+            // Non-object scalar from SELECT RAW (e.g. COUNT result) — single synthetic field at ordinal 0
+            _fieldNames.Add(string.Empty);
+            _fieldOrdinals[string.Empty] = 0;
+        }
         else if (_currentRow != null)
         {
             // For non-JsonElement types, use reflection
@@ -1037,6 +1081,7 @@ public class CouchbaseDbDataReader<T> : DbDataReader
                 _fieldOrdinals[properties[i].Name] = i;
             }
         }
+
     }
 
     private void ValidateOrdinal(int ordinal)

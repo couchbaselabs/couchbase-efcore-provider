@@ -37,8 +37,9 @@ public class DependencyInjectionTests(
             {
                 couchbaseDbContextOptions.Bucket = "default";
                 couchbaseDbContextOptions.Scope = "blogs";
-            });
-        
+            },
+            options => options.UseCamelCaseNamingConvention());
+
         services.AddCouchbase<TravelSampleDbContext>(new ClusterOptions()
                 .WithConnectionString(travelSampleFixture.Host)
                 .WithCredentials(travelSampleFixture.Username, travelSampleFixture.Password)
@@ -47,7 +48,8 @@ public class DependencyInjectionTests(
             {
                 configuration.Bucket = "travel-sample";
                 configuration.Scope = "inventory";
-            });
+            },
+            options => options.UseCamelCaseNamingConvention());
 
         services.AddKeyedCouchbase("mine", options =>
         {
