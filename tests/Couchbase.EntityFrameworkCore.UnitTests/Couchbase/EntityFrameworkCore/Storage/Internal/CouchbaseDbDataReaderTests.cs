@@ -1421,7 +1421,7 @@ public class CouchbaseDbDataReaderTests
     }
 
     [Fact]
-    public async Task ScalarRaw_NumberRow_GetOrdinalWithAnyNameReturnZero()
+    public async Task ScalarRaw_NumberRow_GetOrdinalWithAnyNameReturnsZero()
     {
         // The EF Core shaper may request any alias name for scalar projections;
         // a SELECT RAW result maps any name to ordinal 0.
