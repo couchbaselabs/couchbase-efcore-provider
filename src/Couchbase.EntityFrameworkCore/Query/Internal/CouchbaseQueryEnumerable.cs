@@ -117,6 +117,7 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
         logger.LogStatement(dbCommand, TimeSpan.Zero);
 #endif
         var queryOptions = GetParameters(dbCommand);
+        queryOptions.CancellationToken(cancellationToken);
 
         var bucket = await _bucketProvider.GetBucketAsync(_couchbaseDbContextOptionsBuilder.Bucket).ConfigureAwait(false);
         var cluster = bucket.Cluster;
