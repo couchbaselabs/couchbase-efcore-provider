@@ -1330,6 +1330,60 @@ public class CouchbaseDbDataReaderTests
 
     #endregion
 
+    #region Phase 3 — scalar SELECT RAW and shaper-compatible access
+
+    [Fact]
+    public async Task ScalarRaw_NumberRow_FieldCountIsOne()
+    {
+        var rows = new List<JsonElement> { JsonDocument.Parse("42").RootElement };
+        var reader = CreateReader(rows);
+        await reader.ReadAsync(CancellationToken.None);
+        Assert.Equal(1, reader.FieldCount);
+    }
+
+    [Fact]
+    public async Task ScalarRaw_NumberRow_GetValueReturnsNumber()
+    {
+        var rows = new List<JsonElement> { JsonDocument.Parse("42").RootElement };
+        var reader = CreateReader(rows);
+        await reader.ReadAsync(CancellationToken.None);
+        var value = reader.GetValue(0);
+        Assert.Equal(42L, value);
+    }
+
+    [Fact]
+    public async Task ScalarRaw_NumberRow_GetOrdinalWithAnyNameReturnZero()
+    {
+        // The EF Core shaper may request any alias name for scalar projections;
+        // a SELECT RAW result maps any name to ordinal 0.
+        var rows = new List<JsonElement> { JsonDocument.Parse("5").RootElement };
+        var reader = CreateReader(rows);
+        await reader.ReadAsync(CancellationToken.None);
+        Assert.Equal(0, reader.GetOrdinal("c0"));
+        Assert.Equal(0, reader.GetOrdinal("any_alias"));
+    }
+
+    [Fact]
+    public async Task ScalarRaw_StringRow_GetValueReturnsString()
+    {
+        var rows = new List<JsonElement> { JsonDocument.Parse("\"hello\"").RootElement };
+        var reader = CreateReader(rows);
+        await reader.ReadAsync(CancellationToken.None);
+        Assert.Equal("hello", reader.GetValue(0));
+    }
+
+    [Fact]
+    public async Task ObjectRow_SingleField_GetOrdinalUnknownNameStillThrows()
+    {
+        // An object row with one named field should NOT fall back to ordinal 0 for unknown names.
+        var rows = new List<JsonElement> { JsonDocument.Parse("{\"id\": 1}").RootElement };
+        var reader = CreateReader(rows);
+        await reader.ReadAsync(CancellationToken.None);
+        Assert.Throws<IndexOutOfRangeException>(() => reader.GetOrdinal("nonexistent"));
+    }
+
+    #endregion
+
     private static CouchbaseDbDataReader<JsonElement> CreateReader(List<JsonElement> rows)
     {
         var mockQueryResult = new Mock<IQueryResult<JsonElement>>();

@@ -152,11 +152,33 @@ public class CouchbaseShapedQueryCompilingExpressionVisitor : RelationalShapedQu
                     Expression.Constant(_couchbaseDbContextOptionsBuilder));
             }
 
+            // ProjectionExpression.Alias is "" when no explicit AS clause is emitted — in that case
+            // the N1QL response key is the underlying ColumnExpression.Name.
+            static string EffectiveAlias(ProjectionExpression pe) =>
+                pe.Alias != string.Empty ? pe.Alias
+                    : pe.Expression is ColumnExpression c ? c.Name
+                    : string.Empty;
+
+            var projectionAliasesExpression = Dependencies.LiftableConstantFactory.CreateLiftableConstant(
+                selectExpression.Projection.Select(EffectiveAlias).ToArray(),
+#pragma warning disable EF9100
+                Expression.Lambda<Func<MaterializerLiftableConstantContext, object>>(
+#pragma warning restore EF9100
+                    Expression.NewArrayInit(
+                        typeof(string),
+                        selectExpression.Projection.Select(pe => Expression.Constant(EffectiveAlias(pe), typeof(string)))),
+#pragma warning disable EF9100
+                    Expression.Parameter(typeof(MaterializerLiftableConstantContext), "_")),
+#pragma warning restore EF9100
+                "projectionAliases",
+                typeof(string[]));
+
             return Expression.Call(
                 CreateSingleQueryingEnumerableMethodInfo.MakeGenericMethod(shaper.ReturnType),
                 Expression.Convert(QueryCompilationContext.QueryContextParameter, typeof(RelationalQueryContext)),
                 relationalCommandResolver,
                 readerColumnsExpression,
+                projectionAliasesExpression,
                 shaper,
                 Expression.Constant(_contextType),
                 Expression.Constant(QueryCompilationContext.QueryTrackingBehavior == QueryTrackingBehavior.NoTrackingWithIdentityResolution),

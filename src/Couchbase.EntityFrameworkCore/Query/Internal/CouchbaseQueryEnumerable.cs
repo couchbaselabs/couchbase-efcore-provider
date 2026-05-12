@@ -3,18 +3,17 @@
 
 using System.Collections;
 using System.Data.Common;
+using System.Text.Json;
 using Couchbase.Query;
 using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.EntityFrameworkCore.Storage.Internal;
 using Couchbase.EntityFrameworkCore.Utils;
 using Couchbase.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.ChangeTracking.Internal;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Query;
 using Microsoft.EntityFrameworkCore.Query.Internal;
 using Microsoft.EntityFrameworkCore.Storage;
-using Microsoft.Extensions.Logging;
 
 namespace Couchbase.EntityFrameworkCore.Query.Internal;
 
@@ -24,6 +23,7 @@ public static class CouchbaseQueryEnumerable
         RelationalQueryContext relationalQueryContext,
         RelationalCommandResolver relationalCommandResolver,
         IReadOnlyList<ReaderColumn?>? readerColumns,
+        string[]? projectionAliases,
         Func<QueryContext, DbDataReader, ResultContext, SingleQueryResultCoordinator, T> shaper,
         Type contextType,
         bool standAloneStateManager,
@@ -35,6 +35,7 @@ public static class CouchbaseQueryEnumerable
             relationalQueryContext,
             relationalCommandResolver,
             readerColumns,
+            projectionAliases,
             shaper,
             contextType,
             standAloneStateManager,
@@ -53,6 +54,9 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
     private readonly Type _contextType;
     private readonly Func<QueryContext, DbDataReader, ResultContext, SingleQueryResultCoordinator, T> _shaper;
     private readonly IReadOnlyList<ReaderColumn?>? _readerColumns;
+    // Ordered SELECT projection aliases from SelectExpression.Projection — always available and
+    // used as the authoritative column-name list for building the reader's ordinal→JSON index map.
+    private readonly string[]? _projectionAliases;
     private readonly RelationalCommandResolver _relationalCommandResolver;
     private readonly RelationalQueryContext _relationalQueryContext;
     private readonly ICouchbaseDbContextOptionsBuilder _couchbaseDbContextOptionsBuilder;
@@ -63,6 +67,7 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
         RelationalQueryContext relationalQueryContext,
         RelationalCommandResolver relationalCommandResolver,
         IReadOnlyList<ReaderColumn?>? readerColumns,
+        string[]? projectionAliases,
         Func<QueryContext, DbDataReader, ResultContext, SingleQueryResultCoordinator, T> shaper,
         Type contextType,
         bool standAloneStateManager,
@@ -74,6 +79,7 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
         _relationalQueryContext = relationalQueryContext;
         _relationalCommandResolver = relationalCommandResolver;
         _readerColumns = readerColumns;
+        _projectionAliases = projectionAliases;
         _shaper = shaper;
         _contextType = contextType;
         _queryLogger = relationalQueryContext.QueryLogger;
@@ -114,56 +120,60 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
 
         var bucket = await _bucketProvider.GetBucketAsync(_couchbaseDbContextOptionsBuilder.Bucket).ConfigureAwait(false);
         var cluster = bucket.Cluster;
-        var result = await cluster.QueryAsync<T>(queryString, queryOptions).ConfigureAwait(false);
+
+        // Prefer projection aliases (always available from SelectExpression) over readerColumns names.
+        // readerColumns can be null in EF Core 10 for certain query shapes.
+        var columnNames = _projectionAliases ?? _readerColumns?.Select(rc => rc?.Name).ToArray();
+        var queryResult = await cluster.QueryAsync<JsonElement>(queryString, queryOptions).ConfigureAwait(false);
+        await using var reader = new CouchbaseDbDataReader<JsonElement>(queryResult, columnNames);
 
         _relationalQueryContext.InitializeStateManager(_standAloneStateManager);
 
-        var model = _dbContext.Model;
-        var entityType = model.FindEntityType(typeof(T));
+        var coordinator = new SingleQueryResultCoordinator();
 
-        await foreach (var doc in result)
+        // coordinator.HasNext carries a buffered row signal set by the shaper (collection navigation
+        // case: shaper detects a new root key and buffers the current row for the next iteration).
+        // Using "??" mirrors EF Core's SingleQueryingEnumerable pattern exactly.
+        var hasNext = coordinator.HasNext ?? await reader.ReadAsync(cancellationToken).ConfigureAwait(false);
+
+        while (hasNext)
         {
-            // Scalar values (e.g. COUNT results) are not entities and are never tracked.
-            if (entityType == null)
+            // Signal to shaper: a row is available and entity materialisation should begin.
+            // For simple (non-navigation) queries the shaper leaves ResultReady = true.
+            // For collection-navigation queries the shaper sets ResultReady = false while
+            // accumulating related rows, and restores it to true when the root entity is complete.
+            coordinator.ResultReady = true;
+            coordinator.HasNext = null;
+
+            var result = _shaper(_relationalQueryContext, reader, coordinator.ResultContext, coordinator);
+
+            if (coordinator.ResultReady)
             {
-                yield return doc;
-                continue;
+                // Entity is complete — yield it and advance to the next row.
+                coordinator.ResultContext.Values = null;
+                yield return result;
+                hasNext = coordinator.HasNext ?? await reader.ReadAsync(cancellationToken).ConfigureAwait(false);
             }
-
-            var toReturn = doc;
-            var primaryKey = entityType.FindPrimaryKey();
-
-            if (primaryKey != null)
+            else if (coordinator.HasNext == true)
             {
-                // Extract primary key values from the deserialized document.
-                var keyValues = primaryKey.Properties
-                    .Select(p => p.PropertyInfo?.GetValue(doc))
-                    .ToArray();
-
-                // Identity resolution: if a different instance with the same key is already
-                // tracked, return the tracked instance. Returning a second instance with the
-                // same key causes EF Core to throw when the caller later calls Remove/Attach.
-                var existingEntry = _relationalQueryContext
-                    .TryGetEntry(primaryKey, keyValues!, true, out var key);
-
-                if (existingEntry != null)
+                // Shaper buffered a row (detected new root key mid-stream); loop without reading.
+                hasNext = true;
+            }
+            else
+            {
+                // Shaper needs more rows to complete the current entity (collection accumulation).
+                hasNext = await reader.ReadAsync(cancellationToken).ConfigureAwait(false);
+                if (!hasNext)
                 {
-                    toReturn = (T)existingEntry.Entity;
-                }
-                else
-                {
-                    try
-                    {
-                        _relationalQueryContext.StartTracking(entityType, doc, Snapshot.Empty);
-                    }
-                    catch (Exception e)
-                    {
-                        logger.Logger.LogError("{E}", e);
-                    }
+                    // EOF: signal the shaper to finalise the last pending root entity.
+                    coordinator.HasNext = false;
+                    coordinator.ResultReady = true;
+                    var last = _shaper(_relationalQueryContext, reader, coordinator.ResultContext, coordinator);
+                    coordinator.ResultContext.Values = null;
+                    yield return last;
+                    // hasNext is false so the outer while exits naturally.
                 }
             }
-
-            yield return toReturn;
         }
     }
 
