@@ -1,4 +1,3 @@
-using System.Collections.Immutable;
 using Couchbase.EntityFrameworkCore.Diagnostics.Internal;
 using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.EntityFrameworkCore.Infrastructure.Internal;
@@ -9,6 +8,8 @@ using Couchbase.EntityFrameworkCore.Query.Internal;
 using Couchbase.EntityFrameworkCore.Query.Internal.Translators;
 using Couchbase.EntityFrameworkCore.Storage.Internal;
 using Couchbase.EntityFrameworkCore.ValueGeneration;
+using CouchbaseModificationCommandBatchFactory = Couchbase.EntityFrameworkCore.Update.Internal.CouchbaseModificationCommandBatchFactory;
+using CouchbaseUpdateSqlGenerator = Couchbase.EntityFrameworkCore.Update.Internal.CouchbaseUpdateSqlGenerator;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -47,7 +48,6 @@ public static class CouchbaseServiceCollectionExtensions
 
         var builder = new EntityFrameworkRelationalServicesBuilder(serviceCollection)
             .TryAdd<IRelationalTypeMappingSource, CouchbaseTypeMappingSource>()
-            .TryAdd<IDatabase, CouchbaseDatabaseWrapper>()
             .TryAdd<IDatabaseProvider, DatabaseProvider<CouchbaseOptionsExtension>>()
             .TryAdd<LoggingDefinitions, CouchbaseLoggingDefinitions>()
             .TryAdd<IModificationCommandBatchFactory, CouchbaseModificationCommandBatchFactory>()
@@ -57,7 +57,6 @@ public static class CouchbaseServiceCollectionExtensions
             .TryAdd<ISqlGenerationHelper, CouchbaseSqlGenerationHelper>()
             .TryAdd<IShapedQueryCompilingExpressionVisitorFactory, CouchbaseShapedQueryCompilingExpressionVisitorFactory>()
             .TryAdd<IHistoryRepository, CouchbaseHistoryRepository>()//not used but required by ASP.NET
-            .TryAdd<IModificationCommandBatchFactory, CouchbaseModificationCommandBatchFactory>()
             .TryAdd<IMethodCallTranslatorProvider, CouchbaseMethodCallTranslatorProvider>()
 
             //Found that this was necessary, because the default convention of determining a
@@ -74,13 +73,16 @@ public static class CouchbaseServiceCollectionExtensions
 
         builder.TryAddCoreServices();
 
-        // Register our value generator selector AFTER core services to override the default
-        // Use a ServiceDescriptor to replace any existing registration
-        var existingSelector = serviceCollection.FirstOrDefault(d => d.ServiceType == typeof(IValueGeneratorSelector));
-        if (existingSelector != null)
+        // IDatabase and IValueGeneratorSelector must be registered AFTER TryAddCoreServices()
+        // because EF Core's relational core services register RelationalDatabase / the default
+        // selector, and TryAdd semantics mean the core registration wins over the builder's entry.
+        // Removing and re-adding with AddScoped guarantees our implementation is the one resolved.
+        foreach (var type in new[] { typeof(IDatabase), typeof(IValueGeneratorSelector) })
         {
-            serviceCollection.Remove(existingSelector);
+            var existing = serviceCollection.Where(d => d.ServiceType == type).ToList();
+            foreach (var descriptor in existing) serviceCollection.Remove(descriptor);
         }
+        serviceCollection.AddScoped<IDatabase, CouchbaseDatabaseWrapper>();
         serviceCollection.AddScoped<IValueGeneratorSelector, CouchbaseValueGeneratorSelector>();
 
         serviceCollection

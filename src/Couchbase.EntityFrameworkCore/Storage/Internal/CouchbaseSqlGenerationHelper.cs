@@ -9,15 +9,66 @@ public class CouchbaseSqlGenerationHelper : RelationalSqlGenerationHelper
     {
     }
 
+    /// <summary>
+    /// Wraps each dot-separated part of <paramref name="identifier"/> in backticks.
+    /// Couchbase uses three-part keyspace notation (bucket.scope.collection) stored as a
+    /// single dotted string in EF Core's table-name slot, so each segment must be quoted
+    /// individually: `default.blogs.personphoto` → `default`.`blogs`.`personphoto`.
+    /// </summary>
     public override void DelimitIdentifier(StringBuilder builder, string identifier)
     {
-        builder.Append('`');
-        EscapeIdentifier(builder, identifier);
-        builder.Append('`');
+        var span = identifier.AsSpan();
+        var dot = span.IndexOf('.');
+        if (dot < 0)
+        {
+            // Fast path: single segment — no allocation needed.
+            builder.Append('`');
+            EscapeIdentifier(builder, identifier);
+            builder.Append('`');
+            return;
+        }
+
+        var first = true;
+        while (true)
+        {
+            dot = span.IndexOf('.');
+            var segment = dot < 0 ? span : span[..dot];
+            if (!first) builder.Append('.');
+            first = false;
+            builder.Append('`');
+            EscapeIdentifierSpan(builder, segment);
+            builder.Append('`');
+            if (dot < 0) break;
+            span = span[(dot + 1)..];
+        }
+    }
+
+    private static void EscapeIdentifierSpan(StringBuilder builder, ReadOnlySpan<char> identifier)
+    {
+        var start = 0;
+        for (var i = 0; i < identifier.Length; i++)
+        {
+            if (identifier[i] == '`')
+            {
+                builder.Append(identifier[start..i]);
+                builder.Append("``");
+                start = i + 1;
+            }
+        }
+        if (start < identifier.Length)
+            builder.Append(identifier[start..]);
     }
 
     public override string DelimitIdentifier(string identifier)
-        => $"`{EscapeIdentifier(identifier)}`";
+    {
+        if (!identifier.Contains('.'))
+        {
+            return $"`{EscapeIdentifier(identifier)}`";
+        }
+        var sb = new StringBuilder();
+        DelimitIdentifier(sb, identifier);
+        return sb.ToString();
+    }
 
     /// <summary>
     /// Escapes backticks in identifiers by doubling them.
