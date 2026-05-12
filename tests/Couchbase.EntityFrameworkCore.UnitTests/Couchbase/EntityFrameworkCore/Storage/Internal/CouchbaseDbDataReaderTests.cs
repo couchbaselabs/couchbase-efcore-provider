@@ -1003,6 +1003,21 @@ public class CouchbaseDbDataReaderTests
     }
 
     [Fact]
+    public async Task GetInt32_WhenJsonNumberHasFractionalRepresentation_ReturnsIntValue()
+    {
+        // System.Text.Json TryGetInt64 returns false for numbers stored with a decimal
+        // point (e.g. 2.0), so ConvertJsonElement falls back to GetDouble() and returns
+        // a double.  GetInt32 must convert that double via Convert.ToInt32 rather than
+        // throwing, consistent with every other numeric getter's fallback arm.
+        var rows = new List<JsonElement> { JsonDocument.Parse("{\"count\": 2.0}").RootElement };
+        var reader = CreateReader(rows);
+
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Equal(2, reader.GetInt32(0));
+    }
+
+    [Fact]
     public async Task GetFloat_WithValueExceedingFloatRange_ReturnsInfinity()
     {
         // Values exceeding float range return infinity rather than throwing
