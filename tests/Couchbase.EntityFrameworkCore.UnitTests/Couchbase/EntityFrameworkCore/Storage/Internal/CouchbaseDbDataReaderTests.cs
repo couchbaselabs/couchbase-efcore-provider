@@ -1330,6 +1330,60 @@ public class CouchbaseDbDataReaderTests
 
     #endregion
 
+    #region Phase 3 — projection-alias column-name mapping bugs
+
+    [Fact]
+    public async Task GetValue_NullColumnNameSlot_FallsBackToPositionalAccess()
+    {
+        // Bug: when _columnNames[ordinal] is null the contract says "use positional
+        // access", but the current implementation returns DBNull.Value instead.
+        // Row fields in document order: id=1 at position 0, name="test" at position 1.
+        // _columnNames has null at slot 0 (no alias → positional) and "name" at slot 1.
+        var rows = new List<JsonElement>
+        {
+            JsonDocument.Parse("{\"id\": 1, \"name\": \"test\"}").RootElement
+        };
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { null, "name" });
+        await reader.ReadAsync(CancellationToken.None);
+
+        // Slot 0 is null: should return the value at positional ordinal 0 (id = 1).
+        Assert.Equal(1L, reader.GetValue(0));
+        // Slot 1 is "name": name-based lookup should return "test".
+        Assert.Equal("test", reader.GetValue(1));
+    }
+
+    [Fact]
+    public async Task GetValue_ScalarRowWithNonEmptyColumnAlias_ReturnsScalarValue()
+    {
+        // Bug: SELECT RAW COUNT(*) produces a bare numeric JsonElement whose schema
+        // has a single synthetic "" field.  When _columnNames is set with a non-empty
+        // alias (e.g. "c"), _fieldOrdinals.TryGetValue("c") fails because only "" is
+        // registered, so GetValue returns DBNull.Value instead of the scalar number.
+        var rows = new List<JsonElement> { JsonDocument.Parse("42").RootElement };
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { "c" });
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Equal(42L, reader.GetValue(0));
+    }
+
+    [Fact]
+    public async Task GetValue_MissingDocumentField_ReturnsDBNull()
+    {
+        // Confirm the one case where DBNull.Value IS correct: the alias is present in
+        // _columnNames but the field is absent from the N1QL response (MISSING field).
+        var rows = new List<JsonElement>
+        {
+            JsonDocument.Parse("{\"name\": \"test\"}").RootElement
+        };
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { "id", "name" });
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Equal(DBNull.Value, reader.GetValue(0)); // "id" not in response → MISSING
+        Assert.Equal("test", reader.GetValue(1));
+    }
+
+    #endregion
+
     #region Phase 3 — scalar SELECT RAW and shaper-compatible access
 
     [Fact]
@@ -1392,6 +1446,18 @@ public class CouchbaseDbDataReaderTests
         mockQueryResult.Setup(q => q.Rows).Returns(rows.ToAsyncEnumerable());
 
         return new CouchbaseDbDataReader<JsonElement>(mockQueryResult.Object);
+    }
+
+    private static CouchbaseDbDataReader<JsonElement> CreateReaderWithColumnNames(
+        List<JsonElement> rows,
+        string?[]? columnNames)
+    {
+        var mockQueryResult = new Mock<IQueryResult<JsonElement>>();
+        var metaData = new QueryMetaData { Status = QueryStatus.Success };
+        mockQueryResult.Setup(q => q.MetaData).Returns(metaData);
+        mockQueryResult.Setup(q => q.Rows).Returns(rows.ToAsyncEnumerable());
+
+        return new CouchbaseDbDataReader<JsonElement>(mockQueryResult.Object, columnNames);
     }
 
     private static CouchbaseDbDataReader<JsonElement> CreateReaderWithCancellationToken(
