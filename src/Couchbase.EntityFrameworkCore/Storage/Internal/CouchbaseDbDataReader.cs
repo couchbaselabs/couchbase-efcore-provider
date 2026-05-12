@@ -447,16 +447,26 @@ public class CouchbaseDbDataReader<T> : DbDataReader
         if (_columnNames != null && (uint)ordinal < (uint)_columnNames.Length)
         {
             var colName = _columnNames[ordinal];
-            if (colName != null && _fieldOrdinals != null && _fieldOrdinals.TryGetValue(colName, out var jsonOrdinal))
+            if (colName != null && _fieldOrdinals != null)
             {
-                return GetFieldValue(_fieldNames![jsonOrdinal]);
+                if (_fieldOrdinals.TryGetValue(colName, out var jsonOrdinal))
+                {
+                    return GetFieldValue(_fieldNames![jsonOrdinal]);
+                }
+                // Scalar SELECT RAW row: single synthetic "" field answers to any alias,
+                // matching the same special-case in GetOrdinal.
+                if (_fieldNames?.Count == 1 && _fieldNames[0] == string.Empty)
+                {
+                    return GetFieldValue(string.Empty);
+                }
+                // Field genuinely absent from the N1QL response (MISSING) — treat as null.
+                return DBNull.Value;
             }
-            // Field not in response (naming mismatch between model and document) — treat as null.
-            return DBNull.Value;
+            // null slot in _columnNames means "no alias for this ordinal — use positional
+            // access", as documented on the constructor.  Fall through.
         }
 
-        // No column names available: fall back to positional access (works when N1QL happens to
-        // return columns in SELECT clause order, e.g. scalar COUNT queries).
+        // No column names supplied, or null slot: positional access.
         ValidateOrdinal(ordinal);
         return GetFieldValue(_fieldNames![ordinal]);
     }
