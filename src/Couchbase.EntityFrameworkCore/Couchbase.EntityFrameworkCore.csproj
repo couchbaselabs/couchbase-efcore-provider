@@ -36,8 +36,6 @@
     <ItemGroup>
       <Compile Remove="Query\Internal\CouchbaseProjectionBindingExpressionVisitor.cs" />
       <Compile Remove="Storage\Internal\CouchbaseRelationalCommandBuilder.cs" />
-      <Compile Remove="Query\Internal\CouchbaseQueryableMethodTranslatingExpressionVisitor.cs" />
-      <Compile Remove="Query\Internal\CouchbaseQueryableMethodTranslatingExpressionVisitorFactory.cs" />
       <Compile Remove="Query\Internal\CouchbaseQueryContextFactory.cs" />
       <Compile Remove="Query\Internal\CouchbaseQueryContext.cs" />
     </ItemGroup>
