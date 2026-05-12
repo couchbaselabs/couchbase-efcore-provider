@@ -9,6 +9,19 @@ namespace Couchbase.EntityFrameworkCore.Extensions;
 public static class CouchbaseEntityTypeBuilderExtensions
 {
     /// <summary>
+    /// Maps an entity to a Couchbase Collection with an explicit keyspace.
+    /// </summary>
+    public static EntityTypeBuilder<TEntity> ToCouchbaseCollection<TEntity>(
+        this EntityTypeBuilder<TEntity> entityTypeBuilder,
+        string bucket,
+        string scope,
+        string collection) where TEntity : class
+    {
+        var keyspace = new CouchbaseKeyspace(bucket, scope, collection);
+        return entityTypeBuilder.ToTable(keyspace.ToString());
+    }
+
+    /// <summary>
     /// Maps an entity to a Couchbase Collection. The Bucket name and Scope name come from the provider initialization.
     /// </summary>
     /// <param name="entityTypeBuilder">The entity type builder.</param>
