@@ -1,23 +1,28 @@
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+
 using Microsoft.EntityFrameworkCore.Query;
 
 namespace Couchbase.EntityFrameworkCore.Query.Internal;
 
-public class CouchbaseQueryCompilationContext : RelationalQueryCompilationContext
+public class CouchbaseQueryCompilationContextFactory : IQueryCompilationContextFactory
 {
-    public CouchbaseQueryCompilationContext(
+    public CouchbaseQueryCompilationContextFactory(
         QueryCompilationContextDependencies dependencies,
-        RelationalQueryCompilationContextDependencies relationalDependencies,
-        bool async)
-        : base(dependencies, relationalDependencies, async)
+        RelationalQueryCompilationContextDependencies relationalDependencies)
     {
+        Dependencies = dependencies;
+        RelationalDependencies = relationalDependencies;
     }
 
-    /// <summary>
-    /// Navigation includes recorded during shaper compilation (Phase 2).
-    /// Populated by <see cref="CouchbaseShapedQueryCompilingExpressionVisitor"/> and
-    /// consumed by Phase 4 result-shaping logic.
-    /// </summary>
-    public List<NavigationInclude> NavigationIncludes { get; } = [];
+    protected virtual QueryCompilationContextDependencies Dependencies { get; }
+    protected virtual RelationalQueryCompilationContextDependencies RelationalDependencies { get; }
+
+    public virtual QueryCompilationContext Create(bool async)
+        => new CouchbaseQueryCompilationContext(Dependencies, RelationalDependencies, async);
+
+    public virtual QueryCompilationContext CreatePrecompiled(bool async)
+        => new CouchbaseQueryCompilationContext(Dependencies, RelationalDependencies, async);
 }
 
 /* ************************************************************

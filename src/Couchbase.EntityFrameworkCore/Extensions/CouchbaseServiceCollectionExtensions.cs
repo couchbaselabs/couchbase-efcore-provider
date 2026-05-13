@@ -78,13 +78,14 @@ public static class CouchbaseServiceCollectionExtensions
         // because EF Core's relational core services register RelationalDatabase / the default
         // selector, and TryAdd semantics mean the core registration wins over the builder's entry.
         // Removing and re-adding with AddScoped guarantees our implementation is the one resolved.
-        foreach (var type in new[] { typeof(IDatabase), typeof(IValueGeneratorSelector) })
+        foreach (var type in new[] { typeof(IDatabase), typeof(IValueGeneratorSelector), typeof(IQueryCompilationContextFactory) })
         {
             var existing = serviceCollection.Where(d => d.ServiceType == type).ToList();
             foreach (var descriptor in existing) serviceCollection.Remove(descriptor);
         }
         serviceCollection.AddScoped<IDatabase, CouchbaseDatabaseWrapper>();
         serviceCollection.AddScoped<IValueGeneratorSelector, CouchbaseValueGeneratorSelector>();
+        serviceCollection.AddScoped<IQueryCompilationContextFactory, CouchbaseQueryCompilationContextFactory>();
 
         serviceCollection
             //.AddScoped<IQueryContextFactory, CouchbaseQueryContextFactory>()
