@@ -1544,6 +1544,150 @@ public class CouchbaseDbDataReaderTests
 
     #endregion
 
+    #region Phase 3 — GetSchemaTable null-slot, duplicate aliases, GetValues, and edge cases
+
+    [Fact]
+    public async Task GetSchemaTable_WithNullSlot_StoresDBNullForColumnName()
+    {
+        // When _columnNames has a null slot, GetSchemaTable stores DBNull.Value for ColumnName
+        // (because there is no alias for that ordinal). The DataTable accepts DBNull.Value for
+        // a typeof(string) column (stored as object internally).
+        var rows = new List<JsonElement>
+        {
+            JsonDocument.Parse("{\"id\": 1, \"name\": \"alice\"}").RootElement
+        };
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { null, "name" });
+        await reader.ReadAsync(CancellationToken.None);
+
+        var schema = reader.GetSchemaTable();
+
+        Assert.Equal(2, schema.Rows.Count);
+        // Null slot → ColumnName is DBNull.Value, not a string
+        Assert.Equal(DBNull.Value, schema.Rows[0]["ColumnName"]);
+        Assert.Equal(0, schema.Rows[0]["ColumnOrdinal"]);
+        // Non-null slot → ColumnName is the alias
+        Assert.Equal("name", schema.Rows[1]["ColumnName"]);
+        Assert.Equal(1, schema.Rows[1]["ColumnOrdinal"]);
+    }
+
+    [Fact]
+    public async Task GetOrdinal_WithDuplicateColumnNames_FirstWins()
+    {
+        // When two slots share the same alias, TryAdd keeps the first.
+        // GetOrdinal("dup") must return the first slot's ordinal (0), not the second (1).
+        var rows = new List<JsonElement>
+        {
+            JsonDocument.Parse("{\"id\": 1, \"name\": \"alice\"}").RootElement
+        };
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { "dup", "dup" });
+        await reader.ReadAsync(CancellationToken.None);
+
+        // First-wins: ordinal 0 is returned for "dup" even though slot 1 also has it.
+        Assert.Equal(0, reader.GetOrdinal("dup"));
+    }
+
+    [Fact]
+    public async Task GetValues_WithColumnNames_UsesProjectionCount()
+    {
+        // When _columnNames is set and has fewer slots than the JSON fields, GetValues
+        // must iterate over projection count (2), not JSON field count (3).
+        var rows = new List<JsonElement>
+        {
+            JsonDocument.Parse("{\"a\": 1, \"b\": 2, \"c\": 3}").RootElement
+        };
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { "a", "b" });
+        await reader.ReadAsync(CancellationToken.None);
+
+        var values = new object[5];
+        var count = reader.GetValues(values);
+
+        // Only 2 slots in projection — count must be min(5, 2) = 2
+        Assert.Equal(2, count);
+        Assert.Equal(1L, values[0]);
+        Assert.Equal(2L, values[1]);
+        // Remaining entries in values are untouched (default null)
+        Assert.Null(values[2]);
+    }
+
+    [Fact]
+    public async Task GetValues_NullArgument_ThrowsArgumentNullException()
+    {
+        var rows = new List<JsonElement>
+        {
+            JsonDocument.Parse("{\"id\": 1}").RootElement
+        };
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { "id" });
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Throws<ArgumentNullException>(() => reader.GetValues(null!));
+    }
+
+    [Fact]
+    public async Task GetName_WithColumnNames_OutOfRange_ThrowsIndexOutOfRangeException()
+    {
+        // The (uint)ordinal >= (uint)_columnNames.Length guard at line 369 must fire.
+        var rows = new List<JsonElement>
+        {
+            JsonDocument.Parse("{\"id\": 1}").RootElement
+        };
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { "id" });
+        await reader.ReadAsync(CancellationToken.None);
+
+        // Ordinal 1 is out of range for a 1-element projection.
+        Assert.Throws<IndexOutOfRangeException>(() => reader.GetName(1));
+        Assert.Throws<IndexOutOfRangeException>(() => reader.GetName(-1));
+    }
+
+    [Fact]
+    public void GetOrdinal_WithAllNullColumnNames_ThrowsForAnyLookup()
+    {
+        // _projectionOrdinals is built but empty (all entries skipped because alias == null).
+        // Any GetOrdinal lookup must throw IndexOutOfRangeException.
+        var rows = new List<JsonElement>
+        {
+            JsonDocument.Parse("{\"id\": 1}").RootElement
+        };
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { null, null });
+
+        // No alias registered → every name lookup must throw.
+        Assert.Throws<IndexOutOfRangeException>(() => reader.GetOrdinal("id"));
+        Assert.Throws<IndexOutOfRangeException>(() => reader.GetOrdinal("anything"));
+    }
+
+    [Fact]
+    public void FieldCount_WithEmptyColumnNames_ReturnsZero()
+    {
+        // Empty _columnNames array → FieldCount must be 0 without triggering schema discovery.
+        var rows = new List<JsonElement>
+        {
+            JsonDocument.Parse("{\"id\": 1}").RootElement
+        };
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { });
+
+        Assert.Equal(0, reader.FieldCount);
+    }
+
+    [Fact]
+    public async Task GetValues_WithColumnNamesAndSmallerArray_UsesMinOfArrayAndProjection()
+    {
+        // Array is smaller than projection — must return min(array.Length, _columnNames.Length).
+        var rows = new List<JsonElement>
+        {
+            JsonDocument.Parse("{\"a\": 10, \"b\": 20, \"c\": 30}").RootElement
+        };
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { "a", "b", "c" });
+        await reader.ReadAsync(CancellationToken.None);
+
+        var values = new object[2]; // smaller than projection (3)
+        var count = reader.GetValues(values);
+
+        Assert.Equal(2, count);
+        Assert.Equal(10L, values[0]);
+        Assert.Equal(20L, values[1]);
+    }
+
+    #endregion
+
     #region Phase 3 — scalar SELECT RAW and shaper-compatible access
 
     [Fact]
