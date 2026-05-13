@@ -1399,6 +1399,151 @@ public class CouchbaseDbDataReaderTests
 
     #endregion
 
+    #region Phase 3 — GetOrdinal/GetName/FieldCount/schema with projection aliases
+
+    [Fact]
+    public async Task GetOrdinal_WithColumnNames_ReturnsProjectionOrdinal()
+    {
+        // JSON response order: id=0, name=1.  Projection maps "name" to slot 0, "id" to slot 1.
+        // GetOrdinal must return the projection slot, not the JSON response position.
+        var rows = new List<JsonElement>
+        {
+            JsonDocument.Parse("{\"id\": 1, \"name\": \"alice\"}").RootElement
+        };
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { "name", "id" });
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Equal(0, reader.GetOrdinal("name"));
+        Assert.Equal(1, reader.GetOrdinal("id"));
+    }
+
+    [Fact]
+    public async Task GetOrdinal_WithColumnNames_IsCaseInsensitive()
+    {
+        var rows = new List<JsonElement>
+        {
+            JsonDocument.Parse("{\"id\": 1, \"name\": \"alice\"}").RootElement
+        };
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { "name", "id" });
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Equal(0, reader.GetOrdinal("NAME"));
+        Assert.Equal(0, reader.GetOrdinal("Name"));
+        Assert.Equal(1, reader.GetOrdinal("ID"));
+    }
+
+    [Fact]
+    public async Task GetOrdinal_WithColumnNames_UnknownNameThrows()
+    {
+        var rows = new List<JsonElement>
+        {
+            JsonDocument.Parse("{\"id\": 1}").RootElement
+        };
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { "id" });
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Throws<IndexOutOfRangeException>(() => reader.GetOrdinal("nonexistent"));
+    }
+
+    [Fact]
+    public async Task IndexerByName_WithColumnNames_ReturnsCorrectValue()
+    {
+        // This is the core contract test: reader["name"] must call GetValue(GetOrdinal("name"))
+        // and return the value that the shaper ordinal for "name" maps to — not the wrong one.
+        var rows = new List<JsonElement>
+        {
+            JsonDocument.Parse("{\"id\": 99, \"name\": \"bob\"}").RootElement
+        };
+        // Projection maps "name" → slot 0, "id" → slot 1 (reversed from JSON order).
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { "name", "id" });
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Equal("bob", reader["name"]);
+        Assert.Equal(99L, reader["id"]);
+    }
+
+    [Fact]
+    public async Task GetName_WithColumnNames_ReturnsProjectionAlias()
+    {
+        var rows = new List<JsonElement>
+        {
+            JsonDocument.Parse("{\"id\": 1, \"name\": \"alice\"}").RootElement
+        };
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { "name", "id" });
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Equal("name", reader.GetName(0));
+        Assert.Equal("id", reader.GetName(1));
+    }
+
+    [Fact]
+    public async Task GetName_WithColumnNames_NullSlotFallsBackToJsonFieldName()
+    {
+        var rows = new List<JsonElement>
+        {
+            JsonDocument.Parse("{\"id\": 1, \"name\": \"alice\"}").RootElement
+        };
+        // Slot 0 is null (positional), slot 1 has an explicit alias.
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { null, "name" });
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Equal("id", reader.GetName(0));   // positional fallback to JSON field name
+        Assert.Equal("name", reader.GetName(1));
+    }
+
+    [Fact]
+    public void FieldCount_WithColumnNames_ReturnsProjectionLength()
+    {
+        // JSON has 3 fields, but projection only exposes 2.
+        var rows = new List<JsonElement>
+        {
+            JsonDocument.Parse("{\"a\": 1, \"b\": 2, \"c\": 3}").RootElement
+        };
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { "a", "b" });
+
+        Assert.Equal(2, reader.FieldCount);
+    }
+
+    [Fact]
+    public async Task GetSchemaTable_WithColumnNames_ReflectsProjectionAliases()
+    {
+        var rows = new List<JsonElement>
+        {
+            JsonDocument.Parse("{\"id\": 1, \"name\": \"alice\"}").RootElement
+        };
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { "name", "id" });
+        await reader.ReadAsync(CancellationToken.None);
+
+        var schema = reader.GetSchemaTable();
+
+        Assert.Equal(2, schema.Rows.Count);
+        Assert.Equal("name", schema.Rows[0]["ColumnName"]);
+        Assert.Equal(0, schema.Rows[0]["ColumnOrdinal"]);
+        Assert.Equal("id", schema.Rows[1]["ColumnName"]);
+        Assert.Equal(1, schema.Rows[1]["ColumnOrdinal"]);
+    }
+
+    [Fact]
+    public async Task GetOrdinal_WithColumnNames_DoesNotRequireSchemaDiscovery()
+    {
+        // GetOrdinal with _columnNames must resolve without calling EnsureFieldInfo,
+        // so it works even before Read() and without triggering a row buffer.
+        var rows = new List<JsonElement>
+        {
+            JsonDocument.Parse("{\"id\": 1}").RootElement
+        };
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { "id" });
+
+        // No Read() call — should still return the projection ordinal.
+        Assert.Equal(0, reader.GetOrdinal("id"));
+
+        // First Read() must still return the first row (no row was consumed).
+        Assert.True(await reader.ReadAsync(CancellationToken.None));
+        Assert.Equal(1L, reader.GetInt64(0));
+    }
+
+    #endregion
+
     #region Phase 3 — scalar SELECT RAW and shaper-compatible access
 
     [Fact]
