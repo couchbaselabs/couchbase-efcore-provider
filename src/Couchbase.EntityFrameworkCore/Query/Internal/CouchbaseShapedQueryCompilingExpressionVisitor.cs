@@ -9,6 +9,7 @@ using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Query;
 using Microsoft.EntityFrameworkCore.Query.Internal;
 using Microsoft.EntityFrameworkCore.Query.SqlExpressions;
@@ -48,10 +49,67 @@ public class CouchbaseShapedQueryCompilingExpressionVisitor : RelationalShapedQu
         _detailedErrorsEnabled = dependencies.CoreSingletonOptions.AreDetailedErrorsEnabled;
     }
 
+    /// <summary>
+    /// Walks the shaper expression and records root-level <see cref="NavigationInclude"/> nodes
+    /// (those with a concrete <see cref="INavigation"/>) into the compilation context.
+    /// ThenInclude chains are embedded inside collection/reference shaper expressions and are
+    /// resolved during Phase 4.
+    /// </summary>
+    private void CollectNavigationIncludes(Expression shaperExpression)
+    {
+        if (QueryCompilationContext is not CouchbaseQueryCompilationContext ctx)
+            return;
+
+        PopulateNavigationIncludes(shaperExpression, ctx.NavigationIncludes);
+    }
+
+    /// <summary>
+    /// Populates <paramref name="target"/> with root-level <see cref="NavigationInclude"/> nodes
+    /// extracted from <paramref name="shaperExpression"/>.
+    /// Exposed as <c>internal</c> for unit testing without a live compilation context.
+    /// </summary>
+    internal static void PopulateNavigationIncludes(Expression shaperExpression, List<NavigationInclude> target)
+        => target.AddRange(ExtractNavigationIncludes(shaperExpression));
+
+    /// <summary>
+    /// Extracts root-level <see cref="NavigationInclude"/> nodes from a shaper expression's
+    /// <see cref="IncludeExpression"/> chain, in original Include order.
+    /// Exposed as <c>internal</c> for unit testing.
+    /// </summary>
+    internal static List<NavigationInclude> ExtractNavigationIncludes(Expression shaperExpression)
+    {
+        var current = shaperExpression;
+        var collected = new List<NavigationInclude>();
+
+        while (current is IncludeExpression include)
+        {
+            // ISkipNavigation (many-to-many) is intentionally excluded here — Phase 4 will
+            // address skip navigations as a distinct case with their own representation.
+            //
+            // Filter is always null here: by the time VisitShapedQuery runs, any filter
+            // lambda from a filtered include (.Include(b => b.Posts.Where(...))) has already
+            // been translated into a SQL predicate inside the SelectExpression and is no
+            // longer recoverable as a LambdaExpression from IncludeExpression.NavigationExpression.
+            // Phase 4 must detect filtered includes by inspecting RelationalCollectionShaperExpression
+            // or the inner SelectExpression's WHERE clause rather than relying on Filter here.
+            if (include.Navigation is INavigation nav)
+                collected.Add(new NavigationInclude(nav, null, []));
+
+            current = include.EntityExpression;
+        }
+
+        // IncludeExpressions are chained outermost-first, so traversal builds the list in
+        // reverse Include order. One Reverse() restores original order — O(n) vs O(n²) Insert(0).
+        collected.Reverse();
+        return collected;
+    }
+
     /// <inheritdoc />
     [Experimental("EF9100")]
     protected override Expression VisitShapedQuery(ShapedQueryExpression shapedQueryExpression)
     {
+        CollectNavigationIncludes(shapedQueryExpression.ShaperExpression);
+
         var selectExpression = (SelectExpression)shapedQueryExpression.QueryExpression;
 
         VerifyNoClientConstant(shapedQueryExpression.ShaperExpression);

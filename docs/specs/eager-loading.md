@@ -2,7 +2,7 @@
 
 ## Context
 
-The EF Core eager loading API (`Include` / `ThenInclude`) requires a functioning query pipeline end-to-end. The current codebase is a skeleton: every method in the query pipeline throws `NotImplementedException`. Eager loading cannot be bolted on before the foundation exists, so this plan is structured in strict dependency order.
+The EF Core eager loading API (`Include` / `ThenInclude`) requires a functioning query pipeline end-to-end. This plan is structured in strict dependency order. Phases 0, 2, and 3 are complete; the query pipeline executes N1QL queries through the EF Core relational shaper and materialises entity graphs from JOIN results. Phase 4 (owned-type / embedded-document fixup) and later phases remain.
 
 ---
 
@@ -68,62 +68,47 @@ EF Core calls `Navigation(...).AutoInclude()` on the model builder. The provider
 
 ---
 
-## Phase 2 — Include / ThenInclude Expression Handling
+## Phase 2 — Include / ThenInclude Expression Handling ✅ COMPLETE
 
-### How EF Core wires it up internally
+### How EF Core 10 wires it up (implementation note)
 
-When a developer writes:
+**EF Core 10 does not have a `TranslateInclude` method.** The spec was written against an older conceptual model. Actual pipeline in EF Core 10:
 
-```csharp
-context.Blogs.Include(b => b.Posts).ThenInclude(p => p.Author)
-```
+1. `NavigationExpandingExpressionVisitor` processes `.Include()` / `.ThenInclude()` calls and records the navigation tree in each entity reference's `IncludePaths`.
+2. During navigation expansion, `IncludeExpression` nodes are created in the `ShapedQueryExpression.ShaperExpression` — one per navigation level, chained through `EntityExpression`.
+3. The base `RelationalQueryableMethodTranslatingExpressionVisitor` adds the SQL LEFT JOINs as part of normal expression translation (inherited; no Couchbase override needed for standard foreign-key navigations).
+4. `ShaperProcessingExpressionVisitor.ProcessShaper` (called in `CouchbaseShapedQueryCompilingExpressionVisitor.VisitShapedQuery`) processes the `IncludeExpression` nodes and generates navigation fixup code.
+5. For owned types (embedded in documents), JOINs are intentionally skipped by `CouchbaseQuerySqlGenerator.VisitLeftJoin` / `VisitInnerJoin` — Phase 4 handles the embedded-document read.
 
-EF Core calls `QueryableMethodTranslatingExpressionVisitor.TranslateInclude`. This produces an `IncludeExpression` wrapping the root `ShapedQueryExpression` with a list of `IncludeTreeNode` objects describing the navigation path and any filter lambda.
-
-### 2.1 — Override `TranslateInclude`
-
-In `CouchbaseQueryableMethodTranslatingExpressionVisitor`, override:
+### 2.1 — `NavigationInclude` record
 
 ```csharp
-protected override ShapedQueryExpression TranslateInclude(
-    ShapedQueryExpression source,
-    LambdaExpression navigationLambda,
-    bool thenInclude,
-    bool setLoaded)
-```
-
-Implementation steps:
-
-1. Resolve the `INavigation` from the lambda using `navigationLambda` and the entity metadata on `source`.
-2. Record the resolved navigation (and its filter lambda if present) on the `CouchbaseQueryExpression` inside `source`. Use a tree structure mirroring `IncludeTreeNode`: a root list of `NavigationInclude` nodes, each with a `Children` list for `ThenInclude` chains.
-3. Return the same `source` (the include is embedded in the expression, not a new wrapper).
-
-```csharp
-// internal model to attach to CouchbaseQueryExpression
-record NavigationInclude(
+// Query/Internal/NavigationInclude.cs
+public record NavigationInclude(
     INavigation Navigation,
-    LambdaExpression? Filter,   // for filtered includes
+    LambdaExpression? Filter,   // always null — see note below
     List<NavigationInclude> Children);
 ```
 
-### 2.2 — Multiple root includes & ThenInclude chaining
+Stored on `CouchbaseQueryCompilationContext.NavigationIncludes` for Phase 4 consumption.
 
-The standard pattern:
+> **Filter is always `null`.** By the time `VisitShapedQuery` runs, any filter lambda from
+> `.Include(b => b.Posts.Where(...))` has already been compiled into a SQL predicate inside
+> the `SelectExpression`'s WHERE clause and is no longer recoverable as a `LambdaExpression`
+> from `IncludeExpression.NavigationExpression`. The field is retained in the record for
+> forward compatibility, but Phase 4 **must not** rely on it to detect filtered includes.
+> Instead, Phase 4 should inspect `RelationalCollectionShaperExpression` or the inner
+> `SelectExpression`'s predicate to determine whether a collection include is filtered.
 
-```csharp
-.Include(b => b.Posts).ThenInclude(p => p.Author)
-.Include(b => b.Posts).ThenInclude(p => p.Tags)
-```
+### 2.2 — Include collection in `VisitShapedQuery`
 
-EF Core calls `TranslateInclude` once per `.Include` / `.ThenInclude` call. The second `.Include(b => b.Posts)` must merge into the existing `Posts` node rather than create a duplicate. Match on `INavigation` identity before appending.
+`CouchbaseShapedQueryCompilingExpressionVisitor.VisitShapedQuery` calls `CollectNavigationIncludes(shaperExpression)` before compiling the shaper, which delegates to the internal static `PopulateNavigationIncludes(shaperExpression, target)`. This walks the outermost `IncludeExpression` chain in the shaper and records root-level `INavigation` includes on the context. `ISkipNavigation` (many-to-many) entries are skipped. ThenInclude chains (nested inside collection/reference shaper expressions) are resolved by Phase 4.
 
-### 2.3 — Navigation chain shorthand
+`CouchbaseQueryCompilationContextFactory` is registered via the remove-then-add pattern in `AddEntityFrameworkCouchbase` to ensure EF Core's relational default is replaced; without this, `CollectNavigationIncludes` silently no-ops because the context type check fails.
 
-```csharp
-.Include(b => b.Owner.AuthoredPosts)
-```
+### 2.3 — Deduplication and ThenInclude chaining
 
-EF Core decomposes this into a chain of member accesses. Walk the expression tree, resolve each navigation segment in order, and nest them as a depth-first chain of `NavigationInclude` nodes.
+EF Core's `NavigationExpandingExpressionVisitor` already deduplicates includes (merges `.Include(b => b.Posts).Include(b => b.Posts)` into one `IncludeTreeNode`). No Couchbase-side deduplication is required. ThenInclude children are visible inside the `NavigationExpression` of each `IncludeExpression` — Phase 4 will walk these recursively.
 
 ---
 
@@ -196,38 +181,37 @@ For collection navigations, a single JOIN query multiplies root rows. A **split 
 
 ---
 
-## Phase 4 — Result Shaping & Navigation Fixup
+## Phase 4 — Owned-Type / Embedded-Document Navigation Fixup
 
-### 4.1 — Projecting aliased columns
+### Context (updated after Phase 3)
 
-When the N1QL query returns `b.*`, `p.*`, etc., the JSON result will contain a map keyed by alias. The materializer must demultiplex these into separate entity instances.
+Standard foreign-key navigations between separate collections are **already handled by Phase 3**:
 
-In `CouchbaseShapedQueryCompilingExpressionVisitor.VisitShapedQuery`:
+- Projection ordinals and column aliasing — handled by `CouchbaseDbDataReader` + `projectionAliases` liftable constant.
+- Collection grouping (multiple rows → single root entity with populated collection) — handled by `SingleQueryResultCoordinator` in `CouchbaseQueryEnumerable`.
+- Navigation property fixup (inverse references, change tracker) — generated by `ShaperProcessingExpressionVisitor.ProcessShaper` inside the EF Core shaper.
 
-1. Detect whether the compiled query expression contains any `NavigationInclude` nodes.
-2. If yes, emit a **multi-entity materializer** that:
-   - Reads the root entity from the `b.*` JSON fragment.
-   - For each `NavigationInclude`, reads the related entity from the `p0.*` fragment.
-   - Uses `IEntityMaterializerSource` (already in EF Core DI) to construct typed entity instances.
+Phase 4 is therefore scoped to **owned types stored as embedded JSON within the parent document**, where the Phase 3 JOIN approach does not apply.
 
-### 4.2 — Collection navigation assembly
+### 4.1 — Owned-type detection
 
-For one-to-many relationships, multiple result rows map to the same root entity. The materializer must group by root PK and aggregate the related rows into the collection property:
+`CouchbaseQuerySqlGenerator.VisitLeftJoin` / `VisitInnerJoin` intentionally skips JOINs for owned-type navigations (they live inside the parent document, not in a separate collection). `NavigationIncludes` recorded by Phase 2 will contain these navigations. Phase 4 must distinguish them from foreign-key navigations.
 
-```
-Row 1: Blog{id:1}, Post{id:10}
-Row 2: Blog{id:1}, Post{id:11}
-Row 3: Blog{id:2}, Post{id:12}
+Detection: check `navigation.TargetEntityType.IsOwned()` on each `NavigationInclude` entry.
 
-→ Blog{id:1, Posts:[Post{id:10}, Post{id:11}]}
-→ Blog{id:2, Posts:[Post{id:12}]}
-```
+### 4.2 — Embedded-document materialisation
 
-Implement this as a post-processing step over the raw `IAsyncEnumerable<JsonObject>` result before returning to the caller.
+For owned navigations, the parent document's JSON already contains the nested object(s). Phase 4 must:
 
-### 4.3 — Navigation property fixup
+1. Locate the embedded JSON fragment within the parent document's `JsonElement` using the navigation's configured column name or JSON property path.
+2. Materialise the owned entity from that fragment using `IEntityMaterializerSource`.
+3. Assign the materialised instance to the navigation property on the parent entity.
 
-After materializing, call EF Core's built-in `NavigationFixer` (registered in DI via `IChangeDetector` / `INavigationFixer`) to wire inverse navigation properties and update the change tracker. For `AsNoTracking` queries, do manual fixup: set reference navigations and populate collection navigations directly on the materialized objects.
+For owned collections, the fragment is a JSON array; iterate and materialise each element.
+
+### 4.3 — ThenInclude chain walking
+
+`NavigationIncludes` recorded in Phase 2 only captures root-level navigations. Phase 4 must recursively walk `NavigationInclude.Children` to process ThenInclude chains, applying the same owned-vs-foreign-key detection at each level.
 
 ---
 
@@ -235,13 +219,13 @@ After materializing, call EF Core's built-in `NavigationFixer` (registered in DI
 
 ### 5.1 — Auto-Include
 
-In `TranslateInclude` (Phase 2.1), after processing explicit includes, walk `IEntityType.GetNavigations()` and check `navigation.IsEagerLoaded`. For each auto-include navigation not already in the tree, call the same path-recording logic.
+EF Core's `NavigationExpandingExpressionVisitor` already injects auto-include navigations (those with `navigation.IsEagerLoaded == true`) into the `IncludeExpression` chain before `VisitShapedQuery` is called. No Couchbase-side injection is needed for standard foreign-key navigations.
 
-This must run once per entity type encountered in the query (including types brought in by earlier includes).
+For owned-type auto-includes (Phase 4 scope), verify that `NavigationIncludes` captures them correctly and that Phase 4's embedded-document materialisation handles them without an explicit `.Include()` call.
 
 ### 5.2 — IgnoreAutoIncludes
 
-EF Core sets a flag on the `QueryCompilationContext` when `.IgnoreAutoIncludes()` is called. Read `QueryCompilationContext.IgnoreAutoIncludes` in the translation step and skip the auto-include injection when true.
+EF Core's `NavigationExpandingExpressionVisitor` respects `QueryCompilationContext.IgnoreAutoIncludes` before building the `IncludeExpression` chain. No Couchbase-side handling is required for foreign-key navigations. For owned-type navigations, check whether the flag suppresses their `IncludeExpression` nodes or whether Phase 4 must check it explicitly.
 
 ---
 
@@ -252,7 +236,7 @@ context.People.Include(p => ((Student)p).School)
 context.People.Include("School")
 ```
 
-The cast-based form produces a `UnaryExpression` (cast) wrapping a `MemberExpression`. In `TranslateInclude`, detect this pattern, resolve the target type from the cast, look up the navigation on the derived `IEntityType`, and proceed normally.
+The cast-based form produces a `UnaryExpression` (cast) wrapping a `MemberExpression`. EF Core's `NavigationExpandingExpressionVisitor` resolves this to the correct derived-type navigation and creates the `IncludeExpression` node — no Couchbase-side detection is needed for foreign-key navigations. For owned-type navigations on derived types, Phase 4 must handle the cast when walking `NavigationIncludes`.
 
 The string-based overload (`Include(string navigationName)`) is resolved by EF Core's `QueryableExtensions` before reaching the visitor. No special provider handling is needed beyond correct navigation metadata on the model.
 
@@ -270,8 +254,11 @@ The string-based overload (`Include(string navigationName)`) is resolved by EF C
 | `Query/Internal/CouchbaseQueryEnumerable.cs` | ✅ Phase 3 | Rewritten: uses `QueryAsync<JsonElement>` + `CouchbaseDbDataReader<JsonElement>` + EF Core shaper + `SingleQueryResultCoordinator`; carries `string[] projectionAliases` from `VisitShapedQuery` |
 | `Query/Internal/CouchbaseShapedQueryCompilingExpressionVisitor.cs` | ✅ Phase 3 | `VisitShapedQuery` extracts ordered projection aliases via `EffectiveAlias`; passes as liftable constant to `CouchbaseQueryEnumerable` |
 | `Storage/Internal/CouchbaseDbDataReader.cs` | ✅ Phase 3 | `InitializeFieldInfo` handles scalar non-Object `JsonElement` (single synthetic `""` field); `GetOrdinal` falls back to ordinal 0 for scalar results; when `_columnNames` is active: `_projectionOrdinals` reverse-lookup (O(1), built at construction); `GetValue` translates shaper ordinal → alias → `_fieldOrdinals` → JSON value, with null-slot positional fallback and MISSING → `DBNull.Value`; `GetOrdinal` resolves aliases via `_projectionOrdinals` with constrained null-slot fallback to restore `GetOrdinal(GetName(i)) == i`; `GetName` returns alias for non-null slots, JSON field name for null slots; `FieldCount`/`GetValues`/`GetSchemaTable` use `_columnNames.Length` |
-| `Query/Internal/CouchbaseQueryableMethodTranslatingExpressionVisitor.cs` | Phase 2 | Override `TranslateInclude` to record navigation paths on the `SelectExpression` |
-| `Query/Internal/NavigationInclude.cs` *(new)* | Phase 2 | `record NavigationInclude(INavigation, LambdaExpression?, List<NavigationInclude>)` |
+| `Query/Internal/CouchbaseQueryableMethodTranslatingExpressionVisitor.cs` | ✅ Phase 2 | No override needed — base relational pipeline handles SQL JOINs for navigations automatically |
+| `Query/Internal/NavigationInclude.cs` *(new)* | ✅ Phase 2 | `record NavigationInclude(INavigation, LambdaExpression?, List<NavigationInclude>)` — Phase 4 consumption target |
+| `Query/Internal/CouchbaseQueryCompilationContext.cs` | ✅ Phase 2 | Extends `RelationalQueryCompilationContext`; adds `NavigationIncludes` list and precompiling constructor overload |
+| `Query/Internal/CouchbaseQueryCompilationContextFactory.cs` *(new)* | ✅ Phase 2 | Implements `IQueryCompilationContextFactory`; creates `CouchbaseQueryCompilationContext`; registered via remove-then-add in `AddEntityFrameworkCouchbase` |
+| `Query/Internal/CouchbaseShapedQueryCompilingExpressionVisitor.cs` | ✅ Phase 2 | `CollectNavigationIncludes` → `PopulateNavigationIncludes` (internal static, testable seam) → `ExtractNavigationIncludes`; walks root-level `IncludeExpression` chain; skips `ISkipNavigation` |
 | `Extensions/CouchbaseEntityTypeBuilderExtensions.cs` | Phase 1 | `ToCouchbaseCollection(bucket, scope, collection)` already exists; verify annotation flows |
 
 ---
@@ -300,4 +287,4 @@ Phase 0 (foundation) → Phase 1 (metadata) → Phase 2 (expression handling)
     → Phase 3b (split query, optional)
 ```
 
-Phases 2 and 3 are the most complex and should be developed together since the expression tree shape drives the N1QL output. Phase 4 (materializer) is where the most Couchbase-specific engineering lives, as JSON document structure does not directly map to flat relational rows.
+Phases 0–3 are complete. Phase 4 (owned-type / embedded-document fixup) is where the remaining Couchbase-specific engineering lives — foreign-key navigation materialisation is already handled by the EF Core shaper pipeline established in Phase 3.

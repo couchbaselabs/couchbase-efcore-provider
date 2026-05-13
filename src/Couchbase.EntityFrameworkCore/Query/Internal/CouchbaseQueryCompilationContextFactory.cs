@@ -1,34 +1,30 @@
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+
 using System.Diagnostics.CodeAnalysis;
 using Microsoft.EntityFrameworkCore.Query;
 
 namespace Couchbase.EntityFrameworkCore.Query.Internal;
 
-public class CouchbaseQueryCompilationContext : RelationalQueryCompilationContext
+public class CouchbaseQueryCompilationContextFactory : IQueryCompilationContextFactory
 {
-    public CouchbaseQueryCompilationContext(
+    public CouchbaseQueryCompilationContextFactory(
         QueryCompilationContextDependencies dependencies,
-        RelationalQueryCompilationContextDependencies relationalDependencies,
-        bool async)
-        : base(dependencies, relationalDependencies, async)
+        RelationalQueryCompilationContextDependencies relationalDependencies)
     {
+        Dependencies = dependencies;
+        RelationalDependencies = relationalDependencies;
     }
+
+    protected virtual QueryCompilationContextDependencies Dependencies { get; }
+    protected virtual RelationalQueryCompilationContextDependencies RelationalDependencies { get; }
+
+    public virtual QueryCompilationContext Create(bool async)
+        => new CouchbaseQueryCompilationContext(Dependencies, RelationalDependencies, async);
 
     [Experimental("EF9100")]
-    public CouchbaseQueryCompilationContext(
-        QueryCompilationContextDependencies dependencies,
-        RelationalQueryCompilationContextDependencies relationalDependencies,
-        bool async,
-        bool precompiling)
-        : base(dependencies, relationalDependencies, async, precompiling)
-    {
-    }
-
-    /// <summary>
-    /// Navigation includes recorded during shaper compilation (Phase 2).
-    /// Populated by <see cref="CouchbaseShapedQueryCompilingExpressionVisitor"/> and
-    /// consumed by Phase 4 result-shaping logic.
-    /// </summary>
-    public List<NavigationInclude> NavigationIncludes { get; } = [];
+    public virtual QueryCompilationContext CreatePrecompiled(bool async)
+        => new CouchbaseQueryCompilationContext(Dependencies, RelationalDependencies, async, precompiling: true);
 }
 
 /* ************************************************************

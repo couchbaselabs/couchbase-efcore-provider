@@ -74,17 +74,23 @@ public static class CouchbaseServiceCollectionExtensions
 
         builder.TryAddCoreServices();
 
-        // IDatabase and IValueGeneratorSelector must be registered AFTER TryAddCoreServices()
-        // because EF Core's relational core services register RelationalDatabase / the default
-        // selector, and TryAdd semantics mean the core registration wins over the builder's entry.
-        // Removing and re-adding with AddScoped guarantees our implementation is the one resolved.
-        foreach (var type in new[] { typeof(IDatabase), typeof(IValueGeneratorSelector) })
+        // IDatabase, IValueGeneratorSelector, and IQueryCompilationContextFactory must be
+        // registered AFTER TryAddCoreServices() because EF Core's relational core services
+        // register their own implementations for all three, and TryAdd semantics mean the
+        // core registration wins over any earlier builder entry. IQueryCompilationContextFactory
+        // specifically must produce CouchbaseQueryCompilationContext (which carries
+        // NavigationIncludes for eager loading); the relational default produces a plain
+        // RelationalQueryCompilationContext, so the type-check in CollectNavigationIncludes would
+        // silently no-op. Removing and re-adding with AddScoped guarantees our implementation
+        // is the one resolved.
+        foreach (var type in new[] { typeof(IDatabase), typeof(IValueGeneratorSelector), typeof(IQueryCompilationContextFactory) })
         {
             var existing = serviceCollection.Where(d => d.ServiceType == type).ToList();
             foreach (var descriptor in existing) serviceCollection.Remove(descriptor);
         }
         serviceCollection.AddScoped<IDatabase, CouchbaseDatabaseWrapper>();
         serviceCollection.AddScoped<IValueGeneratorSelector, CouchbaseValueGeneratorSelector>();
+        serviceCollection.AddScoped<IQueryCompilationContextFactory, CouchbaseQueryCompilationContextFactory>();
 
         serviceCollection
             //.AddScoped<IQueryContextFactory, CouchbaseQueryContextFactory>()
