@@ -38,6 +38,9 @@ public class CouchbaseDbDataReader<T> : DbDataReader
     // Ordered SELECT projection aliases supplied by the caller (one per shaper ordinal).
     // Used in GetValue to translate shaper ordinal → JSON property via _fieldOrdinals.
     private readonly string?[]? _columnNames;
+    // Reverse map of _columnNames: alias (case-insensitive) → projection ordinal.
+    // Built eagerly at construction so GetOrdinal needs no schema discovery when active.
+    private readonly Dictionary<string, int>? _projectionOrdinals;
     private IAsyncEnumerator<T>? _enumerator;
     private CancellationToken _cancellationToken;
     private T? _currentRow;
@@ -69,6 +72,16 @@ public class CouchbaseDbDataReader<T> : DbDataReader
         : this(queryResult, null, CommandBehavior.Default, CancellationToken.None)
     {
         _columnNames = columnNames;
+        if (columnNames != null)
+        {
+            _projectionOrdinals = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            for (var i = 0; i < columnNames.Length; i++)
+            {
+                var alias = columnNames[i];
+                if (alias != null)
+                    _projectionOrdinals.TryAdd(alias, i);
+            }
+        }
     }
 
     /// <summary>
@@ -98,6 +111,8 @@ public class CouchbaseDbDataReader<T> : DbDataReader
     {
         get
         {
+            if (_columnNames != null)
+                return _columnNames.Length;
             EnsureFieldInfo();
             return _fieldNames?.Count ?? 0;
         }
@@ -349,6 +364,16 @@ public class CouchbaseDbDataReader<T> : DbDataReader
     /// <exception cref="IndexOutOfRangeException">Thrown when <paramref name="ordinal"/> is out of range.</exception>
     public override string GetName(int ordinal)
     {
+        if (_columnNames != null)
+        {
+            if ((uint)ordinal >= (uint)_columnNames.Length)
+                throw new IndexOutOfRangeException($"Ordinal {ordinal} is out of range. FieldCount: {_columnNames.Length}");
+            var alias = _columnNames[ordinal];
+            if (alias != null)
+                return alias;
+            // null slot: fall back to the JSON field name at the same position
+        }
+
         EnsureFieldInfo();
         ValidateOrdinal(ordinal);
         return _fieldNames![ordinal];
@@ -368,22 +393,25 @@ public class CouchbaseDbDataReader<T> : DbDataReader
     public override int GetOrdinal(string name)
     {
         if (name == null)
-        {
             throw new ArgumentNullException(nameof(name));
+
+        // When projection aliases are active, resolve against them to return the
+        // projection ordinal that GetValue/GetName expect.  No schema discovery needed.
+        if (_projectionOrdinals != null)
+        {
+            if (_projectionOrdinals.TryGetValue(name, out var projOrdinal))
+                return projOrdinal;
+            throw new IndexOutOfRangeException($"Field '{name}' not found.");
         }
 
         EnsureFieldInfo();
         if (_fieldOrdinals != null && _fieldOrdinals.TryGetValue(name, out var ordinal))
-        {
             return ordinal;
-        }
 
         // For scalar SELECT RAW results the single synthetic field has an empty name.
         // Any column name lookup on a scalar result maps to ordinal 0.
         if (_fieldNames?.Count == 1 && _fieldNames[0] == string.Empty)
-        {
             return 0;
-        }
 
         throw new IndexOutOfRangeException($"Field '{name}' not found.");
     }
@@ -486,9 +514,19 @@ public class CouchbaseDbDataReader<T> : DbDataReader
         }
 
         EnsureCurrentRow();
-        EnsureFieldInfo();
 
-        var count = Math.Min(values.Length, _fieldNames!.Count);
+        int fieldCount;
+        if (_columnNames != null)
+        {
+            fieldCount = _columnNames.Length;
+        }
+        else
+        {
+            EnsureFieldInfo();
+            fieldCount = _fieldNames!.Count;
+        }
+
+        var count = Math.Min(values.Length, fieldCount);
         for (var i = 0; i < count; i++)
         {
             values[i] = GetValue(i);
@@ -966,14 +1004,27 @@ public class CouchbaseDbDataReader<T> : DbDataReader
     /// <returns>A DataTable with ColumnName, ColumnOrdinal, DataType, and AllowDBNull columns.</returns>
     public override DataTable GetSchemaTable()
     {
-        EnsureFieldInfo();
-
         var schemaTable = new DataTable("SchemaTable");
         schemaTable.Columns.Add("ColumnName", typeof(string));
         schemaTable.Columns.Add("ColumnOrdinal", typeof(int));
         schemaTable.Columns.Add("DataType", typeof(Type));
         schemaTable.Columns.Add("AllowDBNull", typeof(bool));
 
+        if (_columnNames != null)
+        {
+            for (var i = 0; i < _columnNames.Length; i++)
+            {
+                var row = schemaTable.NewRow();
+                row["ColumnName"] = (object?)_columnNames[i] ?? DBNull.Value;
+                row["ColumnOrdinal"] = i;
+                row["DataType"] = typeof(object);
+                row["AllowDBNull"] = true;
+                schemaTable.Rows.Add(row);
+            }
+            return schemaTable;
+        }
+
+        EnsureFieldInfo();
         if (_fieldNames != null)
         {
             for (var i = 0; i < _fieldNames.Count; i++)
