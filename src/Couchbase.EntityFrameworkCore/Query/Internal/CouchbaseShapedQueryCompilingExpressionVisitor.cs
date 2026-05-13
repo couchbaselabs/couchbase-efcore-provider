@@ -9,6 +9,7 @@ using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Query;
 using Microsoft.EntityFrameworkCore.Query.Internal;
 using Microsoft.EntityFrameworkCore.Query.SqlExpressions;
@@ -48,10 +49,37 @@ public class CouchbaseShapedQueryCompilingExpressionVisitor : RelationalShapedQu
         _detailedErrorsEnabled = dependencies.CoreSingletonOptions.AreDetailedErrorsEnabled;
     }
 
+    /// <summary>
+    /// Walks the shaper expression and records root-level <see cref="NavigationInclude"/> nodes
+    /// (those with a concrete <see cref="INavigation"/>) into the compilation context.
+    /// ThenInclude chains are embedded inside collection/reference shaper expressions and are
+    /// resolved during Phase 4.
+    /// </summary>
+    private void CollectNavigationIncludes(Expression shaperExpression)
+    {
+        if (QueryCompilationContext is not CouchbaseQueryCompilationContext ctx)
+            return;
+
+        var current = shaperExpression;
+        var collected = new List<NavigationInclude>();
+
+        while (current is IncludeExpression include)
+        {
+            if (include.Navigation is INavigation nav)
+                collected.Insert(0, new NavigationInclude(nav, null, []));
+
+            current = include.EntityExpression;
+        }
+
+        ctx.NavigationIncludes.AddRange(collected);
+    }
+
     /// <inheritdoc />
     [Experimental("EF9100")]
     protected override Expression VisitShapedQuery(ShapedQueryExpression shapedQueryExpression)
     {
+        CollectNavigationIncludes(shapedQueryExpression.ShaperExpression);
+
         var selectExpression = (SelectExpression)shapedQueryExpression.QueryExpression;
 
         VerifyNoClientConstant(shapedQueryExpression.ShaperExpression);

@@ -68,62 +68,37 @@ EF Core calls `Navigation(...).AutoInclude()` on the model builder. The provider
 
 ---
 
-## Phase 2 — Include / ThenInclude Expression Handling
+## Phase 2 — Include / ThenInclude Expression Handling ✅ COMPLETE
 
-### How EF Core wires it up internally
+### How EF Core 10 wires it up (implementation note)
 
-When a developer writes:
+**EF Core 10 does not have a `TranslateInclude` method.** The spec was written against an older conceptual model. Actual pipeline in EF Core 10:
 
-```csharp
-context.Blogs.Include(b => b.Posts).ThenInclude(p => p.Author)
-```
+1. `NavigationExpandingExpressionVisitor` processes `.Include()` / `.ThenInclude()` calls and records the navigation tree in each entity reference's `IncludePaths`.
+2. During navigation expansion, `IncludeExpression` nodes are created in the `ShapedQueryExpression.ShaperExpression` — one per navigation level, chained through `EntityExpression`.
+3. The base `RelationalQueryableMethodTranslatingExpressionVisitor` adds the SQL LEFT JOINs as part of normal expression translation (inherited; no Couchbase override needed for standard foreign-key navigations).
+4. `ShaperProcessingExpressionVisitor.ProcessShaper` (called in `CouchbaseShapedQueryCompilingExpressionVisitor.VisitShapedQuery`) processes the `IncludeExpression` nodes and generates navigation fixup code.
+5. For owned types (embedded in documents), JOINs are intentionally skipped by `CouchbaseQuerySqlGenerator.VisitLeftJoin` / `VisitInnerJoin` — Phase 4 handles the embedded-document read.
 
-EF Core calls `QueryableMethodTranslatingExpressionVisitor.TranslateInclude`. This produces an `IncludeExpression` wrapping the root `ShapedQueryExpression` with a list of `IncludeTreeNode` objects describing the navigation path and any filter lambda.
-
-### 2.1 — Override `TranslateInclude`
-
-In `CouchbaseQueryableMethodTranslatingExpressionVisitor`, override:
+### 2.1 — `NavigationInclude` record
 
 ```csharp
-protected override ShapedQueryExpression TranslateInclude(
-    ShapedQueryExpression source,
-    LambdaExpression navigationLambda,
-    bool thenInclude,
-    bool setLoaded)
-```
-
-Implementation steps:
-
-1. Resolve the `INavigation` from the lambda using `navigationLambda` and the entity metadata on `source`.
-2. Record the resolved navigation (and its filter lambda if present) on the `CouchbaseQueryExpression` inside `source`. Use a tree structure mirroring `IncludeTreeNode`: a root list of `NavigationInclude` nodes, each with a `Children` list for `ThenInclude` chains.
-3. Return the same `source` (the include is embedded in the expression, not a new wrapper).
-
-```csharp
-// internal model to attach to CouchbaseQueryExpression
-record NavigationInclude(
+// Query/Internal/NavigationInclude.cs
+public record NavigationInclude(
     INavigation Navigation,
     LambdaExpression? Filter,   // for filtered includes
     List<NavigationInclude> Children);
 ```
 
-### 2.2 — Multiple root includes & ThenInclude chaining
+Stored on `CouchbaseQueryCompilationContext.NavigationIncludes` for Phase 4 consumption.
 
-The standard pattern:
+### 2.2 — Include collection in `VisitShapedQuery`
 
-```csharp
-.Include(b => b.Posts).ThenInclude(p => p.Author)
-.Include(b => b.Posts).ThenInclude(p => p.Tags)
-```
+`CouchbaseShapedQueryCompilingExpressionVisitor.VisitShapedQuery` calls `CollectNavigationIncludes(shaperExpression)` before compiling the shaper. This walks the outermost `IncludeExpression` chain in the shaper and records root-level `INavigation` includes on the context. ThenInclude chains (nested inside collection/reference shaper expressions) are resolved by Phase 4.
 
-EF Core calls `TranslateInclude` once per `.Include` / `.ThenInclude` call. The second `.Include(b => b.Posts)` must merge into the existing `Posts` node rather than create a duplicate. Match on `INavigation` identity before appending.
+### 2.3 — Deduplication and ThenInclude chaining
 
-### 2.3 — Navigation chain shorthand
-
-```csharp
-.Include(b => b.Owner.AuthoredPosts)
-```
-
-EF Core decomposes this into a chain of member accesses. Walk the expression tree, resolve each navigation segment in order, and nest them as a depth-first chain of `NavigationInclude` nodes.
+EF Core's `NavigationExpandingExpressionVisitor` already deduplicates includes (merges `.Include(b => b.Posts).Include(b => b.Posts)` into one `IncludeTreeNode`). No Couchbase-side deduplication is required. ThenInclude children are visible inside the `NavigationExpression` of each `IncludeExpression` — Phase 4 will walk these recursively.
 
 ---
 
@@ -270,8 +245,10 @@ The string-based overload (`Include(string navigationName)`) is resolved by EF C
 | `Query/Internal/CouchbaseQueryEnumerable.cs` | ✅ Phase 3 | Rewritten: uses `QueryAsync<JsonElement>` + `CouchbaseDbDataReader<JsonElement>` + EF Core shaper + `SingleQueryResultCoordinator`; carries `string[] projectionAliases` from `VisitShapedQuery` |
 | `Query/Internal/CouchbaseShapedQueryCompilingExpressionVisitor.cs` | ✅ Phase 3 | `VisitShapedQuery` extracts ordered projection aliases via `EffectiveAlias`; passes as liftable constant to `CouchbaseQueryEnumerable` |
 | `Storage/Internal/CouchbaseDbDataReader.cs` | ✅ Phase 3 | `InitializeFieldInfo` handles scalar non-Object `JsonElement` (single synthetic `""` field); `GetOrdinal` falls back to ordinal 0 for scalar results; when `_columnNames` is active: `_projectionOrdinals` reverse-lookup (O(1), built at construction); `GetValue` translates shaper ordinal → alias → `_fieldOrdinals` → JSON value, with null-slot positional fallback and MISSING → `DBNull.Value`; `GetOrdinal` resolves aliases via `_projectionOrdinals` with constrained null-slot fallback to restore `GetOrdinal(GetName(i)) == i`; `GetName` returns alias for non-null slots, JSON field name for null slots; `FieldCount`/`GetValues`/`GetSchemaTable` use `_columnNames.Length` |
-| `Query/Internal/CouchbaseQueryableMethodTranslatingExpressionVisitor.cs` | Phase 2 | Override `TranslateInclude` to record navigation paths on the `SelectExpression` |
-| `Query/Internal/NavigationInclude.cs` *(new)* | Phase 2 | `record NavigationInclude(INavigation, LambdaExpression?, List<NavigationInclude>)` |
+| `Query/Internal/CouchbaseQueryableMethodTranslatingExpressionVisitor.cs` | ✅ Phase 2 | No override needed — base relational pipeline handles SQL JOINs for navigations automatically |
+| `Query/Internal/NavigationInclude.cs` *(new)* | ✅ Phase 2 | `record NavigationInclude(INavigation, LambdaExpression?, List<NavigationInclude>)` — Phase 4 consumption target |
+| `Query/Internal/CouchbaseQueryCompilationContext.cs` | ✅ Phase 2 | Added `NavigationIncludes` list; populated by `CollectNavigationIncludes` in `VisitShapedQuery` |
+| `Query/Internal/CouchbaseShapedQueryCompilingExpressionVisitor.cs` | ✅ Phase 2 | `CollectNavigationIncludes` walks root-level `IncludeExpression` chain in shaper; records into context |
 | `Extensions/CouchbaseEntityTypeBuilderExtensions.cs` | Phase 1 | `ToCouchbaseCollection(bucket, scope, collection)` already exists; verify annotation flows |
 
 ---

@@ -1,21 +1,19 @@
-using Microsoft.EntityFrameworkCore.Query;
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+
+using System.Linq.Expressions;
+using Microsoft.EntityFrameworkCore.Metadata;
 
 namespace Couchbase.EntityFrameworkCore.Query.Internal;
 
-public class CouchbaseQueryCompilationContext : QueryCompilationContext
-{
-    public CouchbaseQueryCompilationContext(QueryCompilationContextDependencies dependencies, bool async)
-        : base(dependencies, async)
-    {
-    }
-
-    /// <summary>
-    /// Navigation includes recorded during shaper compilation (Phase 2).
-    /// Populated by <see cref="CouchbaseShapedQueryCompilingExpressionVisitor"/> and
-    /// consumed by Phase 4 result-shaping logic.
-    /// </summary>
-    public List<NavigationInclude> NavigationIncludes { get; } = [];
-}
+/// <summary>
+/// Records a single navigation include (from .Include() or .ThenInclude()) for use
+/// during result shaping in Phase 4. Children represent ThenInclude chains.
+/// </summary>
+public record NavigationInclude(
+    INavigation Navigation,
+    LambdaExpression? Filter,
+    List<NavigationInclude> Children);
 
 /* ************************************************************
  *
