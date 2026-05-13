@@ -1544,6 +1544,107 @@ public class CouchbaseDbDataReaderTests
 
     #endregion
 
+    #region Phase 3 — GetOrdinal/GetName inverse for null slots and GetValue MISSING positional
+
+    [Fact]
+    public async Task GetOrdinal_NullSlot_RoundTripsWithGetName()
+    {
+        // GetName(0) returns the JSON field name "id" for a null slot.
+        // GetOrdinal("id") must return 0 so the pair are inverses.
+        var rows = new List<JsonElement>
+        {
+            JsonDocument.Parse("{\"id\": 1, \"name\": \"alice\"}").RootElement
+        };
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { null, "name" });
+        await reader.ReadAsync(CancellationToken.None);
+
+        var name = reader.GetName(0);          // "id" via positional fallback
+        Assert.Equal(0, reader.GetOrdinal(name));
+    }
+
+    [Fact]
+    public async Task GetOrdinal_NullSlot_CaseInsensitive()
+    {
+        var rows = new List<JsonElement>
+        {
+            JsonDocument.Parse("{\"MyField\": 99}").RootElement
+        };
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { null });
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Equal(0, reader.GetOrdinal("myfield"));
+        Assert.Equal(0, reader.GetOrdinal("MYFIELD"));
+        Assert.Equal(0, reader.GetOrdinal("MyField"));
+    }
+
+    [Fact]
+    public async Task GetOrdinal_NullSlot_NonMatchingNameStillThrows()
+    {
+        // The constrained fallback only accepts names that map to a null-slot position.
+        // An arbitrary unknown name must still throw.
+        var rows = new List<JsonElement>
+        {
+            JsonDocument.Parse("{\"id\": 1}").RootElement
+        };
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { null });
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Throws<IndexOutOfRangeException>(() => reader.GetOrdinal("nonexistent"));
+    }
+
+    [Fact]
+    public async Task GetOrdinal_NullSlot_AliasNameInNonNullSlotIsNotResolvedViaFallback()
+    {
+        // "name" is already a non-null alias at slot 1.  If someone asks for ordinal
+        // of a JSON field that happens to share that string but lives at slot 0 (null),
+        // the alias lookup wins — it returns 1, not 0.
+        var rows = new List<JsonElement>
+        {
+            JsonDocument.Parse("{\"name\": \"positional\", \"title\": \"alias\"}").RootElement
+        };
+        // Slot 0 is null (positional → "name"), slot 1 has alias "name" (mapped to "title").
+        // This is a degenerate case; alias wins.
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { null, "name" });
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Equal(1, reader.GetOrdinal("name")); // alias at slot 1 wins
+    }
+
+    [Fact]
+    public async Task GetValue_NullSlot_PositionalMissingFieldReturnsDBNull()
+    {
+        // JSON response has only 1 field; projection has 2 null slots.
+        // Slot 0 resolves positionally to "id" — present.
+        // Slot 1 is a null slot beyond _fieldNames.Count — must be DBNull, not throw.
+        var rows = new List<JsonElement>
+        {
+            JsonDocument.Parse("{\"id\": 42}").RootElement
+        };
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { null, null });
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Equal(42L, reader.GetValue(0));
+        Assert.Equal(DBNull.Value, reader.GetValue(1));
+    }
+
+    [Fact]
+    public async Task GetValue_NoColumnNames_OutOfRangeOrdinalThrows()
+    {
+        // Without _columnNames, an out-of-range ordinal is programmer error and must throw.
+        // (DBNull is only returned for null-slot positions beyond the JSON field count.)
+        var rows = new List<JsonElement>
+        {
+            JsonDocument.Parse("{\"id\": 7}").RootElement
+        };
+        var reader = CreateReader(rows);
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Equal(7L, reader.GetValue(0));
+        Assert.Throws<IndexOutOfRangeException>(() => reader.GetValue(99));
+    }
+
+    #endregion
+
     #region Phase 3 — GetSchemaTable null-slot, duplicate aliases, GetValues, and edge cases
 
     [Fact]
@@ -1639,18 +1740,22 @@ public class CouchbaseDbDataReaderTests
     }
 
     [Fact]
-    public void GetOrdinal_WithAllNullColumnNames_ThrowsForAnyLookup()
+    public async Task GetOrdinal_WithAllNullColumnNames_ResolvesJsonFieldNamesViaFallback()
     {
-        // _projectionOrdinals is built but empty (all entries skipped because alias == null).
-        // Any GetOrdinal lookup must throw IndexOutOfRangeException.
+        // _projectionOrdinals is empty (all slots null), but the constrained fallback
+        // resolves JSON field names that map to null-slot positions.
         var rows = new List<JsonElement>
         {
-            JsonDocument.Parse("{\"id\": 1}").RootElement
+            JsonDocument.Parse("{\"id\": 1, \"name\": \"alice\"}").RootElement
         };
         var reader = CreateReaderWithColumnNames(rows, new string?[] { null, null });
+        await reader.ReadAsync(CancellationToken.None);
 
-        // No alias registered → every name lookup must throw.
-        Assert.Throws<IndexOutOfRangeException>(() => reader.GetOrdinal("id"));
+        // Both slots are null — JSON field names resolve via the constrained fallback.
+        Assert.Equal(0, reader.GetOrdinal("id"));
+        Assert.Equal(1, reader.GetOrdinal("name"));
+
+        // A name that doesn't exist in the JSON response still throws.
         Assert.Throws<IndexOutOfRangeException>(() => reader.GetOrdinal("anything"));
     }
 

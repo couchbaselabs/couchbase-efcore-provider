@@ -401,6 +401,20 @@ public class CouchbaseDbDataReader<T> : DbDataReader
         {
             if (_projectionOrdinals.TryGetValue(name, out var projOrdinal))
                 return projOrdinal;
+
+            // Constrained fallback for null-slot positions: GetName(i) returns the JSON
+            // field name for a null slot, so GetOrdinal must resolve it back to i to
+            // keep GetOrdinal(GetName(i)) == i.  Only accept the name when it maps to a
+            // null slot — a non-null slot's alias already lives in _projectionOrdinals, so
+            // landing here with that alias would be ambiguous and is correctly rejected.
+            EnsureFieldInfo();
+            if (_fieldOrdinals != null && _fieldOrdinals.TryGetValue(name, out var jsonOrd)
+                && (uint)jsonOrd < (uint)_columnNames!.Length
+                && _columnNames[jsonOrd] == null)
+            {
+                return jsonOrd;
+            }
+
             throw new IndexOutOfRangeException($"Field '{name}' not found.");
         }
 
@@ -495,6 +509,12 @@ public class CouchbaseDbDataReader<T> : DbDataReader
         }
 
         // No column names supplied, or null slot: positional access.
+        // For a null slot (projection active, no alias), a JSON field that doesn't reach
+        // this ordinal is MISSING — return DBNull consistent with non-null alias handling above.
+        // Without a projection mapping, an out-of-range ordinal is programmer error — throw.
+        var isNullSlot = _columnNames != null && (uint)ordinal < (uint)_columnNames.Length;
+        if (isNullSlot && (_fieldNames == null || ordinal >= _fieldNames.Count))
+            return DBNull.Value;
         ValidateOrdinal(ordinal);
         return GetFieldValue(_fieldNames![ordinal]);
     }
