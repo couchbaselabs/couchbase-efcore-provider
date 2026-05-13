@@ -1,6 +1,7 @@
 using System.Linq.Expressions;
 using Couchbase.EntityFrameworkCore.Query.Internal;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Query;
 using Moq;
 using Xunit;
 
@@ -8,10 +9,9 @@ namespace Couchbase.EntityFrameworkCore.UnitTests.Couchbase.EntityFrameworkCore.
 
 /// <summary>
 /// Phase 2 verification: NavigationInclude record construction, property storage,
-/// equality semantics, and tree composition. Context accumulation
-/// (CouchbaseQueryCompilationContext.NavigationIncludes) and
-/// CollectNavigationIncludes integration require a full EF Core compilation
-/// context and are covered by integration tests.
+/// equality semantics, tree composition, and ExtractNavigationIncludes shaper
+/// walking. Context accumulation (CouchbaseQueryCompilationContext.NavigationIncludes)
+/// and full VisitShapedQuery integration are covered by integration tests.
 /// </summary>
 public class NavigationIncludeTests
 {
@@ -137,7 +137,71 @@ public class NavigationIncludeTests
     }
 
     // ---------------------------------------------------------------
-    // Helper
+    // ExtractNavigationIncludes — shaper walking
+    // ---------------------------------------------------------------
+
+    [Fact]
+    public void ExtractNavigationIncludes_NoIncludeExpression_ReturnsEmpty()
+    {
+        var shaper = Expression.Constant(new object());
+
+        var result = CouchbaseShapedQueryCompilingExpressionVisitor
+            .ExtractNavigationIncludes(shaper);
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public void ExtractNavigationIncludes_SingleInclude_ReturnsSingleEntry()
+    {
+        var postsNav = MockNavigation("Posts");
+        var shaper = MakeIncludeChain(postsNav);
+
+        var result = CouchbaseShapedQueryCompilingExpressionVisitor
+            .ExtractNavigationIncludes(shaper);
+
+        Assert.Single(result);
+        Assert.Equal("Posts", result[0].Navigation.Name);
+    }
+
+    [Fact]
+    public void ExtractNavigationIncludes_MultipleIncludes_ReturnedInOriginalOrder()
+    {
+        // EF Core chains includes outermost-last: Include(Posts) then Include(Tags)
+        // produces IncludeExpression(IncludeExpression(shaper, Posts), Tags).
+        // ExtractNavigationIncludes must restore original order: [Posts, Tags].
+        var postsNav = MockNavigation("Posts");
+        var tagsNav = MockNavigation("Tags");
+        var shaper = MakeIncludeChain(postsNav, tagsNav);
+
+        var result = CouchbaseShapedQueryCompilingExpressionVisitor
+            .ExtractNavigationIncludes(shaper);
+
+        Assert.Equal(2, result.Count);
+        Assert.Equal("Posts", result[0].Navigation.Name);
+        Assert.Equal("Tags", result[1].Navigation.Name);
+    }
+
+    [Fact]
+    public void ExtractNavigationIncludes_SkipNavigation_IsExcluded()
+    {
+        var postsNav = MockNavigation("Posts");
+        var skipNav = new Mock<ISkipNavigation>();
+        skipNav.Setup(n => n.Name).Returns("Tags");
+
+        // Build chain: IncludeExpression(IncludeExpression(shaper, Posts), SkipTags)
+        var inner = MakeIncludeChain(postsNav);
+        var outer = new IncludeExpression(inner, Expression.Constant(null, typeof(object)), skipNav.Object);
+
+        var result = CouchbaseShapedQueryCompilingExpressionVisitor
+            .ExtractNavigationIncludes(outer);
+
+        Assert.Single(result);
+        Assert.Equal("Posts", result[0].Navigation.Name);
+    }
+
+    // ---------------------------------------------------------------
+    // Helpers
     // ---------------------------------------------------------------
 
     private static INavigation MockNavigation(string name)
@@ -145,5 +209,18 @@ public class NavigationIncludeTests
         var mock = new Mock<INavigation>();
         mock.Setup(n => n.Name).Returns(name);
         return mock.Object;
+    }
+
+    /// <summary>
+    /// Builds a chain of IncludeExpression nodes in the order EF Core produces them:
+    /// each subsequent include wraps the previous as its EntityExpression.
+    /// </summary>
+    private static Expression MakeIncludeChain(params INavigation[] navigations)
+    {
+        Expression current = Expression.Constant(new object());
+        var navExpr = Expression.Constant(null, typeof(object));
+        foreach (var nav in navigations)
+            current = new IncludeExpression(current, navExpr, nav);
+        return current;
     }
 }

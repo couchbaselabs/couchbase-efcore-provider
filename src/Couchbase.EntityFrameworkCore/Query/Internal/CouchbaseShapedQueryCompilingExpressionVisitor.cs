@@ -60,6 +60,16 @@ public class CouchbaseShapedQueryCompilingExpressionVisitor : RelationalShapedQu
         if (QueryCompilationContext is not CouchbaseQueryCompilationContext ctx)
             return;
 
+        ctx.NavigationIncludes.AddRange(ExtractNavigationIncludes(shaperExpression));
+    }
+
+    /// <summary>
+    /// Extracts root-level <see cref="NavigationInclude"/> nodes from a shaper expression's
+    /// <see cref="IncludeExpression"/> chain, in original Include order.
+    /// Exposed as <c>internal</c> for unit testing.
+    /// </summary>
+    internal static List<NavigationInclude> ExtractNavigationIncludes(Expression shaperExpression)
+    {
         var current = shaperExpression;
         var collected = new List<NavigationInclude>();
 
@@ -76,7 +86,7 @@ public class CouchbaseShapedQueryCompilingExpressionVisitor : RelationalShapedQu
         // IncludeExpressions are chained outermost-first, so traversal builds the list in
         // reverse Include order. One Reverse() restores original order — O(n) vs O(n²) Insert(0).
         collected.Reverse();
-        ctx.NavigationIncludes.AddRange(collected);
+        return collected;
     }
 
     /// <inheritdoc />
