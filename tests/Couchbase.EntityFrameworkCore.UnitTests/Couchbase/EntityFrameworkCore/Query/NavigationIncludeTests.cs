@@ -11,7 +11,9 @@ namespace Couchbase.EntityFrameworkCore.UnitTests.Couchbase.EntityFrameworkCore.
 /// Phase 2 verification: NavigationInclude record construction, property storage,
 /// equality semantics, tree composition, and ExtractNavigationIncludes shaper
 /// walking. Context accumulation (CouchbaseQueryCompilationContext.NavigationIncludes)
-/// and full VisitShapedQuery integration are covered by integration tests.
+/// and full VisitShapedQuery integration are not yet covered — they require a
+/// live EF Core compilation context and will be added as integration tests in
+/// Phase 4.
 /// </summary>
 public class NavigationIncludeTests
 {
