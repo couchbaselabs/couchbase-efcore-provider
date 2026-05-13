@@ -7,9 +7,13 @@ using Xunit;
 namespace Couchbase.EntityFrameworkCore.UnitTests.Couchbase.EntityFrameworkCore.Query;
 
 /// <summary>
-/// Phase 2 verification: NavigationInclude record structure and context storage.
+/// Phase 2 verification: NavigationInclude record construction, property storage,
+/// equality semantics, and tree composition. Context accumulation
+/// (CouchbaseQueryCompilationContext.NavigationIncludes) and
+/// CollectNavigationIncludes integration require a full EF Core compilation
+/// context and are covered by integration tests.
 /// </summary>
-public class Phase2NavigationIncludeTests
+public class NavigationIncludeTests
 {
     // ---------------------------------------------------------------
     // 2.1 — NavigationInclude record
