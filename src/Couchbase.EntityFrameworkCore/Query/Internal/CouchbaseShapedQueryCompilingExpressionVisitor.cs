@@ -65,12 +65,17 @@ public class CouchbaseShapedQueryCompilingExpressionVisitor : RelationalShapedQu
 
         while (current is IncludeExpression include)
         {
+            // ISkipNavigation (many-to-many) is intentionally excluded here — Phase 4 will
+            // address skip navigations as a distinct case with their own representation.
             if (include.Navigation is INavigation nav)
-                collected.Insert(0, new NavigationInclude(nav, null, []));
+                collected.Add(new NavigationInclude(nav, null, []));
 
             current = include.EntityExpression;
         }
 
+        // IncludeExpressions are chained outermost-first, so traversal builds the list in
+        // reverse Include order. One Reverse() restores original order — O(n) vs O(n²) Insert(0).
+        collected.Reverse();
         ctx.NavigationIncludes.AddRange(collected);
     }
 
