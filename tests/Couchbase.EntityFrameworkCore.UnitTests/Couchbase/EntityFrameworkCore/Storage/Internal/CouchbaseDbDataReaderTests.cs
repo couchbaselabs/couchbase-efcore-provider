@@ -1003,6 +1003,21 @@ public class CouchbaseDbDataReaderTests
     }
 
     [Fact]
+    public async Task GetInt32_WhenJsonNumberHasFractionalRepresentation_ReturnsIntValue()
+    {
+        // System.Text.Json TryGetInt64 returns false for numbers stored with a decimal
+        // point (e.g. 2.0), so ConvertJsonElement falls back to GetDouble() and returns
+        // a double.  GetInt32 must convert that double via Convert.ToInt32 rather than
+        // throwing, consistent with every other numeric getter's fallback arm.
+        var rows = new List<JsonElement> { JsonDocument.Parse("{\"count\": 2.0}").RootElement };
+        var reader = CreateReader(rows);
+
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Equal(2, reader.GetInt32(0));
+    }
+
+    [Fact]
     public async Task GetFloat_WithValueExceedingFloatRange_ReturnsInfinity()
     {
         // Values exceeding float range return infinity rather than throwing
@@ -1330,6 +1345,508 @@ public class CouchbaseDbDataReaderTests
 
     #endregion
 
+    #region Phase 3 — projection-alias column-name mapping bugs
+
+    [Fact]
+    public async Task GetValue_NullColumnNameSlot_FallsBackToPositionalAccess()
+    {
+        // Bug: when _columnNames[ordinal] is null the contract says "use positional
+        // access", but the current implementation returns DBNull.Value instead.
+        // Row fields in document order: id=1 at position 0, name="test" at position 1.
+        // _columnNames has null at slot 0 (no alias → positional) and "name" at slot 1.
+        var rows = new List<JsonElement>
+        {
+            JsonDocument.Parse("{\"id\": 1, \"name\": \"test\"}").RootElement
+        };
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { null, "name" });
+        await reader.ReadAsync(CancellationToken.None);
+
+        // Slot 0 is null: should return the value at positional ordinal 0 (id = 1).
+        Assert.Equal(1L, reader.GetValue(0));
+        // Slot 1 is "name": name-based lookup should return "test".
+        Assert.Equal("test", reader.GetValue(1));
+    }
+
+    [Fact]
+    public async Task GetValue_ScalarRowWithNonEmptyColumnAlias_ReturnsScalarValue()
+    {
+        // Bug: SELECT RAW COUNT(*) produces a bare numeric JsonElement whose schema
+        // has a single synthetic "" field.  When _columnNames is set with a non-empty
+        // alias (e.g. "c"), _fieldOrdinals.TryGetValue("c") fails because only "" is
+        // registered, so GetValue returns DBNull.Value instead of the scalar number.
+        var rows = new List<JsonElement> { JsonDocument.Parse("42").RootElement };
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { "c" });
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Equal(42L, reader.GetValue(0));
+    }
+
+    [Fact]
+    public async Task GetValue_MissingDocumentField_ReturnsDBNull()
+    {
+        // Confirm the one case where DBNull.Value IS correct: the alias is present in
+        // _columnNames but the field is absent from the N1QL response (MISSING field).
+        var rows = new List<JsonElement>
+        {
+            JsonDocument.Parse("{\"name\": \"test\"}").RootElement
+        };
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { "id", "name" });
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Equal(DBNull.Value, reader.GetValue(0)); // "id" not in response → MISSING
+        Assert.Equal("test", reader.GetValue(1));
+    }
+
+    #endregion
+
+    #region Phase 3 — GetOrdinal/GetName/FieldCount/schema with projection aliases
+
+    [Fact]
+    public async Task GetOrdinal_WithColumnNames_ReturnsProjectionOrdinal()
+    {
+        // JSON response order: id=0, name=1.  Projection maps "name" to slot 0, "id" to slot 1.
+        // GetOrdinal must return the projection slot, not the JSON response position.
+        var rows = new List<JsonElement>
+        {
+            JsonDocument.Parse("{\"id\": 1, \"name\": \"alice\"}").RootElement
+        };
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { "name", "id" });
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Equal(0, reader.GetOrdinal("name"));
+        Assert.Equal(1, reader.GetOrdinal("id"));
+    }
+
+    [Fact]
+    public async Task GetOrdinal_WithColumnNames_IsCaseInsensitive()
+    {
+        var rows = new List<JsonElement>
+        {
+            JsonDocument.Parse("{\"id\": 1, \"name\": \"alice\"}").RootElement
+        };
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { "name", "id" });
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Equal(0, reader.GetOrdinal("NAME"));
+        Assert.Equal(0, reader.GetOrdinal("Name"));
+        Assert.Equal(1, reader.GetOrdinal("ID"));
+    }
+
+    [Fact]
+    public async Task GetOrdinal_WithColumnNames_UnknownNameThrows()
+    {
+        var rows = new List<JsonElement>
+        {
+            JsonDocument.Parse("{\"id\": 1}").RootElement
+        };
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { "id" });
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Throws<IndexOutOfRangeException>(() => reader.GetOrdinal("nonexistent"));
+    }
+
+    [Fact]
+    public async Task IndexerByName_WithColumnNames_ReturnsCorrectValue()
+    {
+        // This is the core contract test: reader["name"] must call GetValue(GetOrdinal("name"))
+        // and return the value that the shaper ordinal for "name" maps to — not the wrong one.
+        var rows = new List<JsonElement>
+        {
+            JsonDocument.Parse("{\"id\": 99, \"name\": \"bob\"}").RootElement
+        };
+        // Projection maps "name" → slot 0, "id" → slot 1 (reversed from JSON order).
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { "name", "id" });
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Equal("bob", reader["name"]);
+        Assert.Equal(99L, reader["id"]);
+    }
+
+    [Fact]
+    public async Task GetName_WithColumnNames_ReturnsProjectionAlias()
+    {
+        var rows = new List<JsonElement>
+        {
+            JsonDocument.Parse("{\"id\": 1, \"name\": \"alice\"}").RootElement
+        };
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { "name", "id" });
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Equal("name", reader.GetName(0));
+        Assert.Equal("id", reader.GetName(1));
+    }
+
+    [Fact]
+    public async Task GetName_WithColumnNames_NullSlotFallsBackToJsonFieldName()
+    {
+        var rows = new List<JsonElement>
+        {
+            JsonDocument.Parse("{\"id\": 1, \"name\": \"alice\"}").RootElement
+        };
+        // Slot 0 is null (positional), slot 1 has an explicit alias.
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { null, "name" });
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Equal("id", reader.GetName(0));   // positional fallback to JSON field name
+        Assert.Equal("name", reader.GetName(1));
+    }
+
+    [Fact]
+    public void FieldCount_WithColumnNames_ReturnsProjectionLength()
+    {
+        // JSON has 3 fields, but projection only exposes 2.
+        var rows = new List<JsonElement>
+        {
+            JsonDocument.Parse("{\"a\": 1, \"b\": 2, \"c\": 3}").RootElement
+        };
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { "a", "b" });
+
+        Assert.Equal(2, reader.FieldCount);
+    }
+
+    [Fact]
+    public async Task GetSchemaTable_WithColumnNames_ReflectsProjectionAliases()
+    {
+        var rows = new List<JsonElement>
+        {
+            JsonDocument.Parse("{\"id\": 1, \"name\": \"alice\"}").RootElement
+        };
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { "name", "id" });
+        await reader.ReadAsync(CancellationToken.None);
+
+        var schema = reader.GetSchemaTable();
+
+        Assert.Equal(2, schema.Rows.Count);
+        Assert.Equal("name", schema.Rows[0]["ColumnName"]);
+        Assert.Equal(0, schema.Rows[0]["ColumnOrdinal"]);
+        Assert.Equal("id", schema.Rows[1]["ColumnName"]);
+        Assert.Equal(1, schema.Rows[1]["ColumnOrdinal"]);
+    }
+
+    [Fact]
+    public async Task GetOrdinal_WithColumnNames_DoesNotRequireSchemaDiscovery()
+    {
+        // GetOrdinal with _columnNames must resolve without calling EnsureFieldInfo,
+        // so it works even before Read() and without triggering a row buffer.
+        var rows = new List<JsonElement>
+        {
+            JsonDocument.Parse("{\"id\": 1}").RootElement
+        };
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { "id" });
+
+        // No Read() call — should still return the projection ordinal.
+        Assert.Equal(0, reader.GetOrdinal("id"));
+
+        // First Read() must still return the first row (no row was consumed).
+        Assert.True(await reader.ReadAsync(CancellationToken.None));
+        Assert.Equal(1L, reader.GetInt64(0));
+    }
+
+    #endregion
+
+    #region Phase 3 — GetOrdinal/GetName inverse for null slots and GetValue MISSING positional
+
+    [Fact]
+    public async Task GetOrdinal_NullSlot_RoundTripsWithGetName()
+    {
+        // GetName(0) returns the JSON field name "id" for a null slot.
+        // GetOrdinal("id") must return 0 so the pair are inverses.
+        var rows = new List<JsonElement>
+        {
+            JsonDocument.Parse("{\"id\": 1, \"name\": \"alice\"}").RootElement
+        };
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { null, "name" });
+        await reader.ReadAsync(CancellationToken.None);
+
+        var name = reader.GetName(0);          // "id" via positional fallback
+        Assert.Equal(0, reader.GetOrdinal(name));
+    }
+
+    [Fact]
+    public async Task GetOrdinal_NullSlot_CaseInsensitive()
+    {
+        var rows = new List<JsonElement>
+        {
+            JsonDocument.Parse("{\"MyField\": 99}").RootElement
+        };
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { null });
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Equal(0, reader.GetOrdinal("myfield"));
+        Assert.Equal(0, reader.GetOrdinal("MYFIELD"));
+        Assert.Equal(0, reader.GetOrdinal("MyField"));
+    }
+
+    [Fact]
+    public async Task GetOrdinal_NullSlot_NonMatchingNameStillThrows()
+    {
+        // The constrained fallback only accepts names that map to a null-slot position.
+        // An arbitrary unknown name must still throw.
+        var rows = new List<JsonElement>
+        {
+            JsonDocument.Parse("{\"id\": 1}").RootElement
+        };
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { null });
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Throws<IndexOutOfRangeException>(() => reader.GetOrdinal("nonexistent"));
+    }
+
+    [Fact]
+    public async Task GetOrdinal_NullSlot_AliasNameInNonNullSlotIsNotResolvedViaFallback()
+    {
+        // "name" is already a non-null alias at slot 1.  If someone asks for ordinal
+        // of a JSON field that happens to share that string but lives at slot 0 (null),
+        // the alias lookup wins — it returns 1, not 0.
+        var rows = new List<JsonElement>
+        {
+            JsonDocument.Parse("{\"name\": \"positional\", \"title\": \"alias\"}").RootElement
+        };
+        // Slot 0 is null (positional → "name"), slot 1 has alias "name" (mapped to "title").
+        // This is a degenerate case; alias wins.
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { null, "name" });
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Equal(1, reader.GetOrdinal("name")); // alias at slot 1 wins
+    }
+
+    [Fact]
+    public async Task GetValue_NullSlot_PositionalMissingFieldReturnsDBNull()
+    {
+        // JSON response has only 1 field; projection has 2 null slots.
+        // Slot 0 resolves positionally to "id" — present.
+        // Slot 1 is a null slot beyond _fieldNames.Count — must be DBNull, not throw.
+        var rows = new List<JsonElement>
+        {
+            JsonDocument.Parse("{\"id\": 42}").RootElement
+        };
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { null, null });
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Equal(42L, reader.GetValue(0));
+        Assert.Equal(DBNull.Value, reader.GetValue(1));
+    }
+
+    [Fact]
+    public async Task GetValue_NoColumnNames_OutOfRangeOrdinalThrows()
+    {
+        // Without _columnNames, an out-of-range ordinal is programmer error and must throw.
+        // (DBNull is only returned for null-slot positions beyond the JSON field count.)
+        var rows = new List<JsonElement>
+        {
+            JsonDocument.Parse("{\"id\": 7}").RootElement
+        };
+        var reader = CreateReader(rows);
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Equal(7L, reader.GetValue(0));
+        Assert.Throws<IndexOutOfRangeException>(() => reader.GetValue(99));
+    }
+
+    #endregion
+
+    #region Phase 3 — GetSchemaTable null-slot, duplicate aliases, GetValues, and edge cases
+
+    [Fact]
+    public async Task GetSchemaTable_WithNullSlot_StoresDBNullForColumnName()
+    {
+        // When _columnNames has a null slot, GetSchemaTable stores DBNull.Value for ColumnName
+        // (because there is no alias for that ordinal). The DataTable accepts DBNull.Value for
+        // a typeof(string) column (stored as object internally).
+        var rows = new List<JsonElement>
+        {
+            JsonDocument.Parse("{\"id\": 1, \"name\": \"alice\"}").RootElement
+        };
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { null, "name" });
+        await reader.ReadAsync(CancellationToken.None);
+
+        var schema = reader.GetSchemaTable();
+
+        Assert.Equal(2, schema.Rows.Count);
+        // Null slot → ColumnName is DBNull.Value, not a string
+        Assert.Equal(DBNull.Value, schema.Rows[0]["ColumnName"]);
+        Assert.Equal(0, schema.Rows[0]["ColumnOrdinal"]);
+        // Non-null slot → ColumnName is the alias
+        Assert.Equal("name", schema.Rows[1]["ColumnName"]);
+        Assert.Equal(1, schema.Rows[1]["ColumnOrdinal"]);
+    }
+
+    [Fact]
+    public async Task GetOrdinal_WithDuplicateColumnNames_FirstWins()
+    {
+        // When two slots share the same alias, TryAdd keeps the first.
+        // GetOrdinal("dup") must return the first slot's ordinal (0), not the second (1).
+        var rows = new List<JsonElement>
+        {
+            JsonDocument.Parse("{\"id\": 1, \"name\": \"alice\"}").RootElement
+        };
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { "dup", "dup" });
+        await reader.ReadAsync(CancellationToken.None);
+
+        // First-wins: ordinal 0 is returned for "dup" even though slot 1 also has it.
+        Assert.Equal(0, reader.GetOrdinal("dup"));
+    }
+
+    [Fact]
+    public async Task GetValues_WithColumnNames_UsesProjectionCount()
+    {
+        // When _columnNames is set and has fewer slots than the JSON fields, GetValues
+        // must iterate over projection count (2), not JSON field count (3).
+        var rows = new List<JsonElement>
+        {
+            JsonDocument.Parse("{\"a\": 1, \"b\": 2, \"c\": 3}").RootElement
+        };
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { "a", "b" });
+        await reader.ReadAsync(CancellationToken.None);
+
+        var values = new object[5];
+        var count = reader.GetValues(values);
+
+        // Only 2 slots in projection — count must be min(5, 2) = 2
+        Assert.Equal(2, count);
+        Assert.Equal(1L, values[0]);
+        Assert.Equal(2L, values[1]);
+        // Remaining entries in values are untouched (default null)
+        Assert.Null(values[2]);
+    }
+
+    [Fact]
+    public async Task GetValues_NullArgument_ThrowsArgumentNullException()
+    {
+        var rows = new List<JsonElement>
+        {
+            JsonDocument.Parse("{\"id\": 1}").RootElement
+        };
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { "id" });
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Throws<ArgumentNullException>(() => reader.GetValues(null!));
+    }
+
+    [Fact]
+    public async Task GetName_WithColumnNames_OutOfRange_ThrowsIndexOutOfRangeException()
+    {
+        // The (uint)ordinal >= (uint)_columnNames.Length guard at line 369 must fire.
+        var rows = new List<JsonElement>
+        {
+            JsonDocument.Parse("{\"id\": 1}").RootElement
+        };
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { "id" });
+        await reader.ReadAsync(CancellationToken.None);
+
+        // Ordinal 1 is out of range for a 1-element projection.
+        Assert.Throws<IndexOutOfRangeException>(() => reader.GetName(1));
+        Assert.Throws<IndexOutOfRangeException>(() => reader.GetName(-1));
+    }
+
+    [Fact]
+    public async Task GetOrdinal_WithAllNullColumnNames_ResolvesJsonFieldNamesViaFallback()
+    {
+        // _projectionOrdinals is empty (all slots null), but the constrained fallback
+        // resolves JSON field names that map to null-slot positions.
+        var rows = new List<JsonElement>
+        {
+            JsonDocument.Parse("{\"id\": 1, \"name\": \"alice\"}").RootElement
+        };
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { null, null });
+        await reader.ReadAsync(CancellationToken.None);
+
+        // Both slots are null — JSON field names resolve via the constrained fallback.
+        Assert.Equal(0, reader.GetOrdinal("id"));
+        Assert.Equal(1, reader.GetOrdinal("name"));
+
+        // A name that doesn't exist in the JSON response still throws.
+        Assert.Throws<IndexOutOfRangeException>(() => reader.GetOrdinal("anything"));
+    }
+
+    [Fact]
+    public void FieldCount_WithEmptyColumnNames_ReturnsZero()
+    {
+        // Empty _columnNames array → FieldCount must be 0 without triggering schema discovery.
+        var rows = new List<JsonElement>
+        {
+            JsonDocument.Parse("{\"id\": 1}").RootElement
+        };
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { });
+
+        Assert.Equal(0, reader.FieldCount);
+    }
+
+    [Fact]
+    public async Task GetValues_WithColumnNamesAndSmallerArray_UsesMinOfArrayAndProjection()
+    {
+        // Array is smaller than projection — must return min(array.Length, _columnNames.Length).
+        var rows = new List<JsonElement>
+        {
+            JsonDocument.Parse("{\"a\": 10, \"b\": 20, \"c\": 30}").RootElement
+        };
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { "a", "b", "c" });
+        await reader.ReadAsync(CancellationToken.None);
+
+        var values = new object[2]; // smaller than projection (3)
+        var count = reader.GetValues(values);
+
+        Assert.Equal(2, count);
+        Assert.Equal(10L, values[0]);
+        Assert.Equal(20L, values[1]);
+    }
+
+    #endregion
+
+    #region Phase 3 — scalar SELECT RAW and shaper-compatible access
+
+    [Fact]
+    public async Task ScalarRaw_NumberRow_FieldCountIsOne()
+    {
+        var rows = new List<JsonElement> { JsonDocument.Parse("42").RootElement };
+        var reader = CreateReader(rows);
+        await reader.ReadAsync(CancellationToken.None);
+        Assert.Equal(1, reader.FieldCount);
+    }
+
+    [Fact]
+    public async Task ScalarRaw_NumberRow_GetValueReturnsNumber()
+    {
+        var rows = new List<JsonElement> { JsonDocument.Parse("42").RootElement };
+        var reader = CreateReader(rows);
+        await reader.ReadAsync(CancellationToken.None);
+        var value = reader.GetValue(0);
+        Assert.Equal(42L, value);
+    }
+
+    [Fact]
+    public async Task ScalarRaw_NumberRow_GetOrdinalWithAnyNameReturnsZero()
+    {
+        // The EF Core shaper may request any alias name for scalar projections;
+        // a SELECT RAW result maps any name to ordinal 0.
+        var rows = new List<JsonElement> { JsonDocument.Parse("5").RootElement };
+        var reader = CreateReader(rows);
+        await reader.ReadAsync(CancellationToken.None);
+        Assert.Equal(0, reader.GetOrdinal("c0"));
+        Assert.Equal(0, reader.GetOrdinal("any_alias"));
+    }
+
+    [Fact]
+    public async Task ScalarRaw_StringRow_GetValueReturnsString()
+    {
+        var rows = new List<JsonElement> { JsonDocument.Parse("\"hello\"").RootElement };
+        var reader = CreateReader(rows);
+        await reader.ReadAsync(CancellationToken.None);
+        Assert.Equal("hello", reader.GetValue(0));
+    }
+
+    [Fact]
+    public async Task ObjectRow_SingleField_GetOrdinalUnknownNameStillThrows()
+    {
+        // An object row with one named field should NOT fall back to ordinal 0 for unknown names.
+        var rows = new List<JsonElement> { JsonDocument.Parse("{\"id\": 1}").RootElement };
+        var reader = CreateReader(rows);
+        await reader.ReadAsync(CancellationToken.None);
+        Assert.Throws<IndexOutOfRangeException>(() => reader.GetOrdinal("nonexistent"));
+    }
+
+    #endregion
+
     private static CouchbaseDbDataReader<JsonElement> CreateReader(List<JsonElement> rows)
     {
         var mockQueryResult = new Mock<IQueryResult<JsonElement>>();
@@ -1338,6 +1855,18 @@ public class CouchbaseDbDataReaderTests
         mockQueryResult.Setup(q => q.Rows).Returns(rows.ToAsyncEnumerable());
 
         return new CouchbaseDbDataReader<JsonElement>(mockQueryResult.Object);
+    }
+
+    private static CouchbaseDbDataReader<JsonElement> CreateReaderWithColumnNames(
+        List<JsonElement> rows,
+        string?[]? columnNames)
+    {
+        var mockQueryResult = new Mock<IQueryResult<JsonElement>>();
+        var metaData = new QueryMetaData { Status = QueryStatus.Success };
+        mockQueryResult.Setup(q => q.MetaData).Returns(metaData);
+        mockQueryResult.Setup(q => q.Rows).Returns(rows.ToAsyncEnumerable());
+
+        return new CouchbaseDbDataReader<JsonElement>(mockQueryResult.Object, columnNames);
     }
 
     private static CouchbaseDbDataReader<JsonElement> CreateReaderWithCancellationToken(

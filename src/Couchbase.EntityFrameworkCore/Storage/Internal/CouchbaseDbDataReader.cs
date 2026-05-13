@@ -35,6 +35,12 @@ public class CouchbaseDbDataReader<T> : DbDataReader
     private readonly DbConnection? _connection;
     private readonly CommandBehavior _behavior;
     private readonly CancellationToken _initialCancellationToken;
+    // Ordered SELECT projection aliases supplied by the caller (one per shaper ordinal).
+    // Used in GetValue to translate shaper ordinal → JSON property via _fieldOrdinals.
+    private readonly string?[]? _columnNames;
+    // Reverse map of _columnNames: alias (case-insensitive) → projection ordinal.
+    // Built eagerly at construction so GetOrdinal needs no schema discovery when active.
+    private readonly Dictionary<string, int>? _projectionOrdinals;
     private IAsyncEnumerator<T>? _enumerator;
     private CancellationToken _cancellationToken;
     private T? _currentRow;
@@ -55,6 +61,27 @@ public class CouchbaseDbDataReader<T> : DbDataReader
     public CouchbaseDbDataReader(IQueryResult<T> queryResult)
         : this(queryResult, null, CommandBehavior.Default, CancellationToken.None)
     {
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="CouchbaseDbDataReader{T}"/> class with a column-name mapping.
+    /// The <paramref name="columnNames"/> array should contain the SELECT-clause alias for each EF Core
+    /// <c>readerColumn</c> in order; <c>null</c> elements fall back to positional mapping.
+    /// </summary>
+    public CouchbaseDbDataReader(IQueryResult<T> queryResult, string?[]? columnNames)
+        : this(queryResult, null, CommandBehavior.Default, CancellationToken.None)
+    {
+        _columnNames = columnNames;
+        if (columnNames != null)
+        {
+            _projectionOrdinals = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            for (var i = 0; i < columnNames.Length; i++)
+            {
+                var alias = columnNames[i];
+                if (alias != null)
+                    _projectionOrdinals.TryAdd(alias, i);
+            }
+        }
     }
 
     /// <summary>
@@ -84,6 +111,8 @@ public class CouchbaseDbDataReader<T> : DbDataReader
     {
         get
         {
+            if (_columnNames != null)
+                return _columnNames.Length;
             EnsureFieldInfo();
             return _fieldNames?.Count ?? 0;
         }
@@ -335,6 +364,16 @@ public class CouchbaseDbDataReader<T> : DbDataReader
     /// <exception cref="IndexOutOfRangeException">Thrown when <paramref name="ordinal"/> is out of range.</exception>
     public override string GetName(int ordinal)
     {
+        if (_columnNames != null)
+        {
+            if ((uint)ordinal >= (uint)_columnNames.Length)
+                throw new IndexOutOfRangeException($"Ordinal {ordinal} is out of range. FieldCount: {_columnNames.Length}");
+            var alias = _columnNames[ordinal];
+            if (alias != null)
+                return alias;
+            // null slot: fall back to the JSON field name at the same position
+        }
+
         EnsureFieldInfo();
         ValidateOrdinal(ordinal);
         return _fieldNames![ordinal];
@@ -354,15 +393,39 @@ public class CouchbaseDbDataReader<T> : DbDataReader
     public override int GetOrdinal(string name)
     {
         if (name == null)
-        {
             throw new ArgumentNullException(nameof(name));
+
+        // When projection aliases are active, resolve against them to return the
+        // projection ordinal that GetValue/GetName expect.  No schema discovery needed.
+        if (_projectionOrdinals != null)
+        {
+            if (_projectionOrdinals.TryGetValue(name, out var projOrdinal))
+                return projOrdinal;
+
+            // Constrained fallback for null-slot positions: GetName(i) returns the JSON
+            // field name for a null slot, so GetOrdinal must resolve it back to i to
+            // keep GetOrdinal(GetName(i)) == i.  Only accept the name when it maps to a
+            // null slot — a non-null slot's alias already lives in _projectionOrdinals, so
+            // landing here with that alias would be ambiguous and is correctly rejected.
+            EnsureFieldInfo();
+            if (_fieldOrdinals != null && _fieldOrdinals.TryGetValue(name, out var jsonOrd)
+                && (uint)jsonOrd < (uint)_columnNames!.Length
+                && _columnNames[jsonOrd] == null)
+            {
+                return jsonOrd;
+            }
+
+            throw new IndexOutOfRangeException($"Field '{name}' not found.");
         }
 
         EnsureFieldInfo();
         if (_fieldOrdinals != null && _fieldOrdinals.TryGetValue(name, out var ordinal))
-        {
             return ordinal;
-        }
+
+        // For scalar SELECT RAW results the single synthetic field has an empty name.
+        // Any column name lookup on a scalar result maps to ordinal 0.
+        if (_fieldNames?.Count == 1 && _fieldNames[0] == string.Empty)
+            return 0;
 
         throw new IndexOutOfRangeException($"Field '{name}' not found.");
     }
@@ -417,10 +480,43 @@ public class CouchbaseDbDataReader<T> : DbDataReader
     public override object GetValue(int ordinal)
     {
         EnsureCurrentRow();
-        ValidateOrdinal(ordinal);
 
-        var fieldName = _fieldNames![ordinal];
-        return GetFieldValue(fieldName);
+        // When the caller supplied column names (projection aliases from the SELECT clause), use
+        // _fieldOrdinals to translate each shaper ordinal to the correct JSON property.
+        // N1QL returns response fields in document-storage order, which differs from the SELECT
+        // clause order, so positional access is incorrect without this mapping.
+        // _fieldOrdinals uses OrdinalIgnoreCase, so camelCase aliases match camelCase JSON keys.
+        if (_columnNames != null && (uint)ordinal < (uint)_columnNames.Length)
+        {
+            var colName = _columnNames[ordinal];
+            if (colName != null && _fieldOrdinals != null)
+            {
+                if (_fieldOrdinals.TryGetValue(colName, out var jsonOrdinal))
+                {
+                    return GetFieldValue(_fieldNames![jsonOrdinal]);
+                }
+                // Scalar SELECT RAW row: single synthetic "" field answers to any alias,
+                // matching the same special-case in GetOrdinal.
+                if (_fieldNames?.Count == 1 && _fieldNames[0] == string.Empty)
+                {
+                    return GetFieldValue(string.Empty);
+                }
+                // Field genuinely absent from the N1QL response (MISSING) — treat as null.
+                return DBNull.Value;
+            }
+            // null slot in _columnNames means "no alias for this ordinal — use positional
+            // access", as documented on the constructor.  Fall through.
+        }
+
+        // No column names supplied, or null slot: positional access.
+        // For a null slot (projection active, no alias), a JSON field that doesn't reach
+        // this ordinal is MISSING — return DBNull consistent with non-null alias handling above.
+        // Without a projection mapping, an out-of-range ordinal is programmer error — throw.
+        var isNullSlot = _columnNames != null && (uint)ordinal < (uint)_columnNames.Length;
+        if (isNullSlot && (_fieldNames == null || ordinal >= _fieldNames.Count))
+            return DBNull.Value;
+        ValidateOrdinal(ordinal);
+        return GetFieldValue(_fieldNames![ordinal]);
     }
 
     /// <summary>
@@ -438,9 +534,19 @@ public class CouchbaseDbDataReader<T> : DbDataReader
         }
 
         EnsureCurrentRow();
-        EnsureFieldInfo();
 
-        var count = Math.Min(values.Length, _fieldNames!.Count);
+        int fieldCount;
+        if (_columnNames != null)
+        {
+            fieldCount = _columnNames.Length;
+        }
+        else
+        {
+            EnsureFieldInfo();
+            fieldCount = _fieldNames!.Count;
+        }
+
+        var count = Math.Min(values.Length, fieldCount);
         for (var i = 0; i < count; i++)
         {
             values[i] = GetValue(i);
@@ -918,14 +1024,27 @@ public class CouchbaseDbDataReader<T> : DbDataReader
     /// <returns>A DataTable with ColumnName, ColumnOrdinal, DataType, and AllowDBNull columns.</returns>
     public override DataTable GetSchemaTable()
     {
-        EnsureFieldInfo();
-
         var schemaTable = new DataTable("SchemaTable");
         schemaTable.Columns.Add("ColumnName", typeof(string));
         schemaTable.Columns.Add("ColumnOrdinal", typeof(int));
         schemaTable.Columns.Add("DataType", typeof(Type));
         schemaTable.Columns.Add("AllowDBNull", typeof(bool));
 
+        if (_columnNames != null)
+        {
+            for (var i = 0; i < _columnNames.Length; i++)
+            {
+                var row = schemaTable.NewRow();
+                row["ColumnName"] = (object?)_columnNames[i] ?? DBNull.Value;
+                row["ColumnOrdinal"] = i;
+                row["DataType"] = typeof(object);
+                row["AllowDBNull"] = true;
+                schemaTable.Rows.Add(row);
+            }
+            return schemaTable;
+        }
+
+        EnsureFieldInfo();
         if (_fieldNames != null)
         {
             for (var i = 0; i < _fieldNames.Count; i++)
@@ -1026,6 +1145,12 @@ public class CouchbaseDbDataReader<T> : DbDataReader
                 _fieldOrdinals[property.Name] = ordinal++;
             }
         }
+        else if (_currentRow is JsonElement)
+        {
+            // Non-object scalar from SELECT RAW (e.g. COUNT result) — single synthetic field at ordinal 0
+            _fieldNames.Add(string.Empty);
+            _fieldOrdinals[string.Empty] = 0;
+        }
         else if (_currentRow != null)
         {
             // For non-JsonElement types, use reflection
@@ -1037,6 +1162,7 @@ public class CouchbaseDbDataReader<T> : DbDataReader
                 _fieldOrdinals[properties[i].Name] = i;
             }
         }
+
     }
 
     private void ValidateOrdinal(int ordinal)
