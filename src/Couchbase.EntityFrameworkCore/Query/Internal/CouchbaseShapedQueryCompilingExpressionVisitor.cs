@@ -77,6 +77,13 @@ public class CouchbaseShapedQueryCompilingExpressionVisitor : RelationalShapedQu
         {
             // ISkipNavigation (many-to-many) is intentionally excluded here — Phase 4 will
             // address skip navigations as a distinct case with their own representation.
+            //
+            // Filter is always null here: by the time VisitShapedQuery runs, any filter
+            // lambda from a filtered include (.Include(b => b.Posts.Where(...))) has already
+            // been translated into a SQL predicate inside the SelectExpression and is no
+            // longer recoverable as a LambdaExpression from IncludeExpression.NavigationExpression.
+            // Phase 4 must detect filtered includes by inspecting RelationalCollectionShaperExpression
+            // or the inner SelectExpression's WHERE clause rather than relying on Filter here.
             if (include.Navigation is INavigation nav)
                 collected.Add(new NavigationInclude(nav, null, []));
 
