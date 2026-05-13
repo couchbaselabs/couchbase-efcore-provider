@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.EntityFrameworkCore.Query;
 
 namespace Couchbase.EntityFrameworkCore.Query.Internal;
@@ -9,6 +10,16 @@ public class CouchbaseQueryCompilationContext : RelationalQueryCompilationContex
         RelationalQueryCompilationContextDependencies relationalDependencies,
         bool async)
         : base(dependencies, relationalDependencies, async)
+    {
+    }
+
+    [Experimental("EF9100")]
+    public CouchbaseQueryCompilationContext(
+        QueryCompilationContextDependencies dependencies,
+        RelationalQueryCompilationContextDependencies relationalDependencies,
+        bool async,
+        bool precompiling)
+        : base(dependencies, relationalDependencies, async, precompiling)
     {
     }
 
