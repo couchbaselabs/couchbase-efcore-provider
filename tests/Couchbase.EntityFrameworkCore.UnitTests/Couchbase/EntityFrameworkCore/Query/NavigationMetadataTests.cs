@@ -11,7 +11,7 @@ namespace Couchbase.EntityFrameworkCore.UnitTests.Couchbase.EntityFrameworkCore.
 /// These tests exercise the EF Core model-building infrastructure that Phase 2+ (Include
 /// translation) depends on.
 /// </summary>
-public class Phase1NavigationMetadataTests
+public class NavigationMetadataTests
 {
     // ---------------------------------------------------------------
     // 1.1 — Relationship configuration
