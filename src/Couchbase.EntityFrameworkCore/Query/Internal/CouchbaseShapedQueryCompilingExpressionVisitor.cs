@@ -60,8 +60,16 @@ public class CouchbaseShapedQueryCompilingExpressionVisitor : RelationalShapedQu
         if (QueryCompilationContext is not CouchbaseQueryCompilationContext ctx)
             return;
 
-        ctx.NavigationIncludes.AddRange(ExtractNavigationIncludes(shaperExpression));
+        PopulateNavigationIncludes(shaperExpression, ctx.NavigationIncludes);
     }
+
+    /// <summary>
+    /// Populates <paramref name="target"/> with root-level <see cref="NavigationInclude"/> nodes
+    /// extracted from <paramref name="shaperExpression"/>.
+    /// Exposed as <c>internal</c> for unit testing without a live compilation context.
+    /// </summary>
+    internal static void PopulateNavigationIncludes(Expression shaperExpression, List<NavigationInclude> target)
+        => target.AddRange(ExtractNavigationIncludes(shaperExpression));
 
     /// <summary>
     /// Extracts root-level <see cref="NavigationInclude"/> nodes from a shaper expression's

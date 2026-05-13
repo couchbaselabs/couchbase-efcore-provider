@@ -203,6 +203,69 @@ public class NavigationIncludeTests
     }
 
     // ---------------------------------------------------------------
+    // PopulateNavigationIncludes — accumulation seam
+    // ---------------------------------------------------------------
+
+    [Fact]
+    public void PopulateNavigationIncludes_NoIncludes_LeavesListEmpty()
+    {
+        var target = new List<NavigationInclude>();
+        var shaper = Expression.Constant(new object());
+
+        CouchbaseShapedQueryCompilingExpressionVisitor
+            .PopulateNavigationIncludes(shaper, target);
+
+        Assert.Empty(target);
+    }
+
+    [Fact]
+    public void PopulateNavigationIncludes_SingleInclude_AddsOneEntry()
+    {
+        var postsNav = MockNavigation("Posts");
+        var target = new List<NavigationInclude>();
+
+        CouchbaseShapedQueryCompilingExpressionVisitor
+            .PopulateNavigationIncludes(MakeIncludeChain(postsNav), target);
+
+        Assert.Single(target);
+        Assert.Equal("Posts", target[0].Navigation.Name);
+    }
+
+    [Fact]
+    public void PopulateNavigationIncludes_MultipleIncludes_AppendedInOriginalOrder()
+    {
+        var postsNav = MockNavigation("Posts");
+        var tagsNav  = MockNavigation("Tags");
+        var target   = new List<NavigationInclude>();
+
+        CouchbaseShapedQueryCompilingExpressionVisitor
+            .PopulateNavigationIncludes(MakeIncludeChain(postsNav, tagsNav), target);
+
+        Assert.Equal(2, target.Count);
+        Assert.Equal("Posts", target[0].Navigation.Name);
+        Assert.Equal("Tags",  target[1].Navigation.Name);
+    }
+
+    [Fact]
+    public void PopulateNavigationIncludes_CalledTwice_AccumulatesAllEntries()
+    {
+        // Phase 4 may process multiple shaped queries; each call must append,
+        // not reset, so that all navigation includes across queries are captured.
+        var postsNav  = MockNavigation("Posts");
+        var authorNav = MockNavigation("Author");
+        var target    = new List<NavigationInclude>();
+
+        CouchbaseShapedQueryCompilingExpressionVisitor
+            .PopulateNavigationIncludes(MakeIncludeChain(postsNav), target);
+        CouchbaseShapedQueryCompilingExpressionVisitor
+            .PopulateNavigationIncludes(MakeIncludeChain(authorNav), target);
+
+        Assert.Equal(2, target.Count);
+        Assert.Equal("Posts",  target[0].Navigation.Name);
+        Assert.Equal("Author", target[1].Navigation.Name);
+    }
+
+    // ---------------------------------------------------------------
     // Helpers
     // ---------------------------------------------------------------
 
