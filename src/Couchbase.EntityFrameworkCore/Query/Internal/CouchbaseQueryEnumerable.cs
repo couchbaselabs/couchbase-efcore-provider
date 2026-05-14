@@ -345,7 +345,7 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
                 var ownedEntity = Activator.CreateInstance(clrType)!;
                 foreach (var prop in properties)
                 {
-                    if (TryGetPropertyCI(itemElement, prop.Name, out var propElement))
+                    if (TryGetPropertyCI(itemElement, prop.GetColumnName(), out var propElement))
                         prop.PropertyInfo?.SetValue(ownedEntity, ConvertJsonValue(propElement, prop.ClrType));
                 }
                 list.Add(ownedEntity);
