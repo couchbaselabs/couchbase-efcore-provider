@@ -1,4 +1,6 @@
+using System.Text.Json;
 using Couchbase.EntityFrameworkCore.Extensions;
+using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.EntityFrameworkCore.Utils;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -11,15 +13,18 @@ public class CouchbaseDatabaseWrapper : Database
 {
     private readonly ICouchbaseClientWrapper _couchbaseClient;
     private readonly IRelationalConnection _relationalConnection;
+    private readonly JsonNamingPolicy? _fieldNamingPolicy;
 
     public CouchbaseDatabaseWrapper(
         DatabaseDependencies dependencies,
         ICouchbaseClientWrapper couchbaseClient,
-        IRelationalConnection relationalConnection)
+        IRelationalConnection relationalConnection,
+        ICouchbaseDbContextOptionsBuilder couchbaseDbContextOptionsBuilder)
         : base(dependencies)
     {
         _couchbaseClient = couchbaseClient ?? throw new ArgumentNullException(nameof(couchbaseClient));
         _relationalConnection = relationalConnection ?? throw new ArgumentNullException(nameof(relationalConnection));
+        _fieldNamingPolicy = couchbaseDbContextOptionsBuilder.FieldNamingPolicy;
     }
 
     public override int SaveChanges(IList<IUpdateEntry> entries)
@@ -74,7 +79,7 @@ public class CouchbaseDatabaseWrapper : Database
                     break;
 
                 case EntityState.Modified:
-                    var modifiedDocument = HydrateObjectFromEntity(updateEntry);
+                    var modifiedDocument = HydrateObjectFromEntity(updateEntry, _fieldNamingPolicy);
                     if (transaction != null)
                     {
                         await _couchbaseClient.EnqueueTransactionalUpsert(transaction, primaryKey, keyspace, modifiedDocument).ConfigureAwait(false);
@@ -90,7 +95,7 @@ public class CouchbaseDatabaseWrapper : Database
                     break;
 
                 case EntityState.Added:
-                    var newDocument = HydrateObjectFromEntity(updateEntry);
+                    var newDocument = HydrateObjectFromEntity(updateEntry, _fieldNamingPolicy);
                     if (transaction != null)
                     {
                         await _couchbaseClient.EnqueueTransactionalInsert(transaction, primaryKey, keyspace, newDocument).ConfigureAwait(false);
@@ -122,7 +127,7 @@ public class CouchbaseDatabaseWrapper : Database
         return null;
     }
 
-    private static object HydrateObjectFromEntity(IUpdateEntry updateEntry)
+    private static object HydrateObjectFromEntity(IUpdateEntry updateEntry, JsonNamingPolicy? fieldNamingPolicy = null)
     {
         var entityType = updateEntry.EntityType;
 
@@ -168,8 +173,8 @@ public class CouchbaseDatabaseWrapper : Database
             var navValue = nav.PropertyInfo!.GetValue(entity);
             if (nav.IsCollection)
             {
-                var camelName = char.ToLowerInvariant(nav.Name[0]) + nav.Name[1..];
-                doc[camelName] = navValue;
+                var fieldName = fieldNamingPolicy?.ConvertName(nav.Name) ?? nav.Name;
+                doc[fieldName] = navValue;
             }
             else if (navValue != null)
             {

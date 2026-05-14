@@ -21,7 +21,7 @@ public class CouchbaseDatabaseWrapperHydrateTests
             .GetMethod("HydrateObjectFromEntity", BindingFlags.NonPublic | BindingFlags.Static)!;
 
     private static object Hydrate(IUpdateEntry entry)
-        => HydrateMethod.Invoke(null, [entry])!;
+        => HydrateMethod.Invoke(null, [entry, null])!;
 
     // -----------------------------------------------------------------------
     // Helpers
