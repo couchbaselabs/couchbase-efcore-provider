@@ -3,6 +3,7 @@ using Couchbase.EntityFrameworkCore.Extensions;
 using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.EntityFrameworkCore.Utils;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.EntityFrameworkCore.Update;
 using Database = Microsoft.EntityFrameworkCore.Storage.Database;
@@ -118,6 +119,13 @@ public class CouchbaseDatabaseWrapper : Database
         return updateCount;
     }
 
+    // Internal seam so the null-nav behaviour can be verified without a live DbContext.
+    internal static void FillOwnsOneIntoDoc(Dictionary<string, object?> doc, INavigation nav, object? navValue)
+    {
+        foreach (var p in nav.TargetEntityType.GetProperties().Where(p => !p.IsShadowProperty()))
+            doc[p.GetColumnName()] = navValue == null ? null : p.PropertyInfo?.GetValue(navValue);
+    }
+
     private CouchbaseDbTransaction? GetCurrentTransaction()
     {
         if (_relationalConnection is CouchbaseRelationalConnection couchbaseRelationalConnection)
@@ -176,10 +184,9 @@ public class CouchbaseDatabaseWrapper : Database
                 var fieldName = fieldNamingPolicy?.ConvertName(nav.Name) ?? nav.Name;
                 doc[fieldName] = navValue;
             }
-            else if (navValue != null)
+            else
             {
-                foreach (var p in nav.TargetEntityType.GetProperties().Where(p => !p.IsShadowProperty()))
-                    doc[p.GetColumnName()] = p.PropertyInfo?.GetValue(navValue);
+                FillOwnsOneIntoDoc(doc, nav, navValue);
             }
         }
 
