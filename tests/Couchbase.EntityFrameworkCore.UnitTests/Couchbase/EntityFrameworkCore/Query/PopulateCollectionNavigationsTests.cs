@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Moq;
 using Xunit;
+using JsonNamingPolicy = System.Text.Json.JsonNamingPolicy;
 
 namespace Couchbase.EntityFrameworkCore.UnitTests.Couchbase.EntityFrameworkCore.Query;
 
@@ -31,8 +32,9 @@ public class PopulateCollectionNavigationsTests
         typeof(CouchbaseQueryEnumerable<OwnerEntity>)
             .GetMethod("PopulateCollectionNavigations", BindingFlags.NonPublic | BindingFlags.Static)!;
 
-    private static void Populate(OwnerEntity entity, JsonElement doc, IReadOnlyList<INavigation> navs)
-        => PopulateMethod.Invoke(null, [entity, doc, navs]);
+    private static void Populate(OwnerEntity entity, JsonElement doc, IReadOnlyList<INavigation> navs,
+        JsonNamingPolicy? policy = null)
+        => PopulateMethod.Invoke(null, [entity, doc, navs, policy]);
 
     /// <summary>
     /// Builds a mock INavigation whose single owned property has CLR name "Value"
@@ -97,5 +99,45 @@ public class PopulateCollectionNavigationsTests
         Assert.NotNull(entity.Items);
         Assert.Single(entity.Items);
         Assert.Null(entity.Items[0].Value);
+    }
+
+    [Fact]
+    public void PopulateCollectionNavigations_uses_naming_policy_for_multi_uppercase_nav_name()
+    {
+        // nav.Name = "URLs"; JsonNamingPolicy.CamelCase converts this to "urls", not "uRLs".
+        // Without the policy, TryGetPropertyCI would search for "URLs" and still find "urls"
+        // via case-insensitive match — but only because OrdinalIgnoreCase treats them the same.
+        // This test pins that the policy is applied so the lookup key is "urls" (correct),
+        // not the result of a manual char.ToLowerInvariant which would produce "uRLs".
+        var propInfo = typeof(OwnedItem).GetProperty(nameof(OwnedItem.Value))!;
+        var prop = new Mock<IProperty>();
+        prop.Setup(p => p.Name).Returns("Value");
+        prop.Setup(p => p.ClrType).Returns(typeof(string));
+        prop.Setup(p => p.PropertyInfo).Returns(propInfo);
+        var annotation = new Mock<IAnnotation>();
+        annotation.Setup(a => a.Value).Returns("Value");
+        prop.Setup(p => p.FindAnnotation("Relational:ColumnName")).Returns(annotation.Object);
+        prop.Setup(p => p["Relational:ColumnName"]).Returns("Value");
+
+        var targetType = new Mock<IEntityType>();
+        targetType.Setup(t => t.ClrType).Returns(typeof(OwnedItem));
+        targetType.Setup(t => t.GetProperties()).Returns([prop.Object]);
+
+        var navPropInfo = typeof(OwnerEntity).GetProperty(nameof(OwnerEntity.Items))!;
+        var nav = new Mock<INavigation>();
+        nav.Setup(n => n.Name).Returns("URLs"); // multi-uppercase CLR name
+        nav.Setup(n => n.PropertyInfo).Returns(navPropInfo);
+        nav.Setup(n => n.TargetEntityType).Returns(targetType.Object);
+        nav.Setup(n => n.IsCollection).Returns(true);
+
+        // JsonNamingPolicy.CamelCase converts "URLs" → "urls"
+        var doc = JsonDocument.Parse("""{"urls": [{"Value": "https://example.com"}]}""").RootElement;
+        var entity = new OwnerEntity();
+
+        Populate(entity, doc, [nav.Object], JsonNamingPolicy.CamelCase);
+
+        Assert.NotNull(entity.Items);
+        Assert.Single(entity.Items);
+        Assert.Equal("https://example.com", entity.Items[0].Value);
     }
 }

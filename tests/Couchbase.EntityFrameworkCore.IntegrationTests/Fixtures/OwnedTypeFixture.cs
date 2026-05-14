@@ -13,6 +13,8 @@ public class OwnedTypeFixture : CouchbaseFixture<OwnedTypeDbContext>
     public override async Task InitializeAsync()
     {
         await base.InitializeAsync();
+        await using var ctx = GetDbContext();
+        await ctx.Database.EnsureCreatedAsync();
         await LoadDataAsync();
     }
 
