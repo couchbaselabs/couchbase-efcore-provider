@@ -334,6 +334,17 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
         return sql[(open + 1)..close];
     }
 
+    // KNOWN LIMITATION — change-tracker bypass
+    // Owned collection items created here are materialized via Activator.CreateInstance and
+    // assigned directly to the navigation property via reflection. They are NOT registered with
+    // the EF Core state manager, which means:
+    //   • Modifications to the items after the query (e.g. customer.ContactMethods[0].Value = "x")
+    //     will NOT be detected by SaveChanges, regardless of whether the query used tracking or
+    //     no-tracking — the behavior is silently identical in both cases.
+    //   • This deviates from standard EF Core semantics, where owned collection members
+    //     materialized through the shaper are tracked alongside their owner.
+    // Fixing this requires hooking each owned item into IStateManager via the owner's
+    // InternalEntityEntry, which is deferred as a follow-up task.
     private static void PopulateCollectionNavigations(T entity, JsonElement docElement, IReadOnlyList<INavigation> collections)
     {
         foreach (var nav in collections)
