@@ -11,6 +11,7 @@ defaultBucket.WithScope("contoso",
     "course", "enrollment", "person", "department", "officeAssignment",
     "courseAssignment"
 ]);
+defaultBucket.WithScope("ownedtypes", ["customer"]);
 
 var sampleBucket = couchbase.AddSampleBucket("travel-sample", "travel-sample");
 builder.Build().Run();

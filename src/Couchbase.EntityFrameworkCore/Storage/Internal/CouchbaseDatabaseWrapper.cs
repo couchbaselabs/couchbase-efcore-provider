@@ -125,24 +125,60 @@ public class CouchbaseDatabaseWrapper : Database
     private static object HydrateObjectFromEntity(IUpdateEntry updateEntry)
     {
         var entityType = updateEntry.EntityType;
-        var obj = Activator.CreateInstance(entityType.ClrType)!;
 
+        var ownedNavs = entityType.GetNavigations()
+            .Where(n => n.TargetEntityType.IsOwned() && n.PropertyInfo != null)
+            .ToList();
+
+        // No owned navigations: use CLR instance so the SDK's camelCase serializer produces
+        // the same field names that already work for all existing entity types.
+        if (ownedNavs.Count == 0)
+        {
+            var obj = Activator.CreateInstance(entityType.ClrType)!;
+            foreach (var property in entityType.GetProperties())
+            {
+                if (property.IsShadowProperty()) continue;
+                var value = updateEntry.GetCurrentValue(property);
+                if (property.PropertyInfo?.GetSetMethod(nonPublic: true) != null)
+                    property.PropertyInfo.SetValue(obj, value);
+                else if (property.FieldInfo != null)
+                    property.FieldInfo.SetValue(obj, value);
+            }
+            return obj;
+        }
+
+        // With owned navigations, build a flat dictionary so that:
+        //   OwnsOne  → each owned scalar is stored as a top-level field whose key matches
+        //              EF Core's projected column name (e.g. "address_street"), allowing the
+        //              EF Core shaper to read it directly from the N1QL result row.
+        //   OwnsMany → the collection is stored under its camelCase navigation name
+        //              (e.g. "contactMethods") so a KV GET can retrieve it later.
+        // Dictionary keys are serialized verbatim by System.Text.Json — no camelCase
+        // transformation — so GetColumnName() keys match what N1QL SELECT returns.
+        var doc = new Dictionary<string, object?>();
         foreach (var property in entityType.GetProperties())
         {
             if (property.IsShadowProperty()) continue;
+            doc[property.GetColumnName()] = updateEntry.GetCurrentValue(property);
+        }
 
-            var value = updateEntry.GetCurrentValue(property);
-            if (property.PropertyInfo?.GetSetMethod(nonPublic: true) != null)
+        var entity = updateEntry.ToEntityEntry().Entity;
+        foreach (var nav in ownedNavs)
+        {
+            var navValue = nav.PropertyInfo!.GetValue(entity);
+            if (nav.IsCollection)
             {
-                property.PropertyInfo.SetValue(obj, value);
+                var camelName = char.ToLowerInvariant(nav.Name[0]) + nav.Name[1..];
+                doc[camelName] = navValue;
             }
-            else if (property.FieldInfo != null)
+            else if (navValue != null)
             {
-                property.FieldInfo.SetValue(obj, value);
+                foreach (var p in nav.TargetEntityType.GetProperties().Where(p => !p.IsShadowProperty()))
+                    doc[p.GetColumnName()] = p.PropertyInfo?.GetValue(navValue);
             }
         }
 
-        return obj;
+        return doc;
     }
 }
 
