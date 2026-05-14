@@ -189,7 +189,7 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
                     && navRow is JsonElement rowElement
                     && rowElement.ValueKind == JsonValueKind.Object)
                 {
-                    PopulateCollectionNavigations(result, rowElement, _ownedCollectionNavigations);
+                    PopulateCollectionNavigations(result, rowElement, _ownedCollectionNavigations, _couchbaseDbContextOptionsBuilder.FieldNamingPolicy);
                 }
                 pendingEntityRow = null;
                 yield return result;
@@ -220,7 +220,7 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
                         && pendingEntityRow is JsonElement lastRow
                         && lastRow.ValueKind == JsonValueKind.Object)
                     {
-                        PopulateCollectionNavigations(last, lastRow, _ownedCollectionNavigations);
+                        PopulateCollectionNavigations(last, lastRow, _ownedCollectionNavigations, _couchbaseDbContextOptionsBuilder.FieldNamingPolicy);
                     }
                     pendingEntityRow = null;
                     yield return last;
@@ -345,11 +345,12 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
     //     materialized through the shaper are tracked alongside their owner.
     // Fixing this requires hooking each owned item into IStateManager via the owner's
     // InternalEntityEntry, which is deferred as a follow-up task.
-    private static void PopulateCollectionNavigations(T entity, JsonElement docElement, IReadOnlyList<INavigation> collections)
+    private static void PopulateCollectionNavigations(T entity, JsonElement docElement, IReadOnlyList<INavigation> collections, JsonNamingPolicy? fieldNamingPolicy)
     {
         foreach (var nav in collections)
         {
-            if (!TryGetPropertyCI(docElement, nav.Name, out var arrayElement)
+            var fieldName = fieldNamingPolicy?.ConvertName(nav.Name) ?? nav.Name;
+            if (!TryGetPropertyCI(docElement, fieldName, out var arrayElement)
                 || arrayElement.ValueKind != JsonValueKind.Array)
                 continue;
 
