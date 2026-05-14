@@ -93,6 +93,13 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
         _couchbaseDbContextOptionsBuilder = couchbaseDbContextOptionsBuilder;
         _bucketProvider = bucketProvider;
         _dbContext = relationalQueryContext.Context;
+        // FindEntityType returns null when T is not a mapped entity (scalar projections such as
+        // Select(c => c.Name) where T = string, or anonymous projections such as Select(c => new { c.Name })).
+        // In both cases _ownedCollectionNavigations is empty and OwnsMany population is skipped,
+        // which is correct: the projected type has no navigation properties to populate.
+        // Anonymous projections that happen to include an owned-collection property (e.g.
+        // Select(c => new { c.ContactMethods })) will not have the embedded array populated
+        // by this path; callers that need embedded collections should query the root entity directly.
         _ownerEntityType = relationalQueryContext.Context.Model.FindEntityType(typeof(T));
         _ownedCollectionNavigations = _ownerEntityType == null ? [] :
             _ownerEntityType.GetNavigations()
