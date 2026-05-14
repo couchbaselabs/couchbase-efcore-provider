@@ -44,6 +44,11 @@ public class CouchbaseDbDataReader<T> : DbDataReader
     private IAsyncEnumerator<T>? _enumerator;
     private CancellationToken _cancellationToken;
     private T? _currentRow;
+
+    /// <summary>
+    /// Gets the current row as read by the last <see cref="ReadAsync"/> call.
+    /// </summary>
+    public T? CurrentRow => _currentRow;
     private T? _bufferedRow;
     private bool _hasBufferedRow;
     private bool _hasCurrentRow;

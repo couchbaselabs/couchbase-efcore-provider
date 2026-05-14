@@ -5,12 +5,14 @@ using System.Collections;
 using System.Data.Common;
 using System.Text.Json;
 using Couchbase.Query;
+using Couchbase.EntityFrameworkCore.Extensions;
 using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.EntityFrameworkCore.Storage.Internal;
 using Couchbase.EntityFrameworkCore.Utils;
 using Couchbase.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Query;
 using Microsoft.EntityFrameworkCore.Query.Internal;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -62,6 +64,8 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
     private readonly ICouchbaseDbContextOptionsBuilder _couchbaseDbContextOptionsBuilder;
     private readonly IBucketProvider _bucketProvider;
     private readonly DbContext _dbContext;
+    private readonly IEntityType? _ownerEntityType;
+    private readonly IReadOnlyList<INavigation> _ownedCollectionNavigations;
 
     public CouchbaseQueryEnumerable(
         RelationalQueryContext relationalQueryContext,
@@ -89,6 +93,11 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
         _couchbaseDbContextOptionsBuilder = couchbaseDbContextOptionsBuilder;
         _bucketProvider = bucketProvider;
         _dbContext = relationalQueryContext.Context;
+        _ownerEntityType = relationalQueryContext.Context.Model.FindEntityType(typeof(T));
+        _ownedCollectionNavigations = _ownerEntityType == null ? [] :
+            _ownerEntityType.GetNavigations()
+                .Where(n => n.IsCollection && n.TargetEntityType.IsOwned())
+                .ToArray();
     }
 
     /// <summary>Returns an enumerator that iterates through the collection.</summary>
@@ -150,8 +159,11 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
 
             if (coordinator.ResultReady)
             {
-                // Entity is complete — yield it and advance to the next row.
+                // Entity is complete — populate OwnsMany collections via KV GET, then yield.
+                // OwnsOne references are already populated by the EF Core shaper because
+                // HydrateObjectFromEntity stores them as flat fields matching SELECT column names.
                 coordinator.ResultContext.Values = null;
+                await PopulateOwnedCollectionsAsync(result, cancellationToken).ConfigureAwait(false);
                 yield return result;
                 hasNext = coordinator.HasNext ?? await reader.ReadAsync(cancellationToken).ConfigureAwait(false);
             }
@@ -171,11 +183,97 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
                     coordinator.ResultReady = true;
                     var last = _shaper(_relationalQueryContext, reader, coordinator.ResultContext, coordinator);
                     coordinator.ResultContext.Values = null;
+                    await PopulateOwnedCollectionsAsync(last, cancellationToken).ConfigureAwait(false);
                     yield return last;
                     // hasNext is false so the outer while exits naturally.
                 }
             }
         }
+    }
+
+    // Fetches the full Couchbase document via KV GET and populates OwnsMany collections
+    // on the entity.  OwnsOne references are already handled by the EF Core shaper because
+    // HydrateObjectFromEntity stores them as flat fields matching N1QL column projections.
+    private async Task PopulateOwnedCollectionsAsync(T entity, CancellationToken cancellationToken)
+    {
+        if (_ownedCollectionNavigations.Count == 0 || entity == null || _ownerEntityType == null)
+            return;
+
+        var keyspace = _ownerEntityType.GetCollectionName();
+        var parts = keyspace.Split('.');
+        if (parts.Length != 3) return;
+
+        var bucket = await _bucketProvider.GetBucketAsync(parts[0].Trim('`')).ConfigureAwait(false);
+        var kvCollection = bucket.Scope(parts[1].Trim('`')).Collection(parts[2].Trim('`'));
+        var key = _ownerEntityType.GetPrimaryKey((object)entity!);
+        var getResult = await kvCollection.GetAsync(key).ConfigureAwait(false);
+        var fullDoc = getResult.ContentAs<JsonElement>();
+
+        if (fullDoc.ValueKind != JsonValueKind.Object) return;
+        PopulateCollectionNavigations(entity, fullDoc, _ownedCollectionNavigations);
+    }
+
+    private static void PopulateCollectionNavigations(T entity, JsonElement docElement, IReadOnlyList<INavigation> collections)
+    {
+        foreach (var nav in collections)
+        {
+            if (!TryGetPropertyCI(docElement, nav.Name, out var arrayElement)
+                || arrayElement.ValueKind != JsonValueKind.Array)
+                continue;
+
+            var clrType = nav.TargetEntityType.ClrType;
+            var list = (IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(clrType))!;
+            var properties = nav.TargetEntityType.GetProperties()
+                .Where(p => !p.IsShadowProperty()).ToList();
+
+            foreach (var itemElement in arrayElement.EnumerateArray())
+            {
+                var ownedEntity = Activator.CreateInstance(clrType)!;
+                foreach (var prop in properties)
+                {
+                    if (TryGetPropertyCI(itemElement, prop.Name, out var propElement))
+                        prop.PropertyInfo?.SetValue(ownedEntity, ConvertJsonValue(propElement, prop.ClrType));
+                }
+                list.Add(ownedEntity);
+            }
+
+            nav.PropertyInfo?.SetValue(entity, list);
+        }
+    }
+
+    // JsonElement.TryGetProperty is case-sensitive. The SDK's SystemTextJsonSerializer uses
+    // JsonSerializerDefaults.Web (camelCase), so navigation/property names may vary in case
+    // between what EF Core models use and what appears in the stored document.
+    private static bool TryGetPropertyCI(JsonElement element, string name, out JsonElement value)
+    {
+        if (element.TryGetProperty(name, out value)) return true;
+        foreach (var prop in element.EnumerateObject())
+        {
+            if (!string.Equals(prop.Name, name, StringComparison.OrdinalIgnoreCase)) continue;
+            value = prop.Value;
+            return true;
+        }
+        value = default;
+        return false;
+    }
+
+    private static object? ConvertJsonValue(JsonElement element, Type targetType)
+    {
+        if (element.ValueKind == JsonValueKind.Null) return null;
+        var t = Nullable.GetUnderlyingType(targetType) ?? targetType;
+        return t switch
+        {
+            _ when t == typeof(string)   => element.GetString(),
+            _ when t == typeof(int)      => element.GetInt32(),
+            _ when t == typeof(long)     => element.GetInt64(),
+            _ when t == typeof(double)   => element.GetDouble(),
+            _ when t == typeof(decimal)  => element.GetDecimal(),
+            _ when t == typeof(float)    => (float)element.GetDouble(),
+            _ when t == typeof(bool)     => element.GetBoolean(),
+            _ when t == typeof(Guid)     => element.GetGuid(),
+            _ when t == typeof(DateTime) => element.GetDateTime(),
+            _ => null
+        };
     }
 
     /// <summary>
