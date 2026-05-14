@@ -386,7 +386,7 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
             _ when t == typeof(bool)     => element.GetBoolean(),
             _ when t == typeof(Guid)     => element.GetGuid(),
             _ when t == typeof(DateTime) => element.GetDateTime(),
-            _ => null
+            _ => JsonSerializer.Deserialize(element.GetRawText(), t)
         };
     }
 
