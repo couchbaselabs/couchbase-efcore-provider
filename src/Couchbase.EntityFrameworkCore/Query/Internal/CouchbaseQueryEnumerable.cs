@@ -5,8 +5,8 @@ using System.Collections;
 using System.Data.Common;
 using System.Text.Json;
 using Couchbase.Query;
-using Couchbase.EntityFrameworkCore.Extensions;
 using Couchbase.EntityFrameworkCore.Infrastructure;
+using Couchbase.EntityFrameworkCore.Metadata;
 using Couchbase.EntityFrameworkCore.Storage.Internal;
 using Couchbase.EntityFrameworkCore.Utils;
 using Couchbase.Extensions.DependencyInjection;
@@ -128,6 +128,11 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
         var queryOptions = GetParameters(dbCommand);
         queryOptions.CancellationToken(cancellationToken);
 
+        // Inject OwnsMany navigation columns into the SELECT so the embedded arrays arrive
+        // with the row — avoids an N+1 KV GET for each yielded entity.
+        if (_ownedCollectionNavigations.Count > 0)
+            queryString = InjectOwnedCollectionColumns(queryString);
+
         var bucket = await _bucketProvider.GetBucketAsync(_couchbaseDbContextOptionsBuilder.Bucket).ConfigureAwait(false);
         var cluster = bucket.Cluster;
 
@@ -140,6 +145,15 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
         _relationalQueryContext.InitializeStateManager(_standAloneStateManager);
 
         var coordinator = new SingleQueryResultCoordinator();
+        var jsonReader = reader as CouchbaseDbDataReader<JsonElement>;
+
+        // pendingEntityRow: the most recent row that belonged to the entity currently being
+        // accumulated. The Couchbase SQL generator skips the OwnsMany LEFT JOIN, so each
+        // owner document produces exactly one N1QL row. When the shaper sets ResultReady=false
+        // (expecting more JOIN rows that never arrive) and the outer loop either reads the
+        // next entity's row or hits EOF, CurrentRow has already advanced away from the
+        // current entity's row. We therefore save it here before each read.
+        JsonElement? pendingEntityRow = null;
 
         // coordinator.HasNext carries a buffered row signal set by the shaper (collection navigation
         // case: shaper detects a new root key and buffers the current row for the next iteration).
@@ -159,11 +173,18 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
 
             if (coordinator.ResultReady)
             {
-                // Entity is complete — populate OwnsMany collections via KV GET, then yield.
-                // OwnsOne references are already populated by the EF Core shaper because
-                // HydrateObjectFromEntity stores them as flat fields matching SELECT column names.
                 coordinator.ResultContext.Values = null;
-                await PopulateOwnedCollectionsAsync(result, cancellationToken).ConfigureAwait(false);
+                // Use pendingEntityRow if available (entity was accumulated across multiple reads);
+                // fall back to CurrentRow for shapers that complete in a single iteration.
+                var navRow = pendingEntityRow
+                    ?? (jsonReader?.CurrentRow is JsonElement r ? r : (JsonElement?)null);
+                if (_ownedCollectionNavigations.Count > 0
+                    && navRow is JsonElement rowElement
+                    && rowElement.ValueKind == JsonValueKind.Object)
+                {
+                    PopulateCollectionNavigations(result, rowElement, _ownedCollectionNavigations);
+                }
+                pendingEntityRow = null;
                 yield return result;
                 hasNext = coordinator.HasNext ?? await reader.ReadAsync(cancellationToken).ConfigureAwait(false);
             }
@@ -175,6 +196,10 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
             else
             {
                 // Shaper needs more rows to complete the current entity (collection accumulation).
+                // Save the current row before advancing — it belongs to the entity being built.
+                if (jsonReader?.CurrentRow is JsonElement entityRow)
+                    pendingEntityRow = entityRow;
+
                 hasNext = await reader.ReadAsync(cancellationToken).ConfigureAwait(false);
                 if (!hasNext)
                 {
@@ -183,7 +208,14 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
                     coordinator.ResultReady = true;
                     var last = _shaper(_relationalQueryContext, reader, coordinator.ResultContext, coordinator);
                     coordinator.ResultContext.Values = null;
-                    await PopulateOwnedCollectionsAsync(last, cancellationToken).ConfigureAwait(false);
+                    // CurrentRow is null at EOF; use pendingEntityRow saved above.
+                    if (_ownedCollectionNavigations.Count > 0
+                        && pendingEntityRow is JsonElement lastRow
+                        && lastRow.ValueKind == JsonValueKind.Object)
+                    {
+                        PopulateCollectionNavigations(last, lastRow, _ownedCollectionNavigations);
+                    }
+                    pendingEntityRow = null;
                     yield return last;
                     // hasNext is false so the outer while exits naturally.
                 }
@@ -191,26 +223,108 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
         }
     }
 
-    // Fetches the full Couchbase document via KV GET and populates OwnsMany collections
-    // on the entity.  OwnsOne references are already handled by the EF Core shaper because
-    // HydrateObjectFromEntity stores them as flat fields matching N1QL column projections.
-    private async Task PopulateOwnedCollectionsAsync(T entity, CancellationToken cancellationToken)
+    // Appends OwnsMany navigation column references to the SELECT clause so the embedded
+    // arrays arrive in the N1QL result row — avoids N+1 KV GETs.
+    private string InjectOwnedCollectionColumns(string sql)
     {
-        if (_ownedCollectionNavigations.Count == 0 || entity == null || _ownerEntityType == null)
-            return;
+        var policy = _couchbaseDbContextOptionsBuilder.FieldNamingPolicy;
+        var navNames = _ownedCollectionNavigations
+            .Select(n => policy?.ConvertName(n.Name) ?? n.Name)
+            .ToArray();
+        return InjectOwnedCollectionColumns(sql, _ownerEntityType?.GetTableName(), navNames);
+    }
 
-        var keyspace = _ownerEntityType.GetCollectionName();
-        var parts = keyspace.Split('.');
-        if (parts.Length != 3) return;
+    // Internal overload with explicit parameters — unit-testable without a live EF Core context.
+    internal static string InjectOwnedCollectionColumns(string sql, string? tableName, IReadOnlyList<string> camelNavNames)
+    {
+        var outerFromIdx = IndexOfFrom(sql);
+        if (outerFromIdx <= 0) return sql;
 
-        var bucket = await _bucketProvider.GetBucketAsync(parts[0].Trim('`')).ConfigureAwait(false);
-        var kvCollection = bucket.Scope(parts[1].Trim('`')).Collection(parts[2].Trim('`'));
-        var key = _ownerEntityType.GetPrimaryKey((object)entity!);
-        var getResult = await kvCollection.GetAsync(key).ConfigureAwait(false);
-        var fullDoc = getResult.ContentAs<JsonElement>();
+        // After "\nFROM " or " FROM " (both 6 chars) check whether the FROM references
+        // a subquery "(SELECT ... FROM keyspace AS alias LIMIT n) AS outerAlias".
+        // EF Core wraps the customer query in a subquery when FirstAsync/Take is used.
+        var contentStart = outerFromIdx + 6;
+        if (contentStart < sql.Length && sql[contentStart] == '(')
+        {
+            // Subquery form: inject into the inner SELECT and also into the outer SELECT.
+            int depth = 0, subEnd = -1;
+            for (var i = contentStart; i < sql.Length; i++)
+            {
+                if (sql[i] == '(') depth++;
+                else if (sql[i] == ')') { if (--depth == 0) { subEnd = i; break; } }
+            }
+            if (subEnd < 0) return sql;
 
-        if (fullDoc.ValueKind != JsonValueKind.Object) return;
-        PopulateCollectionNavigations(entity, fullDoc, _ownedCollectionNavigations);
+            var outerAlias = ExtractAliasAfterAs(sql, subEnd + 1);
+            if (outerAlias == null) return sql;
+
+            var innerSql = sql[(contentStart + 1)..subEnd];
+            var innerAlias = ExtractSelectAlias(innerSql, tableName);
+            if (innerAlias == null) return sql;
+
+            var innerFromIdx = IndexOfFrom(innerSql);
+            if (innerFromIdx <= 0) return sql;
+
+            var innerNavCols = string.Join(", ", camelNavNames.Select(n => $"`{innerAlias}`.`{n}`"));
+            var outerNavCols = string.Join(", ", camelNavNames.Select(n => $"`{outerAlias}`.`{n}`"));
+
+            var newInnerSql = innerSql[..innerFromIdx] + ", " + innerNavCols + innerSql[innerFromIdx..];
+            var afterSubquery = sql[(subEnd + 1)..];
+
+            return sql[..outerFromIdx] + ", " + outerNavCols
+                + sql[outerFromIdx..(contentStart + 1)]  // "\nFROM ("
+                + newInnerSql + ")" + afterSubquery;
+        }
+
+        // Simple form: FROM directly references the keyspace.
+        var alias = ExtractSelectAlias(sql, tableName);
+        if (alias == null) return sql;
+
+        var navCols = string.Join(", ", camelNavNames.Select(n => $"`{alias}`.`{n}`"));
+        return sql[..outerFromIdx] + ", " + navCols + sql[outerFromIdx..];
+    }
+
+    // Extracts the EF Core table alias from the SQL's FROM clause.
+    // Primary path: locate the keyspace via CouchbaseKeyspace.ToSqlString() then read the
+    // AS clause that immediately follows — precise and avoids matching aliases in SELECT.
+    // Fallback: scan for the first AS clause that appears after FROM.
+    internal static string? ExtractSelectAlias(string sql, string? tableName)
+    {
+        var fromIdx = IndexOfFrom(sql);
+        if (fromIdx < 0) return null;
+
+        if (CouchbaseKeyspace.TryParse(tableName, out var ks))
+        {
+            var sqlKs = ks.Value.ToSqlString();
+            var ksIdx = sql.IndexOf(sqlKs, fromIdx, StringComparison.Ordinal);
+            if (ksIdx >= 0)
+            {
+                var alias = ExtractAliasAfterAs(sql, ksIdx + sqlKs.Length);
+                if (alias != null) return alias;
+            }
+        }
+
+        return ExtractAliasAfterAs(sql, fromIdx);
+    }
+
+    // EF Core's SQL generator emits "\nFROM " (AppendLine + Append), not " FROM ".
+    // Check for both so injection works regardless of single- vs multi-line formatting.
+    internal static int IndexOfFrom(string sql)
+    {
+        var idx = sql.IndexOf("\nFROM ", StringComparison.OrdinalIgnoreCase);
+        if (idx >= 0) return idx;
+        return sql.IndexOf(" FROM ", StringComparison.OrdinalIgnoreCase);
+    }
+
+    internal static string? ExtractAliasAfterAs(string sql, int searchFrom)
+    {
+        var asIdx = sql.IndexOf(" AS ", searchFrom, StringComparison.OrdinalIgnoreCase);
+        if (asIdx < 0) return null;
+        var open = sql.IndexOf('`', asIdx + 4);
+        if (open < 0) return null;
+        var close = sql.IndexOf('`', open + 1);
+        if (close < 0) return null;
+        return sql[(open + 1)..close];
     }
 
     private static void PopulateCollectionNavigations(T entity, JsonElement docElement, IReadOnlyList<INavigation> collections)
@@ -244,7 +358,7 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
     // JsonElement.TryGetProperty is case-sensitive. The SDK's SystemTextJsonSerializer uses
     // JsonSerializerDefaults.Web (camelCase), so navigation/property names may vary in case
     // between what EF Core models use and what appears in the stored document.
-    private static bool TryGetPropertyCI(JsonElement element, string name, out JsonElement value)
+    internal static bool TryGetPropertyCI(JsonElement element, string name, out JsonElement value)
     {
         if (element.TryGetProperty(name, out value)) return true;
         foreach (var prop in element.EnumerateObject())
