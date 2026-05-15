@@ -56,7 +56,10 @@ public class CouchbaseDatabaseWrapper : Database
             }
 
             var primaryKey = entityType.GetPrimaryKey(entity);
-            var keyspace = entityType.GetCollectionName();
+            var keyspace = entityType.GetCollectionName()
+                ?? throw new InvalidOperationException(
+                    $"Entity type '{entityType.ClrType.Name}' has no mapped table name. " +
+                    "Ensure the entity is mapped to a Couchbase collection via ToCouchbaseCollection().");
 
             switch (updateEntry.EntityState)
             {
