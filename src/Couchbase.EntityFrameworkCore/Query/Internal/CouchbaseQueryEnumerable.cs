@@ -178,7 +178,7 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
                     && navRow is JsonElement rowElement
                     && rowElement.ValueKind == JsonValueKind.Object)
                 {
-                    PopulateCollectionNavigations(result, rowElement, _ownedCollectionNavigations, _couchbaseDbContextOptionsBuilder.FieldNamingPolicy);
+                    PopulateCollectionNavigations(result, rowElement, _ownedCollectionNavigations, _couchbaseDbContextOptionsBuilder.FieldNamingPolicy, _couchbaseDbContextOptionsBuilder.SerializerOptions);
                 }
                 pendingEntityRow = null;
                 yield return result;
@@ -209,7 +209,7 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
                         && pendingEntityRow is JsonElement lastRow
                         && lastRow.ValueKind == JsonValueKind.Object)
                     {
-                        PopulateCollectionNavigations(last, lastRow, _ownedCollectionNavigations, _couchbaseDbContextOptionsBuilder.FieldNamingPolicy);
+                        PopulateCollectionNavigations(last, lastRow, _ownedCollectionNavigations, _couchbaseDbContextOptionsBuilder.FieldNamingPolicy, _couchbaseDbContextOptionsBuilder.SerializerOptions);
                     }
                     pendingEntityRow = null;
                     yield return last;
@@ -230,8 +230,11 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
     //     materialized through the shaper are tracked alongside their owner.
     // Fixing this requires hooking each owned item into IStateManager via the owner's
     // InternalEntityEntry, which is deferred as a follow-up task.
-    private static void PopulateCollectionNavigations(T entity, JsonElement docElement, IReadOnlyList<INavigation> collections, JsonNamingPolicy? fieldNamingPolicy)
+    private static readonly JsonSerializerOptions _defaultSerializerOptions = new(JsonSerializerDefaults.Web);
+
+    private static void PopulateCollectionNavigations(T entity, JsonElement docElement, IReadOnlyList<INavigation> collections, JsonNamingPolicy? fieldNamingPolicy, JsonSerializerOptions? serializerOptions)
     {
+        var options = serializerOptions ?? _defaultSerializerOptions;
         foreach (var nav in collections)
         {
             var fieldName = fieldNamingPolicy?.ConvertName(nav.Name) ?? nav.Name;
@@ -250,7 +253,7 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
                 foreach (var prop in properties)
                 {
                     if (TryGetPropertyCI(itemElement, prop.GetColumnName(), out var propElement))
-                        prop.PropertyInfo?.SetValue(ownedEntity, ConvertJsonValue(propElement, prop.ClrType));
+                        prop.PropertyInfo?.SetValue(ownedEntity, ConvertJsonValue(propElement, prop.ClrType, options));
                 }
                 list.Add(ownedEntity);
             }
@@ -275,7 +278,7 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
         return false;
     }
 
-    private static object? ConvertJsonValue(JsonElement element, Type targetType)
+    private static object? ConvertJsonValue(JsonElement element, Type targetType, JsonSerializerOptions options)
     {
         if (element.ValueKind == JsonValueKind.Null) return null;
         var t = Nullable.GetUnderlyingType(targetType) ?? targetType;
@@ -290,7 +293,7 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
             _ when t == typeof(bool)     => element.GetBoolean(),
             _ when t == typeof(Guid)     => element.GetGuid(),
             _ when t == typeof(DateTime) => element.GetDateTime(),
-            _ => JsonSerializer.Deserialize(element.GetRawText(), t)
+            _ => JsonSerializer.Deserialize(element.GetRawText(), t, options)
         };
     }
 
