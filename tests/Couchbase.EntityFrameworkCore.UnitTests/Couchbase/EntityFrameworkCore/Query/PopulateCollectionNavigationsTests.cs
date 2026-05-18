@@ -33,8 +33,8 @@ public class PopulateCollectionNavigationsTests
             .GetMethod("PopulateCollectionNavigations", BindingFlags.NonPublic | BindingFlags.Static)!;
 
     private static void Populate(OwnerEntity entity, JsonElement doc, IReadOnlyList<INavigation> navs,
-        JsonNamingPolicy? policy = null)
-        => PopulateMethod.Invoke(null, [entity, doc, navs, policy]);
+        JsonNamingPolicy? policy = null, JsonSerializerOptions? serializerOptions = null)
+        => PopulateMethod.Invoke(null, [entity, doc, navs, policy, serializerOptions]);
 
     /// <summary>
     /// Builds a mock INavigation whose single owned property has CLR name "Value"

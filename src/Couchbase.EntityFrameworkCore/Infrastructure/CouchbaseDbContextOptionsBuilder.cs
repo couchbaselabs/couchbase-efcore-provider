@@ -36,6 +36,8 @@ public class CouchbaseDbContextOptionsBuilder : ICouchbaseDbContextOptionsBuilde
 
     public JsonNamingPolicy? FieldNamingPolicy { get; set; } = JsonNamingPolicy.CamelCase;
 
+    public JsonSerializerOptions? SerializerOptions { get; set; }
+
     DbContextOptionsBuilder ICouchbaseDbContextOptionsBuilder.OptionsBuilder => OptionsBuilder;
 }
 
@@ -70,6 +72,15 @@ public interface ICouchbaseDbContextOptionsBuilder
     /// such as <see cref="JsonNamingPolicy.SnakeCaseLower"/>.
     /// </summary>
     public JsonNamingPolicy? FieldNamingPolicy { get; set; }
+
+    /// <summary>
+    /// <see cref="JsonSerializerOptions"/> used when deserializing scalar values inside
+    /// OwnsMany embedded collections. Defaults to <c>null</c>, which causes the provider to
+    /// use <c>JsonSerializerDefaults.Web</c> — the same defaults the Couchbase SDK applies.
+    /// Supply a custom instance to match a non-default serializer configured on the SDK
+    /// (e.g. custom converters, different enum handling, or a different naming policy).
+    /// </summary>
+    public JsonSerializerOptions? SerializerOptions { get; set; }
 }
 
 /* ************************************************************
