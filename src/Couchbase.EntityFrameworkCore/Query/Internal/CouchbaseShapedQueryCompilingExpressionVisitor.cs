@@ -210,6 +210,12 @@ public class CouchbaseShapedQueryCompilingExpressionVisitor : RelationalShapedQu
                     Expression.Constant(_couchbaseDbContextOptionsBuilder));
             }
 
+            // Add OwnsMany navigation columns to the SELECT projection using the IR so the
+            // embedded arrays arrive in the N1QL row. Done after ProcessShaper (shaper ordinals
+            // are already fixed) and before projectionAliases is built (so the new names are
+            // included in the alias array that CouchbaseDbDataReader uses for column lookup).
+            AddOwnedCollectionColumnsToProjection(selectExpression, shaper.ReturnType);
+
             // ProjectionExpression.Alias is "" when no explicit AS clause is emitted — in that case
             // the N1QL response key is the underlying ColumnExpression.Name.
             static string EffectiveAlias(ProjectionExpression pe) =>
@@ -244,6 +250,82 @@ public class CouchbaseShapedQueryCompilingExpressionVisitor : RelationalShapedQu
                 Expression.Constant(_threadSafetyChecksEnabled),
                 Expression.Constant(_bucketProvider),
                 Expression.Constant(_couchbaseDbContextOptionsBuilder));
+        }
+    }
+
+    /// <summary>
+    /// Appends a <see cref="ColumnExpression"/> for each OwnsMany navigation of the root entity
+    /// to <paramref name="selectExpression"/>'s projection so the embedded JSON arrays arrive
+    /// inline with the N1QL result row. This replaces the post-hoc string rewriting that
+    /// <c>InjectOwnedCollectionColumns</c> previously applied to the emitted SQL, eliminating
+    /// brittleness caused by matching FROM/AS tokens in string literals or nested subqueries.
+    ///
+    /// Handles two shapes that EF Core emits for entities with collection includes:
+    /// <list type="bullet">
+    ///   <item>Simple — FROM references the entity <see cref="TableExpression"/> directly.</item>
+    ///   <item>Subquery — FROM references an inner <see cref="SelectExpression"/> (used when
+    ///     EF Core wraps a LIMIT-constrained query); the column is added to both the inner and
+    ///     outer projections using their respective aliases.</item>
+    /// </list>
+    /// </summary>
+    private void AddOwnedCollectionColumnsToProjection(SelectExpression selectExpression, Type shaperReturnType)
+    {
+        // Locate the owner entity's TableExpression.
+        // Simple form:   Tables contains the entity TableExpression directly.
+        // Subquery form: Tables[0] is an inner SelectExpression (EF Core wraps FirstAsync/Take
+        //                in a subquery before the LEFT JOIN expansion); the entity TableExpression
+        //                is inside the inner select.
+        TableExpression? ownerTable = null;
+        SelectExpression? innerSelect = null;
+
+        var directTable = selectExpression.Tables
+            .OfType<TableExpression>()
+            .FirstOrDefault(t => t.Name.Split('.').Length == 3);
+
+        if (directTable != null)
+        {
+            ownerTable = directTable;
+        }
+        else
+        {
+            innerSelect = selectExpression.Tables.OfType<SelectExpression>().FirstOrDefault();
+            if (innerSelect != null)
+                ownerTable = innerSelect.Tables
+                    .OfType<TableExpression>()
+                    .FirstOrDefault(t => t.Name.Split('.').Length == 3);
+        }
+
+        if (ownerTable == null) return;
+
+        // Only inject for root-entity queries — skip scalar/anonymous projections.
+        var entityType = QueryCompilationContext.Model.GetEntityTypes()
+            .FirstOrDefault(e => e.ClrType == shaperReturnType && e.GetTableName() == ownerTable.Name);
+        if (entityType == null) return;
+
+        var ownedCollNavs = entityType.GetNavigations()
+            .Where(n => n.IsCollection && n.TargetEntityType.IsOwned())
+            .ToList();
+        if (ownedCollNavs.Count == 0) return;
+
+        var policy = _couchbaseDbContextOptionsBuilder.FieldNamingPolicy;
+        foreach (var nav in ownedCollNavs)
+        {
+            var fieldName = policy?.ConvertName(nav.Name) ?? nav.Name;
+
+            if (innerSelect != null)
+            {
+                // Subquery form: project the column from the entity table into the inner SELECT,
+                // then surface it from the inner subquery's alias in the outer SELECT.
+                innerSelect.AddToProjection(
+                    new ColumnExpression(fieldName, ownerTable.Alias, typeof(object), null, true));
+                selectExpression.AddToProjection(
+                    new ColumnExpression(fieldName, innerSelect.Alias, typeof(object), null, true));
+            }
+            else
+            {
+                selectExpression.AddToProjection(
+                    new ColumnExpression(fieldName, ownerTable.Alias, typeof(object), null, true));
+            }
         }
     }
 
