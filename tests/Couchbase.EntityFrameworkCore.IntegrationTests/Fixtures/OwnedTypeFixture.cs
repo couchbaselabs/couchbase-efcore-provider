@@ -21,7 +21,9 @@ public class OwnedTypeFixture : CouchbaseFixture<OwnedTypeDbContext>
     public override async Task LoadDataAsync()
     {
         await using var ctx = GetDbContext();
-        await ctx.AddRangeAsync(
+        // Use UpdateRange (→ UpsertAsync) so this is idempotent whether or not the
+        // documents already exist from a previous test run or a previous test in this run.
+        ctx.UpdateRange(
             new Customer
             {
                 CustomerId = 1,

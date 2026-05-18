@@ -975,6 +975,11 @@ public class CouchbaseDbDataReader<T> : DbDataReader
             string s => s,
             JsonElement je when je.ValueKind == JsonValueKind.String => je.GetString()!,
             JsonElement je => je.GetRawText(),
+            // DBNull means the column is null in the DB. EF Core checks IsDBNull before using
+            // the result for nullable properties, but calls GetString directly for non-nullable
+            // string properties mapped from an optional column. Return null so those round-trip
+            // correctly rather than falling through to DBNull.Value.ToString() == "".
+            DBNull => null!,
             null => throw new InvalidCastException("Cannot convert null to string."),
             _ => value.ToString()!
         };
