@@ -142,7 +142,6 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
         _relationalQueryContext.InitializeStateManager(_standAloneStateManager);
 
         var coordinator = new SingleQueryResultCoordinator();
-        var jsonReader = reader as CouchbaseDbDataReader<JsonElement>;
 
         // pendingEntityRow: the most recent row that belonged to the entity currently being
         // accumulated. The Couchbase SQL generator skips the OwnsMany LEFT JOIN, so each
@@ -174,7 +173,7 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
                 // Use pendingEntityRow if available (entity was accumulated across multiple reads);
                 // fall back to CurrentRow for shapers that complete in a single iteration.
                 var navRow = pendingEntityRow
-                    ?? (jsonReader?.CurrentRow is JsonElement r ? r : (JsonElement?)null);
+                    ?? (reader.CurrentRow is JsonElement r ? r : (JsonElement?)null);
                 if (_ownedCollectionNavigations.Count > 0
                     && navRow is JsonElement rowElement
                     && rowElement.ValueKind == JsonValueKind.Object)
@@ -194,7 +193,7 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
             {
                 // Shaper needs more rows to complete the current entity (collection accumulation).
                 // Save the current row before advancing — it belongs to the entity being built.
-                if (jsonReader?.CurrentRow is JsonElement entityRow)
+                if (reader.CurrentRow is JsonElement entityRow)
                     pendingEntityRow = entityRow;
 
                 hasNext = await reader.ReadAsync(cancellationToken).ConfigureAwait(false);
