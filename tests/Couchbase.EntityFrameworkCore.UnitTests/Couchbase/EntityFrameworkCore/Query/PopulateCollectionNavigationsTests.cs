@@ -11,8 +11,9 @@ using JsonNamingPolicy = System.Text.Json.JsonNamingPolicy;
 namespace Couchbase.EntityFrameworkCore.UnitTests.Couchbase.EntityFrameworkCore.Query;
 
 /// <summary>
-/// Tests for PopulateCollectionNavigations to verify it uses GetColumnName()
-/// rather than the CLR property name when reading OwnsMany item properties.
+/// Tests for PopulateCollectionNavigations to verify it uses the serializer's
+/// PropertyNamingPolicy applied to the CLR property name when reading OwnsMany item
+/// properties — not GetColumnName(), which returns the EF Core relational column name.
 /// </summary>
 public class PopulateCollectionNavigationsTests
 {
@@ -70,15 +71,16 @@ public class PopulateCollectionNavigationsTests
     }
 
     [Fact]
-    public void PopulateCollectionNavigations_reads_value_by_column_name()
+    public void PopulateCollectionNavigations_reads_property_using_clr_name_and_naming_policy()
     {
-        // Column name "val" differs from CLR name "Value".
-        // JSON stores the property under "val" — the remapped column name.
-        var nav = BuildNav("val");
-        var doc = JsonDocument.Parse("""{"items": [{"val": "hello"}]}""").RootElement;
+        // The SDK serializes owned items using the CLR property name run through the naming policy
+        // (camelCase by default). CLR name "Value" → JSON key "value".
+        // The EF Core column name ("col_irrelevant") is not used for the lookup.
+        var nav = BuildNav("col_irrelevant");
+        var doc = JsonDocument.Parse("""{"items": [{"value": "hello"}]}""").RootElement;
         var entity = new OwnerEntity();
 
-        Populate(entity, doc, [nav]);
+        Populate(entity, doc, [nav], serializerOptions: new JsonSerializerOptions(JsonSerializerDefaults.Web));
 
         Assert.NotNull(entity.Items);
         Assert.Single(entity.Items);
@@ -86,15 +88,32 @@ public class PopulateCollectionNavigationsTests
     }
 
     [Fact]
-    public void PopulateCollectionNavigations_misses_value_when_json_uses_only_clr_name()
+    public void PopulateCollectionNavigations_ignores_HasColumnName_remapping()
     {
-        // When the document contains "Value" (CLR name) but the column name is "val",
-        // the lookup correctly fails — proving the code uses GetColumnName(), not prop.Name.
-        var nav = BuildNav("val");
-        var doc = JsonDocument.Parse("""{"items": [{"Value": "hello"}]}""").RootElement;
+        // HasColumnName("foo") remaps the EF Core column but does not affect the JSON key —
+        // the SDK writes the field under the CLR property name (camelCase: "value"), not "foo".
+        // Previously GetColumnName() returned "foo" here, causing a silent null for the property.
+        var nav = BuildNav("foo");
+        var doc = JsonDocument.Parse("""{"items": [{"value": "hello"}]}""").RootElement;
         var entity = new OwnerEntity();
 
-        Populate(entity, doc, [nav]);
+        Populate(entity, doc, [nav], serializerOptions: new JsonSerializerOptions(JsonSerializerDefaults.Web));
+
+        Assert.NotNull(entity.Items);
+        Assert.Single(entity.Items);
+        Assert.Equal("hello", entity.Items[0].Value);
+    }
+
+    [Fact]
+    public void PopulateCollectionNavigations_does_not_find_value_keyed_by_column_name()
+    {
+        // Inverse of the above: if JSON is somehow keyed on the EF column name "foo" rather
+        // than the CLR name, the lookup misses — confirming GetColumnName() is not used.
+        var nav = BuildNav("foo");
+        var doc = JsonDocument.Parse("""{"items": [{"foo": "hello"}]}""").RootElement;
+        var entity = new OwnerEntity();
+
+        Populate(entity, doc, [nav], serializerOptions: new JsonSerializerOptions(JsonSerializerDefaults.Web));
 
         Assert.NotNull(entity.Items);
         Assert.Single(entity.Items);

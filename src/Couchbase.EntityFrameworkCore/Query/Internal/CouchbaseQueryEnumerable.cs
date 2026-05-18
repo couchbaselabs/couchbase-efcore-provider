@@ -252,7 +252,12 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
                 var ownedEntity = Activator.CreateInstance(clrType)!;
                 foreach (var prop in properties)
                 {
-                    if (TryGetPropertyCI(itemElement, prop.GetColumnName(), out var propElement))
+                    // Use the serializer's PropertyNamingPolicy to derive the JSON key — the SDK
+                    // wrote the field using the CLR property name run through that policy (e.g.
+                    // camelCase by default). GetColumnName() returns the EF Core relational column
+                    // name (prefixed, PascalCase) which does not match the stored JSON key.
+                    var jsonKey = options.PropertyNamingPolicy?.ConvertName(prop.Name) ?? prop.Name;
+                    if (TryGetPropertyCI(itemElement, jsonKey, out var propElement))
                         prop.PropertyInfo?.SetValue(ownedEntity, ConvertJsonValue(propElement, prop.ClrType, options));
                 }
                 list.Add(ownedEntity);
