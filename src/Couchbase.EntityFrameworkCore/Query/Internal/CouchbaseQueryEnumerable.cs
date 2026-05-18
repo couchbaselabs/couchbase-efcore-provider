@@ -245,7 +245,8 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
     internal static string InjectOwnedCollectionColumns(string sql, string? tableName, IReadOnlyList<string> camelNavNames)
     {
         var outerFromIdx = IndexOfFrom(sql);
-        if (outerFromIdx <= 0) return sql;
+        if (outerFromIdx <= 0)
+            throw CannotInject(sql, "no FROM clause found");
 
         // After "\nFROM " or " FROM " (both 6 chars) check whether the FROM references
         // a subquery "(SELECT ... FROM keyspace AS alias LIMIT n) AS outerAlias".
@@ -260,17 +261,21 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
                 if (sql[i] == '(') depth++;
                 else if (sql[i] == ')') { if (--depth == 0) { subEnd = i; break; } }
             }
-            if (subEnd < 0) return sql;
+            if (subEnd < 0)
+                throw CannotInject(sql, "unbalanced parentheses in subquery form");
 
             var outerAlias = ExtractAliasAfterAs(sql, subEnd + 1);
-            if (outerAlias == null) return sql;
+            if (outerAlias == null)
+                throw CannotInject(sql, "could not extract outer alias after subquery closing parenthesis");
 
             var innerSql = sql[(contentStart + 1)..subEnd];
             var innerAlias = ExtractSelectAlias(innerSql, tableName);
-            if (innerAlias == null) return sql;
+            if (innerAlias == null)
+                throw CannotInject(sql, "could not extract table alias from inner subquery");
 
             var innerFromIdx = IndexOfFrom(innerSql);
-            if (innerFromIdx <= 0) return sql;
+            if (innerFromIdx <= 0)
+                throw CannotInject(sql, "no FROM clause found inside subquery");
 
             var innerNavCols = string.Join(", ", camelNavNames.Select(n => $"`{innerAlias}`.`{n}`"));
             var outerNavCols = string.Join(", ", camelNavNames.Select(n => $"`{outerAlias}`.`{n}`"));
@@ -285,10 +290,19 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
 
         // Simple form: FROM directly references the keyspace.
         var alias = ExtractSelectAlias(sql, tableName);
-        if (alias == null) return sql;
+        if (alias == null)
+            throw CannotInject(sql, "could not extract table alias from FROM clause");
 
         var navCols = string.Join(", ", camelNavNames.Select(n => $"`{alias}`.`{n}`"));
         return sql[..outerFromIdx] + ", " + navCols + sql[outerFromIdx..];
+    }
+
+    private static InvalidOperationException CannotInject(string sql, string reason)
+    {
+        var snippet = sql.Length > 200 ? sql[..200] + "…" : sql;
+        return new InvalidOperationException(
+            $"CouchbaseQueryEnumerable: cannot inject OwnsMany collection columns — {reason}. " +
+            $"SQL (truncated): {snippet}");
     }
 
     // Extracts the EF Core table alias from the SQL's FROM clause.

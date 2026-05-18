@@ -121,12 +121,52 @@ public class OwnedCollectionInjectionTests
     }
 
     [Fact]
-    public void InjectOwnedCollectionColumns_returns_unchanged_sql_when_FROM_not_found()
+    public void InjectOwnedCollectionColumns_throws_when_FROM_not_found()
     {
         const string broken = "SELECT `c`.`id` WHERE `c`.`id` = 1"; // no FROM
-        var result = CouchbaseQueryEnumerable<object>.InjectOwnedCollectionColumns(
-            broken, TableName, NavNames);
-        Assert.Equal(broken, result);
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            CouchbaseQueryEnumerable<object>.InjectOwnedCollectionColumns(broken, TableName, NavNames));
+        Assert.Contains("no FROM clause found", ex.Message);
+    }
+
+    [Fact]
+    public void InjectOwnedCollectionColumns_throws_when_subquery_parens_unbalanced()
+    {
+        // FROM starts a subquery but the closing ')' is missing.
+        const string broken =
+            "SELECT `d0`.`id`\n" +
+            "FROM (\n" +
+            "    SELECT `d`.`id`\n" +
+            "    FROM `default`.`s`.`col` AS `d`\n";
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            CouchbaseQueryEnumerable<object>.InjectOwnedCollectionColumns(broken, TableName, NavNames));
+        Assert.Contains("unbalanced parentheses", ex.Message);
+    }
+
+    [Fact]
+    public void InjectOwnedCollectionColumns_throws_when_outer_alias_missing()
+    {
+        // Subquery closes but has no AS `alias` afterward.
+        const string broken =
+            "SELECT `d0`.`id`\n" +
+            "FROM (\n" +
+            "    SELECT `d`.`id`\n" +
+            "    FROM `default`.`s`.`col` AS `d`\n" +
+            ")\n" +
+            "ORDER BY 1";
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            CouchbaseQueryEnumerable<object>.InjectOwnedCollectionColumns(broken, TableName, NavNames));
+        Assert.Contains("outer alias", ex.Message);
+    }
+
+    [Fact]
+    public void InjectOwnedCollectionColumns_throws_when_simple_form_alias_missing()
+    {
+        // FROM clause exists but has no AS `alias` after the keyspace.
+        const string broken = "SELECT `c`.`id`\nFROM `default`.`s`.`col`\nWHERE 1=1";
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            CouchbaseQueryEnumerable<object>.InjectOwnedCollectionColumns(broken, TableName, NavNames));
+        Assert.Contains("table alias", ex.Message);
     }
 
     [Fact]
