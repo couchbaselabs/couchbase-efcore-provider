@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Text.Json;
 using Couchbase.EntityFrameworkCore.Extensions;
 using Couchbase.EntityFrameworkCore.Infrastructure;
@@ -188,7 +189,24 @@ public class CouchbaseDatabaseWrapper : Database
             if (nav.IsCollection)
             {
                 var fieldName = fieldNamingPolicy?.ConvertName(nav.Name) ?? nav.Name;
-                doc[fieldName] = navValue;
+                if (navValue is IEnumerable items)
+                {
+                    var itemProps = nav.TargetEntityType.GetProperties()
+                        .Where(p => !p.IsShadowProperty()).ToList();
+                    var list = new List<Dictionary<string, object?>>();
+                    foreach (var item in items)
+                    {
+                        var itemDoc = new Dictionary<string, object?>();
+                        foreach (var p in itemProps)
+                            itemDoc[fieldNamingPolicy?.ConvertName(p.Name) ?? p.Name] = p.PropertyInfo?.GetValue(item);
+                        list.Add(itemDoc);
+                    }
+                    doc[fieldName] = list;
+                }
+                else
+                {
+                    doc[fieldName] = null;
+                }
             }
             else
             {
