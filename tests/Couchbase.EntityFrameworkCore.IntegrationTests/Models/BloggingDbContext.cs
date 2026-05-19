@@ -89,6 +89,10 @@ public class BloggingDbContext(DbContextOptions<BloggingDbContext> options) : Db
                 new BloggingFixture.Person { PersonId = 2, Name = "Phileas Fogg", PhotoId = 2 },
                 new BloggingFixture.Person { PersonId = 3, Name = "Jane Doe", PhotoId = 3 });
 
+        modelBuilder.Entity<BloggingFixture.Person>()
+            .Navigation(p => p.Photo)
+            .AutoInclude();
+
         modelBuilder.Entity<BloggingFixture.PersonPhoto>()
             .ToCouchbaseCollection(this, "personphoto")
             .HasData(
