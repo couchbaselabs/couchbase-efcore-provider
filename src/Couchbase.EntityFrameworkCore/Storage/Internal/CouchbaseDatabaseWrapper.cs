@@ -175,6 +175,19 @@ public class CouchbaseDatabaseWrapper : Database
         //              can look up the same key in the N1QL result row.
         // Dictionary keys are serialized verbatim by System.Text.Json — no camelCase
         // transformation — so GetColumnName() keys match what N1QL SELECT returns.
+        //
+        // Known limitations (apply equally to the CLR-instance path above):
+        //   1. EF Core value converters (HasConversion) are not applied. GetCurrentValue
+        //      returns the model-side CLR value; property.GetValueConverter()?.ConvertToProvider
+        //      is never called. This affects all entity writes and should be fixed in a
+        //      dedicated write-path correctness pass.
+        //   2. Properties with no PropertyInfo and no FieldInfo are silently dropped.
+        //
+        // Additional limitation specific to the OwnsMany item dictionary (built below):
+        //   3. A custom JsonConverter<TOwnedItem> registered in the SDK's serializer options
+        //      will not fire for owned-item dictionaries, because the item-type boundary is
+        //      erased. The SDK sees Dictionary<string,object?> rather than TOwnedItem and
+        //      dispatches on the runtime type of each property value instead.
         var doc = new Dictionary<string, object?>();
         foreach (var property in entityType.GetProperties())
         {
