@@ -4,6 +4,8 @@ using Couchbase.EntityFrameworkCore.Extensions;
 using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.EntityFrameworkCore.Utils;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking.Internal;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.EntityFrameworkCore.Update;
@@ -43,6 +45,12 @@ public class CouchbaseDatabaseWrapper : Database
         var transaction = GetCurrentTransaction();
         var updateCount = 0;
 
+        // Track root-entity keys written in the main loop so the second pass can skip
+        // owners that were already written (e.g. user manually set entry.State = Modified).
+        var writtenRoots = new HashSet<string>();
+        // Owned entries whose owner must be written in the second pass.
+        var deferredOwnedEntries = new List<IUpdateEntry>();
+
         foreach (var updateEntry in entries)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -53,6 +61,10 @@ public class CouchbaseDatabaseWrapper : Database
 
             if (entityType.IsOwned())
             {
+                // Collect owned entries with actual changes; their owners will be written
+                // in the second pass below if not already written by the main loop.
+                if (updateEntry.EntityState is not (EntityState.Unchanged or EntityState.Detached))
+                    deferredOwnedEntries.Add(updateEntry);
                 continue;
             }
 
@@ -66,9 +78,13 @@ public class CouchbaseDatabaseWrapper : Database
             {
                 case EntityState.Detached:
                 case EntityState.Unchanged:
+                    // Not written — intentionally NOT added to writtenRoots so the deferred-owned
+                    // pass can still write the owner if an owned item triggered a change.
                     break;
 
                 case EntityState.Deleted:
+                    // Add to writtenRoots so the deferred pass doesn't upsert a just-deleted doc.
+                    writtenRoots.Add($"{entityType.ClrType.Name}:{primaryKey}");
                     if (transaction != null)
                     {
                         await _couchbaseClient.EnqueueTransactionalRemove(transaction, primaryKey, keyspace).ConfigureAwait(false);
@@ -84,6 +100,7 @@ public class CouchbaseDatabaseWrapper : Database
                     break;
 
                 case EntityState.Modified:
+                    writtenRoots.Add($"{entityType.ClrType.Name}:{primaryKey}");
                     var modifiedDocument = HydrateObjectFromEntity(updateEntry, _fieldNamingPolicy);
                     if (transaction != null)
                     {
@@ -100,6 +117,7 @@ public class CouchbaseDatabaseWrapper : Database
                     break;
 
                 case EntityState.Added:
+                    writtenRoots.Add($"{entityType.ClrType.Name}:{primaryKey}");
                     var newDocument = HydrateObjectFromEntity(updateEntry, _fieldNamingPolicy);
                     if (transaction != null)
                     {
@@ -117,6 +135,61 @@ public class CouchbaseDatabaseWrapper : Database
 
                 default:
                     throw new ArgumentOutOfRangeException();
+            }
+        }
+
+        // Second pass: for each owned entry with a state change, write the owner document
+        // if it was not already written in the main loop above. This removes the need for
+        // callers to manually set ctx.Entry(owner).State = EntityState.Modified after
+        // mutating owned navigations (OwnsOne property changes, OwnsMany collection mutation).
+        foreach (var ownedEntry in deferredOwnedEntries)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var ownership = ownedEntry.EntityType.FindOwnership();
+            if (ownership == null) continue;
+
+            // FK values on the owned entry are equal to the owner's PK values.
+            var fkValues = ownership.Properties
+                .Select(p => ownedEntry.GetCurrentValue(p))
+                .ToArray();
+
+            var ownerEntityType = ownership.PrincipalEntityType;
+            var context = ownedEntry.ToEntityEntry().Context;
+
+            var ownerEntityEntry = context.ChangeTracker.Entries()
+                .FirstOrDefault(e =>
+                    e.Metadata == ownerEntityType &&
+                    ownership.PrincipalKey.Properties
+                        .Select((p, i) => Equals(e.CurrentValues[p.Name], fkValues[i]))
+                        .All(b => b));
+
+            if (ownerEntityEntry == null) continue;
+
+            var ownerEntity = ownerEntityEntry.Entity;
+            var ownerPrimaryKey = ownerEntityType.GetPrimaryKey(ownerEntity);
+            var rootKey = $"{ownerEntityType.ClrType.Name}:{ownerPrimaryKey}";
+
+            if (writtenRoots.Contains(rootKey)) continue;
+            writtenRoots.Add(rootKey);
+
+            var ownerKeyspace = ownerEntityType.GetCollectionName()
+                ?? throw new InvalidOperationException(
+                    $"Owner entity type '{ownerEntityType.ClrType.Name}' has no mapped table name. " +
+                    "Ensure the entity is mapped to a Couchbase collection via ToCouchbaseCollection().");
+
+            var ownerUpdateEntry = (IUpdateEntry)((IInfrastructure<InternalEntityEntry>)ownerEntityEntry).Instance;
+            var ownerDocument = HydrateObjectFromEntity(ownerUpdateEntry, _fieldNamingPolicy);
+
+            if (transaction != null)
+            {
+                await _couchbaseClient.EnqueueTransactionalUpsert(transaction, ownerPrimaryKey, ownerKeyspace, ownerDocument).ConfigureAwait(false);
+                updateCount++;
+            }
+            else
+            {
+                if (await _couchbaseClient.UpdateDocument(ownerPrimaryKey, ownerKeyspace, ownerDocument).ConfigureAwait(false))
+                    updateCount++;
             }
         }
 
