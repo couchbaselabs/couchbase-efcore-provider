@@ -242,10 +242,18 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
                 || arrayElement.ValueKind != JsonValueKind.Array)
                 continue;
 
+            var accessor = nav.GetCollectionAccessor();
             var clrType = nav.TargetEntityType.ClrType;
-            var list = (IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(clrType))!;
             var properties = nav.TargetEntityType.GetProperties()
                 .Where(p => !p.IsShadowProperty()).ToList();
+
+            if (accessor != null)
+                accessor.GetOrCreate(entity!, forMaterialization: true);
+            else
+            {
+                var list = (IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(clrType))!;
+                nav.PropertyInfo?.SetValue(entity, list);
+            }
 
             foreach (var itemElement in arrayElement.EnumerateArray())
             {
@@ -256,10 +264,11 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
                     if (TryGetPropertyCI(itemElement, jsonKey, out var propElement))
                         prop.PropertyInfo?.SetValue(ownedEntity, ConvertJsonValue(propElement, prop.ClrType, options));
                 }
-                list.Add(ownedEntity);
+                if (accessor != null)
+                    accessor.Add(entity!, ownedEntity, forMaterialization: true);
+                else
+                    ((IList)nav.PropertyInfo!.GetValue(entity)!).Add(ownedEntity);
             }
-
-            nav.PropertyInfo?.SetValue(entity, list);
         }
     }
 
