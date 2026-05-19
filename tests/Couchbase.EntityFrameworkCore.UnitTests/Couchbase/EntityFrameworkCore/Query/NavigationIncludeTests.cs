@@ -1,5 +1,6 @@
 using System.Linq.Expressions;
 using Couchbase.EntityFrameworkCore.Query.Internal;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Query;
 using Moq;
@@ -266,6 +267,94 @@ public class NavigationIncludeTests
     }
 
     // ---------------------------------------------------------------
+    // 4.3 — ThenInclude chain walking
+    // ---------------------------------------------------------------
+
+    [Fact]
+    public void ExtractNavigationIncludes_ReferenceThenInclude_PopulatesChildren()
+    {
+        // Reference ThenInclude: Blog.Address → Address.Country
+        // EF Core embeds the child IncludeExpression directly in NavigationExpression.
+        var addressNav = MockNavigation("Address");
+        var countryNav = MockNavigation("Country");
+
+        var childInclude = MakeIncludeChain(countryNav);
+        var root = new IncludeExpression(Expression.Constant(new object()), childInclude, addressNav);
+
+        var result = CouchbaseShapedQueryCompilingExpressionVisitor
+            .ExtractNavigationIncludes(root);
+
+        Assert.Single(result);
+        Assert.Equal("Address", result[0].Navigation.Name);
+        Assert.Single(result[0].Children);
+        Assert.Equal("Country", result[0].Children[0].Navigation.Name);
+    }
+
+    [Fact]
+    public void ExtractNavigationIncludes_CollectionThenInclude_PopulatesChildren()
+    {
+        // Collection ThenInclude: Blog.Posts → Post.Author
+        // EF Core wraps the child shaper in RelationalCollectionShaperExpression.InnerShaper.
+        var postsNav = MockNavigation("Posts");
+        var authorNav = MockNavigation("Author");
+
+        var innerShaper = MakeIncludeChain(authorNav);
+        var collectionShaper = new RelationalCollectionShaperExpression(
+            Expression.Constant(0), Expression.Constant(0), Expression.Constant(0),
+            [], [], [],
+            innerShaper, null, typeof(object));
+
+        var root = new IncludeExpression(Expression.Constant(new object()), collectionShaper, postsNav);
+
+        var result = CouchbaseShapedQueryCompilingExpressionVisitor
+            .ExtractNavigationIncludes(root);
+
+        Assert.Single(result);
+        Assert.Equal("Posts", result[0].Navigation.Name);
+        Assert.Single(result[0].Children);
+        Assert.Equal("Author", result[0].Children[0].Navigation.Name);
+    }
+
+    [Fact]
+    public void ExtractNavigationIncludes_DeepChain_PopulatesAllLevels()
+    {
+        // Blog.Posts → Post.Author → Author.Photo (three levels deep via collection)
+        var postsNav  = MockNavigation("Posts");
+        var authorNav = MockNavigation("Author");
+        var photoNav  = MockNavigation("Photo");
+
+        var photoInclude  = MakeIncludeChain(photoNav);
+        var authorShaper  = new RelationalCollectionShaperExpression(
+            Expression.Constant(0), Expression.Constant(0), Expression.Constant(0),
+            [], [], [],
+            new IncludeExpression(Expression.Constant(new object()), photoInclude, authorNav),
+            null, typeof(object));
+
+        var root = new IncludeExpression(Expression.Constant(new object()), authorShaper, postsNav);
+
+        var result = CouchbaseShapedQueryCompilingExpressionVisitor
+            .ExtractNavigationIncludes(root);
+
+        Assert.Single(result);
+        Assert.Equal("Posts",  result[0].Navigation.Name);
+        Assert.Single(result[0].Children);
+        Assert.Equal("Author", result[0].Children[0].Navigation.Name);
+        Assert.Single(result[0].Children[0].Children);
+        Assert.Equal("Photo",  result[0].Children[0].Children[0].Navigation.Name);
+    }
+
+    [Fact]
+    public void ExtractNavigationIncludes_NoThenInclude_ChildrenEmpty()
+    {
+        var postsNav = MockNavigation("Posts");
+        var result = CouchbaseShapedQueryCompilingExpressionVisitor
+            .ExtractNavigationIncludes(MakeIncludeChain(postsNav));
+
+        Assert.Single(result);
+        Assert.Empty(result[0].Children);
+    }
+
+    // ---------------------------------------------------------------
     // Helpers
     // ---------------------------------------------------------------
 
@@ -279,6 +368,7 @@ public class NavigationIncludeTests
     /// <summary>
     /// Builds a chain of IncludeExpression nodes in the order EF Core produces them:
     /// each subsequent include wraps the previous as its EntityExpression.
+    /// Uses a plain constant as NavigationExpression (no ThenInclude children).
     /// </summary>
     private static Expression MakeIncludeChain(params INavigation[] navigations)
     {

@@ -93,7 +93,7 @@ public class CouchbaseShapedQueryCompilingExpressionVisitor : RelationalShapedQu
             // Phase 4 must detect filtered includes by inspecting RelationalCollectionShaperExpression
             // or the inner SelectExpression's WHERE clause rather than relying on Filter here.
             if (include.Navigation is INavigation nav)
-                collected.Add(new NavigationInclude(nav, null, []));
+                collected.Add(new NavigationInclude(nav, null, ExtractChildren(include.NavigationExpression)));
 
             current = include.EntityExpression;
         }
@@ -102,6 +102,17 @@ public class CouchbaseShapedQueryCompilingExpressionVisitor : RelationalShapedQu
         // reverse Include order. One Reverse() restores original order — O(n) vs O(n²) Insert(0).
         collected.Reverse();
         return collected;
+    }
+
+    // Extracts ThenInclude children from the NavigationExpression of a single IncludeExpression.
+    // Collection navigations wrap their inner shaper in RelationalCollectionShaperExpression;
+    // reference navigations embed ThenInclude nodes directly as a nested IncludeExpression.
+    private static List<NavigationInclude> ExtractChildren(Expression navigationExpression)
+    {
+        if (navigationExpression is RelationalCollectionShaperExpression collectionShaper)
+            return ExtractNavigationIncludes(collectionShaper.InnerShaper);
+
+        return ExtractNavigationIncludes(navigationExpression);
     }
 
     /// <inheritdoc />
