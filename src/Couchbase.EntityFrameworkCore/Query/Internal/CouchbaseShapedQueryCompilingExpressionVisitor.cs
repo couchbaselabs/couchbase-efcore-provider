@@ -281,7 +281,17 @@ public class CouchbaseShapedQueryCompilingExpressionVisitor : RelationalShapedQu
     /// </summary>
     private void AddOwnedCollectionColumnsToProjection(SelectExpression selectExpression, Type shaperReturnType)
     {
-        // Locate the owner entity's TableExpression.
+        // Resolve the entity type first so we can match the TableExpression by the entity's
+        // configured table name rather than the fragile 3-part "bucket.scope.collection"
+        // heuristic that fails silently in test contexts where SetupKeyspaces is not called.
+        var entityType = QueryCompilationContext.Model.GetEntityTypes()
+            .FirstOrDefault(e => e.ClrType == shaperReturnType);
+        if (entityType == null) return;
+
+        var expectedTableName = entityType.GetTableName();
+        if (expectedTableName == null) return;
+
+        // Locate the owner entity's TableExpression by matching its configured name.
         // Simple form:   Tables contains the entity TableExpression directly.
         // Subquery form: Tables[0] is an inner SelectExpression (EF Core wraps FirstAsync/Take
         //                in a subquery before the LEFT JOIN expansion); the entity TableExpression
@@ -291,7 +301,7 @@ public class CouchbaseShapedQueryCompilingExpressionVisitor : RelationalShapedQu
 
         var directTable = selectExpression.Tables
             .OfType<TableExpression>()
-            .FirstOrDefault(t => t.Name.Split('.').Length == 3);
+            .FirstOrDefault(t => t.Name == expectedTableName);
 
         if (directTable != null)
         {
@@ -303,15 +313,10 @@ public class CouchbaseShapedQueryCompilingExpressionVisitor : RelationalShapedQu
             if (innerSelect != null)
                 ownerTable = innerSelect.Tables
                     .OfType<TableExpression>()
-                    .FirstOrDefault(t => t.Name.Split('.').Length == 3);
+                    .FirstOrDefault(t => t.Name == expectedTableName);
         }
 
         if (ownerTable == null) return;
-
-        // Only inject for root-entity queries — skip scalar/anonymous projections.
-        var entityType = QueryCompilationContext.Model.GetEntityTypes()
-            .FirstOrDefault(e => e.ClrType == shaperReturnType && e.GetTableName() == ownerTable.Name);
-        if (entityType == null) return;
 
         var ownedCollNavs = entityType.GetNavigations()
             .Where(n => n.IsCollection && n.TargetEntityType.IsOwned())

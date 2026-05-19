@@ -65,7 +65,6 @@ public class OwnedTypeTests(
             var customer = await ctx.Customers.FirstAsync(c => c.CustomerId == 1);
             customer.Address.Street = "99 Updated Ln";
             customer.Address.City = "Shelbyville";
-            ctx.Entry(customer).State = EntityState.Modified;
             await ctx.SaveChangesAsync();
         }
 
@@ -87,7 +86,6 @@ public class OwnedTypeTests(
             var customer = await ctx.Customers.FirstAsync(c => c.CustomerId == 2);
             customer.Address.Street = null;
             customer.Address.City = null;
-            ctx.Entry(customer).State = EntityState.Modified;
             await ctx.SaveChangesAsync();
         }
 
@@ -113,7 +111,6 @@ public class OwnedTypeTests(
                 new OwnedTypeFixture.ContactMethod { Id = 1, Type = "fax", Value = "555-0199" },
                 new OwnedTypeFixture.ContactMethod { Id = 2, Type = "sms", Value = "555-0200" }
             ];
-            ctx.Entry(customer).State = EntityState.Modified;
             await ctx.SaveChangesAsync();
         }
 
@@ -134,7 +131,6 @@ public class OwnedTypeTests(
         {
             var customer = await ctx.Customers.FirstAsync(c => c.CustomerId == 1);
             customer.ContactMethods = [];
-            ctx.Entry(customer).State = EntityState.Modified;
             await ctx.SaveChangesAsync();
         }
 
