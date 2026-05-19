@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Couchbase.EntityFrameworkCore.Extensions;
 using Microsoft.EntityFrameworkCore;
 
@@ -33,6 +34,10 @@ public class CouchbaseDbContextOptionsBuilder : ICouchbaseDbContextOptionsBuilde
 
     public bool AutoCreateScopes { get; set; }
 
+    public JsonNamingPolicy? FieldNamingPolicy { get; set; } = JsonNamingPolicy.CamelCase;
+
+    public JsonSerializerOptions? SerializerOptions { get; set; }
+
     DbContextOptionsBuilder ICouchbaseDbContextOptionsBuilder.OptionsBuilder => OptionsBuilder;
 }
 
@@ -58,6 +63,24 @@ public interface ICouchbaseDbContextOptionsBuilder
     /// When true, any scopes referenced in entity keyspace mappings will be created automatically.
     /// </remarks>
     public bool AutoCreateScopes { get; set; }
+
+    /// <summary>
+    /// Controls how CLR navigation names are converted to JSON field names when reading and
+    /// writing OwnsMany embedded collections. Defaults to <see cref="JsonNamingPolicy.CamelCase"/>
+    /// to match the Couchbase SDK's default serializer (<c>JsonSerializerDefaults.Web</c>).
+    /// Set to <c>null</c> to use the CLR name verbatim (PascalCase), or supply a custom policy
+    /// such as <see cref="JsonNamingPolicy.SnakeCaseLower"/>.
+    /// </summary>
+    public JsonNamingPolicy? FieldNamingPolicy { get; set; }
+
+    /// <summary>
+    /// <see cref="JsonSerializerOptions"/> used when deserializing scalar values inside
+    /// OwnsMany embedded collections. Defaults to <c>null</c>, which causes the provider to
+    /// use <c>JsonSerializerDefaults.Web</c> — the same defaults the Couchbase SDK applies.
+    /// Supply a custom instance to match a non-default serializer configured on the SDK
+    /// (e.g. custom converters, different enum handling, or a different naming policy).
+    /// </summary>
+    public JsonSerializerOptions? SerializerOptions { get; set; }
 }
 
 /* ************************************************************

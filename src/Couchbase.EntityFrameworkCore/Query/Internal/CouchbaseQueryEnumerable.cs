@@ -6,11 +6,13 @@ using System.Data.Common;
 using System.Text.Json;
 using Couchbase.Query;
 using Couchbase.EntityFrameworkCore.Infrastructure;
+using Couchbase.EntityFrameworkCore.Metadata;
 using Couchbase.EntityFrameworkCore.Storage.Internal;
 using Couchbase.EntityFrameworkCore.Utils;
 using Couchbase.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Query;
 using Microsoft.EntityFrameworkCore.Query.Internal;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -62,6 +64,7 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
     private readonly ICouchbaseDbContextOptionsBuilder _couchbaseDbContextOptionsBuilder;
     private readonly IBucketProvider _bucketProvider;
     private readonly DbContext _dbContext;
+    private readonly IReadOnlyList<INavigation> _ownedCollectionNavigations;
 
     public CouchbaseQueryEnumerable(
         RelationalQueryContext relationalQueryContext,
@@ -89,6 +92,14 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
         _couchbaseDbContextOptionsBuilder = couchbaseDbContextOptionsBuilder;
         _bucketProvider = bucketProvider;
         _dbContext = relationalQueryContext.Context;
+        // FindEntityType returns null when T is not a mapped entity (scalar projections such as
+        // Select(c => c.Name) where T = string, or anonymous projections such as Select(c => new { c.Name })).
+        // In both cases _ownedCollectionNavigations is empty and OwnsMany population is skipped.
+        var ownerEntityType = relationalQueryContext.Context.Model.FindEntityType(typeof(T));
+        _ownedCollectionNavigations = ownerEntityType == null ? [] :
+            ownerEntityType.GetNavigations()
+                .Where(n => n.IsCollection && n.TargetEntityType.IsOwned())
+                .ToArray();
     }
 
     /// <summary>Returns an enumerator that iterates through the collection.</summary>
@@ -132,6 +143,14 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
 
         var coordinator = new SingleQueryResultCoordinator();
 
+        // pendingEntityRow: the most recent row that belonged to the entity currently being
+        // accumulated. The Couchbase SQL generator skips the OwnsMany LEFT JOIN, so each
+        // owner document produces exactly one N1QL row. When the shaper sets ResultReady=false
+        // (expecting more JOIN rows that never arrive) and the outer loop either reads the
+        // next entity's row or hits EOF, CurrentRow has already advanced away from the
+        // current entity's row. We therefore save it here before each read.
+        JsonElement? pendingEntityRow = null;
+
         // coordinator.HasNext carries a buffered row signal set by the shaper (collection navigation
         // case: shaper detects a new root key and buffers the current row for the next iteration).
         // Using "??" mirrors EF Core's SingleQueryingEnumerable pattern exactly.
@@ -150,8 +169,18 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
 
             if (coordinator.ResultReady)
             {
-                // Entity is complete — yield it and advance to the next row.
                 coordinator.ResultContext.Values = null;
+                // Use pendingEntityRow if available (entity was accumulated across multiple reads);
+                // fall back to CurrentRow for shapers that complete in a single iteration.
+                var navRow = pendingEntityRow
+                    ?? (reader.CurrentRow is JsonElement r ? r : (JsonElement?)null);
+                if (_ownedCollectionNavigations.Count > 0
+                    && navRow is JsonElement rowElement
+                    && rowElement.ValueKind == JsonValueKind.Object)
+                {
+                    PopulateCollectionNavigations(result, rowElement, _ownedCollectionNavigations, _couchbaseDbContextOptionsBuilder.FieldNamingPolicy, _couchbaseDbContextOptionsBuilder.SerializerOptions);
+                }
+                pendingEntityRow = null;
                 yield return result;
                 hasNext = coordinator.HasNext ?? await reader.ReadAsync(cancellationToken).ConfigureAwait(false);
             }
@@ -163,6 +192,10 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
             else
             {
                 // Shaper needs more rows to complete the current entity (collection accumulation).
+                // Save the current row before advancing — it belongs to the entity being built.
+                if (reader.CurrentRow is JsonElement entityRow)
+                    pendingEntityRow = entityRow;
+
                 hasNext = await reader.ReadAsync(cancellationToken).ConfigureAwait(false);
                 if (!hasNext)
                 {
@@ -171,11 +204,107 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
                     coordinator.ResultReady = true;
                     var last = _shaper(_relationalQueryContext, reader, coordinator.ResultContext, coordinator);
                     coordinator.ResultContext.Values = null;
+                    // CurrentRow is null at EOF; use pendingEntityRow saved above.
+                    if (_ownedCollectionNavigations.Count > 0
+                        && pendingEntityRow is JsonElement lastRow
+                        && lastRow.ValueKind == JsonValueKind.Object)
+                    {
+                        PopulateCollectionNavigations(last, lastRow, _ownedCollectionNavigations, _couchbaseDbContextOptionsBuilder.FieldNamingPolicy, _couchbaseDbContextOptionsBuilder.SerializerOptions);
+                    }
+                    pendingEntityRow = null;
                     yield return last;
                     // hasNext is false so the outer while exits naturally.
                 }
             }
         }
+    }
+
+    // KNOWN LIMITATION — change-tracker bypass
+    // Owned collection items created here are materialized via Activator.CreateInstance and
+    // assigned directly to the navigation property via reflection. They are NOT registered with
+    // the EF Core state manager, which means:
+    //   • Modifications to the items after the query (e.g. customer.ContactMethods[0].Value = "x")
+    //     will NOT be detected by SaveChanges, regardless of whether the query used tracking or
+    //     no-tracking — the behavior is silently identical in both cases.
+    //   • This deviates from standard EF Core semantics, where owned collection members
+    //     materialized through the shaper are tracked alongside their owner.
+    // Fixing this requires hooking each owned item into IStateManager via the owner's
+    // InternalEntityEntry, which is deferred as a follow-up task.
+    private static readonly JsonSerializerOptions _defaultSerializerOptions = new(JsonSerializerDefaults.Web);
+
+    private static void PopulateCollectionNavigations(T entity, JsonElement docElement, IReadOnlyList<INavigation> collections, JsonNamingPolicy? fieldNamingPolicy, JsonSerializerOptions? serializerOptions)
+    {
+        var options = serializerOptions ?? _defaultSerializerOptions;
+        foreach (var nav in collections)
+        {
+            var fieldName = fieldNamingPolicy?.ConvertName(nav.Name) ?? nav.Name;
+            if (!TryGetPropertyCI(docElement, fieldName, out var arrayElement)
+                || arrayElement.ValueKind != JsonValueKind.Array)
+                continue;
+
+            var accessor = nav.GetCollectionAccessor();
+            var clrType = nav.TargetEntityType.ClrType;
+            var properties = nav.TargetEntityType.GetProperties()
+                .Where(p => !p.IsShadowProperty()).ToList();
+
+            if (accessor != null)
+                accessor.GetOrCreate(entity!, forMaterialization: true);
+            else
+            {
+                var list = (IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(clrType))!;
+                nav.PropertyInfo?.SetValue(entity, list);
+            }
+
+            foreach (var itemElement in arrayElement.EnumerateArray())
+            {
+                var ownedEntity = Activator.CreateInstance(clrType)!;
+                foreach (var prop in properties)
+                {
+                    var jsonKey = fieldNamingPolicy?.ConvertName(prop.Name) ?? prop.Name;
+                    if (TryGetPropertyCI(itemElement, jsonKey, out var propElement))
+                        prop.PropertyInfo?.SetValue(ownedEntity, ConvertJsonValue(propElement, prop.ClrType, options));
+                }
+                if (accessor != null)
+                    accessor.Add(entity!, ownedEntity, forMaterialization: true);
+                else
+                    ((IList)nav.PropertyInfo!.GetValue(entity)!).Add(ownedEntity);
+            }
+        }
+    }
+
+    // JsonElement.TryGetProperty is case-sensitive. The SDK's SystemTextJsonSerializer uses
+    // JsonSerializerDefaults.Web (camelCase), so navigation/property names may vary in case
+    // between what EF Core models use and what appears in the stored document.
+    internal static bool TryGetPropertyCI(JsonElement element, string name, out JsonElement value)
+    {
+        if (element.TryGetProperty(name, out value)) return true;
+        foreach (var prop in element.EnumerateObject())
+        {
+            if (!string.Equals(prop.Name, name, StringComparison.OrdinalIgnoreCase)) continue;
+            value = prop.Value;
+            return true;
+        }
+        value = default;
+        return false;
+    }
+
+    private static object? ConvertJsonValue(JsonElement element, Type targetType, JsonSerializerOptions options)
+    {
+        if (element.ValueKind == JsonValueKind.Null) return null;
+        var t = Nullable.GetUnderlyingType(targetType) ?? targetType;
+        return t switch
+        {
+            _ when t == typeof(string)   => element.GetString(),
+            _ when t == typeof(int)      => element.GetInt32(),
+            _ when t == typeof(long)     => element.GetInt64(),
+            _ when t == typeof(double)   => element.GetDouble(),
+            _ when t == typeof(decimal)  => element.GetDecimal(),
+            _ when t == typeof(float)    => (float)element.GetDouble(),
+            _ when t == typeof(bool)     => element.GetBoolean(),
+            _ when t == typeof(Guid)     => element.GetGuid(),
+            _ when t == typeof(DateTime) => element.GetDateTime(),
+            _ => JsonSerializer.Deserialize(element.GetRawText(), t, options)
+        };
     }
 
     /// <summary>

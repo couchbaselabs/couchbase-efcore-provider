@@ -44,6 +44,11 @@ public class CouchbaseDbDataReader<T> : DbDataReader
     private IAsyncEnumerator<T>? _enumerator;
     private CancellationToken _cancellationToken;
     private T? _currentRow;
+
+    /// <summary>
+    /// Gets the current row as read by the last <see cref="ReadAsync"/> call.
+    /// </summary>
+    public T? CurrentRow => _currentRow;
     private T? _bufferedRow;
     private bool _hasBufferedRow;
     private bool _hasCurrentRow;
@@ -970,6 +975,12 @@ public class CouchbaseDbDataReader<T> : DbDataReader
             string s => s,
             JsonElement je when je.ValueKind == JsonValueKind.String => je.GetString()!,
             JsonElement je => je.GetRawText(),
+            // EF Core's ShapedQueryCompilingExpressionVisitor emits materializer lambdas that
+            // call GetString directly (no IsDBNull guard) for non-nullable string properties,
+            // even when those properties are mapped from optional N1QL columns that can be
+            // absent/null. Returning null! here lets those materializers propagate the absence
+            // as a CLR null; callers that need strict ADO.NET semantics must call IsDBNull first.
+            DBNull => null!,
             null => throw new InvalidCastException("Cannot convert null to string."),
             _ => value.ToString()!
         };

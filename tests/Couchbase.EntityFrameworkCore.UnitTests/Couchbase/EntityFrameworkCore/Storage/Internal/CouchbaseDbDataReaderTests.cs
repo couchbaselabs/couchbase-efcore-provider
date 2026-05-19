@@ -237,6 +237,19 @@ public class CouchbaseDbDataReaderTests
     }
 
     [Fact]
+    public async Task GetString_WhenColumnIsNull_ReturnsNull()
+    {
+        // EF Core materializer lambdas call GetString without IsDBNull for non-nullable
+        // string properties on optional columns; returning null lets those round-trips work.
+        var rows = new List<JsonElement> { JsonDocument.Parse("{\"name\": null}").RootElement };
+        var reader = CreateReader(rows);
+
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Null(reader.GetString(0));
+    }
+
+    [Fact]
     public async Task GetDateTime_ReturnsDateTime()
     {
         var rows = new List<JsonElement> { JsonDocument.Parse("{\"created\": \"2025-01-15T10:30:00Z\"}").RootElement };

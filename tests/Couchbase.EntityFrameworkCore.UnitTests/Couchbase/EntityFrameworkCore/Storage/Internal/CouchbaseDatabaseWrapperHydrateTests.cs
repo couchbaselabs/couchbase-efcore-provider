@@ -1,5 +1,7 @@
+using System.Collections.Generic;
 using System.Reflection;
 using Couchbase.EntityFrameworkCore.Storage.Internal;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Update;
 using Moq;
@@ -21,7 +23,7 @@ public class CouchbaseDatabaseWrapperHydrateTests
             .GetMethod("HydrateObjectFromEntity", BindingFlags.NonPublic | BindingFlags.Static)!;
 
     private static object Hydrate(IUpdateEntry entry)
-        => HydrateMethod.Invoke(null, [entry])!;
+        => HydrateMethod.Invoke(null, [entry, null])!;
 
     // -----------------------------------------------------------------------
     // Helpers
@@ -201,6 +203,70 @@ public class CouchbaseDatabaseWrapperHydrateTests
     // -----------------------------------------------------------------------
     // Mixed: shadow + settable in the same entity
     // -----------------------------------------------------------------------
+
+    // -----------------------------------------------------------------------
+    // OwnsOne null navigation — owned scalar columns must be written as null
+    // -----------------------------------------------------------------------
+
+    private class OwnedAddress
+    {
+        public string? Street { get; set; }
+        public string? City { get; set; }
+    }
+
+    private static INavigation BuildOwnsOneNav(object? navValue)
+    {
+        var streetProp = BuildOwnedProperty("street", typeof(OwnedAddress).GetProperty(nameof(OwnedAddress.Street))!, navValue);
+        var cityProp  = BuildOwnedProperty("city",   typeof(OwnedAddress).GetProperty(nameof(OwnedAddress.City))!,   navValue);
+
+        var targetType = new Mock<IEntityType>();
+        targetType.Setup(t => t.GetProperties()).Returns([streetProp, cityProp]);
+
+        var nav = new Mock<INavigation>();
+        nav.Setup(n => n.IsCollection).Returns(false);
+        nav.Setup(n => n.TargetEntityType).Returns(targetType.Object);
+
+        return nav.Object;
+    }
+
+    private static IProperty BuildOwnedProperty(string columnName, PropertyInfo propInfo, object? navValue)
+    {
+        var prop = new Mock<IProperty>();
+        prop.Setup(p => p.PropertyInfo).Returns(propInfo);
+        // Wire GetColumnName() via annotation
+        var annotation = new Mock<IAnnotation>();
+        annotation.Setup(a => a.Value).Returns(columnName);
+        prop.Setup(p => p.FindAnnotation("Relational:ColumnName")).Returns(annotation.Object);
+        prop.Setup(p => p["Relational:ColumnName"]).Returns(columnName);
+        return prop.Object;
+    }
+
+    [Fact]
+    public void FillOwnsOneIntoDoc_NullNavigation_WritesNullForEachOwnedColumn()
+    {
+        var doc = new Dictionary<string, object?>();
+        var nav = BuildOwnsOneNav(null);
+
+        CouchbaseDatabaseWrapper.FillOwnsOneIntoDoc(doc, nav, navValue: null);
+
+        Assert.True(doc.ContainsKey("street"), "street key must be present");
+        Assert.True(doc.ContainsKey("city"),   "city key must be present");
+        Assert.Null(doc["street"]);
+        Assert.Null(doc["city"]);
+    }
+
+    [Fact]
+    public void FillOwnsOneIntoDoc_NonNullNavigation_WritesPropertyValues()
+    {
+        var address = new OwnedAddress { Street = "1 Main St", City = "Springfield" };
+        var doc = new Dictionary<string, object?>();
+        var nav = BuildOwnsOneNav(address);
+
+        CouchbaseDatabaseWrapper.FillOwnsOneIntoDoc(doc, nav, navValue: address);
+
+        Assert.Equal("1 Main St",  doc["street"]);
+        Assert.Equal("Springfield", doc["city"]);
+    }
 
     [Fact]
     public void Hydrate_MixedProperties_SetsSettableSkipsShadow()

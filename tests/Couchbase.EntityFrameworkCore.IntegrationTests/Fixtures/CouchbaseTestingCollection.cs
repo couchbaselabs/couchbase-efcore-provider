@@ -1,7 +1,7 @@
 namespace Couchbase.EntityFrameworkCode.IntegrationTests.Fixtures;
 
 [CollectionDefinition(Name)]
-public class CouchbaseTestingCollection: ICollectionFixture<BloggingFixture>, ICollectionFixture<TravelSampleFixture>
+public class CouchbaseTestingCollection: ICollectionFixture<BloggingFixture>, ICollectionFixture<TravelSampleFixture>, ICollectionFixture<OwnedTypeFixture>
 {
     public const string Name = "CouchbaseTestingCollection";
 

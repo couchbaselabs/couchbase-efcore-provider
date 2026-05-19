@@ -1,6 +1,10 @@
+using System.Collections;
+using System.Text.Json;
 using Couchbase.EntityFrameworkCore.Extensions;
+using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.EntityFrameworkCore.Utils;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.EntityFrameworkCore.Update;
 using Database = Microsoft.EntityFrameworkCore.Storage.Database;
@@ -11,15 +15,18 @@ public class CouchbaseDatabaseWrapper : Database
 {
     private readonly ICouchbaseClientWrapper _couchbaseClient;
     private readonly IRelationalConnection _relationalConnection;
+    private readonly JsonNamingPolicy? _fieldNamingPolicy;
 
     public CouchbaseDatabaseWrapper(
         DatabaseDependencies dependencies,
         ICouchbaseClientWrapper couchbaseClient,
-        IRelationalConnection relationalConnection)
+        IRelationalConnection relationalConnection,
+        ICouchbaseDbContextOptionsBuilder couchbaseDbContextOptionsBuilder)
         : base(dependencies)
     {
         _couchbaseClient = couchbaseClient ?? throw new ArgumentNullException(nameof(couchbaseClient));
         _relationalConnection = relationalConnection ?? throw new ArgumentNullException(nameof(relationalConnection));
+        _fieldNamingPolicy = couchbaseDbContextOptionsBuilder.FieldNamingPolicy;
     }
 
     public override int SaveChanges(IList<IUpdateEntry> entries)
@@ -50,7 +57,10 @@ public class CouchbaseDatabaseWrapper : Database
             }
 
             var primaryKey = entityType.GetPrimaryKey(entity);
-            var keyspace = entityType.GetCollectionName();
+            var keyspace = entityType.GetCollectionName()
+                ?? throw new InvalidOperationException(
+                    $"Entity type '{entityType.ClrType.Name}' has no mapped table name. " +
+                    "Ensure the entity is mapped to a Couchbase collection via ToCouchbaseCollection().");
 
             switch (updateEntry.EntityState)
             {
@@ -74,7 +84,7 @@ public class CouchbaseDatabaseWrapper : Database
                     break;
 
                 case EntityState.Modified:
-                    var modifiedDocument = HydrateObjectFromEntity(updateEntry);
+                    var modifiedDocument = HydrateObjectFromEntity(updateEntry, _fieldNamingPolicy);
                     if (transaction != null)
                     {
                         await _couchbaseClient.EnqueueTransactionalUpsert(transaction, primaryKey, keyspace, modifiedDocument).ConfigureAwait(false);
@@ -90,7 +100,7 @@ public class CouchbaseDatabaseWrapper : Database
                     break;
 
                 case EntityState.Added:
-                    var newDocument = HydrateObjectFromEntity(updateEntry);
+                    var newDocument = HydrateObjectFromEntity(updateEntry, _fieldNamingPolicy);
                     if (transaction != null)
                     {
                         await _couchbaseClient.EnqueueTransactionalInsert(transaction, primaryKey, keyspace, newDocument).ConfigureAwait(false);
@@ -113,6 +123,13 @@ public class CouchbaseDatabaseWrapper : Database
         return updateCount;
     }
 
+    // Internal seam so the null-nav behaviour can be verified without a live DbContext.
+    internal static void FillOwnsOneIntoDoc(Dictionary<string, object?> doc, INavigation nav, object? navValue)
+    {
+        foreach (var p in nav.TargetEntityType.GetProperties().Where(p => !p.IsShadowProperty()))
+            doc[p.GetColumnName()] = navValue == null ? null : p.PropertyInfo?.GetValue(navValue);
+    }
+
     private CouchbaseDbTransaction? GetCurrentTransaction()
     {
         if (_relationalConnection is CouchbaseRelationalConnection couchbaseRelationalConnection)
@@ -122,27 +139,95 @@ public class CouchbaseDatabaseWrapper : Database
         return null;
     }
 
-    private static object HydrateObjectFromEntity(IUpdateEntry updateEntry)
+    private static object HydrateObjectFromEntity(IUpdateEntry updateEntry, JsonNamingPolicy? fieldNamingPolicy = null)
     {
         var entityType = updateEntry.EntityType;
-        var obj = Activator.CreateInstance(entityType.ClrType)!;
 
+        var ownedNavs = entityType.GetNavigations()
+            .Where(n => n.TargetEntityType.IsOwned() && n.PropertyInfo != null)
+            .ToList();
+
+        // No owned navigations: use CLR instance so the SDK's camelCase serializer produces
+        // the same field names that already work for all existing entity types.
+        if (ownedNavs.Count == 0)
+        {
+            var obj = Activator.CreateInstance(entityType.ClrType)!;
+            foreach (var property in entityType.GetProperties())
+            {
+                if (property.IsShadowProperty()) continue;
+                var value = updateEntry.GetCurrentValue(property);
+                if (property.PropertyInfo?.GetSetMethod(nonPublic: true) != null)
+                    property.PropertyInfo.SetValue(obj, value);
+                else if (property.FieldInfo != null)
+                    property.FieldInfo.SetValue(obj, value);
+            }
+            return obj;
+        }
+
+        // With owned navigations, build a flat dictionary so that:
+        //   OwnsOne  → each owned scalar is stored as a top-level field whose key matches
+        //              EF Core's projected column name (e.g. "address_street"), allowing the
+        //              EF Core shaper to read it directly from the N1QL result row.
+        //   OwnsMany → the collection is stored under its camelCase navigation name
+        //              (e.g. "contactMethods") so AddOwnedCollectionColumnsToProjection
+        //              (CouchbaseShapedQueryCompilingExpressionVisitor) can inject a
+        //              ColumnExpression into the IR projection, and PopulateCollectionNavigations
+        //              can look up the same key in the N1QL result row.
+        // Dictionary keys are serialized verbatim by System.Text.Json — no camelCase
+        // transformation — so GetColumnName() keys match what N1QL SELECT returns.
+        //
+        // Known limitations (apply equally to the CLR-instance path above):
+        //   1. EF Core value converters (HasConversion) are not applied. GetCurrentValue
+        //      returns the model-side CLR value; property.GetValueConverter()?.ConvertToProvider
+        //      is never called. This affects all entity writes and should be fixed in a
+        //      dedicated write-path correctness pass.
+        //   2. Properties with no PropertyInfo and no FieldInfo are silently dropped.
+        //
+        // Additional limitation specific to the OwnsMany item dictionary (built below):
+        //   3. A custom JsonConverter<TOwnedItem> registered in the SDK's serializer options
+        //      will not fire for owned-item dictionaries, because the item-type boundary is
+        //      erased. The SDK sees Dictionary<string,object?> rather than TOwnedItem and
+        //      dispatches on the runtime type of each property value instead.
+        var doc = new Dictionary<string, object?>();
         foreach (var property in entityType.GetProperties())
         {
             if (property.IsShadowProperty()) continue;
+            doc[property.GetColumnName()] = updateEntry.GetCurrentValue(property);
+        }
 
-            var value = updateEntry.GetCurrentValue(property);
-            if (property.PropertyInfo?.GetSetMethod(nonPublic: true) != null)
+        var entity = updateEntry.ToEntityEntry().Entity;
+        foreach (var nav in ownedNavs)
+        {
+            var navValue = nav.PropertyInfo!.GetValue(entity);
+            if (nav.IsCollection)
             {
-                property.PropertyInfo.SetValue(obj, value);
+                var fieldName = fieldNamingPolicy?.ConvertName(nav.Name) ?? nav.Name;
+                if (navValue is IEnumerable items)
+                {
+                    var itemProps = nav.TargetEntityType.GetProperties()
+                        .Where(p => !p.IsShadowProperty()).ToList();
+                    var list = new List<Dictionary<string, object?>>();
+                    foreach (var item in items)
+                    {
+                        var itemDoc = new Dictionary<string, object?>();
+                        foreach (var p in itemProps)
+                            itemDoc[fieldNamingPolicy?.ConvertName(p.Name) ?? p.Name] = p.PropertyInfo?.GetValue(item);
+                        list.Add(itemDoc);
+                    }
+                    doc[fieldName] = list;
+                }
+                else
+                {
+                    doc[fieldName] = null;
+                }
             }
-            else if (property.FieldInfo != null)
+            else
             {
-                property.FieldInfo.SetValue(obj, value);
+                FillOwnsOneIntoDoc(doc, nav, navValue);
             }
         }
 
-        return obj;
+        return doc;
     }
 }
 
