@@ -1162,6 +1162,12 @@ public class CouchbaseDbDataReader<T> : DbDataReader
             _fieldNames.Add(string.Empty);
             _fieldOrdinals[string.Empty] = 0;
         }
+        else if (_currentRow != null)
+        {
+            throw new NotSupportedException(
+                $"CouchbaseDbDataReader<T> requires rows of type JsonElement but received {_currentRow.GetType().FullName}. " +
+                "Use cluster.QueryAsync<JsonElement>() to produce a compatible result.");
+        }
     }
 
     private void ValidateOrdinal(int ordinal)
