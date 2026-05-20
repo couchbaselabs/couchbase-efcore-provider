@@ -239,7 +239,13 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
                 .Where(p => !p.IsShadowProperty()).ToList();
 
             if (accessor != null)
-                accessor.GetOrCreate(entity!, forMaterialization: true);
+            {
+                // Clear any items the EF Core shaper may have pre-populated from the injected
+                // OwnsMany column (observed with AsNoTracking queries). We are the authoritative
+                // source for owned-collection data; clearing before adding prevents duplicates.
+                var coll = accessor.GetOrCreate(entity!, forMaterialization: true);
+                (coll as IList)?.Clear();
+            }
             else
             {
                 var list = (IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(clrType))!;

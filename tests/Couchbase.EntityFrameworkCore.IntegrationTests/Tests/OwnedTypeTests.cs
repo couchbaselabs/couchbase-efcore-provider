@@ -140,4 +140,228 @@ public class OwnedTypeTests(
             Assert.Empty(customer.ContactMethods);
         }
     }
+
+    // -------------------------------------------------------------------------
+    // Read path — untested scenarios
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task OwnsOne_FilterBy_OwnedProperty_ReturnsMatchingCustomer()
+    {
+        await using var ctx = fixture.GetDbContext();
+        var customers = await ctx.Customers
+            .Where(c => c.Address.City == "Springfield")
+            .ToListAsync();
+
+        Assert.Single(customers);
+        Assert.Equal("Alice", customers[0].Name);
+    }
+
+    [Fact]
+    public async Task OwnsMany_ToListAsync_AllCustomersCollectionsPopulated()
+    {
+        await using var ctx = fixture.GetDbContext();
+        var customers = await ctx.Customers.ToListAsync();
+
+        Assert.Equal(2, customers.Count);
+        var alice = customers.Single(c => c.Name == "Alice");
+        var bob   = customers.Single(c => c.Name == "Bob");
+        Assert.Equal(2, alice.ContactMethods.Count);
+        Assert.Single(bob.ContactMethods);
+    }
+
+    [Fact]
+    public async Task OwnsMany_AsNoTracking_IsPopulated()
+    {
+        await using var ctx = fixture.GetDbContext();
+        var customer = await ctx.Customers
+            .AsNoTracking()
+            .FirstAsync(c => c.CustomerId == 1);
+
+        Assert.Equal(2, customer.ContactMethods.Count);
+        Assert.Contains(customer.ContactMethods, cm => cm.Type == "email");
+        Assert.Contains(customer.ContactMethods, cm => cm.Type == "phone");
+    }
+
+    [Fact]
+    public async Task OwnsMany_ItemOrderIsPreserved()
+    {
+        // Seed stores email first, phone second for customer 1.
+        await using var ctx = fixture.GetDbContext();
+        var customer = await ctx.Customers.FirstAsync(c => c.CustomerId == 1);
+
+        Assert.Equal(2, customer.ContactMethods.Count);
+        Assert.Equal("email", customer.ContactMethods[0].Type);
+        Assert.Equal("phone", customer.ContactMethods[1].Type);
+    }
+
+    [Fact]
+    public async Task OwnsMany_EmptyCollectionDocument_ReadsAsEmpty()
+    {
+        // A document stored with an empty contactMethods array must read back as
+        // an empty list, not null.
+        const int id = 97;
+        await using (var ctx = fixture.GetDbContext())
+        {
+            ctx.Update(new OwnedTypeFixture.Customer
+            {
+                CustomerId = id,
+                Name = "Empty",
+                Address = new OwnedTypeFixture.Address { Street = "0 Void Ln", City = "Nowhere" },
+                ContactMethods = []
+            });
+            await ctx.SaveChangesAsync();
+        }
+
+        try
+        {
+            await using var ctx = fixture.GetDbContext();
+            var customer = await ctx.Customers.FirstAsync(c => c.CustomerId == id);
+            Assert.NotNull(customer.ContactMethods);
+            Assert.Empty(customer.ContactMethods);
+        }
+        finally
+        {
+            await using var ctx = fixture.GetDbContext();
+            var customer = await ctx.Customers.FirstOrDefaultAsync(c => c.CustomerId == id);
+            if (customer != null) { ctx.Remove(customer); await ctx.SaveChangesAsync(); }
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Write path — untested scenarios
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task Customer_Add_WithOwnedTypes_RoundTrips()
+    {
+        const int id = 99;
+        try
+        {
+            await using (var ctx = fixture.GetDbContext())
+            {
+                ctx.Add(new OwnedTypeFixture.Customer
+                {
+                    CustomerId = id,
+                    Name = "Charlie",
+                    Address = new OwnedTypeFixture.Address { Street = "3 Oak Ave", City = "Shelbyville" },
+                    ContactMethods =
+                    [
+                        new OwnedTypeFixture.ContactMethod { Id = 1, Type = "email", Value = "charlie@example.com" }
+                    ]
+                });
+                await ctx.SaveChangesAsync();
+            }
+
+            await using (var ctx = fixture.GetDbContext())
+            {
+                var customer = await ctx.Customers.FirstAsync(c => c.CustomerId == id);
+                Assert.Equal("Charlie", customer.Name);
+                Assert.Equal("3 Oak Ave", customer.Address.Street);
+                Assert.Equal("Shelbyville", customer.Address.City);
+                Assert.Single(customer.ContactMethods);
+                Assert.Equal("charlie@example.com", customer.ContactMethods[0].Value);
+            }
+        }
+        finally
+        {
+            await using var ctx = fixture.GetDbContext();
+            var customer = await ctx.Customers.FirstOrDefaultAsync(c => c.CustomerId == id);
+            if (customer != null) { ctx.Remove(customer); await ctx.SaveChangesAsync(); }
+        }
+    }
+
+    [Fact]
+    public async Task Customer_Delete_RemovesDocument()
+    {
+        const int id = 98;
+        await using (var ctx = fixture.GetDbContext())
+        {
+            ctx.Update(new OwnedTypeFixture.Customer
+            {
+                CustomerId = id,
+                Name = "Transient",
+                Address = new OwnedTypeFixture.Address { Street = "Temp St", City = "Nowhere" },
+                ContactMethods = []
+            });
+            await ctx.SaveChangesAsync();
+        }
+
+        await using (var ctx = fixture.GetDbContext())
+        {
+            var customer = await ctx.Customers.FirstAsync(c => c.CustomerId == id);
+            ctx.Remove(customer);
+            await ctx.SaveChangesAsync();
+        }
+
+        await using (var ctx = fixture.GetDbContext())
+        {
+            var customer = await ctx.Customers.FirstOrDefaultAsync(c => c.CustomerId == id);
+            Assert.Null(customer);
+        }
+    }
+
+    [Fact]
+    public async Task OwnsMany_AddSingleItem_RoundTrips()
+    {
+        // Add one item to an existing collection via .Add() without replacing the list
+        // reference; the owner document must be rewritten.
+        await using (var ctx = fixture.GetDbContext())
+        {
+            var customer = await ctx.Customers.FirstAsync(c => c.CustomerId == 2);
+            customer.ContactMethods.Add(
+                new OwnedTypeFixture.ContactMethod { Id = 2, Type = "phone", Value = "555-0202" });
+            await ctx.SaveChangesAsync();
+        }
+
+        await using (var ctx = fixture.GetDbContext())
+        {
+            var customer = await ctx.Customers.FirstAsync(c => c.CustomerId == 2);
+            Assert.Equal(2, customer.ContactMethods.Count);
+            Assert.Contains(customer.ContactMethods, cm => cm.Type == "email");
+            Assert.Contains(customer.ContactMethods, cm => cm.Type == "phone" && cm.Value == "555-0202");
+        }
+    }
+
+    [Fact]
+    public async Task OwnsMany_RemoveSingleItem_RoundTrips()
+    {
+        // Remove one item from a two-item collection via .Remove() without replacing the
+        // list reference; the owner document must be rewritten with the item absent.
+        await using (var ctx = fixture.GetDbContext())
+        {
+            var customer = await ctx.Customers.FirstAsync(c => c.CustomerId == 1);
+            var email = customer.ContactMethods.First(cm => cm.Type == "email");
+            customer.ContactMethods.Remove(email);
+            await ctx.SaveChangesAsync();
+        }
+
+        await using (var ctx = fixture.GetDbContext())
+        {
+            var customer = await ctx.Customers.FirstAsync(c => c.CustomerId == 1);
+            Assert.Single(customer.ContactMethods);
+            Assert.DoesNotContain(customer.ContactMethods, cm => cm.Type == "email");
+            Assert.Contains(customer.ContactMethods, cm => cm.Type == "phone");
+        }
+    }
+
+    [Fact]
+    public async Task OwnsMany_MutateItemProperty_RoundTrips()
+    {
+        // Mutate a scalar property on an existing owned item in-place; the owner
+        // document must be rewritten with the updated value.
+        await using (var ctx = fixture.GetDbContext())
+        {
+            var customer = await ctx.Customers.FirstAsync(c => c.CustomerId == 1);
+            customer.ContactMethods.First(cm => cm.Type == "email").Value = "alice.new@example.com";
+            await ctx.SaveChangesAsync();
+        }
+
+        await using (var ctx = fixture.GetDbContext())
+        {
+            var customer = await ctx.Customers.FirstAsync(c => c.CustomerId == 1);
+            Assert.Contains(customer.ContactMethods,
+                cm => cm.Type == "email" && cm.Value == "alice.new@example.com");
+        }
+    }
 }
