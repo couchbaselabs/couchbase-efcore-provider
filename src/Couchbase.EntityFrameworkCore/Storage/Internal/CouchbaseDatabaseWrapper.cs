@@ -5,7 +5,6 @@ using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.EntityFrameworkCore.Utils;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking.Internal;
-using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.EntityFrameworkCore.Update;
@@ -155,18 +154,15 @@ public class CouchbaseDatabaseWrapper : Database
                 .ToArray();
 
             var ownerEntityType = ownership.PrincipalEntityType;
-            var context = ownedEntry.ToEntityEntry().Context;
 
-            var ownerEntityEntry = context.ChangeTracker.Entries()
-                .FirstOrDefault(e =>
-                    e.Metadata == ownerEntityType &&
-                    ownership.PrincipalKey.Properties
-                        .Select((p, i) => Equals(e.CurrentValues[p.Name], fkValues[i]))
-                        .All(b => b));
+            // Use StateManager.TryGetEntry for O(1) owner lookup instead of a linear
+            // ChangeTracker.Entries() scan, and get the InternalEntityEntry directly so
+            // the IInfrastructure<InternalEntityEntry> unwrap is no longer needed.
+            var stateManager = ((InternalEntityEntry)ownedEntry).StateManager;
+            var ownerInternalEntry = stateManager.TryGetEntry(ownership.PrincipalKey, fkValues);
+            if (ownerInternalEntry == null) continue;
 
-            if (ownerEntityEntry == null) continue;
-
-            var ownerEntity = ownerEntityEntry.Entity;
+            var ownerEntity = ownerInternalEntry.Entity;
             var ownerPrimaryKey = ownerEntityType.GetPrimaryKey(ownerEntity);
             var rootKey = $"{ownerEntityType.ClrType.Name}:{ownerPrimaryKey}";
 
@@ -178,8 +174,7 @@ public class CouchbaseDatabaseWrapper : Database
                     $"Owner entity type '{ownerEntityType.ClrType.Name}' has no mapped table name. " +
                     "Ensure the entity is mapped to a Couchbase collection via ToCouchbaseCollection().");
 
-            var ownerUpdateEntry = (IUpdateEntry)((IInfrastructure<InternalEntityEntry>)ownerEntityEntry).Instance;
-            var ownerDocument = HydrateObjectFromEntity(ownerUpdateEntry, _fieldNamingPolicy);
+            var ownerDocument = HydrateObjectFromEntity(ownerInternalEntry, _fieldNamingPolicy);
 
             if (transaction != null)
             {
