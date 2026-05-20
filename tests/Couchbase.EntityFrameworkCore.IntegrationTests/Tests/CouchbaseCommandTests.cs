@@ -1,4 +1,5 @@
 using System.Data;
+using System.Text.Json;
 using Couchbase.EntityFrameworkCode.IntegrationTests.Fixtures;
 using Couchbase.EntityFrameworkCore.Storage.Internal;
 using Microsoft.EntityFrameworkCore;
@@ -219,7 +220,7 @@ public class CouchbaseCommandTests(
         await using var reader = await command.ExecuteReaderAsync(CancellationToken.None);
 
         Assert.NotNull(reader);
-        Assert.IsType<CouchbaseDbDataReader<object>>(reader);
+        Assert.IsType<CouchbaseDbDataReader<JsonElement>>(reader);
     }
 
     [Fact]
@@ -235,7 +236,7 @@ public class CouchbaseCommandTests(
         using var reader = command.ExecuteReader();
 
         Assert.NotNull(reader);
-        Assert.IsType<CouchbaseDbDataReader<object>>(reader);
+        Assert.IsType<CouchbaseDbDataReader<JsonElement>>(reader);
     }
 
     [Fact]

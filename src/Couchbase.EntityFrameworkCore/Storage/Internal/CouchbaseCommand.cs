@@ -188,11 +188,9 @@ public class CouchbaseCommand : DbCommand
         var options = BuildQueryOptions(linkedCts.Token);
 
         var cluster = ResolveCluster();
-        var queryResult = await cluster.QueryAsync<object>(CommandText, options).ConfigureAwait(false);
+        var queryResult = await cluster.QueryAsync<JsonElement>(CommandText, options).ConfigureAwait(false);
 
-        // Pass connection, behavior, and cancellation token to reader
-        // The token is used for schema discovery if FieldCount/HasRows/etc. are accessed before ReadAsync
-        return new CouchbaseDbDataReader<object>(queryResult, DbConnection, behavior, cancellationToken);
+        return new CouchbaseDbDataReader<JsonElement>(queryResult, DbConnection, behavior, cancellationToken);
     }
 
     protected override void Dispose(bool disposing)
