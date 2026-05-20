@@ -410,8 +410,8 @@ public class CouchbaseCommandTests
     [Fact]
     public async Task ExecuteDbDataReaderAsync_ReturnsDataReader()
     {
-        var mockQueryResult = CreateMockQueryResultWithRows<object>(new List<object>());
-        _mockCluster.Setup(c => c.QueryAsync<object>(It.IsAny<string>(), It.IsAny<QueryOptions>()))
+        var mockQueryResult = CreateMockQueryResultWithRows<JsonElement>(new List<JsonElement>());
+        _mockCluster.Setup(c => c.QueryAsync<JsonElement>(It.IsAny<string>(), It.IsAny<QueryOptions>()))
             .ReturnsAsync(mockQueryResult);
 
         var command = new CouchbaseCommand
@@ -423,7 +423,7 @@ public class CouchbaseCommandTests
         var reader = await command.ExecuteReaderAsync(CancellationToken.None);
 
         Assert.NotNull(reader);
-        Assert.IsType<CouchbaseDbDataReader<object>>(reader);
+        Assert.IsType<CouchbaseDbDataReader<JsonElement>>(reader);
     }
 
     [Fact]
@@ -586,8 +586,8 @@ public class CouchbaseCommandTests
     [Fact]
     public async Task ExecuteReaderAsync_WithCloseConnectionBehavior_ClosesConnectionWhenReaderClosed()
     {
-        var mockQueryResult = CreateMockQueryResultWithRows<object>(new List<object>());
-        _mockCluster.Setup(c => c.QueryAsync<object>(It.IsAny<string>(), It.IsAny<QueryOptions>()))
+        var mockQueryResult = CreateMockQueryResultWithRows<JsonElement>(new List<JsonElement>());
+        _mockCluster.Setup(c => c.QueryAsync<JsonElement>(It.IsAny<string>(), It.IsAny<QueryOptions>()))
             .ReturnsAsync(mockQueryResult);
 
         var mockConnection = new Mock<DbConnection>();
@@ -609,8 +609,8 @@ public class CouchbaseCommandTests
     [Fact]
     public async Task ExecuteReaderAsync_WithCloseConnectionBehavior_ClosesConnectionWhenReaderDisposed()
     {
-        var mockQueryResult = CreateMockQueryResultWithRows<object>(new List<object>());
-        _mockCluster.Setup(c => c.QueryAsync<object>(It.IsAny<string>(), It.IsAny<QueryOptions>()))
+        var mockQueryResult = CreateMockQueryResultWithRows<JsonElement>(new List<JsonElement>());
+        _mockCluster.Setup(c => c.QueryAsync<JsonElement>(It.IsAny<string>(), It.IsAny<QueryOptions>()))
             .ReturnsAsync(mockQueryResult);
 
         var mockConnection = new Mock<DbConnection>();
@@ -632,8 +632,8 @@ public class CouchbaseCommandTests
     [Fact]
     public async Task ExecuteReaderAsync_WithDefaultBehavior_DoesNotCloseConnection()
     {
-        var mockQueryResult = CreateMockQueryResultWithRows<object>(new List<object>());
-        _mockCluster.Setup(c => c.QueryAsync<object>(It.IsAny<string>(), It.IsAny<QueryOptions>()))
+        var mockQueryResult = CreateMockQueryResultWithRows<JsonElement>(new List<JsonElement>());
+        _mockCluster.Setup(c => c.QueryAsync<JsonElement>(It.IsAny<string>(), It.IsAny<QueryOptions>()))
             .ReturnsAsync(mockQueryResult);
 
         var mockConnection = new Mock<DbConnection>();
@@ -655,8 +655,8 @@ public class CouchbaseCommandTests
     [Fact]
     public async Task ExecuteReaderAsync_WithNoConnection_DoesNotThrowOnClose()
     {
-        var mockQueryResult = CreateMockQueryResultWithRows<object>(new List<object>());
-        _mockCluster.Setup(c => c.QueryAsync<object>(It.IsAny<string>(), It.IsAny<QueryOptions>()))
+        var mockQueryResult = CreateMockQueryResultWithRows<JsonElement>(new List<JsonElement>());
+        _mockCluster.Setup(c => c.QueryAsync<JsonElement>(It.IsAny<string>(), It.IsAny<QueryOptions>()))
             .ReturnsAsync(mockQueryResult);
 
         var command = new CouchbaseCommand
