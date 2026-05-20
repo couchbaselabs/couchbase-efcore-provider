@@ -69,6 +69,9 @@ public class CouchbaseSaveChangesInterceptor : SaveChangesInterceptor
             }
         }
         state.TrackedEntities.Clear();
+
+        // Transaction committed — refresh snapshots for all tracked entities
+        RefreshOwnedCollectionSnapshots(context);
     }
 
     public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(
@@ -173,9 +176,17 @@ public class CouchbaseSaveChangesInterceptor : SaveChangesInterceptor
         int result,
         CancellationToken cancellationToken = default)
     {
-        if (eventData.Context != null && IsTransactionActive(eventData.Context))
+        if (eventData.Context != null)
         {
-            RestoreEntityStates(eventData.Context);
+            if (IsTransactionActive(eventData.Context))
+            {
+                RestoreEntityStates(eventData.Context);
+            }
+            else
+            {
+                // Non-transactional save succeeded — refresh snapshots now
+                RefreshOwnedCollectionSnapshots(eventData.Context);
+            }
         }
 
         return await base.SavedChangesAsync(eventData, result, cancellationToken);
@@ -185,9 +196,17 @@ public class CouchbaseSaveChangesInterceptor : SaveChangesInterceptor
         SaveChangesCompletedEventData eventData,
         int result)
     {
-        if (eventData.Context != null && IsTransactionActive(eventData.Context))
+        if (eventData.Context != null)
         {
-            RestoreEntityStates(eventData.Context);
+            if (IsTransactionActive(eventData.Context))
+            {
+                RestoreEntityStates(eventData.Context);
+            }
+            else
+            {
+                // Non-transactional save succeeded — refresh snapshots now
+                RefreshOwnedCollectionSnapshots(eventData.Context);
+            }
         }
 
         return base.SavedChanges(eventData, result);
@@ -226,6 +245,26 @@ public class CouchbaseSaveChangesInterceptor : SaveChangesInterceptor
         finally
         {
             context.ChangeTracker.AutoDetectChangesEnabled = autoDetect;
+        }
+    }
+
+    // After a successful save, update OwnedCollectionSnapshot with current collection
+    // references so subsequent SaveChanges won't see a stale mismatch.
+    private static void RefreshOwnedCollectionSnapshots(DbContext context)
+    {
+        foreach (var entry in context.ChangeTracker.Entries())
+        {
+            if (entry.Metadata.IsOwned()) continue;
+            if (entry.State != EntityState.Unchanged) continue;
+
+            var owner = entry.Entity;
+            if (!OwnedCollectionSnapshot.OriginalRefs.TryGetValue(owner, out var refs)) continue;
+
+            foreach (var nav in entry.Metadata.GetNavigations()
+                         .Where(n => n.TargetEntityType.IsOwned() && n.IsCollection && n.PropertyInfo != null))
+            {
+                refs[nav.Name] = nav.PropertyInfo!.GetValue(owner);
+            }
         }
     }
 
