@@ -11,8 +11,24 @@ namespace Couchbase.EntityFrameworkCode.IntegrationTests.Tests;
 [Collection(CouchbaseTestingCollection.Name)]
 public class BloggingDbContextTests(
     BloggingFixture fixture,
-    ITestOutputHelper output)
+    ITestOutputHelper output) : IAsyncLifetime
 {
+    // Upsert known-good seed data before each test so that mutations in other test
+    // classes (e.g. CrudTests.Removing_Relationships_Async clearing OwnerId on Blog 2)
+    // don't cause queries like Where(o => o.Owner.Name == "Jane Doe") to return empty.
+    public async Task InitializeAsync()
+    {
+        await using var ctx = fixture.GetDbContext();
+        ctx.Update(new BloggingFixture.Blog { BlogId = 1, Url = "https://devblogs.microsoft.com/dotnet", Rating = 5, OwnerId = 1 });
+        ctx.Update(new BloggingFixture.Blog { BlogId = 2, Url = "https://mytravelblog.com/", Rating = 4, OwnerId = 3 });
+        ctx.Update(new BloggingFixture.Person { PersonId = 1, Name = "Dotnet Blog Admin", PhotoId = 1 });
+        ctx.Update(new BloggingFixture.Person { PersonId = 2, Name = "Phileas Fogg", PhotoId = 2 });
+        ctx.Update(new BloggingFixture.Person { PersonId = 3, Name = "Jane Doe", PhotoId = 3 });
+        await ctx.SaveChangesAsync();
+    }
+
+    public Task DisposeAsync() => Task.CompletedTask;
+
     [Fact]
     public async Task Test_Filter_Nested_Entities()
     {

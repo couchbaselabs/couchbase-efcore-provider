@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using Couchbase.EntityFrameworkCore.Query.Internal;
 using Couchbase.EntityFrameworkCore.ValueGeneration;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
@@ -68,6 +69,9 @@ public class CouchbaseSaveChangesInterceptor : SaveChangesInterceptor
             }
         }
         state.TrackedEntities.Clear();
+
+        // Transaction committed — refresh snapshots for all tracked entities
+        RefreshOwnedCollectionSnapshots(context);
     }
 
     public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(
@@ -79,6 +83,7 @@ public class CouchbaseSaveChangesInterceptor : SaveChangesInterceptor
         if (eventData.Context != null)
         {
             await GenerateSequenceValuesAsync(eventData.Context, cancellationToken);
+            MarkOwnersWithReplacedCollections(eventData.Context);
 
             if (IsTransactionActive(eventData.Context))
             {
@@ -97,6 +102,7 @@ public class CouchbaseSaveChangesInterceptor : SaveChangesInterceptor
         {
             GenerateSequenceValuesAsync(eventData.Context, CancellationToken.None)
                 .AsTask().GetAwaiter().GetResult();
+            MarkOwnersWithReplacedCollections(eventData.Context);
 
             if (IsTransactionActive(eventData.Context))
             {
@@ -170,9 +176,17 @@ public class CouchbaseSaveChangesInterceptor : SaveChangesInterceptor
         int result,
         CancellationToken cancellationToken = default)
     {
-        if (eventData.Context != null && IsTransactionActive(eventData.Context))
+        if (eventData.Context != null)
         {
-            RestoreEntityStates(eventData.Context);
+            if (IsTransactionActive(eventData.Context))
+            {
+                RestoreEntityStates(eventData.Context);
+            }
+            else
+            {
+                // Non-transactional save succeeded — refresh snapshots now
+                RefreshOwnedCollectionSnapshots(eventData.Context);
+            }
         }
 
         return await base.SavedChangesAsync(eventData, result, cancellationToken);
@@ -182,12 +196,76 @@ public class CouchbaseSaveChangesInterceptor : SaveChangesInterceptor
         SaveChangesCompletedEventData eventData,
         int result)
     {
-        if (eventData.Context != null && IsTransactionActive(eventData.Context))
+        if (eventData.Context != null)
         {
-            RestoreEntityStates(eventData.Context);
+            if (IsTransactionActive(eventData.Context))
+            {
+                RestoreEntityStates(eventData.Context);
+            }
+            else
+            {
+                // Non-transactional save succeeded — refresh snapshots now
+                RefreshOwnedCollectionSnapshots(eventData.Context);
+            }
         }
 
         return base.SavedChanges(eventData, result);
+    }
+
+    // For each tracked Unchanged/Detached root entity whose OwnsMany collection reference
+    // was replaced (e.g. customer.ContactMethods = []), mark it as Modified so EF Core
+    // includes it in GetEntriesToSave and our SaveChangesAsync is not skipped entirely.
+    // GenerateSequenceValuesAsync (called just before this) already triggered DetectChanges,
+    // so we disable AutoDetectChanges here to avoid a redundant second pass.
+    private static void MarkOwnersWithReplacedCollections(DbContext context)
+    {
+        var autoDetect = context.ChangeTracker.AutoDetectChangesEnabled;
+        context.ChangeTracker.AutoDetectChangesEnabled = false;
+        try
+        {
+            foreach (var entry in context.ChangeTracker.Entries())
+            {
+                if (entry.Metadata.IsOwned()) continue;
+                if (entry.State is not (EntityState.Unchanged or EntityState.Detached)) continue;
+
+                var owner = entry.Entity;
+                if (!OwnedCollectionSnapshot.OriginalRefs.TryGetValue(owner, out var origRefs)) continue;
+
+                foreach (var nav in entry.Metadata.GetNavigations()
+                             .Where(n => n.TargetEntityType.IsOwned() && n.IsCollection && n.PropertyInfo != null))
+                {
+                    if (!origRefs.TryGetValue(nav.Name, out var origRef)) continue;
+                    if (ReferenceEquals(origRef, nav.PropertyInfo!.GetValue(owner))) continue;
+
+                    entry.State = EntityState.Modified;
+                    break;
+                }
+            }
+        }
+        finally
+        {
+            context.ChangeTracker.AutoDetectChangesEnabled = autoDetect;
+        }
+    }
+
+    // After a successful save, update OwnedCollectionSnapshot with current collection
+    // references so subsequent SaveChanges won't see a stale mismatch.
+    private static void RefreshOwnedCollectionSnapshots(DbContext context)
+    {
+        foreach (var entry in context.ChangeTracker.Entries())
+        {
+            if (entry.Metadata.IsOwned()) continue;
+            if (entry.State != EntityState.Unchanged) continue;
+
+            var owner = entry.Entity;
+            if (!OwnedCollectionSnapshot.OriginalRefs.TryGetValue(owner, out var refs)) continue;
+
+            foreach (var nav in entry.Metadata.GetNavigations()
+                         .Where(n => n.TargetEntityType.IsOwned() && n.IsCollection && n.PropertyInfo != null))
+            {
+                refs[nav.Name] = nav.PropertyInfo!.GetValue(owner);
+            }
+        }
     }
 
     private static bool IsTransactionActive(DbContext context)

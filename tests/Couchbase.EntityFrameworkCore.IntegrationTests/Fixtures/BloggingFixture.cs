@@ -120,13 +120,12 @@ public class BloggingFixture : CouchbaseFixture<BloggingDbContext>
                 new PostTag { PostTagId = 6, PostId = 4, TagId = "informative" }
             };
 
-            await dbContext.AddRangeAsync(blogs);
-            await dbContext.AddRangeAsync(posts);
-            await dbContext.AddRangeAsync(persons);
-
-            await dbContext.AddRangeAsync(personPhotos);
-            await dbContext.AddRangeAsync(tags);
-            await dbContext.AddRangeAsync(postTags);
+            dbContext.UpdateRange(blogs);
+            dbContext.UpdateRange(posts);
+            dbContext.UpdateRange(persons);
+            dbContext.UpdateRange(personPhotos);
+            dbContext.UpdateRange(tags);
+            dbContext.UpdateRange(postTags);
 
             await dbContext.SaveChangesAsync();
     }

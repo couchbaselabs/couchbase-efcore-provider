@@ -179,6 +179,7 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
                     && rowElement.ValueKind == JsonValueKind.Object)
                 {
                     PopulateCollectionNavigations(result, rowElement, _ownedCollectionNavigations, _couchbaseDbContextOptionsBuilder.FieldNamingPolicy, _couchbaseDbContextOptionsBuilder.SerializerOptions);
+                    SnapshotCollectionRefs(result);
                 }
                 pendingEntityRow = null;
                 yield return result;
@@ -210,6 +211,7 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
                         && lastRow.ValueKind == JsonValueKind.Object)
                     {
                         PopulateCollectionNavigations(last, lastRow, _ownedCollectionNavigations, _couchbaseDbContextOptionsBuilder.FieldNamingPolicy, _couchbaseDbContextOptionsBuilder.SerializerOptions);
+                        SnapshotCollectionRefs(last);
                     }
                     pendingEntityRow = null;
                     yield return last;
@@ -219,17 +221,6 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
         }
     }
 
-    // KNOWN LIMITATION — change-tracker bypass
-    // Owned collection items created here are materialized via Activator.CreateInstance and
-    // assigned directly to the navigation property via reflection. They are NOT registered with
-    // the EF Core state manager, which means:
-    //   • Modifications to the items after the query (e.g. customer.ContactMethods[0].Value = "x")
-    //     will NOT be detected by SaveChanges, regardless of whether the query used tracking or
-    //     no-tracking — the behavior is silently identical in both cases.
-    //   • This deviates from standard EF Core semantics, where owned collection members
-    //     materialized through the shaper are tracked alongside their owner.
-    // Fixing this requires hooking each owned item into IStateManager via the owner's
-    // InternalEntityEntry, which is deferred as a follow-up task.
     private static readonly JsonSerializerOptions _defaultSerializerOptions = new(JsonSerializerDefaults.Web);
 
     private static void PopulateCollectionNavigations(T entity, JsonElement docElement, IReadOnlyList<INavigation> collections, JsonNamingPolicy? fieldNamingPolicy, JsonSerializerOptions? serializerOptions)
@@ -248,7 +239,13 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
                 .Where(p => !p.IsShadowProperty()).ToList();
 
             if (accessor != null)
-                accessor.GetOrCreate(entity!, forMaterialization: true);
+            {
+                // Clear any items the EF Core shaper may have pre-populated from the injected
+                // OwnsMany column (observed with AsNoTracking queries). We are the authoritative
+                // source for owned-collection data; clearing before adding prevents duplicates.
+                var coll = accessor.GetOrCreate(entity!, forMaterialization: true);
+                (coll as IList)?.Clear();
+            }
             else
             {
                 var list = (IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(clrType))!;
@@ -270,6 +267,18 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
                     ((IList)nav.PropertyInfo!.GetValue(entity)!).Add(ownedEntity);
             }
         }
+    }
+
+    // Record the original collection-object reference for every OwnsMany navigation on
+    // the freshly materialised entity. The save path later compares the current reference
+    // to the stored one; a mismatch (e.g. customer.ContactMethods = []) means the owner
+    // document must be rewritten even when EF Core produced no owned-item change entries.
+    private void SnapshotCollectionRefs(T? entity)
+    {
+        if (entity == null) return;
+        var refs = OwnedCollectionSnapshot.OriginalRefs.GetOrCreateValue(entity);
+        foreach (var nav in _ownedCollectionNavigations)
+            refs[nav.Name] = nav.PropertyInfo?.GetValue(entity);
     }
 
     // JsonElement.TryGetProperty is case-sensitive. The SDK's SystemTextJsonSerializer uses
