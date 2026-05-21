@@ -12,23 +12,24 @@ namespace Couchbase.EntityFrameworkCore.Storage.Internal;
 /// <remarks>
 /// <para>
 /// This reader wraps an <see cref="IQueryResult{T}"/> and provides ADO.NET-compatible access to query results.
-/// Couchbase N1QL queries return rows as JSON objects with named properties (e.g., <c>SELECT id, name FROM bucket</c>
-/// returns rows like <c>{"id": 1, "name": "Alice"}</c>).
+/// Rows must be <see cref="JsonElement"/> instances (i.e. the query must be executed with
+/// <c>cluster.QueryAsync&lt;JsonElement&gt;()</c>); any other row type throws
+/// <see cref="NotSupportedException"/> on the first read.
 /// </para>
 /// <para>
 /// <b>Schema Discovery:</b> Field metadata (names and ordinals) is captured from the first row and reused for all
 /// subsequent rows. If the first row has fields <c>["id", "name"]</c>, those become ordinals 0 and 1 respectively.
-/// Later rows with different fields will have missing fields return <see cref="DBNull.Value"/> and extra fields
-/// will be inaccessible by ordinal.
+/// Later rows with missing fields return <see cref="DBNull.Value"/> for those ordinals; extra fields are
+/// inaccessible by ordinal.
 /// </para>
 /// <para>
-/// <b>Value Extraction:</b> When accessing values by ordinal, nested JSON objects and arrays are automatically
-/// unwrapped to extract the first property/element value. This enables typed getters (e.g., <see cref="GetInt64"/>)
-/// to work with Couchbase's row format. Use <see cref="GetFieldValue{T}"/> with <see cref="JsonElement"/> to
-/// access raw JSON structures.
+/// <b>Value Extraction:</b> Scalar JSON values (string, number, boolean, null) are converted to their CLR
+/// equivalents by <see cref="GetValue"/>. JSON objects and arrays are returned as a raw <see cref="JsonElement"/>
+/// — no unwrapping is performed. Use <see cref="GetFieldValue{T}"/> with <see cref="JsonElement"/> to work with
+/// the raw structure, or with a target CLR type to deserialize it via <see cref="System.Text.Json"/>.
 /// </para>
 /// </remarks>
-/// <typeparam name="T">The type of rows in the query result.</typeparam>
+/// <typeparam name="T">The type of rows in the query result. Must be <see cref="JsonElement"/>.</typeparam>
 public class CouchbaseDbDataReader<T> : DbDataReader
 {
     private readonly IQueryResult<T> _queryResult;
@@ -469,14 +470,9 @@ public class CouchbaseDbDataReader<T> : DbDataReader
     /// Gets the value of the field at the specified ordinal.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// For JSON object values, this method extracts the first property's value to enable
-    /// typed getter methods (e.g., <see cref="GetInt64"/>) to work with Couchbase's row format
-    /// where each row is a JSON object like <c>{"fieldName": value}</c>.
-    /// </para>
-    /// <para>
-    /// Use <see cref="GetFieldValue{T}"/> with <see cref="JsonElement"/> to access the raw JSON structure.
-    /// </para>
+    /// Scalar JSON values (string, number, boolean, null) are returned as their CLR equivalents.
+    /// JSON objects and arrays are returned as a raw <see cref="JsonElement"/> — no unwrapping is
+    /// performed. Use <see cref="GetFieldValue{T}"/> with a target type to deserialize complex values.
     /// </remarks>
     /// <param name="ordinal">The zero-based column ordinal.</param>
     /// <returns>The value of the field, or <see cref="DBNull.Value"/> if null.</returns>

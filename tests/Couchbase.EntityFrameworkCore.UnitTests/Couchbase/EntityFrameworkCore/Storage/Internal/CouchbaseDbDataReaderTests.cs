@@ -1858,6 +1858,40 @@ public class CouchbaseDbDataReaderTests
         Assert.Throws<IndexOutOfRangeException>(() => reader.GetOrdinal("nonexistent"));
     }
 
+    [Fact]
+    public async Task GetValue_ObjectField_ReturnsRawJsonElement()
+    {
+        var rows = new List<JsonElement>
+        {
+            JsonDocument.Parse("{\"nested\": {\"x\": 1, \"y\": 2}}").RootElement
+        };
+        var reader = CreateReader(rows);
+        await reader.ReadAsync(CancellationToken.None);
+
+        var value = reader.GetValue(0);
+
+        var je = Assert.IsType<JsonElement>(value);
+        Assert.Equal(JsonValueKind.Object, je.ValueKind);
+        Assert.Equal(1, je.GetProperty("x").GetInt32());
+    }
+
+    [Fact]
+    public async Task GetValue_ArrayField_ReturnsRawJsonElement()
+    {
+        var rows = new List<JsonElement>
+        {
+            JsonDocument.Parse("{\"tags\": [\"a\", \"b\", \"c\"]}").RootElement
+        };
+        var reader = CreateReader(rows);
+        await reader.ReadAsync(CancellationToken.None);
+
+        var value = reader.GetValue(0);
+
+        var je = Assert.IsType<JsonElement>(value);
+        Assert.Equal(JsonValueKind.Array, je.ValueKind);
+        Assert.Equal(3, je.GetArrayLength());
+    }
+
     #endregion
 
     private static CouchbaseDbDataReader<JsonElement> CreateReader(List<JsonElement> rows)
