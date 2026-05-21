@@ -20,24 +20,34 @@ projection aliases (`_columnNames`) are always supplied by `CouchbaseQueryEnumer
 
 ### Changes
 
+- **Switch `CouchbaseCommand.ExecuteDbDataReaderAsync` from `QueryAsync<object>` to
+  `QueryAsync<JsonElement>`** and change the returned reader type from
+  `CouchbaseDbDataReader<object>` to `CouchbaseDbDataReader<JsonElement>`. This was the
+  origin of the non-`JsonElement` path in the reader — the ADO.NET command path was
+  always using `T=object` while `CouchbaseQueryEnumerable` correctly used `T=JsonElement`.
+  Aligning both callers to `JsonElement` is a prerequisite for the dead-code removal below.
+
 - **Remove the non-`JsonElement` reflection branch** in `InitializeFieldInfo` and `GetFieldValue`.
   The `else if (_currentRow != null)` path uses `Type.GetProperties()` and `PropertyInfo.GetValue`
-  to handle rows that are not `JsonElement`. Since `cluster.QueryAsync<JsonElement>` always
-  produces `JsonElement` rows, this branch is unreachable.
+  to handle rows that are not `JsonElement`. With the command change above, this branch is
+  now unreachable on every code path.
 
-- **Fix `ConvertJsonElement` for `Object` and `Array` kinds.** The current implementation calls
-  `ExtractFirstValueFromObject` / `ExtractFirstValueFromArray`, which take the first property or
-  element of a complex value. This heuristic is wrong for legitimate complex fields (owned types,
-  byte arrays stored as arrays) and only existed to paper over early row-structure confusion. Replace
-  with returning the `JsonElement` as-is for those kinds, consistent with how `GetFieldValue<T>`
-  already handles them.
+- **Fix `ConvertJsonElement` for `Object` and `Array` kinds.** The prior implementation called
+  `ExtractFirstValueFromObject` / `ExtractFirstValueFromArray`, which extracted the first property
+  or element from a complex value. This heuristic was wrong for legitimate complex fields (owned
+  types, byte arrays stored as arrays) and only existed to paper over early row-structure confusion.
+  Replace with returning the `JsonElement` as-is for those kinds, consistent with how
+  `GetFieldValue<T>` already handles them.
 
 - Remove `ExtractFirstValueFromObject` and `ExtractFirstValueFromArray` once the above is done.
 
 ### Expected outcome
 
 Approximately 50 lines removed. The remaining code reflects only what actually runs in the
-provider. Existing tests should pass without modification.
+provider. Five tests required updates: the `IsType<CouchbaseDbDataReader<object>>` assertions
+in both `CouchbaseCommandTests` and `CouchbaseDbDataReaderTests`, and the unit-test mock setups
+that targeted `QueryAsync<object>` for the reader path. The `MultipleRows_CanIterate` integration
+test also needed its N1QL query corrected from an invalid subquery alias to `UNION ALL` form.
 
 ---
 

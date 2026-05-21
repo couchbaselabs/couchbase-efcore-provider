@@ -1,4 +1,5 @@
 using System.Data;
+using System.Text.Json;
 using Couchbase.EntityFrameworkCode.IntegrationTests.Fixtures;
 using Couchbase.EntityFrameworkCore.Storage.Internal;
 using Microsoft.EntityFrameworkCore;
@@ -24,7 +25,7 @@ public class CouchbaseDbDataReaderTests(
         await using var reader = await command.ExecuteReaderAsync(CancellationToken.None);
 
         Assert.NotNull(reader);
-        Assert.IsType<CouchbaseDbDataReader<object>>(reader);
+        Assert.IsType<CouchbaseDbDataReader<JsonElement>>(reader);
     }
 
     [Fact]
@@ -281,7 +282,7 @@ public class CouchbaseDbDataReaderTests(
         await connection.OpenAsync();
 
         using var command = connection.CreateCommand();
-        command.CommandText = "SELECT * FROM (SELECT 1 AS id UNION SELECT 2 UNION SELECT 3) AS t";
+        command.CommandText = "SELECT 1 AS id UNION ALL SELECT 2 AS id UNION ALL SELECT 3 AS id";
 
         await using var reader = await command.ExecuteReaderAsync(CancellationToken.None);
 

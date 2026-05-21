@@ -18,7 +18,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task Read_WithRows_ReturnsTrue()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"id\": 1, \"name\": \"test\"}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"id\": 1, \"name\": \"test\"}") };
         var reader = CreateReader(rows);
 
         var result = await reader.ReadAsync(CancellationToken.None);
@@ -41,9 +41,9 @@ public class CouchbaseDbDataReaderTests
     {
         var rows = new List<JsonElement>
         {
-            JsonDocument.Parse("{\"id\": 1}").RootElement,
-            JsonDocument.Parse("{\"id\": 2}").RootElement,
-            JsonDocument.Parse("{\"id\": 3}").RootElement
+            ParseElement("{\"id\": 1}"),
+            ParseElement("{\"id\": 2}"),
+            ParseElement("{\"id\": 3}")
         };
         var reader = CreateReader(rows);
 
@@ -62,7 +62,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task FieldCount_ReturnsCorrectCount()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"id\": 1, \"name\": \"test\", \"active\": true}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"id\": 1, \"name\": \"test\", \"active\": true}") };
         var reader = CreateReader(rows);
 
         await reader.ReadAsync(CancellationToken.None);
@@ -73,7 +73,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task GetName_ReturnsFieldName()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"id\": 1, \"name\": \"test\"}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"id\": 1, \"name\": \"test\"}") };
         var reader = CreateReader(rows);
 
         await reader.ReadAsync(CancellationToken.None);
@@ -85,7 +85,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task GetOrdinal_ReturnsCorrectOrdinal()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"id\": 1, \"name\": \"test\"}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"id\": 1, \"name\": \"test\"}") };
         var reader = CreateReader(rows);
 
         await reader.ReadAsync(CancellationToken.None);
@@ -97,7 +97,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task GetOrdinal_CaseInsensitive()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"Name\": \"test\"}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"Name\": \"test\"}") };
         var reader = CreateReader(rows);
 
         await reader.ReadAsync(CancellationToken.None);
@@ -110,7 +110,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task GetOrdinal_InvalidName_ThrowsIndexOutOfRangeException()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"id\": 1}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"id\": 1}") };
         var reader = CreateReader(rows);
 
         await reader.ReadAsync(CancellationToken.None);
@@ -129,7 +129,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task GetValue_ReturnsValue()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"id\": 42, \"name\": \"test\"}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"id\": 42, \"name\": \"test\"}") };
         var reader = CreateReader(rows);
 
         await reader.ReadAsync(CancellationToken.None);
@@ -141,7 +141,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task GetValue_WithNullValue_ReturnsDBNull()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"value\": null}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"value\": null}") };
         var reader = CreateReader(rows);
 
         await reader.ReadAsync(CancellationToken.None);
@@ -161,7 +161,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task GetValue_InvalidOrdinal_ThrowsIndexOutOfRangeException()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"id\": 1}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"id\": 1}") };
         var reader = CreateReader(rows);
 
         await reader.ReadAsync(CancellationToken.None);
@@ -172,7 +172,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task GetBoolean_ReturnsBoolean()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"active\": true, \"deleted\": false}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"active\": true, \"deleted\": false}") };
         var reader = CreateReader(rows);
 
         await reader.ReadAsync(CancellationToken.None);
@@ -184,7 +184,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task GetInt32_ReturnsInt()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"count\": 42}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"count\": 42}") };
         var reader = CreateReader(rows);
 
         await reader.ReadAsync(CancellationToken.None);
@@ -195,7 +195,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task GetInt64_ReturnsLong()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"bigNumber\": 9223372036854775807}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"bigNumber\": 9223372036854775807}") };
         var reader = CreateReader(rows);
 
         await reader.ReadAsync(CancellationToken.None);
@@ -206,7 +206,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task GetDouble_ReturnsDouble()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"price\": 19.99}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"price\": 19.99}") };
         var reader = CreateReader(rows);
 
         await reader.ReadAsync(CancellationToken.None);
@@ -217,7 +217,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task GetDecimal_ReturnsDecimal()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"amount\": 123.45}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"amount\": 123.45}") };
         var reader = CreateReader(rows);
 
         await reader.ReadAsync(CancellationToken.None);
@@ -228,7 +228,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task GetString_ReturnsString()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"name\": \"Hello World\"}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"name\": \"Hello World\"}") };
         var reader = CreateReader(rows);
 
         await reader.ReadAsync(CancellationToken.None);
@@ -241,7 +241,7 @@ public class CouchbaseDbDataReaderTests
     {
         // EF Core materializer lambdas call GetString without IsDBNull for non-nullable
         // string properties on optional columns; returning null lets those round-trips work.
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"name\": null}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"name\": null}") };
         var reader = CreateReader(rows);
 
         await reader.ReadAsync(CancellationToken.None);
@@ -252,7 +252,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task GetDateTime_ReturnsDateTime()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"created\": \"2025-01-15T10:30:00Z\"}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"created\": \"2025-01-15T10:30:00Z\"}") };
         var reader = CreateReader(rows);
 
         await reader.ReadAsync(CancellationToken.None);
@@ -267,7 +267,7 @@ public class CouchbaseDbDataReaderTests
     public async Task GetGuid_ReturnsGuid()
     {
         var guid = Guid.NewGuid();
-        var rows = new List<JsonElement> { JsonDocument.Parse($"{{\"id\": \"{guid}\"}}").RootElement };
+        var rows = new List<JsonElement> { ParseElement($"{{\"id\": \"{guid}\"}}") };
         var reader = CreateReader(rows);
 
         await reader.ReadAsync(CancellationToken.None);
@@ -278,7 +278,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task IsDBNull_WithNull_ReturnsTrue()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"value\": null}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"value\": null}") };
         var reader = CreateReader(rows);
 
         await reader.ReadAsync(CancellationToken.None);
@@ -289,7 +289,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task IsDBNull_WithValue_ReturnsFalse()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"value\": 42}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"value\": 42}") };
         var reader = CreateReader(rows);
 
         await reader.ReadAsync(CancellationToken.None);
@@ -300,7 +300,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task GetValues_FillsArray()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"id\": 1, \"name\": \"test\", \"active\": true}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"id\": 1, \"name\": \"test\", \"active\": true}") };
         var reader = CreateReader(rows);
 
         await reader.ReadAsync(CancellationToken.None);
@@ -316,7 +316,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task GetValues_WithSmallerArray_FillsPartially()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"id\": 1, \"name\": \"test\", \"active\": true}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"id\": 1, \"name\": \"test\", \"active\": true}") };
         var reader = CreateReader(rows);
 
         await reader.ReadAsync(CancellationToken.None);
@@ -331,7 +331,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task Indexer_ByOrdinal_ReturnsValue()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"id\": 42}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"id\": 42}") };
         var reader = CreateReader(rows);
 
         await reader.ReadAsync(CancellationToken.None);
@@ -342,7 +342,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task Indexer_ByName_ReturnsValue()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"id\": 42}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"id\": 42}") };
         var reader = CreateReader(rows);
 
         await reader.ReadAsync(CancellationToken.None);
@@ -381,7 +381,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task Read_AfterClose_ReturnsFalse()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"id\": 1}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"id\": 1}") };
         var reader = CreateReader(rows);
 
         reader.Close();
@@ -424,7 +424,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public void HasRows_WithRows_ReturnsTrue()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"id\": 1}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"id\": 1}") };
         var reader = CreateReader(rows);
 
         Assert.True(reader.HasRows);
@@ -441,7 +441,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task HasRows_AfterReadingAllRows_StillReturnsTrue()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"id\": 1}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"id\": 1}") };
         var reader = CreateReader(rows);
 
         // Read and exhaust all rows
@@ -457,8 +457,8 @@ public class CouchbaseDbDataReaderTests
     {
         var rows = new List<JsonElement>
         {
-            JsonDocument.Parse("{\"id\": 1}").RootElement,
-            JsonDocument.Parse("{\"id\": 2}").RootElement
+            ParseElement("{\"id\": 1}"),
+            ParseElement("{\"id\": 2}")
         };
         var reader = CreateReader(rows);
 
@@ -478,7 +478,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task GetSchemaTable_ReturnsSchemaTable()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"id\": 1, \"name\": \"test\"}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"id\": 1, \"name\": \"test\"}") };
         var reader = CreateReader(rows);
 
         await reader.ReadAsync(CancellationToken.None);
@@ -495,7 +495,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task GetDataTypeName_ReturnsTypeName()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"count\": 42}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"count\": 42}") };
         var reader = CreateReader(rows);
 
         await reader.ReadAsync(CancellationToken.None);
@@ -506,7 +506,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task GetFieldType_ReturnsType()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"count\": 42}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"count\": 42}") };
         var reader = CreateReader(rows);
 
         await reader.ReadAsync(CancellationToken.None);
@@ -517,7 +517,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task GetFieldValue_Generic_ReturnsTypedValue()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"count\": 42}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"count\": 42}") };
         var reader = CreateReader(rows);
 
         await reader.ReadAsync(CancellationToken.None);
@@ -528,7 +528,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task GetChar_ReturnsFirstChar()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"letter\": \"A\"}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"letter\": \"A\"}") };
         var reader = CreateReader(rows);
 
         await reader.ReadAsync(CancellationToken.None);
@@ -539,7 +539,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task GetByte_ReturnsByte()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"value\": 255}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"value\": 255}") };
         var reader = CreateReader(rows);
 
         await reader.ReadAsync(CancellationToken.None);
@@ -550,7 +550,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task GetInt16_ReturnsShort()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"value\": 32767}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"value\": 32767}") };
         var reader = CreateReader(rows);
 
         await reader.ReadAsync(CancellationToken.None);
@@ -561,7 +561,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task GetFloat_ReturnsFloat()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"value\": 3.14}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"value\": 3.14}") };
         var reader = CreateReader(rows);
 
         await reader.ReadAsync(CancellationToken.None);
@@ -572,7 +572,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task Dispose_ClosesReader()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"id\": 1}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"id\": 1}") };
         var reader = CreateReader(rows);
 
         reader.Dispose();
@@ -583,7 +583,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task DisposeAsync_ClosesReader()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"id\": 1}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"id\": 1}") };
         var reader = CreateReader(rows);
 
         await reader.DisposeAsync();
@@ -606,8 +606,8 @@ public class CouchbaseDbDataReaderTests
     {
         var rows = new List<JsonElement>
         {
-            JsonDocument.Parse("{\"id\": 1}").RootElement,
-            JsonDocument.Parse("{\"id\": 2}").RootElement
+            ParseElement("{\"id\": 1}"),
+            ParseElement("{\"id\": 2}")
         };
         var reader = CreateReader(rows);
 
@@ -632,8 +632,8 @@ public class CouchbaseDbDataReaderTests
     {
         var rows = new List<JsonElement>
         {
-            JsonDocument.Parse("{\"name\": \"first\"}").RootElement,
-            JsonDocument.Parse("{\"name\": \"second\"}").RootElement
+            ParseElement("{\"name\": \"first\"}"),
+            ParseElement("{\"name\": \"second\"}")
         };
         var reader = CreateReader(rows);
 
@@ -655,7 +655,7 @@ public class CouchbaseDbDataReaderTests
     {
         var rows = new List<JsonElement>
         {
-            JsonDocument.Parse("{\"value\": 100}").RootElement
+            ParseElement("{\"value\": 100}")
         };
         var reader = CreateReader(rows);
 
@@ -675,7 +675,7 @@ public class CouchbaseDbDataReaderTests
     {
         var rows = new List<JsonElement>
         {
-            JsonDocument.Parse("{\"col1\": 1, \"col2\": 2}").RootElement
+            ParseElement("{\"col1\": 1, \"col2\": 2}")
         };
         var reader = CreateReader(rows);
 
@@ -696,7 +696,7 @@ public class CouchbaseDbDataReaderTests
     {
         // JsonElement is a value type - this tests that we track row availability
         // with a boolean flag, not by checking _currentRow == null
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"id\": 1}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"id\": 1}") };
         var reader = CreateReader(rows);
 
         var ex = Assert.Throws<InvalidOperationException>(() => reader.GetValue(0));
@@ -708,7 +708,7 @@ public class CouchbaseDbDataReaderTests
     {
         // After exhausting all rows, GetValue should throw even though
         // _currentRow (being a value type) is not null but default(JsonElement)
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"id\": 1}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"id\": 1}") };
         var reader = CreateReader(rows);
 
         Assert.True(await reader.ReadAsync(CancellationToken.None));
@@ -723,7 +723,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task GetBoolean_AfterReadReturnsFalse_ThrowsInvalidOperationException()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"flag\": true}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"flag\": true}") };
         var reader = CreateReader(rows);
 
         Assert.True(await reader.ReadAsync(CancellationToken.None));
@@ -737,7 +737,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task GetString_AfterReadReturnsFalse_ThrowsInvalidOperationException()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"name\": \"test\"}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"name\": \"test\"}") };
         var reader = CreateReader(rows);
 
         Assert.True(await reader.ReadAsync(CancellationToken.None));
@@ -751,7 +751,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task GetInt64_AfterReadReturnsFalse_ThrowsInvalidOperationException()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"num\": 42}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"num\": 42}") };
         var reader = CreateReader(rows);
 
         Assert.True(await reader.ReadAsync(CancellationToken.None));
@@ -765,7 +765,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task IsDBNull_AfterReadReturnsFalse_ThrowsInvalidOperationException()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"val\": null}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"val\": null}") };
         var reader = CreateReader(rows);
 
         Assert.True(await reader.ReadAsync(CancellationToken.None));
@@ -779,7 +779,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task GetValues_AfterReadReturnsFalse_ThrowsInvalidOperationException()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"a\": 1, \"b\": 2}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"a\": 1, \"b\": 2}") };
         var reader = CreateReader(rows);
 
         Assert.True(await reader.ReadAsync(CancellationToken.None));
@@ -794,7 +794,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task Indexer_ByOrdinal_AfterReadReturnsFalse_ThrowsInvalidOperationException()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"x\": 1}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"x\": 1}") };
         var reader = CreateReader(rows);
 
         Assert.True(await reader.ReadAsync(CancellationToken.None));
@@ -808,7 +808,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task Indexer_ByName_AfterReadReturnsFalse_ThrowsInvalidOperationException()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"x\": 1}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"x\": 1}") };
         var reader = CreateReader(rows);
 
         Assert.True(await reader.ReadAsync(CancellationToken.None));
@@ -824,9 +824,9 @@ public class CouchbaseDbDataReaderTests
     {
         var rows = new List<JsonElement>
         {
-            JsonDocument.Parse("{\"id\": 1}").RootElement,
-            JsonDocument.Parse("{\"id\": 2}").RootElement,
-            JsonDocument.Parse("{\"id\": 3}").RootElement
+            ParseElement("{\"id\": 1}"),
+            ParseElement("{\"id\": 2}"),
+            ParseElement("{\"id\": 3}")
         };
         var reader = CreateReader(rows);
 
@@ -857,7 +857,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task ReadAsync_WithCancelledToken_ThrowsOperationCanceledException()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"id\": 1}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"id\": 1}") };
         var reader = CreateReader(rows);
 
         using var cts = new CancellationTokenSource();
@@ -872,8 +872,8 @@ public class CouchbaseDbDataReaderTests
     {
         var rows = new List<JsonElement>
         {
-            JsonDocument.Parse("{\"id\": 1}").RootElement,
-            JsonDocument.Parse("{\"id\": 2}").RootElement
+            ParseElement("{\"id\": 1}"),
+            ParseElement("{\"id\": 2}")
         };
         var reader = CreateReader(rows);
 
@@ -896,8 +896,8 @@ public class CouchbaseDbDataReaderTests
     {
         var rows = new List<JsonElement>
         {
-            JsonDocument.Parse("{\"id\": 1}").RootElement,
-            JsonDocument.Parse("{\"id\": 2}").RootElement
+            ParseElement("{\"id\": 1}"),
+            ParseElement("{\"id\": 2}")
         };
         var reader = CreateReader(rows);
 
@@ -919,7 +919,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task GetByte_WithValueGreaterThan255_ThrowsOverflowException()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"val\": 256}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"val\": 256}") };
         var reader = CreateReader(rows);
 
         await reader.ReadAsync(CancellationToken.None);
@@ -930,7 +930,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task GetByte_WithNegativeValue_ThrowsOverflowException()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"val\": -1}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"val\": -1}") };
         var reader = CreateReader(rows);
 
         await reader.ReadAsync(CancellationToken.None);
@@ -941,7 +941,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task GetByte_WithValidValue_ReturnsValue()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"val\": 255}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"val\": 255}") };
         var reader = CreateReader(rows);
 
         await reader.ReadAsync(CancellationToken.None);
@@ -952,7 +952,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task GetInt16_WithValueGreaterThanMaxShort_ThrowsOverflowException()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"val\": 32768}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"val\": 32768}") };
         var reader = CreateReader(rows);
 
         await reader.ReadAsync(CancellationToken.None);
@@ -963,7 +963,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task GetInt16_WithValueLessThanMinShort_ThrowsOverflowException()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"val\": -32769}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"val\": -32769}") };
         var reader = CreateReader(rows);
 
         await reader.ReadAsync(CancellationToken.None);
@@ -974,7 +974,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task GetInt16_WithValidValue_ReturnsValue()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"val\": 32767}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"val\": 32767}") };
         var reader = CreateReader(rows);
 
         await reader.ReadAsync(CancellationToken.None);
@@ -985,7 +985,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task GetInt32_WithValueGreaterThanMaxInt_ThrowsOverflowException()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"val\": 2147483648}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"val\": 2147483648}") };
         var reader = CreateReader(rows);
 
         await reader.ReadAsync(CancellationToken.None);
@@ -996,7 +996,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task GetInt32_WithValueLessThanMinInt_ThrowsOverflowException()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"val\": -2147483649}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"val\": -2147483649}") };
         var reader = CreateReader(rows);
 
         await reader.ReadAsync(CancellationToken.None);
@@ -1007,7 +1007,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task GetInt32_WithValidValue_ReturnsValue()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"val\": 2147483647}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"val\": 2147483647}") };
         var reader = CreateReader(rows);
 
         await reader.ReadAsync(CancellationToken.None);
@@ -1022,7 +1022,7 @@ public class CouchbaseDbDataReaderTests
         // point (e.g. 2.0), so ConvertJsonElement falls back to GetDouble() and returns
         // a double.  GetInt32 must convert that double via Convert.ToInt32 rather than
         // throwing, consistent with every other numeric getter's fallback arm.
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"count\": 2.0}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"count\": 2.0}") };
         var reader = CreateReader(rows);
 
         await reader.ReadAsync(CancellationToken.None);
@@ -1034,7 +1034,7 @@ public class CouchbaseDbDataReaderTests
     public async Task GetFloat_WithValueExceedingFloatRange_ReturnsInfinity()
     {
         // Values exceeding float range return infinity rather than throwing
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"val\": 3.5E+38}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"val\": 3.5E+38}") };
         var reader = CreateReader(rows);
 
         await reader.ReadAsync(CancellationToken.None);
@@ -1047,7 +1047,7 @@ public class CouchbaseDbDataReaderTests
     public async Task GetDecimal_WithValueExceedingDecimalRange_ThrowsOverflowException()
     {
         // double.MaxValue exceeds decimal range
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"val\": 1.8E+308}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"val\": 1.8E+308}") };
         var reader = CreateReader(rows);
 
         await reader.ReadAsync(CancellationToken.None);
@@ -1062,7 +1062,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task GetBytes_WithNegativeDataOffset_ThrowsArgumentOutOfRangeException()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"data\": \"SGVsbG8=\"}").RootElement }; // "Hello" in base64
+        var rows = new List<JsonElement> { ParseElement("{\"data\": \"SGVsbG8=\"}") }; // "Hello" in base64
         var reader = CreateReader(rows);
 
         await reader.ReadAsync(CancellationToken.None);
@@ -1074,7 +1074,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task GetBytes_WithNegativeBufferOffset_ThrowsArgumentOutOfRangeException()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"data\": \"SGVsbG8=\"}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"data\": \"SGVsbG8=\"}") };
         var reader = CreateReader(rows);
 
         await reader.ReadAsync(CancellationToken.None);
@@ -1086,7 +1086,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task GetBytes_WithBufferOffsetExceedingBufferLength_ThrowsArgumentOutOfRangeException()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"data\": \"SGVsbG8=\"}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"data\": \"SGVsbG8=\"}") };
         var reader = CreateReader(rows);
 
         await reader.ReadAsync(CancellationToken.None);
@@ -1098,7 +1098,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task GetBytes_WithBufferOffsetAtEndAndZeroLength_ReturnsZero()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"data\": \"SGVsbG8=\"}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"data\": \"SGVsbG8=\"}") };
         var reader = CreateReader(rows);
 
         await reader.ReadAsync(CancellationToken.None);
@@ -1112,7 +1112,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task GetBytes_WithNegativeLength_ThrowsArgumentOutOfRangeException()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"data\": \"SGVsbG8=\"}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"data\": \"SGVsbG8=\"}") };
         var reader = CreateReader(rows);
 
         await reader.ReadAsync(CancellationToken.None);
@@ -1124,7 +1124,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task GetBytes_WithDataOffsetBeyondSourceLength_ReturnsZero()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"data\": \"SGVsbG8=\"}").RootElement }; // 5 bytes
+        var rows = new List<JsonElement> { ParseElement("{\"data\": \"SGVsbG8=\"}") }; // 5 bytes
         var reader = CreateReader(rows);
 
         await reader.ReadAsync(CancellationToken.None);
@@ -1138,7 +1138,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task GetBytes_WithNullBuffer_ReturnsTotalLength()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"data\": \"SGVsbG8=\"}").RootElement }; // "Hello" = 5 bytes
+        var rows = new List<JsonElement> { ParseElement("{\"data\": \"SGVsbG8=\"}") }; // "Hello" = 5 bytes
         var reader = CreateReader(rows);
 
         await reader.ReadAsync(CancellationToken.None);
@@ -1151,7 +1151,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task GetBytes_WithValidParameters_CopiesCorrectData()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"data\": \"SGVsbG8=\"}").RootElement }; // "Hello"
+        var rows = new List<JsonElement> { ParseElement("{\"data\": \"SGVsbG8=\"}") }; // "Hello"
         var reader = CreateReader(rows);
 
         await reader.ReadAsync(CancellationToken.None);
@@ -1168,7 +1168,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task GetChars_WithNegativeDataOffset_ThrowsArgumentOutOfRangeException()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"text\": \"Hello\"}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"text\": \"Hello\"}") };
         var reader = CreateReader(rows);
 
         await reader.ReadAsync(CancellationToken.None);
@@ -1180,7 +1180,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task GetChars_WithNegativeBufferOffset_ThrowsArgumentOutOfRangeException()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"text\": \"Hello\"}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"text\": \"Hello\"}") };
         var reader = CreateReader(rows);
 
         await reader.ReadAsync(CancellationToken.None);
@@ -1192,7 +1192,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task GetChars_WithBufferOffsetExceedingBufferLength_ThrowsArgumentOutOfRangeException()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"text\": \"Hello\"}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"text\": \"Hello\"}") };
         var reader = CreateReader(rows);
 
         await reader.ReadAsync(CancellationToken.None);
@@ -1204,7 +1204,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task GetChars_WithBufferOffsetAtEndAndZeroLength_ReturnsZero()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"text\": \"Hello\"}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"text\": \"Hello\"}") };
         var reader = CreateReader(rows);
 
         await reader.ReadAsync(CancellationToken.None);
@@ -1218,7 +1218,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task GetChars_WithNegativeLength_ThrowsArgumentOutOfRangeException()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"text\": \"Hello\"}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"text\": \"Hello\"}") };
         var reader = CreateReader(rows);
 
         await reader.ReadAsync(CancellationToken.None);
@@ -1230,7 +1230,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task GetChars_WithDataOffsetBeyondSourceLength_ReturnsZero()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"text\": \"Hello\"}").RootElement }; // 5 chars
+        var rows = new List<JsonElement> { ParseElement("{\"text\": \"Hello\"}") }; // 5 chars
         var reader = CreateReader(rows);
 
         await reader.ReadAsync(CancellationToken.None);
@@ -1244,7 +1244,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task GetChars_WithNullBuffer_ReturnsTotalLength()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"text\": \"Hello\"}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"text\": \"Hello\"}") };
         var reader = CreateReader(rows);
 
         await reader.ReadAsync(CancellationToken.None);
@@ -1257,7 +1257,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task GetChars_WithValidParameters_CopiesCorrectData()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"text\": \"Hello\"}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"text\": \"Hello\"}") };
         var reader = CreateReader(rows);
 
         await reader.ReadAsync(CancellationToken.None);
@@ -1282,7 +1282,7 @@ public class CouchbaseDbDataReaderTests
         cts.Cancel();
 
         var reader = CreateReaderWithCancellationToken(
-            new List<JsonElement> { JsonDocument.Parse("{\"id\": 1}").RootElement },
+            new List<JsonElement> { ParseElement("{\"id\": 1}") },
             cts.Token);
 
         Assert.Throws<OperationCanceledException>(() => _ = reader.FieldCount);
@@ -1295,7 +1295,7 @@ public class CouchbaseDbDataReaderTests
         cts.Cancel();
 
         var reader = CreateReaderWithCancellationToken(
-            new List<JsonElement> { JsonDocument.Parse("{\"id\": 1}").RootElement },
+            new List<JsonElement> { ParseElement("{\"id\": 1}") },
             cts.Token);
 
         Assert.Throws<OperationCanceledException>(() => _ = reader.HasRows);
@@ -1308,7 +1308,7 @@ public class CouchbaseDbDataReaderTests
         cts.Cancel();
 
         var reader = CreateReaderWithCancellationToken(
-            new List<JsonElement> { JsonDocument.Parse("{\"id\": 1}").RootElement },
+            new List<JsonElement> { ParseElement("{\"id\": 1}") },
             cts.Token);
 
         Assert.Throws<OperationCanceledException>(() => reader.GetName(0));
@@ -1321,7 +1321,7 @@ public class CouchbaseDbDataReaderTests
         cts.Cancel();
 
         var reader = CreateReaderWithCancellationToken(
-            new List<JsonElement> { JsonDocument.Parse("{\"id\": 1}").RootElement },
+            new List<JsonElement> { ParseElement("{\"id\": 1}") },
             cts.Token);
 
         Assert.Throws<OperationCanceledException>(() => reader.GetOrdinal("id"));
@@ -1335,8 +1335,8 @@ public class CouchbaseDbDataReaderTests
         var cts = new CancellationTokenSource();
         var rows = new List<JsonElement>
         {
-            JsonDocument.Parse("{\"id\": 1}").RootElement,
-            JsonDocument.Parse("{\"id\": 2}").RootElement
+            ParseElement("{\"id\": 1}"),
+            ParseElement("{\"id\": 2}")
         };
 
         var reader = CreateReaderWithCancellationToken(rows, cts.Token);
@@ -1369,7 +1369,7 @@ public class CouchbaseDbDataReaderTests
         // _columnNames has null at slot 0 (no alias → positional) and "name" at slot 1.
         var rows = new List<JsonElement>
         {
-            JsonDocument.Parse("{\"id\": 1, \"name\": \"test\"}").RootElement
+            ParseElement("{\"id\": 1, \"name\": \"test\"}")
         };
         var reader = CreateReaderWithColumnNames(rows, new string?[] { null, "name" });
         await reader.ReadAsync(CancellationToken.None);
@@ -1387,7 +1387,7 @@ public class CouchbaseDbDataReaderTests
         // has a single synthetic "" field.  When _columnNames is set with a non-empty
         // alias (e.g. "c"), _fieldOrdinals.TryGetValue("c") fails because only "" is
         // registered, so GetValue returns DBNull.Value instead of the scalar number.
-        var rows = new List<JsonElement> { JsonDocument.Parse("42").RootElement };
+        var rows = new List<JsonElement> { ParseElement("42") };
         var reader = CreateReaderWithColumnNames(rows, new string?[] { "c" });
         await reader.ReadAsync(CancellationToken.None);
 
@@ -1401,7 +1401,7 @@ public class CouchbaseDbDataReaderTests
         // _columnNames but the field is absent from the N1QL response (MISSING field).
         var rows = new List<JsonElement>
         {
-            JsonDocument.Parse("{\"name\": \"test\"}").RootElement
+            ParseElement("{\"name\": \"test\"}")
         };
         var reader = CreateReaderWithColumnNames(rows, new string?[] { "id", "name" });
         await reader.ReadAsync(CancellationToken.None);
@@ -1421,7 +1421,7 @@ public class CouchbaseDbDataReaderTests
         // GetOrdinal must return the projection slot, not the JSON response position.
         var rows = new List<JsonElement>
         {
-            JsonDocument.Parse("{\"id\": 1, \"name\": \"alice\"}").RootElement
+            ParseElement("{\"id\": 1, \"name\": \"alice\"}")
         };
         var reader = CreateReaderWithColumnNames(rows, new string?[] { "name", "id" });
         await reader.ReadAsync(CancellationToken.None);
@@ -1435,7 +1435,7 @@ public class CouchbaseDbDataReaderTests
     {
         var rows = new List<JsonElement>
         {
-            JsonDocument.Parse("{\"id\": 1, \"name\": \"alice\"}").RootElement
+            ParseElement("{\"id\": 1, \"name\": \"alice\"}")
         };
         var reader = CreateReaderWithColumnNames(rows, new string?[] { "name", "id" });
         await reader.ReadAsync(CancellationToken.None);
@@ -1450,7 +1450,7 @@ public class CouchbaseDbDataReaderTests
     {
         var rows = new List<JsonElement>
         {
-            JsonDocument.Parse("{\"id\": 1}").RootElement
+            ParseElement("{\"id\": 1}")
         };
         var reader = CreateReaderWithColumnNames(rows, new string?[] { "id" });
         await reader.ReadAsync(CancellationToken.None);
@@ -1465,7 +1465,7 @@ public class CouchbaseDbDataReaderTests
         // and return the value that the shaper ordinal for "name" maps to — not the wrong one.
         var rows = new List<JsonElement>
         {
-            JsonDocument.Parse("{\"id\": 99, \"name\": \"bob\"}").RootElement
+            ParseElement("{\"id\": 99, \"name\": \"bob\"}")
         };
         // Projection maps "name" → slot 0, "id" → slot 1 (reversed from JSON order).
         var reader = CreateReaderWithColumnNames(rows, new string?[] { "name", "id" });
@@ -1480,7 +1480,7 @@ public class CouchbaseDbDataReaderTests
     {
         var rows = new List<JsonElement>
         {
-            JsonDocument.Parse("{\"id\": 1, \"name\": \"alice\"}").RootElement
+            ParseElement("{\"id\": 1, \"name\": \"alice\"}")
         };
         var reader = CreateReaderWithColumnNames(rows, new string?[] { "name", "id" });
         await reader.ReadAsync(CancellationToken.None);
@@ -1494,7 +1494,7 @@ public class CouchbaseDbDataReaderTests
     {
         var rows = new List<JsonElement>
         {
-            JsonDocument.Parse("{\"id\": 1, \"name\": \"alice\"}").RootElement
+            ParseElement("{\"id\": 1, \"name\": \"alice\"}")
         };
         // Slot 0 is null (positional), slot 1 has an explicit alias.
         var reader = CreateReaderWithColumnNames(rows, new string?[] { null, "name" });
@@ -1510,7 +1510,7 @@ public class CouchbaseDbDataReaderTests
         // JSON has 3 fields, but projection only exposes 2.
         var rows = new List<JsonElement>
         {
-            JsonDocument.Parse("{\"a\": 1, \"b\": 2, \"c\": 3}").RootElement
+            ParseElement("{\"a\": 1, \"b\": 2, \"c\": 3}")
         };
         var reader = CreateReaderWithColumnNames(rows, new string?[] { "a", "b" });
 
@@ -1522,7 +1522,7 @@ public class CouchbaseDbDataReaderTests
     {
         var rows = new List<JsonElement>
         {
-            JsonDocument.Parse("{\"id\": 1, \"name\": \"alice\"}").RootElement
+            ParseElement("{\"id\": 1, \"name\": \"alice\"}")
         };
         var reader = CreateReaderWithColumnNames(rows, new string?[] { "name", "id" });
         await reader.ReadAsync(CancellationToken.None);
@@ -1543,7 +1543,7 @@ public class CouchbaseDbDataReaderTests
         // so it works even before Read() and without triggering a row buffer.
         var rows = new List<JsonElement>
         {
-            JsonDocument.Parse("{\"id\": 1}").RootElement
+            ParseElement("{\"id\": 1}")
         };
         var reader = CreateReaderWithColumnNames(rows, new string?[] { "id" });
 
@@ -1566,7 +1566,7 @@ public class CouchbaseDbDataReaderTests
         // GetOrdinal("id") must return 0 so the pair are inverses.
         var rows = new List<JsonElement>
         {
-            JsonDocument.Parse("{\"id\": 1, \"name\": \"alice\"}").RootElement
+            ParseElement("{\"id\": 1, \"name\": \"alice\"}")
         };
         var reader = CreateReaderWithColumnNames(rows, new string?[] { null, "name" });
         await reader.ReadAsync(CancellationToken.None);
@@ -1580,7 +1580,7 @@ public class CouchbaseDbDataReaderTests
     {
         var rows = new List<JsonElement>
         {
-            JsonDocument.Parse("{\"MyField\": 99}").RootElement
+            ParseElement("{\"MyField\": 99}")
         };
         var reader = CreateReaderWithColumnNames(rows, new string?[] { null });
         await reader.ReadAsync(CancellationToken.None);
@@ -1597,7 +1597,7 @@ public class CouchbaseDbDataReaderTests
         // An arbitrary unknown name must still throw.
         var rows = new List<JsonElement>
         {
-            JsonDocument.Parse("{\"id\": 1}").RootElement
+            ParseElement("{\"id\": 1}")
         };
         var reader = CreateReaderWithColumnNames(rows, new string?[] { null });
         await reader.ReadAsync(CancellationToken.None);
@@ -1613,7 +1613,7 @@ public class CouchbaseDbDataReaderTests
         // the alias lookup wins — it returns 1, not 0.
         var rows = new List<JsonElement>
         {
-            JsonDocument.Parse("{\"name\": \"positional\", \"title\": \"alias\"}").RootElement
+            ParseElement("{\"name\": \"positional\", \"title\": \"alias\"}")
         };
         // Slot 0 is null (positional → "name"), slot 1 has alias "name" (mapped to "title").
         // This is a degenerate case; alias wins.
@@ -1631,7 +1631,7 @@ public class CouchbaseDbDataReaderTests
         // Slot 1 is a null slot beyond _fieldNames.Count — must be DBNull, not throw.
         var rows = new List<JsonElement>
         {
-            JsonDocument.Parse("{\"id\": 42}").RootElement
+            ParseElement("{\"id\": 42}")
         };
         var reader = CreateReaderWithColumnNames(rows, new string?[] { null, null });
         await reader.ReadAsync(CancellationToken.None);
@@ -1647,7 +1647,7 @@ public class CouchbaseDbDataReaderTests
         // (DBNull is only returned for null-slot positions beyond the JSON field count.)
         var rows = new List<JsonElement>
         {
-            JsonDocument.Parse("{\"id\": 7}").RootElement
+            ParseElement("{\"id\": 7}")
         };
         var reader = CreateReader(rows);
         await reader.ReadAsync(CancellationToken.None);
@@ -1668,7 +1668,7 @@ public class CouchbaseDbDataReaderTests
         // a typeof(string) column (stored as object internally).
         var rows = new List<JsonElement>
         {
-            JsonDocument.Parse("{\"id\": 1, \"name\": \"alice\"}").RootElement
+            ParseElement("{\"id\": 1, \"name\": \"alice\"}")
         };
         var reader = CreateReaderWithColumnNames(rows, new string?[] { null, "name" });
         await reader.ReadAsync(CancellationToken.None);
@@ -1691,7 +1691,7 @@ public class CouchbaseDbDataReaderTests
         // GetOrdinal("dup") must return the first slot's ordinal (0), not the second (1).
         var rows = new List<JsonElement>
         {
-            JsonDocument.Parse("{\"id\": 1, \"name\": \"alice\"}").RootElement
+            ParseElement("{\"id\": 1, \"name\": \"alice\"}")
         };
         var reader = CreateReaderWithColumnNames(rows, new string?[] { "dup", "dup" });
         await reader.ReadAsync(CancellationToken.None);
@@ -1707,7 +1707,7 @@ public class CouchbaseDbDataReaderTests
         // must iterate over projection count (2), not JSON field count (3).
         var rows = new List<JsonElement>
         {
-            JsonDocument.Parse("{\"a\": 1, \"b\": 2, \"c\": 3}").RootElement
+            ParseElement("{\"a\": 1, \"b\": 2, \"c\": 3}")
         };
         var reader = CreateReaderWithColumnNames(rows, new string?[] { "a", "b" });
         await reader.ReadAsync(CancellationToken.None);
@@ -1728,7 +1728,7 @@ public class CouchbaseDbDataReaderTests
     {
         var rows = new List<JsonElement>
         {
-            JsonDocument.Parse("{\"id\": 1}").RootElement
+            ParseElement("{\"id\": 1}")
         };
         var reader = CreateReaderWithColumnNames(rows, new string?[] { "id" });
         await reader.ReadAsync(CancellationToken.None);
@@ -1742,7 +1742,7 @@ public class CouchbaseDbDataReaderTests
         // The (uint)ordinal >= (uint)_columnNames.Length guard at line 369 must fire.
         var rows = new List<JsonElement>
         {
-            JsonDocument.Parse("{\"id\": 1}").RootElement
+            ParseElement("{\"id\": 1}")
         };
         var reader = CreateReaderWithColumnNames(rows, new string?[] { "id" });
         await reader.ReadAsync(CancellationToken.None);
@@ -1759,7 +1759,7 @@ public class CouchbaseDbDataReaderTests
         // resolves JSON field names that map to null-slot positions.
         var rows = new List<JsonElement>
         {
-            JsonDocument.Parse("{\"id\": 1, \"name\": \"alice\"}").RootElement
+            ParseElement("{\"id\": 1, \"name\": \"alice\"}")
         };
         var reader = CreateReaderWithColumnNames(rows, new string?[] { null, null });
         await reader.ReadAsync(CancellationToken.None);
@@ -1778,7 +1778,7 @@ public class CouchbaseDbDataReaderTests
         // Empty _columnNames array → FieldCount must be 0 without triggering schema discovery.
         var rows = new List<JsonElement>
         {
-            JsonDocument.Parse("{\"id\": 1}").RootElement
+            ParseElement("{\"id\": 1}")
         };
         var reader = CreateReaderWithColumnNames(rows, new string?[] { });
 
@@ -1791,7 +1791,7 @@ public class CouchbaseDbDataReaderTests
         // Array is smaller than projection — must return min(array.Length, _columnNames.Length).
         var rows = new List<JsonElement>
         {
-            JsonDocument.Parse("{\"a\": 10, \"b\": 20, \"c\": 30}").RootElement
+            ParseElement("{\"a\": 10, \"b\": 20, \"c\": 30}")
         };
         var reader = CreateReaderWithColumnNames(rows, new string?[] { "a", "b", "c" });
         await reader.ReadAsync(CancellationToken.None);
@@ -1811,7 +1811,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task ScalarRaw_NumberRow_FieldCountIsOne()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("42").RootElement };
+        var rows = new List<JsonElement> { ParseElement("42") };
         var reader = CreateReader(rows);
         await reader.ReadAsync(CancellationToken.None);
         Assert.Equal(1, reader.FieldCount);
@@ -1820,7 +1820,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task ScalarRaw_NumberRow_GetValueReturnsNumber()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("42").RootElement };
+        var rows = new List<JsonElement> { ParseElement("42") };
         var reader = CreateReader(rows);
         await reader.ReadAsync(CancellationToken.None);
         var value = reader.GetValue(0);
@@ -1832,7 +1832,7 @@ public class CouchbaseDbDataReaderTests
     {
         // The EF Core shaper may request any alias name for scalar projections;
         // a SELECT RAW result maps any name to ordinal 0.
-        var rows = new List<JsonElement> { JsonDocument.Parse("5").RootElement };
+        var rows = new List<JsonElement> { ParseElement("5") };
         var reader = CreateReader(rows);
         await reader.ReadAsync(CancellationToken.None);
         Assert.Equal(0, reader.GetOrdinal("c0"));
@@ -1842,7 +1842,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task ScalarRaw_StringRow_GetValueReturnsString()
     {
-        var rows = new List<JsonElement> { JsonDocument.Parse("\"hello\"").RootElement };
+        var rows = new List<JsonElement> { ParseElement("\"hello\"") };
         var reader = CreateReader(rows);
         await reader.ReadAsync(CancellationToken.None);
         Assert.Equal("hello", reader.GetValue(0));
@@ -1852,13 +1852,53 @@ public class CouchbaseDbDataReaderTests
     public async Task ObjectRow_SingleField_GetOrdinalUnknownNameStillThrows()
     {
         // An object row with one named field should NOT fall back to ordinal 0 for unknown names.
-        var rows = new List<JsonElement> { JsonDocument.Parse("{\"id\": 1}").RootElement };
+        var rows = new List<JsonElement> { ParseElement("{\"id\": 1}") };
         var reader = CreateReader(rows);
         await reader.ReadAsync(CancellationToken.None);
         Assert.Throws<IndexOutOfRangeException>(() => reader.GetOrdinal("nonexistent"));
     }
 
+    [Fact]
+    public async Task GetValue_ObjectField_ReturnsRawJsonElement()
+    {
+        var rows = new List<JsonElement>
+        {
+            ParseElement("{\"nested\": {\"x\": 1, \"y\": 2}}")
+        };
+        var reader = CreateReader(rows);
+        await reader.ReadAsync(CancellationToken.None);
+
+        var value = reader.GetValue(0);
+
+        var je = Assert.IsType<JsonElement>(value);
+        Assert.Equal(JsonValueKind.Object, je.ValueKind);
+        Assert.Equal(1, je.GetProperty("x").GetInt32());
+    }
+
+    [Fact]
+    public async Task GetValue_ArrayField_ReturnsRawJsonElement()
+    {
+        var rows = new List<JsonElement>
+        {
+            ParseElement("{\"tags\": [\"a\", \"b\", \"c\"]}")
+        };
+        var reader = CreateReader(rows);
+        await reader.ReadAsync(CancellationToken.None);
+
+        var value = reader.GetValue(0);
+
+        var je = Assert.IsType<JsonElement>(value);
+        Assert.Equal(JsonValueKind.Array, je.ValueKind);
+        Assert.Equal(3, je.GetArrayLength());
+    }
+
     #endregion
+
+    private static JsonElement ParseElement(string json)
+    {
+        using var doc = JsonDocument.Parse(json);
+        return doc.RootElement.Clone();
+    }
 
     private static CouchbaseDbDataReader<JsonElement> CreateReader(List<JsonElement> rows)
     {

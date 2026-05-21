@@ -12,23 +12,26 @@ namespace Couchbase.EntityFrameworkCore.Storage.Internal;
 /// <remarks>
 /// <para>
 /// This reader wraps an <see cref="IQueryResult{T}"/> and provides ADO.NET-compatible access to query results.
-/// Couchbase N1QL queries return rows as JSON objects with named properties (e.g., <c>SELECT id, name FROM bucket</c>
-/// returns rows like <c>{"id": 1, "name": "Alice"}</c>).
+/// Rows must be <see cref="JsonElement"/> instances (i.e. the query must be executed with
+/// <c>cluster.QueryAsync&lt;JsonElement&gt;()</c>); any other row type throws
+/// <see cref="NotSupportedException"/> when the first row is materialized — which may occur
+/// during an explicit <see cref="ReadAsync"/> call or earlier during schema discovery triggered
+/// by accessing <see cref="FieldCount"/>, <see cref="HasRows"/>, or <see cref="GetOrdinal"/>.
 /// </para>
 /// <para>
 /// <b>Schema Discovery:</b> Field metadata (names and ordinals) is captured from the first row and reused for all
 /// subsequent rows. If the first row has fields <c>["id", "name"]</c>, those become ordinals 0 and 1 respectively.
-/// Later rows with different fields will have missing fields return <see cref="DBNull.Value"/> and extra fields
-/// will be inaccessible by ordinal.
+/// Later rows with missing fields return <see cref="DBNull.Value"/> for those ordinals; extra fields are
+/// inaccessible by ordinal.
 /// </para>
 /// <para>
-/// <b>Value Extraction:</b> When accessing values by ordinal, nested JSON objects and arrays are automatically
-/// unwrapped to extract the first property/element value. This enables typed getters (e.g., <see cref="GetInt64"/>)
-/// to work with Couchbase's row format. Use <see cref="GetFieldValue{T}"/> with <see cref="JsonElement"/> to
-/// access raw JSON structures.
+/// <b>Value Extraction:</b> Scalar JSON values (string, number, boolean, null) are converted to their CLR
+/// equivalents by <see cref="GetValue"/>. JSON objects and arrays are returned as a raw <see cref="JsonElement"/>
+/// — no unwrapping is performed. Use <see cref="GetFieldValue{T}"/> with <see cref="JsonElement"/> to work with
+/// the raw structure, or with a target CLR type to deserialize it via <see cref="System.Text.Json"/>.
 /// </para>
 /// </remarks>
-/// <typeparam name="T">The type of rows in the query result.</typeparam>
+/// <typeparam name="T">The type of rows in the query result. Must be <see cref="JsonElement"/>.</typeparam>
 public class CouchbaseDbDataReader<T> : DbDataReader
 {
     private readonly IQueryResult<T> _queryResult;
@@ -469,14 +472,9 @@ public class CouchbaseDbDataReader<T> : DbDataReader
     /// Gets the value of the field at the specified ordinal.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// For JSON object values, this method extracts the first property's value to enable
-    /// typed getter methods (e.g., <see cref="GetInt64"/>) to work with Couchbase's row format
-    /// where each row is a JSON object like <c>{"fieldName": value}</c>.
-    /// </para>
-    /// <para>
-    /// Use <see cref="GetFieldValue{T}"/> with <see cref="JsonElement"/> to access the raw JSON structure.
-    /// </para>
+    /// Scalar JSON values (string, number, boolean, null) are returned as their CLR equivalents.
+    /// JSON objects and arrays are returned as a raw <see cref="JsonElement"/> — no unwrapping is
+    /// performed. Use <see cref="GetFieldValue{T}"/> with a target type to deserialize complex values.
     /// </remarks>
     /// <param name="ordinal">The zero-based column ordinal.</param>
     /// <returns>The value of the field, or <see cref="DBNull.Value"/> if null.</returns>
@@ -1164,16 +1162,10 @@ public class CouchbaseDbDataReader<T> : DbDataReader
         }
         else if (_currentRow != null)
         {
-            // For non-JsonElement types, use reflection
-            var type = _currentRow.GetType();
-            var properties = type.GetProperties();
-            for (var i = 0; i < properties.Length; i++)
-            {
-                _fieldNames.Add(properties[i].Name);
-                _fieldOrdinals[properties[i].Name] = i;
-            }
+            throw new NotSupportedException(
+                $"CouchbaseDbDataReader<T> requires rows of type JsonElement but received {_currentRow.GetType().FullName}. " +
+                "Use cluster.QueryAsync<JsonElement>() to produce a compatible result.");
         }
-
     }
 
     private void ValidateOrdinal(int ordinal)
@@ -1198,93 +1190,22 @@ public class CouchbaseDbDataReader<T> : DbDataReader
                 return ConvertJsonElement(je);
             }
         }
-        else if (_currentRow != null)
-        {
-            var prop = _currentRow.GetType().GetProperty(fieldName);
-            if (prop != null)
-            {
-                return prop.GetValue(_currentRow) ?? DBNull.Value;
-            }
-        }
-
         return DBNull.Value;
     }
 
-    /// <summary>
-    /// Converts a <see cref="JsonElement"/> to a CLR object suitable for ADO.NET typed getter methods.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// Couchbase N1QL queries return each row as a JSON object with named properties. For example,
-    /// <c>SELECT COUNT(*) as cnt FROM bucket</c> returns <c>{"cnt": 42}</c>.
-    /// </para>
-    /// <para>
-    /// When accessing values by ordinal (e.g., <c>GetInt64(0)</c>), the reader must extract the
-    /// first property's value from the object wrapper. Without this extraction, typed getter methods
-    /// would fail with <see cref="InvalidCastException"/> because they receive a JsonElement of kind
-    /// Object instead of the expected primitive value.
-    /// </para>
-    /// <para>
-    /// Callers who need the entire JSON object or array can use <see cref="GetFieldValue{T}"/>
-    /// with <see cref="JsonElement"/> to retrieve the raw element before conversion.
-    /// </para>
-    /// </remarks>
-    /// <param name="element">The JSON element to convert.</param>
-    /// <returns>A CLR object representing the element's value.</returns>
     private static object ConvertJsonElement(JsonElement element)
     {
         return element.ValueKind switch
         {
-            JsonValueKind.Null => DBNull.Value,
+            JsonValueKind.Null      => DBNull.Value,
             JsonValueKind.Undefined => DBNull.Value,
-            JsonValueKind.True => true,
-            JsonValueKind.False => false,
-            JsonValueKind.String => element.GetString()!,
+            JsonValueKind.True      => true,
+            JsonValueKind.False     => false,
+            JsonValueKind.String    => element.GetString()!,
             JsonValueKind.Number when element.TryGetInt64(out var l) => l,
-            JsonValueKind.Number => element.GetDouble(),
-            JsonValueKind.Object => ExtractFirstValueFromObject(element),
-            JsonValueKind.Array => ExtractFirstValueFromArray(element),
-            _ => element
+            JsonValueKind.Number    => element.GetDouble(),
+            _                       => element
         };
-    }
-
-    /// <summary>
-    /// Extracts the first property value from a JSON object.
-    /// </summary>
-    /// <remarks>
-    /// Couchbase N1QL returns rows as objects with named properties (e.g., <c>{"cnt": 42}</c>).
-    /// This method extracts the value of the first property so that ordinal-based access
-    /// (e.g., <c>GetInt64(0)</c>) returns the expected scalar value rather than the wrapper object.
-    /// </remarks>
-    /// <param name="element">A JSON element of kind <see cref="JsonValueKind.Object"/>.</param>
-    /// <returns>The converted value of the first property, or <see cref="DBNull.Value"/> if empty.</returns>
-    private static object ExtractFirstValueFromObject(JsonElement element)
-    {
-        using var enumerator = element.EnumerateObject();
-        if (enumerator.MoveNext())
-        {
-            return ConvertJsonElement(enumerator.Current.Value);
-        }
-        return DBNull.Value;
-    }
-
-    /// <summary>
-    /// Extracts the first element from a JSON array.
-    /// </summary>
-    /// <remarks>
-    /// For JSON arrays, this method extracts and converts the first element so that
-    /// ordinal-based access returns a usable scalar value rather than the array itself.
-    /// </remarks>
-    /// <param name="element">A JSON element of kind <see cref="JsonValueKind.Array"/>.</param>
-    /// <returns>The converted value of the first array element, or <see cref="DBNull.Value"/> if empty.</returns>
-    private static object ExtractFirstValueFromArray(JsonElement element)
-    {
-        using var enumerator = element.EnumerateArray();
-        if (enumerator.MoveNext())
-        {
-            return ConvertJsonElement(enumerator.Current);
-        }
-        return DBNull.Value;
     }
 }
 
