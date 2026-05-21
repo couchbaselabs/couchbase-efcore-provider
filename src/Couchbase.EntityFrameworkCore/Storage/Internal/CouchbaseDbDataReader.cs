@@ -14,7 +14,9 @@ namespace Couchbase.EntityFrameworkCore.Storage.Internal;
 /// This reader wraps an <see cref="IQueryResult{T}"/> and provides ADO.NET-compatible access to query results.
 /// Rows must be <see cref="JsonElement"/> instances (i.e. the query must be executed with
 /// <c>cluster.QueryAsync&lt;JsonElement&gt;()</c>); any other row type throws
-/// <see cref="NotSupportedException"/> on the first read.
+/// <see cref="NotSupportedException"/> when the first row is materialized — which may occur
+/// during an explicit <see cref="ReadAsync"/> call or earlier during schema discovery triggered
+/// by accessing <see cref="FieldCount"/>, <see cref="HasRows"/>, or <see cref="GetOrdinal"/>.
 /// </para>
 /// <para>
 /// <b>Schema Discovery:</b> Field metadata (names and ordinals) is captured from the first row and reused for all
