@@ -1,12 +1,91 @@
+using System.Data;
+using Couchbase.EntityFrameworkCore.Storage.Internal;
 using Couchbase.Extensions.DependencyInjection;
+using Couchbase.KeyValue;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Couchbase.EntityFrameworkCore.Extensions;
 
 public static class CouchbaseDatabaseFacadeExtensions
 {
+    /// <summary>
+    /// Begins a Couchbase transaction with the specified durability level.
+    /// </summary>
+    /// <param name="databaseFacade">The database facade.</param>
+    /// <param name="durabilityLevel">The durability level for this transaction.</param>
+    /// <returns>A transaction that can be committed or rolled back.</returns>
+    public static IDbContextTransaction BeginCouchbaseTransaction(
+        this DatabaseFacade databaseFacade,
+        DurabilityLevel durabilityLevel)
+    {
+        return BeginCouchbaseTransaction(databaseFacade, durabilityLevel, IsolationLevel.Unspecified);
+    }
+
+    /// <summary>
+    /// Begins a Couchbase transaction with the specified durability and isolation levels.
+    /// </summary>
+    /// <param name="databaseFacade">The database facade.</param>
+    /// <param name="durabilityLevel">The durability level for this transaction.</param>
+    /// <param name="isolationLevel">The isolation level (informational only for Couchbase).</param>
+    /// <returns>A transaction that can be committed or rolled back.</returns>
+    public static IDbContextTransaction BeginCouchbaseTransaction(
+        this DatabaseFacade databaseFacade,
+        DurabilityLevel durabilityLevel,
+        IsolationLevel isolationLevel)
+    {
+        var relationalConnection = databaseFacade.GetService<IRelationalConnection>();
+        if (relationalConnection is not CouchbaseRelationalConnection couchbaseConnection)
+        {
+            throw new InvalidOperationException(
+                "BeginCouchbaseTransaction can only be used with a Couchbase database provider.");
+        }
+
+        return couchbaseConnection.BeginCouchbaseTransaction(durabilityLevel, isolationLevel);
+    }
+
+    /// <summary>
+    /// Begins a Couchbase transaction asynchronously with the specified durability level.
+    /// </summary>
+    /// <param name="databaseFacade">The database facade.</param>
+    /// <param name="durabilityLevel">The durability level for this transaction.</param>
+    /// <param name="cancellationToken">A cancellation token.</param>
+    /// <returns>A transaction that can be committed or rolled back.</returns>
+    public static Task<IDbContextTransaction> BeginCouchbaseTransactionAsync(
+        this DatabaseFacade databaseFacade,
+        DurabilityLevel durabilityLevel,
+        CancellationToken cancellationToken = default)
+    {
+        return BeginCouchbaseTransactionAsync(databaseFacade, durabilityLevel, IsolationLevel.Unspecified, cancellationToken);
+    }
+
+    /// <summary>
+    /// Begins a Couchbase transaction asynchronously with the specified durability and isolation levels.
+    /// </summary>
+    /// <param name="databaseFacade">The database facade.</param>
+    /// <param name="durabilityLevel">The durability level for this transaction.</param>
+    /// <param name="isolationLevel">The isolation level (informational only for Couchbase).</param>
+    /// <param name="cancellationToken">A cancellation token.</param>
+    /// <returns>A transaction that can be committed or rolled back.</returns>
+    public static async Task<IDbContextTransaction> BeginCouchbaseTransactionAsync(
+        this DatabaseFacade databaseFacade,
+        DurabilityLevel durabilityLevel,
+        IsolationLevel isolationLevel,
+        CancellationToken cancellationToken = default)
+    {
+        var relationalConnection = databaseFacade.GetService<IRelationalConnection>();
+        if (relationalConnection is not CouchbaseRelationalConnection couchbaseConnection)
+        {
+            throw new InvalidOperationException(
+                "BeginCouchbaseTransactionAsync can only be used with a Couchbase database provider.");
+        }
+
+        return await couchbaseConnection.BeginCouchbaseTransactionAsync(durabilityLevel, isolationLevel, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
     public static async Task<ICluster> GetCouchbaseClientAsync(
         this DatabaseFacade databaseFacade)
     {
@@ -61,6 +140,28 @@ public static class CouchbaseDatabaseFacadeExtensions
             var couchbaseClient = await GetCouchbaseClientAsync(databaseFacade).ConfigureAwait(false);
             await couchbaseClient.Buckets.FlushBucketAsync(bucketName.ToString()).ConfigureAwait(false);
         }
+    }
+
+    /// <summary>
+    /// Gets the number of operations committed in a Couchbase transaction.
+    /// </summary>
+    /// <param name="transaction">The transaction to get the count from.</param>
+    /// <returns>The number of committed operations, or 0 if not a Couchbase transaction.</returns>
+    public static int GetCommittedCount(this IDbContextTransaction transaction)
+    {
+        if (transaction is ICouchbaseDbContextTransaction couchbaseTransaction)
+        {
+            return couchbaseTransaction.CommittedCount;
+        }
+        
+        // Try to get from the underlying DbTransaction
+        var dbTransaction = transaction.GetDbTransaction();
+        if (dbTransaction is CouchbaseDbTransaction couchbaseDbTransaction)
+        {
+            return couchbaseDbTransaction.CommittedCount;
+        }
+
+        return 0;
     }
 }
 

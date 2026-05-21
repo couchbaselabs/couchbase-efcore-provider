@@ -1,9 +1,6 @@
-﻿using System.ComponentModel.DataAnnotations;
-using System.Data.Common;
 using Couchbase.EntityFrameworkCore.Extensions;
 using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.EntityFrameworkCore.Infrastructure.Internal;
-using Couchbase.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -23,6 +20,7 @@ public static class CouchbaseDbContextOptionsExtensions
     var extension = CouchbaseDbContextOptionsBuilderExtensions.GetOrCreateExtension(optionsBuilder, clusterOptions, couchbaseDbContextOptionsBuilder);
     ((IDbContextOptionsBuilderInfrastructure) optionsBuilder).AddOrUpdateExtension(extension);
     CouchbaseDbContextOptionsBuilderExtensions.ConfigureWarnings(optionsBuilder);
+    CouchbaseDbContextOptionsBuilderExtensions.AddSaveChangesInterceptor(optionsBuilder);
 
     return optionsBuilder;
   }
@@ -39,6 +37,7 @@ public static class CouchbaseDbContextOptionsExtensions
     var extension = CouchbaseDbContextOptionsBuilderExtensions.GetOrCreateExtension(optionsBuilder, clusterOptions, couchbaseDbContextOptionsBuilder);
     ((IDbContextOptionsBuilderInfrastructure) optionsBuilder).AddOrUpdateExtension(extension);
     CouchbaseDbContextOptionsBuilderExtensions.ConfigureWarnings(optionsBuilder);
+    CouchbaseDbContextOptionsBuilderExtensions.AddSaveChangesInterceptor(optionsBuilder);
 
     return optionsBuilder;
   }

@@ -5,16 +5,21 @@ namespace Couchbase.EntityFrameworkCore.Query.Internal;
 public class CouchbaseQueryableMethodTranslatingExpressionVisitorFactory : IQueryableMethodTranslatingExpressionVisitorFactory
 {
     private readonly QueryableMethodTranslatingExpressionVisitorDependencies _dependencies;
+    private readonly RelationalQueryableMethodTranslatingExpressionVisitorDependencies _relationalDependencies;
 
     public CouchbaseQueryableMethodTranslatingExpressionVisitorFactory(
-        QueryableMethodTranslatingExpressionVisitorDependencies dependencies)
+        QueryableMethodTranslatingExpressionVisitorDependencies dependencies,
+        RelationalQueryableMethodTranslatingExpressionVisitorDependencies relationalDependencies)
     {
         _dependencies = dependencies;
+        _relationalDependencies = relationalDependencies;
     }
-    
-    public QueryableMethodTranslatingExpressionVisitor Create(QueryCompilationContext queryCompilationContext) =>
-        new CouchbaseQueryableMethodTranslatingExpressionVisitor(_dependencies, queryCompilationContext,
-            subquery: false);
+
+    public QueryableMethodTranslatingExpressionVisitor Create(QueryCompilationContext queryCompilationContext)
+        => new CouchbaseQueryableMethodTranslatingExpressionVisitor(
+            _dependencies,
+            _relationalDependencies,
+            (RelationalQueryCompilationContext)queryCompilationContext);
 }
 
 /* ************************************************************

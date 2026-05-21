@@ -1,13 +1,34 @@
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.EntityFrameworkCore.Query;
 
 namespace Couchbase.EntityFrameworkCore.Query.Internal;
 
-public class CouchbaseQueryCompilationContext : QueryCompilationContext
+public class CouchbaseQueryCompilationContext : RelationalQueryCompilationContext
 {
-    public CouchbaseQueryCompilationContext(QueryCompilationContextDependencies dependencies, bool async) 
-        : base(dependencies, async)
+    public CouchbaseQueryCompilationContext(
+        QueryCompilationContextDependencies dependencies,
+        RelationalQueryCompilationContextDependencies relationalDependencies,
+        bool async)
+        : base(dependencies, relationalDependencies, async)
     {
     }
+
+    [Experimental("EF9100")]
+    public CouchbaseQueryCompilationContext(
+        QueryCompilationContextDependencies dependencies,
+        RelationalQueryCompilationContextDependencies relationalDependencies,
+        bool async,
+        bool precompiling)
+        : base(dependencies, relationalDependencies, async, precompiling)
+    {
+    }
+
+    /// <summary>
+    /// Navigation includes recorded during shaper compilation (Phase 2).
+    /// Populated by <see cref="CouchbaseShapedQueryCompilingExpressionVisitor"/> and
+    /// consumed by Phase 4 result-shaping logic.
+    /// </summary>
+    public List<NavigationInclude> NavigationIncludes { get; } = [];
 }
 
 /* ************************************************************

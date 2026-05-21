@@ -1,5 +1,5 @@
-using System.Text;
 using Couchbase.EntityFrameworkCore.Infrastructure;
+using Couchbase.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
@@ -9,8 +9,25 @@ namespace Couchbase.EntityFrameworkCore.Extensions;
 public static class CouchbaseEntityTypeBuilderExtensions
 {
     /// <summary>
+    /// Maps an entity to a Couchbase Collection with an explicit keyspace.
+    /// </summary>
+    public static EntityTypeBuilder<TEntity> ToCouchbaseCollection<TEntity>(
+        this EntityTypeBuilder<TEntity> entityTypeBuilder,
+        string bucket,
+        string scope,
+        string collection) where TEntity : class
+    {
+        var keyspace = new CouchbaseKeyspace(bucket, scope, collection);
+        return entityTypeBuilder.ToTable(keyspace.ToString());
+    }
+
+    /// <summary>
     /// Maps an entity to a Couchbase Collection. The Bucket name and Scope name come from the provider initialization.
     /// </summary>
+    /// <param name="entityTypeBuilder">The entity type builder.</param>
+    /// <param name="context">The DbContext to get bucket/scope configuration from.</param>
+    /// <param name="collectionName">The collection name.</param>
+    /// <returns>The entity type builder for chaining.</returns>
     public static EntityTypeBuilder<TEntity> ToCouchbaseCollection<TEntity>(
         this EntityTypeBuilder<TEntity> entityTypeBuilder,
         DbContext context,
@@ -19,30 +36,26 @@ public static class CouchbaseEntityTypeBuilderExtensions
         var dbContextOptions = (ICouchbaseDbContextOptionsBuilder)context.
             Database.GetInfrastructure().GetService(typeof(ICouchbaseDbContextOptionsBuilder))!;
 
-        var keyspaceBuilder = new StringBuilder();
-        keyspaceBuilder.Append(collectionName);
-        keyspaceBuilder.Append('.');
-        keyspaceBuilder.Append(dbContextOptions.Bucket);
-        keyspaceBuilder.Append('.');
-        keyspaceBuilder.Append(dbContextOptions.Scope);
-
-        return entityTypeBuilder.ToTable(keyspaceBuilder.ToString());
+        var keyspace = new CouchbaseKeyspace(dbContextOptions.Bucket, dbContextOptions.Scope, collectionName);
+        return entityTypeBuilder.ToTable(keyspace.ToString());
     }
 
+    /// <summary>
+    /// Maps an entity to a Couchbase Collection with a specific scope. The Bucket name comes from the provider initialization.
+    /// </summary>
+    /// <param name="entityTypeBuilder">The entity type builder.</param>
+    /// <param name="context">The DbContext to get bucket configuration from.</param>
+    /// <param name="scope">The scope name.</param>
+    /// <param name="collectionName">The collection name.</param>
+    /// <returns>The entity type builder for chaining.</returns>
     public static EntityTypeBuilder<TEntity> ToCouchbaseCollection<TEntity>(
-        this EntityTypeBuilder<TEntity> entityTypeBuilder,  DbContext context, string scope, string collectionName) where TEntity : class
+        this EntityTypeBuilder<TEntity> entityTypeBuilder, DbContext context, string scope, string collectionName) where TEntity : class
     {
         var dbContextOptions = (ICouchbaseDbContextOptionsBuilder)context.
             Database.GetInfrastructure().GetService(typeof(ICouchbaseDbContextOptionsBuilder))!;
 
-        var keyspaceBuilder = new StringBuilder();
-        keyspaceBuilder.Append(collectionName);
-        keyspaceBuilder.Append('.');
-        keyspaceBuilder.Append(dbContextOptions.Bucket);
-        keyspaceBuilder.Append('.');
-        keyspaceBuilder.Append(scope);
-
-        return entityTypeBuilder.ToTable(keyspaceBuilder.ToString());
+        var keyspace = new CouchbaseKeyspace(dbContextOptions.Bucket, scope, collectionName);
+        return entityTypeBuilder.ToTable(keyspace.ToString());
     }
 }
 

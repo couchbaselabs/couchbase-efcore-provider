@@ -6,6 +6,7 @@ using Couchbase;
 using Couchbase.EntityFrameworkCore.Extensions;
 using Couchbase.Extensions.DependencyInjection;
 using Couchbase.EntityFrameworkCore.Utils;
+using Couchbase.Core.IO.Serializers;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Couchbase.EntityFrameworkCore.Infrastructure.Internal;
@@ -39,7 +40,26 @@ public class CouchbaseOptionsExtension: RelationalOptionsExtension
         {
             options.WithLogging(_couchbaseDbContextOptionsBuilder.ClusterOptions.Logging);
             options.WithConnectionString(_couchbaseDbContextOptionsBuilder.ClusterOptions.ConnectionString);
-            options.WithCredentials(_couchbaseDbContextOptionsBuilder.ClusterOptions.UserName, _couchbaseDbContextOptionsBuilder.ClusterOptions.Password);
+
+            // Use existing serializer if configured, otherwise default to System.Text.Json
+            var existingSerializer = _couchbaseDbContextOptionsBuilder.ClusterOptions.Serializer;
+            if (existingSerializer is null || existingSerializer is DefaultSerializer)
+            {
+                options.WithSerializer(SystemTextJsonSerializer.Create());
+            }
+            else
+            {
+                options.WithSerializer(existingSerializer);
+            }
+
+            if (_couchbaseDbContextOptionsBuilder.ClusterOptions.Authenticator == null)
+            {
+                options.WithCredentials(_couchbaseDbContextOptionsBuilder.ClusterOptions.UserName, _couchbaseDbContextOptionsBuilder.ClusterOptions.Password);
+            }
+            else
+            {
+                options.WithAuthenticator(_couchbaseDbContextOptionsBuilder.ClusterOptions.Authenticator);
+            }
         });
 
         services.AddEntityFrameworkCouchbase(this);
@@ -64,7 +84,7 @@ public class CouchbaseOptionsExtension: RelationalOptionsExtension
 
         public override string LogFragment => $"Using Custom Couchbase Provider - ConnectionString: {ConnectionString}";
 
-        public override int GetServiceProviderHashCode() => ConnectionString.GetHashCode();
+        public override int GetServiceProviderHashCode() => HashCode.Combine(ConnectionString, Extension._couchbaseDbContextOptionsBuilder.Bucket, Extension._couchbaseDbContextOptionsBuilder.Scope);
 
         public override bool ShouldUseSameServiceProvider(DbContextOptionsExtensionInfo other) => other is CouchbaseOptionsExtensionInfo;
 
@@ -74,6 +94,7 @@ public class CouchbaseOptionsExtension: RelationalOptionsExtension
         }
 
         public override CouchbaseOptionsExtension Extension => (CouchbaseOptionsExtension)base.Extension;
+
         private string? ConnectionString => Extension.Connection == null ?
             Extension.ConnectionString :
             Extension.Connection.ConnectionString;

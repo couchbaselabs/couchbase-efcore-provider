@@ -1,4 +1,3 @@
-using System.Collections.Immutable;
 using Couchbase.EntityFrameworkCore.Diagnostics.Internal;
 using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.EntityFrameworkCore.Infrastructure.Internal;
@@ -8,6 +7,9 @@ using Couchbase.EntityFrameworkCore.Query;
 using Couchbase.EntityFrameworkCore.Query.Internal;
 using Couchbase.EntityFrameworkCore.Query.Internal.Translators;
 using Couchbase.EntityFrameworkCore.Storage.Internal;
+using Couchbase.EntityFrameworkCore.ValueGeneration;
+using CouchbaseModificationCommandBatchFactory = Couchbase.EntityFrameworkCore.Update.Internal.CouchbaseModificationCommandBatchFactory;
+using CouchbaseUpdateSqlGenerator = Couchbase.EntityFrameworkCore.Update.Internal.CouchbaseUpdateSqlGenerator;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -17,6 +19,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Query;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.EntityFrameworkCore.Update;
+using Microsoft.EntityFrameworkCore.ValueGeneration;
 using Microsoft.Extensions.DependencyInjection;
 using Couchbase.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore.Query.Internal;
@@ -45,7 +48,6 @@ public static class CouchbaseServiceCollectionExtensions
 
         var builder = new EntityFrameworkRelationalServicesBuilder(serviceCollection)
             .TryAdd<IRelationalTypeMappingSource, CouchbaseTypeMappingSource>()
-            .TryAdd<IDatabase, CouchbaseDatabaseWrapper>()
             .TryAdd<IDatabaseProvider, DatabaseProvider<CouchbaseOptionsExtension>>()
             .TryAdd<LoggingDefinitions, CouchbaseLoggingDefinitions>()
             .TryAdd<IModificationCommandBatchFactory, CouchbaseModificationCommandBatchFactory>()
@@ -54,8 +56,8 @@ public static class CouchbaseServiceCollectionExtensions
             .TryAdd<IQuerySqlGeneratorFactory, CouchbaseQuerySqlGeneratorFactory>()
             .TryAdd<ISqlGenerationHelper, CouchbaseSqlGenerationHelper>()
             .TryAdd<IShapedQueryCompilingExpressionVisitorFactory, CouchbaseShapedQueryCompilingExpressionVisitorFactory>()
+            .TryAdd<IQueryableMethodTranslatingExpressionVisitorFactory, CouchbaseQueryableMethodTranslatingExpressionVisitorFactory>()
             .TryAdd<IHistoryRepository, CouchbaseHistoryRepository>()//not used but required by ASP.NET
-            .TryAdd<IModificationCommandBatchFactory, CouchbaseModificationCommandBatchFactory>()
             .TryAdd<IMethodCallTranslatorProvider, CouchbaseMethodCallTranslatorProvider>()
 
             //Found that this was necessary, because the default convention of determining a
@@ -64,10 +66,6 @@ public static class CouchbaseServiceCollectionExtensions
             .TryAdd<IProviderConventionSetBuilder, CouchbaseConventionSetBuilder>()
             .TryAddProviderSpecificServices(m => m
                 .TryAddScoped<QuerySqlGenerator, CouchbaseQuerySqlGenerator>()
-                //.TryAddScoped<IRelationalConnection, CouchbaseConnection>()
-                //.TryAddScoped<IQueryProvider, CouchbaseQueryProvider>()
-                .TryAddScoped<IRelationalCommand, CouchbaseRelationalCommand>()
-                //.TryAddScoped<QueryContext, RelationalQueryContext>()
                 .TryAddScoped<ICouchbaseClientWrapper, CouchbaseClientWrapper>()
                 .TryAddScoped<IRelationalCommandBuilder, RelationalCommandBuilder>()
                 .TryAddScoped<ICouchbaseDbContextOptionsBuilder,
@@ -76,6 +74,24 @@ public static class CouchbaseServiceCollectionExtensions
 
         builder.TryAddCoreServices();
 
+        // IDatabase, IValueGeneratorSelector, and IQueryCompilationContextFactory must be
+        // registered AFTER TryAddCoreServices() because EF Core's relational core services
+        // register their own implementations for all three, and TryAdd semantics mean the
+        // core registration wins over any earlier builder entry. IQueryCompilationContextFactory
+        // specifically must produce CouchbaseQueryCompilationContext (which carries
+        // NavigationIncludes for eager loading); the relational default produces a plain
+        // RelationalQueryCompilationContext, so the type-check in CollectNavigationIncludes would
+        // silently no-op. Removing and re-adding with AddScoped guarantees our implementation
+        // is the one resolved.
+        foreach (var type in new[] { typeof(IDatabase), typeof(IValueGeneratorSelector), typeof(IQueryCompilationContextFactory) })
+        {
+            var existing = serviceCollection.Where(d => d.ServiceType == type).ToList();
+            foreach (var descriptor in existing) serviceCollection.Remove(descriptor);
+        }
+        serviceCollection.AddScoped<IDatabase, CouchbaseDatabaseWrapper>();
+        serviceCollection.AddScoped<IValueGeneratorSelector, CouchbaseValueGeneratorSelector>();
+        serviceCollection.AddScoped<IQueryCompilationContextFactory, CouchbaseQueryCompilationContextFactory>();
+
         serviceCollection
             //.AddScoped<IQueryContextFactory, CouchbaseQueryContextFactory>()
             .AddScoped<IRelationalConnection, CouchbaseRelationalConnection>()
@@ -83,6 +99,8 @@ public static class CouchbaseServiceCollectionExtensions
             .AddSingleton<ISqlGenerationHelper, CouchbaseSqlGenerationHelper>()
             .AddScoped<IRelationalCommandDiagnosticsLogger, CouchbaseRelationalDiagnosticsCommandLogger>()
             .AddScoped<IRelationalDatabaseCreator, CouchbaseDatabaseCreator>();
+            // Note: CouchbaseSaveChangesInterceptor is registered via CoreOptionsExtension.Interceptors
+            // in AddSaveChangesInterceptor() to avoid duplicate registration
 
         return serviceCollection;
     }

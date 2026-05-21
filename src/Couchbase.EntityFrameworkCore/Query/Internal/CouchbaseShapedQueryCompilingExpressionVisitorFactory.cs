@@ -1,64 +1,60 @@
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+
+using System.Diagnostics;
 using Couchbase.EntityFrameworkCore.Infrastructure;
-using Couchbase.EntityFrameworkCore.Infrastructure.Internal;
 using Couchbase.Extensions.DependencyInjection;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Query;
-using Microsoft.EntityFrameworkCore.Query.Internal;
-using Microsoft.EntityFrameworkCore.Storage;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Couchbase.EntityFrameworkCore.Query.Internal;
 
 public class CouchbaseShapedQueryCompilingExpressionVisitorFactory : IShapedQueryCompilingExpressionVisitorFactory
 {
-    private readonly ShapedQueryCompilingExpressionVisitorDependencies _dependencies;
-    private readonly RelationalShapedQueryCompilingExpressionVisitorDependencies _relationalDependencies;
-    private readonly IQuerySqlGeneratorFactory _querySqlGeneratorFactory;
     private readonly ICouchbaseDbContextOptionsBuilder _couchbaseDbContextOptionsBuilder;
     private readonly IBucketProvider _bucketProvider;
 
+    /// <summary>
+    ///     This is an internal API that supports the Entity Framework Core infrastructure and not subject to
+    ///     the same compatibility standards as public APIs. It may be changed or removed without notice in
+    ///     any release. You should only use it directly in your code with extreme caution and knowing that
+    ///     doing so can result in application failures when updating to a new Entity Framework Core release.
+    /// </summary>
     public CouchbaseShapedQueryCompilingExpressionVisitorFactory(
-        ShapedQueryCompilingExpressionVisitorDependencies dependencies, 
+        ShapedQueryCompilingExpressionVisitorDependencies dependencies,
         RelationalShapedQueryCompilingExpressionVisitorDependencies relationalDependencies,
-        IQuerySqlGeneratorFactory querySqlGeneratorFactory,
         IBucketProvider bucketProvider,
         ICouchbaseDbContextOptionsBuilder couchbaseDbContextOptionsBuilder)
     {
-        _dependencies = dependencies;
-        _relationalDependencies = relationalDependencies;
-        _querySqlGeneratorFactory = querySqlGeneratorFactory;
-        _couchbaseDbContextOptionsBuilder = couchbaseDbContextOptionsBuilder;
+        Dependencies = dependencies;
+        RelationalDependencies = relationalDependencies;
         _bucketProvider = bucketProvider;
+        _couchbaseDbContextOptionsBuilder = couchbaseDbContextOptionsBuilder;
     }
 
-    public ShapedQueryCompilingExpressionVisitor Create(QueryCompilationContext queryCompilationContext)
-    {
-        //the QuerySqlGenerator may be cacheable - if so make a field and call create in ctor above
-        return new CouchbaseShapedQueryCompilingExpressionVisitor(
-            _dependencies,
-            _relationalDependencies,
+    /// <summary>
+    ///     Dependencies for this service.
+    /// </summary>
+    protected virtual ShapedQueryCompilingExpressionVisitorDependencies Dependencies { get; }
+
+    /// <summary>
+    ///     Relational provider-specific dependencies for this service.
+    /// </summary>
+    protected virtual RelationalShapedQueryCompilingExpressionVisitorDependencies RelationalDependencies { get; }
+
+    /// <summary>
+    ///     This is an internal API that supports the Entity Framework Core infrastructure and not subject to
+    ///     the same compatibility standards as public APIs. It may be changed or removed without notice in
+    ///     any release. You should only use it directly in your code with extreme caution and knowing that
+    ///     doing so can result in application failures when updating to a new Entity Framework Core release.
+    /// </summary>
+    [DebuggerStepThrough]
+    public virtual ShapedQueryCompilingExpressionVisitor Create(QueryCompilationContext queryCompilationContext)
+        => new CouchbaseShapedQueryCompilingExpressionVisitor(
+            Dependencies,
+            RelationalDependencies,
             queryCompilationContext,
-            _querySqlGeneratorFactory.Create(),
             _bucketProvider,
-            _couchbaseDbContextOptionsBuilder);
-    }
+            _couchbaseDbContextOptionsBuilder
+            );
 }
 
-/* ************************************************************
- *
- *    @author Couchbase <info@couchbase.com>
- *    @copyright 2025 Couchbase, Inc.
- *
- *    Licensed under the Apache License, Version 2.0 (the "License");
- *    you may not use this file except in compliance with the License.
- *    You may obtain a copy of the License at
- *
- *        http://www.apache.org/licenses/LICENSE-2.0
- *
- *    Unless required by applicable law or agreed to in writing, software
- *    distributed under the License is distributed on an "AS IS" BASIS,
- *    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *    See the License for the specific language governing permissions and
- *    limitations under the License.
- *
- * ************************************************************/

@@ -14,6 +14,34 @@ public class CouchbaseHistoryRepository : HistoryRepository
         throw new NotImplementedException();
     }
 
+    /// <summary>
+    ///     This is an internal API that supports the Entity Framework Core infrastructure and not subject to
+    ///     the same compatibility standards as public APIs. It may be changed or removed without notice in
+    ///     any release. You should only use it directly in your code with extreme caution and knowing that
+    ///     doing so can result in application failures when updating to a new Entity Framework Core release.
+    /// </summary>
+    public override LockReleaseBehavior LockReleaseBehavior { get; }
+
+    /// <summary>
+    ///     Gets an exclusive lock on the database.
+    /// </summary>
+    /// <returns>An object that can be disposed to release the lock.</returns>
+    public override IMigrationsDatabaseLock AcquireDatabaseLock()
+    {
+        throw new NotImplementedException();
+    }
+
+    /// <summary>
+    ///     Gets an exclusive lock on the database.
+    /// </summary>
+    /// <param name="cancellationToken">A <see cref="System.Threading.CancellationToken" /> to observe while waiting for the task to complete.</param>
+    /// <returns>An object that can be disposed to release the lock.</returns>
+    /// <exception cref="System.OperationCanceledException">If the <see cref="System.Threading.CancellationToken" /> is canceled.</exception>
+    public override Task<IMigrationsDatabaseLock> AcquireDatabaseLockAsync(CancellationToken cancellationToken = default)
+    {
+        throw new NotImplementedException();
+    }
+
     public override string GetCreateIfNotExistsScript()
     {
         throw new NotImplementedException();
