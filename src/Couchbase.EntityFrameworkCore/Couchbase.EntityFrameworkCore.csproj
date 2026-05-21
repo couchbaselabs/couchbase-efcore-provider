@@ -21,10 +21,10 @@
     </PropertyGroup>
 
     <ItemGroup>
-      <PackageReference Include="Couchbase.Extensions.DependencyInjection" Version="3.8.1" />
-      <PackageReference Include="CouchbaseNetClient" Version="3.8.1" />
-      <PackageReference Include="Microsoft.EntityFrameworkCore" Version="8.0.14" />
-      <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="8.0.14" />
+      <PackageReference Include="Couchbase.Extensions.DependencyInjection" />
+      <PackageReference Include="CouchbaseNetClient" />
+      <PackageReference Include="Microsoft.EntityFrameworkCore"  />
+      <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
     </ItemGroup>
 
     <ItemGroup>
