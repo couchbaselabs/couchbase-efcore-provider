@@ -486,9 +486,10 @@ public class CouchbaseDbDataReader<T> : DbDataReader
         EnsureCurrentRow();
 
         // When the caller supplied column names (projection aliases from the SELECT clause),
-        // look up the JSON property directly by alias using a case-insensitive scan.
-        // This eliminates the _fieldOrdinals → _fieldNames round-trip that previously
-        // translated the alias to a json ordinal and back to the same name.
+        // resolve the alias via _fieldOrdinals (OrdinalIgnoreCase dictionary, built once from
+        // the first row) to obtain the canonical JSON property name, then call TryGetProperty
+        // with that exact name. Only the fallback path (schema not yet built) uses the O(m)
+        // TryGetPropertyCI linear scan.
         if (_columnNames != null && (uint)ordinal < (uint)_columnNames.Length)
         {
             var colName = _columnNames[ordinal];
