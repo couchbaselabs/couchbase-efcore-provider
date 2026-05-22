@@ -410,18 +410,13 @@ public class CouchbaseDbDataReader<T> : DbDataReader
             if (_projectionOrdinals.TryGetValue(name, out var projOrdinal))
                 return projOrdinal;
 
-            // Constrained fallback for null-slot positions: GetName(i) returns the JSON
-            // field name for a null slot, so GetOrdinal must resolve it back to i to
-            // keep GetOrdinal(GetName(i)) == i.  Only accept the name when it maps to a
-            // null slot — a non-null slot's alias already lives in _projectionOrdinals, so
-            // landing here with that alias would be ambiguous and is correctly rejected.
+            // Fallback for null-slot positions: GetName(i) returns the JSON field name for
+            // a null slot, so GetOrdinal must resolve it back to i. Any name that reaches
+            // here and exists in _fieldOrdinals must correspond to a null slot — non-null
+            // slots have their alias in _projectionOrdinals and are found above.
             EnsureFieldInfo();
-            if (_fieldOrdinals != null && _fieldOrdinals.TryGetValue(name, out var jsonOrd)
-                && (uint)jsonOrd < (uint)_columnNames!.Length
-                && _columnNames[jsonOrd] == null)
-            {
+            if (_fieldOrdinals != null && _fieldOrdinals.TryGetValue(name, out var jsonOrd))
                 return jsonOrd;
-            }
 
             throw new IndexOutOfRangeException($"Field '{name}' not found.");
         }
@@ -484,37 +479,31 @@ public class CouchbaseDbDataReader<T> : DbDataReader
     {
         EnsureCurrentRow();
 
-        // When the caller supplied column names (projection aliases from the SELECT clause), use
-        // _fieldOrdinals to translate each shaper ordinal to the correct JSON property.
-        // N1QL returns response fields in document-storage order, which differs from the SELECT
-        // clause order, so positional access is incorrect without this mapping.
-        // _fieldOrdinals uses OrdinalIgnoreCase, so camelCase aliases match camelCase JSON keys.
+        // When the caller supplied column names (projection aliases from the SELECT clause),
+        // look up the JSON property directly by alias using a case-insensitive scan.
+        // This eliminates the _fieldOrdinals → _fieldNames round-trip that previously
+        // translated the alias to a json ordinal and back to the same name.
         if (_columnNames != null && (uint)ordinal < (uint)_columnNames.Length)
         {
             var colName = _columnNames[ordinal];
-            if (colName != null && _fieldOrdinals != null)
+            if (colName != null)
             {
-                if (_fieldOrdinals.TryGetValue(colName, out var jsonOrdinal))
+                if (_currentRow is JsonElement je && je.ValueKind == JsonValueKind.Object)
                 {
-                    return GetFieldValue(_fieldNames![jsonOrdinal]);
+                    return TryGetPropertyCI(je, colName, out var prop)
+                        ? ConvertJsonElement(prop)
+                        : DBNull.Value;
                 }
-                // Scalar SELECT RAW row: single synthetic "" field answers to any alias,
-                // matching the same special-case in GetOrdinal.
-                if (_fieldNames?.Count == 1 && _fieldNames[0] == string.Empty)
-                {
-                    return GetFieldValue(string.Empty);
-                }
-                // Field genuinely absent from the N1QL response (MISSING) — treat as null.
+                // Scalar SELECT RAW row: the entire element is the value.
+                if (_currentRow is JsonElement raw)
+                    return ConvertJsonElement(raw);
+
                 return DBNull.Value;
             }
-            // null slot in _columnNames means "no alias for this ordinal — use positional
-            // access", as documented on the constructor.  Fall through.
+            // null slot: no alias for this ordinal — fall through to positional access.
         }
 
-        // No column names supplied, or null slot: positional access.
-        // For a null slot (projection active, no alias), a JSON field that doesn't reach
-        // this ordinal is MISSING — return DBNull consistent with non-null alias handling above.
-        // Without a projection mapping, an out-of-range ordinal is programmer error — throw.
+        // No column names supplied, or null slot: positional access via schema discovery.
         var isNullSlot = _columnNames != null && (uint)ordinal < (uint)_columnNames.Length;
         if (isNullSlot && (_fieldNames == null || ordinal >= _fieldNames.Count))
             return DBNull.Value;
@@ -1191,6 +1180,19 @@ public class CouchbaseDbDataReader<T> : DbDataReader
             }
         }
         return DBNull.Value;
+    }
+
+    private static bool TryGetPropertyCI(JsonElement element, string name, out JsonElement value)
+    {
+        if (element.TryGetProperty(name, out value)) return true;
+        foreach (var prop in element.EnumerateObject())
+        {
+            if (!string.Equals(prop.Name, name, StringComparison.OrdinalIgnoreCase)) continue;
+            value = prop.Value;
+            return true;
+        }
+        value = default;
+        return false;
     }
 
     private static object ConvertJsonElement(JsonElement element)
