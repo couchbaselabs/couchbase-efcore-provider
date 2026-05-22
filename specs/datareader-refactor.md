@@ -72,9 +72,14 @@ two allocations and two lookups without changing the result.
 
 ### Changes
 
-- When `_columnNames` is set, replace steps 2–4 with a direct case-insensitive property lookup
-  on the current `JsonElement` row using the same `TryGetPropertyCI` logic already present in
-  `CouchbaseQueryEnumerable`. A missing field returns `DBNull.Value`.
+- When `_columnNames` is set, replace the round-trip through steps 2–3 (dict → array → same name)
+  with a two-step fast path:
+  1. `_fieldOrdinals.TryGetValue(alias)` — O(1) OrdinalIgnoreCase lookup to retrieve the
+     canonical JSON property name stored in `_fieldNames[jsonOrd]`.
+  2. `je.TryGetProperty(canonicalName)` — exact (case-sensitive) property read on the live
+     `JsonElement` row.
+  `TryGetPropertyCI` is retained as a fallback for aliases not present in `_fieldOrdinals`
+  (e.g. computed aliases injected after schema discovery). A missing field returns `DBNull.Value`.
 
 - Retain the no-`_columnNames` fallback path unchanged so this phase is self-contained and does
   not require simultaneous changes to `CouchbaseQueryEnumerable`.
@@ -88,9 +93,10 @@ two allocations and two lookups without changing the result.
 
 ### Expected outcome
 
-`GetValue` hot path (non-null `_columnNames` slot): array lookup + `TryGetPropertyCI`. No
-dictionary lookups. Approximately 15–20 lines removed from `GetValue`; `GetOrdinal` is
-comment-only cleanup.
+`GetValue` hot path (non-null `_columnNames` slot): array lookup → `_fieldOrdinals` dict lookup
+→ exact `TryGetProperty`. One dictionary lookup replaces two (dict + array); the O(m) linear scan
+is eliminated for the common case. `TryGetPropertyCI` is the fallback for unknown aliases only.
+Approximately 15–20 lines removed from `GetValue`; `GetOrdinal` is comment-only cleanup.
 
 ---
 
