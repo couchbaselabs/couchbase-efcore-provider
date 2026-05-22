@@ -79,14 +79,18 @@ two allocations and two lookups without changing the result.
 - Retain the no-`_columnNames` fallback path unchanged so this phase is self-contained and does
   not require simultaneous changes to `CouchbaseQueryEnumerable`.
 
-- Simplify `GetOrdinal` for the `_projectionOrdinals` path. The constrained fallback that
-  reconciles null-slot positions against `_fieldOrdinals` becomes unnecessary once the two ordinal
-  spaces are no longer conflated.
+- Retain the null-slot fallback in `GetOrdinal` unchanged: the `EnsureFieldInfo()` call, the
+  `_fieldOrdinals` lookup, the bounds check `(uint)jsonOrd < (uint)_columnNames.Length`, and the
+  `_columnNames[jsonOrd] == null` guard must all stay. The bounds check prevents extra JSON fields
+  beyond the projection width from being surfaced via `reader["name"]`, and the null-slot guard
+  ensures non-null aliases that somehow bypass `_projectionOrdinals` are rejected rather than
+  silently returned. Only the stale comment above the block needs updating.
 
 ### Expected outcome
 
-`GetValue` hot path: array lookup + case-insensitive `TryGetProperty`. No dictionary lookups.
-Approximately 20–30 lines removed from `GetValue` and `GetOrdinal`.
+`GetValue` hot path (non-null `_columnNames` slot): array lookup + `TryGetPropertyCI`. No
+dictionary lookups. Approximately 15–20 lines removed from `GetValue`; `GetOrdinal` is
+comment-only cleanup.
 
 ---
 

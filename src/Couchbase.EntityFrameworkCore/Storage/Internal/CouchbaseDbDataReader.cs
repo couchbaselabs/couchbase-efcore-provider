@@ -411,12 +411,18 @@ public class CouchbaseDbDataReader<T> : DbDataReader
                 return projOrdinal;
 
             // Fallback for null-slot positions: GetName(i) returns the JSON field name for
-            // a null slot, so GetOrdinal must resolve it back to i. Any name that reaches
-            // here and exists in _fieldOrdinals must correspond to a null slot — non-null
-            // slots have their alias in _projectionOrdinals and are found above.
+            // a null slot, so GetOrdinal must resolve it back to i to keep
+            // GetOrdinal(GetName(i)) == i. Bounds-check against _columnNames.Length so that
+            // extra JSON fields beyond the projection are not surfaced, and verify the slot
+            // is actually null so non-null aliases that somehow bypass _projectionOrdinals
+            // are rejected rather than silently returned.
             EnsureFieldInfo();
-            if (_fieldOrdinals != null && _fieldOrdinals.TryGetValue(name, out var jsonOrd))
+            if (_fieldOrdinals != null && _fieldOrdinals.TryGetValue(name, out var jsonOrd)
+                && (uint)jsonOrd < (uint)_columnNames!.Length
+                && _columnNames[jsonOrd] == null)
+            {
                 return jsonOrd;
+            }
 
             throw new IndexOutOfRangeException($"Field '{name}' not found.");
         }
