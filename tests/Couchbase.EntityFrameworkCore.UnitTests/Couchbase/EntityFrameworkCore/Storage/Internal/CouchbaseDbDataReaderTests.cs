@@ -1923,7 +1923,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task GetValue_WithColumnNames_MultipleAliases_ResolvesEachIndependently()
     {
-        // Each alias resolves directly from the row — no intermediate ordinal mapping.
+        // Each alias resolves via _fieldOrdinals to its canonical name, then exact property access.
         var rows = new List<JsonElement> { ParseElement("{\"name\": \"alice\", \"age\": 30}") };
         var reader = CreateReaderWithColumnNames(rows, new string?[] { "age", "name" });
         await reader.ReadAsync(CancellationToken.None);
