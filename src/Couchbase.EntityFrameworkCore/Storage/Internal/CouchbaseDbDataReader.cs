@@ -2,6 +2,7 @@ using System.Collections;
 using System.Data;
 using System.Data.Common;
 using System.Text.Json;
+using Couchbase.EntityFrameworkCore.Extensions;
 using Couchbase.Query;
 
 namespace Couchbase.EntityFrameworkCore.Storage.Internal;
@@ -509,7 +510,7 @@ public class CouchbaseDbDataReader<T> : DbDataReader
                         ? ConvertJsonElement(prop)
                         : DBNull.Value;
 
-                return TryGetPropertyCI(je, colName, out var fallbackProp)
+                return je.TryGetPropertyCI(colName, out var fallbackProp)
                     ? ConvertJsonElement(fallbackProp)
                     : DBNull.Value;
             }
@@ -1193,19 +1194,6 @@ public class CouchbaseDbDataReader<T> : DbDataReader
             }
         }
         return DBNull.Value;
-    }
-
-    private static bool TryGetPropertyCI(JsonElement element, string name, out JsonElement value)
-    {
-        if (element.TryGetProperty(name, out value)) return true;
-        foreach (var prop in element.EnumerateObject())
-        {
-            if (!string.Equals(prop.Name, name, StringComparison.OrdinalIgnoreCase)) continue;
-            value = prop.Value;
-            return true;
-        }
-        value = default;
-        return false;
     }
 
     private static object ConvertJsonElement(JsonElement element)
