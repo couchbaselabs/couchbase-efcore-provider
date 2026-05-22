@@ -494,17 +494,23 @@ public class CouchbaseDbDataReader<T> : DbDataReader
             var colName = _columnNames[ordinal];
             if (colName != null)
             {
-                if (_currentRow is JsonElement je && je.ValueKind == JsonValueKind.Object)
-                {
-                    return TryGetPropertyCI(je, colName, out var prop)
+                if (_currentRow is not JsonElement je) return DBNull.Value;
+
+                if (je.ValueKind != JsonValueKind.Object)
+                    return ConvertJsonElement(je); // SELECT RAW scalar
+
+                // Use _fieldOrdinals (OrdinalIgnoreCase, built once from the first row) for
+                // O(1) alias→canonical-name resolution, then call TryGetProperty with the
+                // exact canonical name so the JSON property scan hits on the first comparison.
+                // Falls back to TryGetPropertyCI only if schema discovery hasn't run yet.
+                if (_fieldOrdinals != null && _fieldOrdinals.TryGetValue(colName, out var jsonOrd))
+                    return je.TryGetProperty(_fieldNames![jsonOrd], out var prop)
                         ? ConvertJsonElement(prop)
                         : DBNull.Value;
-                }
-                // Scalar SELECT RAW row: the entire element is the value.
-                if (_currentRow is JsonElement raw)
-                    return ConvertJsonElement(raw);
 
-                return DBNull.Value;
+                return TryGetPropertyCI(je, colName, out var fallbackProp)
+                    ? ConvertJsonElement(fallbackProp)
+                    : DBNull.Value;
             }
             // null slot: no alias for this ordinal — fall through to positional access.
         }

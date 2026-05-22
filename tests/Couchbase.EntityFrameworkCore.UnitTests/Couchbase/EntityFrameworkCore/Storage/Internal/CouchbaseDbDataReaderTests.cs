@@ -1932,6 +1932,86 @@ public class CouchbaseDbDataReaderTests
         Assert.Equal("alice", reader.GetValue(1));
     }
 
+    // GetValue — canonical-name O(1) path via _fieldOrdinals
+
+    [Fact]
+    public async Task GetValue_WithColumnNames_SchemaPreBuiltViaHasRows_CaseInsensitiveAliasResolves()
+    {
+        // Accessing HasRows before ReadAsync triggers EnsureFieldInfo (builds _fieldOrdinals).
+        // GetValue must still resolve the alias correctly via the pre-built _fieldOrdinals.
+        var rows = new List<JsonElement> { ParseElement("{\"blogId\": 99}") };
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { "BlogId" });
+
+        _ = reader.HasRows; // triggers schema discovery before ReadAsync
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Equal(99L, reader.GetValue(0));
+    }
+
+    [Fact]
+    public async Task GetValue_WithColumnNames_MultipleRows_CanonicalNameUsedForEveryRow()
+    {
+        // _fieldOrdinals is built from the first row and reused for subsequent rows.
+        // Alias casing differs from JSON key on every row — all must resolve correctly.
+        var rows = new List<JsonElement>
+        {
+            ParseElement("{\"blogId\": 1}"),
+            ParseElement("{\"blogId\": 2}"),
+            ParseElement("{\"blogId\": 3}"),
+        };
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { "BlogId" });
+
+        var results = new List<long>();
+        while (await reader.ReadAsync(CancellationToken.None))
+            results.Add((long)reader.GetValue(0));
+
+        Assert.Equal([1L, 2L, 3L], results);
+    }
+
+    [Fact]
+    public async Task GetValue_WithColumnNames_FieldPresentInFirstRowAbsentInLater_ReturnsDBNull()
+    {
+        // _fieldOrdinals maps "id" → 0 from the first row.
+        // A later row that lacks "id" must return DBNull rather than throw.
+        var rows = new List<JsonElement>
+        {
+            ParseElement("{\"id\": 10}"),
+            ParseElement("{\"other\": 99}"),
+        };
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { "id" });
+
+        await reader.ReadAsync(CancellationToken.None);
+        Assert.Equal(10L, reader.GetValue(0));
+
+        await reader.ReadAsync(CancellationToken.None);
+        Assert.Equal(DBNull.Value, reader.GetValue(0));
+    }
+
+    [Fact]
+    public async Task GetValue_WithColumnNames_AliasNotInSchema_FallsBackToTryGetPropertyCI()
+    {
+        // When _fieldOrdinals does not contain the alias (alias added to _columnNames after
+        // the schema row), TryGetPropertyCI is the safety-net.  The schema is built from a
+        // first row that has no "extra" field; a second row that does exposes the fallback.
+        var rows = new List<JsonElement>
+        {
+            ParseElement("{\"id\": 1}"),
+            ParseElement("{\"id\": 2, \"Extra\": 42}"),
+        };
+        // Two slots: "id" appears in the schema; "extra" does not.
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { "id", "extra" });
+
+        await reader.ReadAsync(CancellationToken.None);
+        Assert.Equal(1L, reader.GetValue(0));
+        Assert.Equal(DBNull.Value, reader.GetValue(1)); // "extra" absent from first row
+
+        await reader.ReadAsync(CancellationToken.None);
+        Assert.Equal(2L, reader.GetValue(0));
+        // "extra" absent from _fieldOrdinals (not in schema row) — TryGetPropertyCI fallback
+        // must find "Extra" case-insensitively and return 42.
+        Assert.Equal(42L, reader.GetValue(1));
+    }
+
     // GetOrdinal null-slot fallback — bounds check and null-slot guard
 
     [Fact]
