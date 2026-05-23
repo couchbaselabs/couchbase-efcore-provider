@@ -1894,6 +1894,168 @@ public class CouchbaseDbDataReaderTests
 
     #endregion
 
+    #region Phase 2 — TryGetPropertyCI and GetOrdinal null-slot guards
+
+    // GetValue — case-insensitive property lookup via TryGetPropertyCI
+
+    [Fact]
+    public async Task GetValue_WithColumnNames_CaseInsensitiveAlias_ReturnsValue()
+    {
+        // JSON has camelCase key; projection alias uses PascalCase — must still resolve.
+        var rows = new List<JsonElement> { ParseElement("{\"blogId\": 42}") };
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { "BlogId" });
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Equal(42L, reader.GetValue(0));
+    }
+
+    [Fact]
+    public async Task GetValue_WithColumnNames_MissingJsonField_ReturnsDBNull()
+    {
+        // Alias present in projection but the JSON row does not contain the property.
+        var rows = new List<JsonElement> { ParseElement("{\"other\": 1}") };
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { "missing" });
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Equal(DBNull.Value, reader.GetValue(0));
+    }
+
+    [Fact]
+    public async Task GetValue_WithColumnNames_MultipleAliases_ResolvesEachIndependently()
+    {
+        // Each alias resolves via _fieldOrdinals to its canonical name, then exact property access.
+        var rows = new List<JsonElement> { ParseElement("{\"name\": \"alice\", \"age\": 30}") };
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { "age", "name" });
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Equal(30L, reader.GetValue(0));
+        Assert.Equal("alice", reader.GetValue(1));
+    }
+
+    // GetValue — canonical-name O(1) path via _fieldOrdinals
+
+    [Fact]
+    public async Task GetValue_WithColumnNames_SchemaPreBuiltViaHasRows_CaseInsensitiveAliasResolves()
+    {
+        // Accessing HasRows before ReadAsync triggers EnsureFieldInfo (builds _fieldOrdinals).
+        // GetValue must still resolve the alias correctly via the pre-built _fieldOrdinals.
+        var rows = new List<JsonElement> { ParseElement("{\"blogId\": 99}") };
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { "BlogId" });
+
+        _ = reader.HasRows; // triggers schema discovery before ReadAsync
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Equal(99L, reader.GetValue(0));
+    }
+
+    [Fact]
+    public async Task GetValue_WithColumnNames_MultipleRows_CanonicalNameUsedForEveryRow()
+    {
+        // _fieldOrdinals is built from the first row and reused for subsequent rows.
+        // Alias casing differs from JSON key on every row — all must resolve correctly.
+        var rows = new List<JsonElement>
+        {
+            ParseElement("{\"blogId\": 1}"),
+            ParseElement("{\"blogId\": 2}"),
+            ParseElement("{\"blogId\": 3}"),
+        };
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { "BlogId" });
+
+        var results = new List<long>();
+        while (await reader.ReadAsync(CancellationToken.None))
+            results.Add((long)reader.GetValue(0));
+
+        Assert.Equal([1L, 2L, 3L], results);
+    }
+
+    [Fact]
+    public async Task GetValue_WithColumnNames_FieldPresentInFirstRowAbsentInLater_ReturnsDBNull()
+    {
+        // _fieldOrdinals maps "id" → 0 from the first row.
+        // A later row that lacks "id" must return DBNull rather than throw.
+        var rows = new List<JsonElement>
+        {
+            ParseElement("{\"id\": 10}"),
+            ParseElement("{\"other\": 99}"),
+        };
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { "id" });
+
+        await reader.ReadAsync(CancellationToken.None);
+        Assert.Equal(10L, reader.GetValue(0));
+
+        await reader.ReadAsync(CancellationToken.None);
+        Assert.Equal(DBNull.Value, reader.GetValue(0));
+    }
+
+    [Fact]
+    public async Task GetValue_WithColumnNames_AliasNotInSchema_FallsBackToTryGetPropertyCI()
+    {
+        // When _fieldOrdinals does not contain the alias (alias added to _columnNames after
+        // the schema row), TryGetPropertyCI is the safety-net.  The schema is built from a
+        // first row that has no "extra" field; a second row that does exposes the fallback.
+        var rows = new List<JsonElement>
+        {
+            ParseElement("{\"id\": 1}"),
+            ParseElement("{\"id\": 2, \"Extra\": 42}"),
+        };
+        // Two slots: "id" appears in the schema; "extra" does not.
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { "id", "extra" });
+
+        await reader.ReadAsync(CancellationToken.None);
+        Assert.Equal(1L, reader.GetValue(0));
+        Assert.Equal(DBNull.Value, reader.GetValue(1)); // "extra" absent from first row
+
+        await reader.ReadAsync(CancellationToken.None);
+        Assert.Equal(2L, reader.GetValue(0));
+        // "extra" absent from _fieldOrdinals (not in schema row) — TryGetPropertyCI fallback
+        // must find "Extra" case-insensitively and return 42.
+        Assert.Equal(42L, reader.GetValue(1));
+    }
+
+    // GetOrdinal null-slot fallback — bounds check and null-slot guard
+
+    [Fact]
+    public async Task GetOrdinal_NullSlotFallback_FieldBeyondProjectionWidth_Throws()
+    {
+        // JSON row has 3 fields; projection only covers 2 columns.
+        // GetOrdinal for the 3rd field name must throw — its ordinal (2) is >= FieldCount (2).
+        var rows = new List<JsonElement> { ParseElement("{\"a\": 1, \"b\": 2, \"c\": 3}") };
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { "a", "b" });
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Throws<IndexOutOfRangeException>(() => reader.GetOrdinal("c"));
+    }
+
+    [Fact]
+    public async Task GetOrdinal_NullSlotFallback_NameMapsToNonNullSlot_Throws()
+    {
+        // JSON fields "a" and "b" map to ordinals 0 and 1.
+        // Both slots have non-null aliases, so neither "a" nor "b" should resolve
+        // via the null-slot fallback — they are not in _projectionOrdinals (aliases differ),
+        // and the null-slot guard must reject them.
+        var rows = new List<JsonElement> { ParseElement("{\"a\": 1, \"b\": 2}") };
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { "ALIAS_A", "ALIAS_B" });
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Throws<IndexOutOfRangeException>(() => reader.GetOrdinal("a"));
+        Assert.Throws<IndexOutOfRangeException>(() => reader.GetOrdinal("b"));
+    }
+
+    [Fact]
+    public async Task GetOrdinal_NullSlotFallback_ValidNullSlot_ReturnsOrdinal()
+    {
+        // Slot 0 is a null slot; slot 1 has an alias. "a" maps to ordinal 0 (null slot) — valid.
+        // "b" maps to ordinal 1, but slot 1 is non-null, so it must be rejected.
+        var rows = new List<JsonElement> { ParseElement("{\"a\": 1, \"b\": 2}") };
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { null, "ALIAS_B" });
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Equal(0, reader.GetOrdinal("a"));
+        Assert.Throws<IndexOutOfRangeException>(() => reader.GetOrdinal("b"));
+    }
+
+    #endregion
+
     private static JsonElement ParseElement(string json)
     {
         using var doc = JsonDocument.Parse(json);

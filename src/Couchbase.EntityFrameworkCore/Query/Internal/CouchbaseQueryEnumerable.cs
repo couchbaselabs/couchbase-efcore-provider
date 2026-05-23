@@ -8,6 +8,7 @@ using Couchbase.Query;
 using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.EntityFrameworkCore.Metadata;
 using Couchbase.EntityFrameworkCore.Storage.Internal;
+using Couchbase.EntityFrameworkCore.Extensions;
 using Couchbase.EntityFrameworkCore.Utils;
 using Couchbase.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
@@ -229,7 +230,7 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
         foreach (var nav in collections)
         {
             var fieldName = fieldNamingPolicy?.ConvertName(nav.Name) ?? nav.Name;
-            if (!TryGetPropertyCI(docElement, fieldName, out var arrayElement)
+            if (!docElement.TryGetPropertyCI(fieldName, out var arrayElement)
                 || arrayElement.ValueKind != JsonValueKind.Array)
                 continue;
 
@@ -258,7 +259,7 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
                 foreach (var prop in properties)
                 {
                     var jsonKey = fieldNamingPolicy?.ConvertName(prop.Name) ?? prop.Name;
-                    if (TryGetPropertyCI(itemElement, jsonKey, out var propElement))
+                    if (itemElement.TryGetPropertyCI(jsonKey, out var propElement))
                         prop.PropertyInfo?.SetValue(ownedEntity, ConvertJsonValue(propElement, prop.ClrType, options));
                 }
                 if (accessor != null)
@@ -281,21 +282,6 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
             refs[nav.Name] = nav.PropertyInfo?.GetValue(entity);
     }
 
-    // JsonElement.TryGetProperty is case-sensitive. The SDK's SystemTextJsonSerializer uses
-    // JsonSerializerDefaults.Web (camelCase), so navigation/property names may vary in case
-    // between what EF Core models use and what appears in the stored document.
-    internal static bool TryGetPropertyCI(JsonElement element, string name, out JsonElement value)
-    {
-        if (element.TryGetProperty(name, out value)) return true;
-        foreach (var prop in element.EnumerateObject())
-        {
-            if (!string.Equals(prop.Name, name, StringComparison.OrdinalIgnoreCase)) continue;
-            value = prop.Value;
-            return true;
-        }
-        value = default;
-        return false;
-    }
 
     private static object? ConvertJsonValue(JsonElement element, Type targetType, JsonSerializerOptions options)
     {

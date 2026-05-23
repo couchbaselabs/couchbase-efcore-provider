@@ -72,21 +72,31 @@ two allocations and two lookups without changing the result.
 
 ### Changes
 
-- When `_columnNames` is set, replace steps 2–4 with a direct case-insensitive property lookup
-  on the current `JsonElement` row using the same `TryGetPropertyCI` logic already present in
-  `CouchbaseQueryEnumerable`. A missing field returns `DBNull.Value`.
+- When `_columnNames` is set, replace the round-trip through steps 2–3 (dict → array → same name)
+  with a two-step fast path:
+  1. `_fieldOrdinals.TryGetValue(alias)` — O(1) OrdinalIgnoreCase lookup to retrieve the
+     canonical JSON property name stored in `_fieldNames[jsonOrd]`.
+  2. `je.TryGetProperty(canonicalName)` — exact (case-sensitive) property read on the live
+     `JsonElement` row.
+  `TryGetPropertyCI` is retained as a fallback for aliases not present in `_fieldOrdinals`
+  (e.g. computed aliases injected after schema discovery). A missing field returns `DBNull.Value`.
 
 - Retain the no-`_columnNames` fallback path unchanged so this phase is self-contained and does
   not require simultaneous changes to `CouchbaseQueryEnumerable`.
 
-- Simplify `GetOrdinal` for the `_projectionOrdinals` path. The constrained fallback that
-  reconciles null-slot positions against `_fieldOrdinals` becomes unnecessary once the two ordinal
-  spaces are no longer conflated.
+- Retain the null-slot fallback in `GetOrdinal` unchanged: the `EnsureFieldInfo()` call, the
+  `_fieldOrdinals` lookup, the bounds check `(uint)jsonOrd < (uint)_columnNames.Length`, and the
+  `_columnNames[jsonOrd] == null` guard must all stay. The bounds check prevents extra JSON fields
+  beyond the projection width from being surfaced via `reader["name"]`, and the null-slot guard
+  ensures non-null aliases that somehow bypass `_projectionOrdinals` are rejected rather than
+  silently returned. Only the stale comment above the block needs updating.
 
 ### Expected outcome
 
-`GetValue` hot path: array lookup + case-insensitive `TryGetProperty`. No dictionary lookups.
-Approximately 20–30 lines removed from `GetValue` and `GetOrdinal`.
+`GetValue` hot path (non-null `_columnNames` slot): array lookup → `_fieldOrdinals` dict lookup
+→ exact `TryGetProperty`. One dictionary lookup replaces two (dict + array); the O(m) linear scan
+is eliminated for the common case. `TryGetPropertyCI` is the fallback for unknown aliases only.
+Approximately 15–20 lines removed from `GetValue`; `GetOrdinal` is comment-only cleanup.
 
 ---
 

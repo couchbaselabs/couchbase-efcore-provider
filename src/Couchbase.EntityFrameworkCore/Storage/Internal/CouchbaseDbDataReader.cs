@@ -2,6 +2,7 @@ using System.Collections;
 using System.Data;
 using System.Data.Common;
 using System.Text.Json;
+using Couchbase.EntityFrameworkCore.Extensions;
 using Couchbase.Query;
 
 namespace Couchbase.EntityFrameworkCore.Storage.Internal;
@@ -410,11 +411,12 @@ public class CouchbaseDbDataReader<T> : DbDataReader
             if (_projectionOrdinals.TryGetValue(name, out var projOrdinal))
                 return projOrdinal;
 
-            // Constrained fallback for null-slot positions: GetName(i) returns the JSON
-            // field name for a null slot, so GetOrdinal must resolve it back to i to
-            // keep GetOrdinal(GetName(i)) == i.  Only accept the name when it maps to a
-            // null slot — a non-null slot's alias already lives in _projectionOrdinals, so
-            // landing here with that alias would be ambiguous and is correctly rejected.
+            // Fallback for null-slot positions: GetName(i) returns the JSON field name for
+            // a null slot, so GetOrdinal must resolve it back to i to keep
+            // GetOrdinal(GetName(i)) == i. Bounds-check against _columnNames.Length so that
+            // extra JSON fields beyond the projection are not surfaced, and verify the slot
+            // is actually null so non-null aliases that somehow bypass _projectionOrdinals
+            // are rejected rather than silently returned.
             EnsureFieldInfo();
             if (_fieldOrdinals != null && _fieldOrdinals.TryGetValue(name, out var jsonOrd)
                 && (uint)jsonOrd < (uint)_columnNames!.Length
@@ -484,37 +486,40 @@ public class CouchbaseDbDataReader<T> : DbDataReader
     {
         EnsureCurrentRow();
 
-        // When the caller supplied column names (projection aliases from the SELECT clause), use
-        // _fieldOrdinals to translate each shaper ordinal to the correct JSON property.
-        // N1QL returns response fields in document-storage order, which differs from the SELECT
-        // clause order, so positional access is incorrect without this mapping.
-        // _fieldOrdinals uses OrdinalIgnoreCase, so camelCase aliases match camelCase JSON keys.
+        // When the caller supplied column names (projection aliases from the SELECT clause),
+        // resolve the alias via _fieldOrdinals (OrdinalIgnoreCase dictionary, built once from
+        // the first row) to obtain the canonical JSON property name, then call TryGetProperty
+        // with that exact name. The TryGetPropertyCI fallback is used when _fieldOrdinals is
+        // null (schema not yet built) or the alias is absent from _fieldOrdinals.
         if (_columnNames != null && (uint)ordinal < (uint)_columnNames.Length)
         {
             var colName = _columnNames[ordinal];
-            if (colName != null && _fieldOrdinals != null)
+            if (colName != null)
             {
-                if (_fieldOrdinals.TryGetValue(colName, out var jsonOrdinal))
-                {
-                    return GetFieldValue(_fieldNames![jsonOrdinal]);
-                }
-                // Scalar SELECT RAW row: single synthetic "" field answers to any alias,
-                // matching the same special-case in GetOrdinal.
-                if (_fieldNames?.Count == 1 && _fieldNames[0] == string.Empty)
-                {
-                    return GetFieldValue(string.Empty);
-                }
-                // Field genuinely absent from the N1QL response (MISSING) — treat as null.
-                return DBNull.Value;
+                if (_currentRow is not JsonElement je) return DBNull.Value;
+
+                if (je.ValueKind != JsonValueKind.Object)
+                    return ConvertJsonElement(je); // SELECT RAW scalar
+
+                // Use _fieldOrdinals (OrdinalIgnoreCase, built once from the first row) for
+                // O(1) alias→canonical-name resolution, then call TryGetProperty with the
+                // exact canonical name so the JSON property scan hits on the first comparison.
+                // Falls back to TryGetPropertyCI when _fieldOrdinals is null (schema not yet
+                // built) or when the alias is absent from _fieldOrdinals (e.g. an alias
+                // introduced after the first row that was never recorded during schema discovery).
+                if (_fieldOrdinals != null && _fieldOrdinals.TryGetValue(colName, out var jsonOrd))
+                    return je.TryGetProperty(_fieldNames![jsonOrd], out var prop)
+                        ? ConvertJsonElement(prop)
+                        : DBNull.Value;
+
+                return je.TryGetPropertyCI(colName, out var fallbackProp)
+                    ? ConvertJsonElement(fallbackProp)
+                    : DBNull.Value;
             }
-            // null slot in _columnNames means "no alias for this ordinal — use positional
-            // access", as documented on the constructor.  Fall through.
+            // null slot: no alias for this ordinal — fall through to positional access.
         }
 
-        // No column names supplied, or null slot: positional access.
-        // For a null slot (projection active, no alias), a JSON field that doesn't reach
-        // this ordinal is MISSING — return DBNull consistent with non-null alias handling above.
-        // Without a projection mapping, an out-of-range ordinal is programmer error — throw.
+        // No column names supplied, or null slot: positional access via schema discovery.
         var isNullSlot = _columnNames != null && (uint)ordinal < (uint)_columnNames.Length;
         if (isNullSlot && (_fieldNames == null || ordinal >= _fieldNames.Count))
             return DBNull.Value;
