@@ -19,4 +19,18 @@ public class CouchbaseQueryEnumerableTests
         Assert.Equal(JsonValueKind.Array, val.ValueKind);
         Assert.Equal(1, val.GetArrayLength());
     }
+
+    [Theory]
+    [InlineData("\"hello\"")]   // String
+    [InlineData("42")]          // Number
+    [InlineData("true")]        // Boolean
+    [InlineData("null")]        // Null
+    [InlineData("[1,2,3]")]     // Array
+    public void TryGetPropertyCI_nonObject_returnsFalse(string json)
+    {
+        var element = JsonDocument.Parse(json).RootElement;
+        var found = element.TryGetPropertyCI("anything", out var val);
+        Assert.False(found);
+        Assert.Equal(JsonValueKind.Undefined, val.ValueKind);
+    }
 }
