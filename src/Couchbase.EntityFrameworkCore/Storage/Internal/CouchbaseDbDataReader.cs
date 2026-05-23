@@ -489,8 +489,8 @@ public class CouchbaseDbDataReader<T> : DbDataReader
         // When the caller supplied column names (projection aliases from the SELECT clause),
         // resolve the alias via _fieldOrdinals (OrdinalIgnoreCase dictionary, built once from
         // the first row) to obtain the canonical JSON property name, then call TryGetProperty
-        // with that exact name. Only the fallback path (schema not yet built) uses the O(m)
-        // TryGetPropertyCI linear scan.
+        // with that exact name. The TryGetPropertyCI fallback is used when _fieldOrdinals is
+        // null (schema not yet built) or the alias is absent from _fieldOrdinals.
         if (_columnNames != null && (uint)ordinal < (uint)_columnNames.Length)
         {
             var colName = _columnNames[ordinal];
@@ -504,7 +504,9 @@ public class CouchbaseDbDataReader<T> : DbDataReader
                 // Use _fieldOrdinals (OrdinalIgnoreCase, built once from the first row) for
                 // O(1) alias→canonical-name resolution, then call TryGetProperty with the
                 // exact canonical name so the JSON property scan hits on the first comparison.
-                // Falls back to TryGetPropertyCI only if schema discovery hasn't run yet.
+                // Falls back to TryGetPropertyCI when _fieldOrdinals is null (schema not yet
+                // built) or when the alias is absent from _fieldOrdinals (e.g. an alias
+                // introduced after the first row that was never recorded during schema discovery).
                 if (_fieldOrdinals != null && _fieldOrdinals.TryGetValue(colName, out var jsonOrd))
                     return je.TryGetProperty(_fieldNames![jsonOrd], out var prop)
                         ? ConvertJsonElement(prop)
