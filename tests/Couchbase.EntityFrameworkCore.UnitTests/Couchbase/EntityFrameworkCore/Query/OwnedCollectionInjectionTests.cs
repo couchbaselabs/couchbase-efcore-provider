@@ -28,8 +28,8 @@ public class CouchbaseQueryEnumerableTests
     [InlineData("[1,2,3]")]     // Array
     public void TryGetPropertyCI_nonObject_returnsFalse(string json)
     {
-        var element = JsonDocument.Parse(json).RootElement;
-        var found = element.TryGetPropertyCI("anything", out var val);
+        using var doc = JsonDocument.Parse(json);
+        var found = doc.RootElement.TryGetPropertyCI("anything", out var val);
         Assert.False(found);
         Assert.Equal(JsonValueKind.Undefined, val.ValueKind);
     }
