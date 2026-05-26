@@ -12,7 +12,16 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public void Constructor_WithNullQueryResult_ThrowsArgumentNullException()
     {
-        Assert.Throws<ArgumentNullException>(() => new CouchbaseDbDataReader<object>(null!));
+        Assert.Throws<ArgumentNullException>(() =>
+            new CouchbaseDbDataReader<object>(null!, Array.Empty<string?>()));
+    }
+
+    [Fact]
+    public void Constructor_WithNullColumnNames_ThrowsArgumentNullException()
+    {
+        var mockQueryResult = new Mock<IQueryResult<object>>();
+        Assert.Throws<ArgumentNullException>(() =>
+            new CouchbaseDbDataReader<object>(mockQueryResult.Object, null!));
     }
 
     [Fact]
@@ -154,7 +163,6 @@ public class CouchbaseDbDataReaderTests
     {
         var reader = CreateReader(new List<JsonElement>());
 
-        // GetValue requires a current row, which requires calling Read() first
         Assert.Throws<InvalidOperationException>(() => reader.GetValue(0));
     }
 
@@ -422,11 +430,14 @@ public class CouchbaseDbDataReaderTests
     }
 
     [Fact]
-    public void HasRows_WithRows_ReturnsTrue()
+    public async Task HasRows_WithRows_ReturnsTrue()
     {
         var rows = new List<JsonElement> { ParseElement("{\"id\": 1}") };
         var reader = CreateReader(rows);
 
+        // After Phase 3: HasRows is false before ReadAsync (no peeking).
+        Assert.False(reader.HasRows);
+        Assert.True(await reader.ReadAsync(CancellationToken.None));
         Assert.True(reader.HasRows);
     }
 
@@ -444,11 +455,9 @@ public class CouchbaseDbDataReaderTests
         var rows = new List<JsonElement> { ParseElement("{\"id\": 1}") };
         var reader = CreateReader(rows);
 
-        // Read and exhaust all rows
         Assert.True(await reader.ReadAsync(CancellationToken.None));
         Assert.False(await reader.ReadAsync(CancellationToken.None));
 
-        // HasRows should still be true (it reflects whether there were rows, not current state)
         Assert.True(reader.HasRows);
     }
 
@@ -462,11 +471,12 @@ public class CouchbaseDbDataReaderTests
         };
         var reader = CreateReader(rows);
 
-        // Check HasRows first
-        Assert.True(reader.HasRows);
+        // After Phase 3: HasRows returns false before ReadAsync (no peeking).
+        Assert.False(reader.HasRows);
 
-        // First row should still be readable
+        // All rows remain readable.
         Assert.True(await reader.ReadAsync(CancellationToken.None));
+        Assert.True(reader.HasRows);
         Assert.Equal(1L, reader.GetInt64(0));
 
         Assert.True(await reader.ReadAsync(CancellationToken.None));
@@ -602,8 +612,9 @@ public class CouchbaseDbDataReaderTests
     }
 
     [Fact]
-    public async Task FieldCount_BeforeRead_DoesNotSkipFirstRow()
+    public async Task FieldCount_AfterFirstRead_ReturnsCorrectCount()
     {
+        // After Phase 3: without column names, FieldCount requires a current row.
         var rows = new List<JsonElement>
         {
             ParseElement("{\"id\": 1}"),
@@ -611,25 +622,20 @@ public class CouchbaseDbDataReaderTests
         };
         var reader = CreateReader(rows);
 
-        // Access FieldCount before Read() - this triggers schema discovery
-        var fieldCount = reader.FieldCount;
-        Assert.Equal(1, fieldCount);
-
-        // First Read() should return the first row, not skip it
         Assert.True(await reader.ReadAsync(CancellationToken.None));
+        Assert.Equal(1, reader.FieldCount);
         Assert.Equal(1L, reader.GetInt64(0));
 
-        // Second Read() should return the second row
         Assert.True(await reader.ReadAsync(CancellationToken.None));
         Assert.Equal(2L, reader.GetInt64(0));
 
-        // No more rows
         Assert.False(await reader.ReadAsync(CancellationToken.None));
     }
 
     [Fact]
-    public async Task GetName_BeforeRead_DoesNotSkipFirstRow()
+    public async Task GetName_AfterFirstRead_ReturnsFieldName()
     {
+        // After Phase 3: without column names, GetName resolves positionally from the current row.
         var rows = new List<JsonElement>
         {
             ParseElement("{\"name\": \"first\"}"),
@@ -637,54 +643,45 @@ public class CouchbaseDbDataReaderTests
         };
         var reader = CreateReader(rows);
 
-        // Access GetName before Read() - this triggers schema discovery
-        var name = reader.GetName(0);
-        Assert.Equal("name", name);
-
-        // First Read() should return the first row
         Assert.True(await reader.ReadAsync(CancellationToken.None));
+        Assert.Equal("name", reader.GetName(0));
         Assert.Equal("first", reader.GetString(0));
 
-        // Second Read() should return the second row
         Assert.True(await reader.ReadAsync(CancellationToken.None));
         Assert.Equal("second", reader.GetString(0));
     }
 
     [Fact]
-    public async Task GetOrdinal_BeforeRead_DoesNotSkipFirstRow()
+    public async Task GetOrdinal_AfterFirstRead_ReturnsCorrectOrdinal()
     {
+        // After Phase 3: without column names, GetOrdinal resolves positionally from the current row.
         var rows = new List<JsonElement>
         {
             ParseElement("{\"value\": 100}")
         };
         var reader = CreateReader(rows);
 
-        // Access GetOrdinal before Read()
-        var ordinal = reader.GetOrdinal("value");
-        Assert.Equal(0, ordinal);
-
-        // First Read() should still return the first (and only) row
         Assert.True(await reader.ReadAsync(CancellationToken.None));
+        Assert.Equal(0, reader.GetOrdinal("value"));
         Assert.Equal(100L, reader.GetInt64(0));
 
         Assert.False(await reader.ReadAsync(CancellationToken.None));
     }
 
     [Fact]
-    public async Task GetSchemaTable_BeforeRead_DoesNotSkipFirstRow()
+    public async Task GetSchemaTable_AfterFirstRead_ReflectsColumnNames()
     {
+        // After Phase 3: without column names, GetSchemaTable derives schema from the current row.
         var rows = new List<JsonElement>
         {
             ParseElement("{\"col1\": 1, \"col2\": 2}")
         };
         var reader = CreateReader(rows);
 
-        // Access schema before Read()
+        Assert.True(await reader.ReadAsync(CancellationToken.None));
         var schema = reader.GetSchemaTable();
         Assert.Equal(2, schema.Rows.Count);
 
-        // First Read() should return the first row
-        Assert.True(await reader.ReadAsync(CancellationToken.None));
         Assert.Equal(1L, reader.GetInt64(0));
         Assert.Equal(2L, reader.GetInt64(1));
     }
@@ -694,7 +691,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public void GetValue_BeforeAnyRead_ThrowsInvalidOperationException()
     {
-        // JsonElement is a value type - this tests that we track row availability
+        // JsonElement is a value type — this tests that we track row availability
         // with a boolean flag, not by checking _currentRow == null
         var rows = new List<JsonElement> { ParseElement("{\"id\": 1}") };
         var reader = CreateReader(rows);
@@ -712,9 +709,9 @@ public class CouchbaseDbDataReaderTests
         var reader = CreateReader(rows);
 
         Assert.True(await reader.ReadAsync(CancellationToken.None));
-        Assert.Equal(1L, reader.GetValue(0)); // This should work
+        Assert.Equal(1L, reader.GetValue(0));
 
-        Assert.False(await reader.ReadAsync(CancellationToken.None)); // No more rows
+        Assert.False(await reader.ReadAsync(CancellationToken.None));
 
         var ex = Assert.Throws<InvalidOperationException>(() => reader.GetValue(0));
         Assert.Contains("No current row", ex.Message);
@@ -830,22 +827,17 @@ public class CouchbaseDbDataReaderTests
         };
         var reader = CreateReader(rows);
 
-        // Before first read - no current row
         Assert.Throws<InvalidOperationException>(() => reader.GetValue(0));
 
-        // Read row 1
         Assert.True(await reader.ReadAsync(CancellationToken.None));
         Assert.Equal(1L, reader.GetInt64(0));
 
-        // Read row 2
         Assert.True(await reader.ReadAsync(CancellationToken.None));
         Assert.Equal(2L, reader.GetInt64(0));
 
-        // Read row 3
         Assert.True(await reader.ReadAsync(CancellationToken.None));
         Assert.Equal(3L, reader.GetInt64(0));
 
-        // No more rows - should throw again
         Assert.False(await reader.ReadAsync(CancellationToken.None));
         Assert.Throws<InvalidOperationException>(() => reader.GetValue(0));
     }
@@ -879,14 +871,11 @@ public class CouchbaseDbDataReaderTests
 
         using var cts = new CancellationTokenSource();
 
-        // First read should succeed
         Assert.True(await reader.ReadAsync(cts.Token));
         Assert.Equal(1L, reader.GetInt64(0));
 
-        // Cancel after first read
         cts.Cancel();
 
-        // Next read should throw
         await Assert.ThrowsAsync<OperationCanceledException>(
             () => reader.ReadAsync(cts.Token));
     }
@@ -903,12 +892,8 @@ public class CouchbaseDbDataReaderTests
 
         using var cts = new CancellationTokenSource();
 
-        // First read captures the token
         Assert.True(await reader.ReadAsync(cts.Token));
-
-        // Subsequent reads with different token still work (enumerator already created)
         Assert.True(await reader.ReadAsync(CancellationToken.None));
-
         Assert.False(await reader.ReadAsync(CancellationToken.None));
     }
 
@@ -1033,7 +1018,6 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task GetFloat_WithValueExceedingFloatRange_ReturnsInfinity()
     {
-        // Values exceeding float range return infinity rather than throwing
         var rows = new List<JsonElement> { ParseElement("{\"val\": 3.5E+38}") };
         var reader = CreateReader(rows);
 
@@ -1046,7 +1030,6 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task GetDecimal_WithValueExceedingDecimalRange_ThrowsOverflowException()
     {
-        // double.MaxValue exceeds decimal range
         var rows = new List<JsonElement> { ParseElement("{\"val\": 1.8E+308}") };
         var reader = CreateReader(rows);
 
@@ -1062,7 +1045,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task GetBytes_WithNegativeDataOffset_ThrowsArgumentOutOfRangeException()
     {
-        var rows = new List<JsonElement> { ParseElement("{\"data\": \"SGVsbG8=\"}") }; // "Hello" in base64
+        var rows = new List<JsonElement> { ParseElement("{\"data\": \"SGVsbG8=\"}") };
         var reader = CreateReader(rows);
 
         await reader.ReadAsync(CancellationToken.None);
@@ -1104,7 +1087,6 @@ public class CouchbaseDbDataReaderTests
         await reader.ReadAsync(CancellationToken.None);
         var buffer = new byte[10];
 
-        // bufferOffset == buffer.Length is valid when length is 0
         var result = reader.GetBytes(0, 0, buffer, 10, 0);
         Assert.Equal(0, result);
     }
@@ -1124,7 +1106,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task GetBytes_WithDataOffsetBeyondSourceLength_ReturnsZero()
     {
-        var rows = new List<JsonElement> { ParseElement("{\"data\": \"SGVsbG8=\"}") }; // 5 bytes
+        var rows = new List<JsonElement> { ParseElement("{\"data\": \"SGVsbG8=\"}") };
         var reader = CreateReader(rows);
 
         await reader.ReadAsync(CancellationToken.None);
@@ -1210,7 +1192,6 @@ public class CouchbaseDbDataReaderTests
         await reader.ReadAsync(CancellationToken.None);
         var buffer = new char[10];
 
-        // bufferOffset == buffer.Length is valid when length is 0
         var result = reader.GetChars(0, 0, buffer, 10, 0);
         Assert.Equal(0, result);
     }
@@ -1230,7 +1211,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task GetChars_WithDataOffsetBeyondSourceLength_ReturnsZero()
     {
-        var rows = new List<JsonElement> { ParseElement("{\"text\": \"Hello\"}") }; // 5 chars
+        var rows = new List<JsonElement> { ParseElement("{\"text\": \"Hello\"}") };
         var reader = CreateReader(rows);
 
         await reader.ReadAsync(CancellationToken.None);
@@ -1269,91 +1250,6 @@ public class CouchbaseDbDataReaderTests
         Assert.Equal('e', buffer[2]);
         Assert.Equal('l', buffer[3]);
         Assert.Equal('l', buffer[4]);
-    }
-
-    #endregion
-
-    #region Initial Cancellation Token Tests
-
-    [Fact]
-    public void FieldCount_WithCancelledToken_ThrowsOperationCancelledException()
-    {
-        var cts = new CancellationTokenSource();
-        cts.Cancel();
-
-        var reader = CreateReaderWithCancellationToken(
-            new List<JsonElement> { ParseElement("{\"id\": 1}") },
-            cts.Token);
-
-        Assert.Throws<OperationCanceledException>(() => _ = reader.FieldCount);
-    }
-
-    [Fact]
-    public void HasRows_WithCancelledToken_ThrowsOperationCancelledException()
-    {
-        var cts = new CancellationTokenSource();
-        cts.Cancel();
-
-        var reader = CreateReaderWithCancellationToken(
-            new List<JsonElement> { ParseElement("{\"id\": 1}") },
-            cts.Token);
-
-        Assert.Throws<OperationCanceledException>(() => _ = reader.HasRows);
-    }
-
-    [Fact]
-    public void GetName_WithCancelledToken_ThrowsOperationCancelledException()
-    {
-        var cts = new CancellationTokenSource();
-        cts.Cancel();
-
-        var reader = CreateReaderWithCancellationToken(
-            new List<JsonElement> { ParseElement("{\"id\": 1}") },
-            cts.Token);
-
-        Assert.Throws<OperationCanceledException>(() => reader.GetName(0));
-    }
-
-    [Fact]
-    public void GetOrdinal_WithCancelledToken_ThrowsOperationCancelledException()
-    {
-        var cts = new CancellationTokenSource();
-        cts.Cancel();
-
-        var reader = CreateReaderWithCancellationToken(
-            new List<JsonElement> { ParseElement("{\"id\": 1}") },
-            cts.Token);
-
-        Assert.Throws<OperationCanceledException>(() => reader.GetOrdinal("id"));
-    }
-
-    [Fact]
-    public async Task SchemaDiscovery_WithValidToken_AllowsSubsequentReads()
-    {
-        // This test verifies that accessing schema properties before ReadAsync
-        // uses the initial token and doesn't prevent subsequent reads
-        var cts = new CancellationTokenSource();
-        var rows = new List<JsonElement>
-        {
-            ParseElement("{\"id\": 1}"),
-            ParseElement("{\"id\": 2}")
-        };
-
-        var reader = CreateReaderWithCancellationToken(rows, cts.Token);
-
-        // Access schema before ReadAsync - this triggers enumerator creation with initial token
-        Assert.Equal(1, reader.FieldCount);
-
-        // First read should work (buffered row from schema discovery)
-        Assert.True(await reader.ReadAsync(CancellationToken.None));
-        Assert.Equal(1L, reader.GetInt64(0));
-
-        // Second read should also work
-        Assert.True(await reader.ReadAsync(CancellationToken.None));
-        Assert.Equal(2L, reader.GetInt64(0));
-
-        // No more rows
-        Assert.False(await reader.ReadAsync(CancellationToken.None));
     }
 
     #endregion
@@ -1461,8 +1357,6 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task IndexerByName_WithColumnNames_ReturnsCorrectValue()
     {
-        // This is the core contract test: reader["name"] must call GetValue(GetOrdinal("name"))
-        // and return the value that the shaper ordinal for "name" maps to — not the wrong one.
         var rows = new List<JsonElement>
         {
             ParseElement("{\"id\": 99, \"name\": \"bob\"}")
@@ -1539,8 +1433,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task GetOrdinal_WithColumnNames_DoesNotRequireSchemaDiscovery()
     {
-        // GetOrdinal with _columnNames must resolve without calling EnsureFieldInfo,
-        // so it works even before Read() and without triggering a row buffer.
+        // GetOrdinal with _columnNames must resolve without requiring a prior ReadAsync call.
         var rows = new List<JsonElement>
         {
             ParseElement("{\"id\": 1}")
@@ -1616,7 +1509,6 @@ public class CouchbaseDbDataReaderTests
             ParseElement("{\"name\": \"positional\", \"title\": \"alias\"}")
         };
         // Slot 0 is null (positional → "name"), slot 1 has alias "name" (mapped to "title").
-        // This is a degenerate case; alias wins.
         var reader = CreateReaderWithColumnNames(rows, new string?[] { null, "name" });
         await reader.ReadAsync(CancellationToken.None);
 
@@ -1628,7 +1520,7 @@ public class CouchbaseDbDataReaderTests
     {
         // JSON response has only 1 field; projection has 2 null slots.
         // Slot 0 resolves positionally to "id" — present.
-        // Slot 1 is a null slot beyond _fieldNames.Count — must be DBNull, not throw.
+        // Slot 1 is a null slot beyond the JSON field count — must be DBNull, not throw.
         var rows = new List<JsonElement>
         {
             ParseElement("{\"id\": 42}")
@@ -1644,7 +1536,6 @@ public class CouchbaseDbDataReaderTests
     public async Task GetValue_NoColumnNames_OutOfRangeOrdinalThrows()
     {
         // Without _columnNames, an out-of-range ordinal is programmer error and must throw.
-        // (DBNull is only returned for null-slot positions beyond the JSON field count.)
         var rows = new List<JsonElement>
         {
             ParseElement("{\"id\": 7}")
@@ -1663,9 +1554,6 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task GetSchemaTable_WithNullSlot_StoresDBNullForColumnName()
     {
-        // When _columnNames has a null slot, GetSchemaTable stores DBNull.Value for ColumnName
-        // (because there is no alias for that ordinal). The DataTable accepts DBNull.Value for
-        // a typeof(string) column (stored as object internally).
         var rows = new List<JsonElement>
         {
             ParseElement("{\"id\": 1, \"name\": \"alice\"}")
@@ -1676,10 +1564,8 @@ public class CouchbaseDbDataReaderTests
         var schema = reader.GetSchemaTable();
 
         Assert.Equal(2, schema.Rows.Count);
-        // Null slot → ColumnName is DBNull.Value, not a string
         Assert.Equal(DBNull.Value, schema.Rows[0]["ColumnName"]);
         Assert.Equal(0, schema.Rows[0]["ColumnOrdinal"]);
-        // Non-null slot → ColumnName is the alias
         Assert.Equal("name", schema.Rows[1]["ColumnName"]);
         Assert.Equal(1, schema.Rows[1]["ColumnOrdinal"]);
     }
@@ -1687,8 +1573,6 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task GetOrdinal_WithDuplicateColumnNames_FirstWins()
     {
-        // When two slots share the same alias, TryAdd keeps the first.
-        // GetOrdinal("dup") must return the first slot's ordinal (0), not the second (1).
         var rows = new List<JsonElement>
         {
             ParseElement("{\"id\": 1, \"name\": \"alice\"}")
@@ -1696,15 +1580,12 @@ public class CouchbaseDbDataReaderTests
         var reader = CreateReaderWithColumnNames(rows, new string?[] { "dup", "dup" });
         await reader.ReadAsync(CancellationToken.None);
 
-        // First-wins: ordinal 0 is returned for "dup" even though slot 1 also has it.
         Assert.Equal(0, reader.GetOrdinal("dup"));
     }
 
     [Fact]
     public async Task GetValues_WithColumnNames_UsesProjectionCount()
     {
-        // When _columnNames is set and has fewer slots than the JSON fields, GetValues
-        // must iterate over projection count (2), not JSON field count (3).
         var rows = new List<JsonElement>
         {
             ParseElement("{\"a\": 1, \"b\": 2, \"c\": 3}")
@@ -1715,11 +1596,9 @@ public class CouchbaseDbDataReaderTests
         var values = new object[5];
         var count = reader.GetValues(values);
 
-        // Only 2 slots in projection — count must be min(5, 2) = 2
         Assert.Equal(2, count);
         Assert.Equal(1L, values[0]);
         Assert.Equal(2L, values[1]);
-        // Remaining entries in values are untouched (default null)
         Assert.Null(values[2]);
     }
 
@@ -1739,7 +1618,6 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task GetName_WithColumnNames_OutOfRange_ThrowsIndexOutOfRangeException()
     {
-        // The (uint)ordinal >= (uint)_columnNames.Length guard at line 369 must fire.
         var rows = new List<JsonElement>
         {
             ParseElement("{\"id\": 1}")
@@ -1747,7 +1625,6 @@ public class CouchbaseDbDataReaderTests
         var reader = CreateReaderWithColumnNames(rows, new string?[] { "id" });
         await reader.ReadAsync(CancellationToken.None);
 
-        // Ordinal 1 is out of range for a 1-element projection.
         Assert.Throws<IndexOutOfRangeException>(() => reader.GetName(1));
         Assert.Throws<IndexOutOfRangeException>(() => reader.GetName(-1));
     }
@@ -1755,8 +1632,6 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task GetOrdinal_WithAllNullColumnNames_ResolvesJsonFieldNamesViaFallback()
     {
-        // _projectionOrdinals is empty (all slots null), but the constrained fallback
-        // resolves JSON field names that map to null-slot positions.
         var rows = new List<JsonElement>
         {
             ParseElement("{\"id\": 1, \"name\": \"alice\"}")
@@ -1764,18 +1639,15 @@ public class CouchbaseDbDataReaderTests
         var reader = CreateReaderWithColumnNames(rows, new string?[] { null, null });
         await reader.ReadAsync(CancellationToken.None);
 
-        // Both slots are null — JSON field names resolve via the constrained fallback.
         Assert.Equal(0, reader.GetOrdinal("id"));
         Assert.Equal(1, reader.GetOrdinal("name"));
 
-        // A name that doesn't exist in the JSON response still throws.
         Assert.Throws<IndexOutOfRangeException>(() => reader.GetOrdinal("anything"));
     }
 
     [Fact]
     public void FieldCount_WithEmptyColumnNames_ReturnsZero()
     {
-        // Empty _columnNames array → FieldCount must be 0 without triggering schema discovery.
         var rows = new List<JsonElement>
         {
             ParseElement("{\"id\": 1}")
@@ -1788,7 +1660,6 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task GetValues_WithColumnNamesAndSmallerArray_UsesMinOfArrayAndProjection()
     {
-        // Array is smaller than projection — must return min(array.Length, _columnNames.Length).
         var rows = new List<JsonElement>
         {
             ParseElement("{\"a\": 10, \"b\": 20, \"c\": 30}")
@@ -1796,7 +1667,7 @@ public class CouchbaseDbDataReaderTests
         var reader = CreateReaderWithColumnNames(rows, new string?[] { "a", "b", "c" });
         await reader.ReadAsync(CancellationToken.None);
 
-        var values = new object[2]; // smaller than projection (3)
+        var values = new object[2];
         var count = reader.GetValues(values);
 
         Assert.Equal(2, count);
@@ -1830,8 +1701,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task ScalarRaw_NumberRow_GetOrdinalWithAnyNameReturnsZero()
     {
-        // The EF Core shaper may request any alias name for scalar projections;
-        // a SELECT RAW result maps any name to ordinal 0.
+        // No-column-names path: scalar SELECT RAW maps any name to ordinal 0.
         var rows = new List<JsonElement> { ParseElement("5") };
         var reader = CreateReader(rows);
         await reader.ReadAsync(CancellationToken.None);
@@ -1923,7 +1793,7 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task GetValue_WithColumnNames_MultipleAliases_ResolvesEachIndependently()
     {
-        // Each alias resolves via _fieldOrdinals to its canonical name, then exact property access.
+        // Each alias resolves via TryGetPropertyCI to its value.
         var rows = new List<JsonElement> { ParseElement("{\"name\": \"alice\", \"age\": 30}") };
         var reader = CreateReaderWithColumnNames(rows, new string?[] { "age", "name" });
         await reader.ReadAsync(CancellationToken.None);
@@ -1932,27 +1802,26 @@ public class CouchbaseDbDataReaderTests
         Assert.Equal("alice", reader.GetValue(1));
     }
 
-    // GetValue — canonical-name O(1) path via _fieldOrdinals
+    // GetValue — canonical-name path via TryGetPropertyCI
 
     [Fact]
-    public async Task GetValue_WithColumnNames_SchemaPreBuiltViaHasRows_CaseInsensitiveAliasResolves()
+    public async Task GetValue_WithColumnNames_HasRows_CaseInsensitiveAliasResolves()
     {
-        // Accessing HasRows before ReadAsync triggers EnsureFieldInfo (builds _fieldOrdinals).
-        // GetValue must still resolve the alias correctly via the pre-built _fieldOrdinals.
+        // Accessing HasRows before ReadAsync no longer triggers schema discovery.
+        // GetValue must still resolve the alias correctly via TryGetPropertyCI.
         var rows = new List<JsonElement> { ParseElement("{\"blogId\": 99}") };
         var reader = CreateReaderWithColumnNames(rows, new string?[] { "BlogId" });
 
-        _ = reader.HasRows; // triggers schema discovery before ReadAsync
+        _ = reader.HasRows; // returns false before ReadAsync; no side effects
         await reader.ReadAsync(CancellationToken.None);
 
         Assert.Equal(99L, reader.GetValue(0));
     }
 
     [Fact]
-    public async Task GetValue_WithColumnNames_MultipleRows_CanonicalNameUsedForEveryRow()
+    public async Task GetValue_WithColumnNames_MultipleRows_AliasUsedForEveryRow()
     {
-        // _fieldOrdinals is built from the first row and reused for subsequent rows.
-        // Alias casing differs from JSON key on every row — all must resolve correctly.
+        // TryGetPropertyCI resolves the alias for every row.
         var rows = new List<JsonElement>
         {
             ParseElement("{\"blogId\": 1}"),
@@ -1971,8 +1840,6 @@ public class CouchbaseDbDataReaderTests
     [Fact]
     public async Task GetValue_WithColumnNames_FieldPresentInFirstRowAbsentInLater_ReturnsDBNull()
     {
-        // _fieldOrdinals maps "id" → 0 from the first row.
-        // A later row that lacks "id" must return DBNull rather than throw.
         var rows = new List<JsonElement>
         {
             ParseElement("{\"id\": 10}"),
@@ -1988,17 +1855,15 @@ public class CouchbaseDbDataReaderTests
     }
 
     [Fact]
-    public async Task GetValue_WithColumnNames_AliasNotInSchema_FallsBackToTryGetPropertyCI()
+    public async Task GetValue_WithColumnNames_AliasNotInFirstRow_FallsBackToTryGetPropertyCI()
     {
-        // When _fieldOrdinals does not contain the alias (alias added to _columnNames after
-        // the schema row), TryGetPropertyCI is the safety-net.  The schema is built from a
-        // first row that has no "extra" field; a second row that does exposes the fallback.
+        // The second row introduces a field absent from the first row.
+        // TryGetPropertyCI finds it case-insensitively on both rows.
         var rows = new List<JsonElement>
         {
             ParseElement("{\"id\": 1}"),
             ParseElement("{\"id\": 2, \"Extra\": 42}"),
         };
-        // Two slots: "id" appears in the schema; "extra" does not.
         var reader = CreateReaderWithColumnNames(rows, new string?[] { "id", "extra" });
 
         await reader.ReadAsync(CancellationToken.None);
@@ -2007,8 +1872,7 @@ public class CouchbaseDbDataReaderTests
 
         await reader.ReadAsync(CancellationToken.None);
         Assert.Equal(2L, reader.GetValue(0));
-        // "extra" absent from _fieldOrdinals (not in schema row) — TryGetPropertyCI fallback
-        // must find "Extra" case-insensitively and return 42.
+        // TryGetPropertyCI finds "Extra" case-insensitively.
         Assert.Equal(42L, reader.GetValue(1));
     }
 
@@ -2069,7 +1933,13 @@ public class CouchbaseDbDataReaderTests
         mockQueryResult.Setup(q => q.MetaData).Returns(metaData);
         mockQueryResult.Setup(q => q.Rows).Returns(rows.ToAsyncEnumerable());
 
-        return new CouchbaseDbDataReader<JsonElement>(mockQueryResult.Object);
+        // Use the raw ADO.NET constructor (no column names) so these tests cover the
+        // positional-access path, which resolves field names from the current row.
+        return new CouchbaseDbDataReader<JsonElement>(
+            mockQueryResult.Object,
+            connection: null,
+            System.Data.CommandBehavior.Default,
+            CancellationToken.None);
     }
 
     private static CouchbaseDbDataReader<JsonElement> CreateReaderWithColumnNames(
@@ -2081,22 +1951,6 @@ public class CouchbaseDbDataReaderTests
         mockQueryResult.Setup(q => q.MetaData).Returns(metaData);
         mockQueryResult.Setup(q => q.Rows).Returns(rows.ToAsyncEnumerable());
 
-        return new CouchbaseDbDataReader<JsonElement>(mockQueryResult.Object, columnNames);
-    }
-
-    private static CouchbaseDbDataReader<JsonElement> CreateReaderWithCancellationToken(
-        List<JsonElement> rows,
-        CancellationToken cancellationToken)
-    {
-        var mockQueryResult = new Mock<IQueryResult<JsonElement>>();
-        var metaData = new QueryMetaData { Status = QueryStatus.Success };
-        mockQueryResult.Setup(q => q.MetaData).Returns(metaData);
-        mockQueryResult.Setup(q => q.Rows).Returns(rows.ToAsyncEnumerable());
-
-        return new CouchbaseDbDataReader<JsonElement>(
-            mockQueryResult.Object,
-            connection: null,
-            CommandBehavior.Default,
-            cancellationToken);
+        return new CouchbaseDbDataReader<JsonElement>(mockQueryResult.Object, columnNames!);
     }
 }
