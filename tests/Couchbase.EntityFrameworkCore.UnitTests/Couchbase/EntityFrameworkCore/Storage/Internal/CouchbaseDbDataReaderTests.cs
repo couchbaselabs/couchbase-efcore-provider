@@ -1982,6 +1982,75 @@ public class CouchbaseDbDataReaderTests
         Assert.True(await reader.ReadAsync(CancellationToken.None));
     }
 
+    [Fact]
+    public async Task NullRow_FieldCount_IsOne()
+    {
+        var reader = CreateNullRowReader();
+        await reader.ReadAsync(CancellationToken.None);
+        Assert.Equal(1, reader.FieldCount);
+    }
+
+    [Fact]
+    public async Task NullRow_GetValue_OrdinalZero_ReturnsDBNull()
+    {
+        var reader = CreateNullRowReader();
+        await reader.ReadAsync(CancellationToken.None);
+        Assert.Equal(DBNull.Value, reader.GetValue(0));
+    }
+
+    [Fact]
+    public async Task NullRow_GetValue_OrdinalNonZero_ThrowsIndexOutOfRangeException()
+    {
+        var reader = CreateNullRowReader();
+        await reader.ReadAsync(CancellationToken.None);
+        Assert.Throws<IndexOutOfRangeException>(() => reader.GetValue(1));
+    }
+
+    [Fact]
+    public async Task NullRow_GetName_OrdinalZero_ReturnsEmptyString()
+    {
+        var reader = CreateNullRowReader();
+        await reader.ReadAsync(CancellationToken.None);
+        Assert.Equal(string.Empty, reader.GetName(0));
+    }
+
+    [Fact]
+    public async Task NullRow_GetOrdinal_ReturnsZero()
+    {
+        var reader = CreateNullRowReader();
+        await reader.ReadAsync(CancellationToken.None);
+        Assert.Equal(0, reader.GetOrdinal("anything"));
+    }
+
+    [Fact]
+    public async Task NullRow_GetSchemaTable_ReturnsSingleEmptyNameRow()
+    {
+        var reader = CreateNullRowReader();
+        await reader.ReadAsync(CancellationToken.None);
+        var schema = reader.GetSchemaTable();
+        Assert.Equal(1, schema.Rows.Count);
+        Assert.Equal(string.Empty, schema.Rows[0]["ColumnName"]);
+        Assert.Equal(0, schema.Rows[0]["ColumnOrdinal"]);
+    }
+
+    [Fact]
+    public async Task NullRow_GetValues_CopiesDBNullToFirstSlot()
+    {
+        var reader = CreateNullRowReader();
+        await reader.ReadAsync(CancellationToken.None);
+        var values = new object[1];
+        Assert.Equal(1, reader.GetValues(values));
+        Assert.Equal(DBNull.Value, values[0]);
+    }
+
+    private static CouchbaseDbDataReader<object?> CreateNullRowReader()
+    {
+        var mockQueryResult = new Mock<IQueryResult<object?>>();
+        mockQueryResult.Setup(q => q.Rows).Returns(new object?[] { null }.ToAsyncEnumerable());
+        return new CouchbaseDbDataReader<object?>(mockQueryResult.Object!, connection: null,
+            System.Data.CommandBehavior.Default, CancellationToken.None);
+    }
+
     #endregion
 
     #region Phase 2 — TryGetPropertyCI and GetOrdinal null-slot guards

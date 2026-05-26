@@ -121,7 +121,7 @@ public class CouchbaseDbDataReader<T> : DbDataReader
             EnsureCurrentRow();
             if (_currentRow is JsonElement je)
                 return je.ValueKind == JsonValueKind.Object ? je.EnumerateObject().Count() : 1;
-            return 0;
+            return 1; // null row (SELECT RAW null) — one column, value is DBNull
         }
     }
 
@@ -348,18 +348,16 @@ public class CouchbaseDbDataReader<T> : DbDataReader
 
         // No column names: positional from current row.
         EnsureCurrentRow();
-        if (_currentRow is JsonElement jePos)
+        if (_currentRow is JsonElement jePos && jePos.ValueKind == JsonValueKind.Object)
         {
-            if (jePos.ValueKind == JsonValueKind.Object)
-            {
-                var i = 0;
-                foreach (var prop in jePos.EnumerateObject())
-                    if (i++ == ordinal) return prop.Name;
-                throw new IndexOutOfRangeException($"Ordinal {ordinal} is out of range.");
-            }
-            if (ordinal == 0)
-                return string.Empty;
+            var i = 0;
+            foreach (var prop in jePos.EnumerateObject())
+                if (i++ == ordinal) return prop.Name;
+            throw new IndexOutOfRangeException($"Ordinal {ordinal} is out of range.");
         }
+        // Scalar (non-object JsonElement) or null row (SELECT RAW null): one column at ordinal 0.
+        if (ordinal == 0)
+            return string.Empty;
         throw new IndexOutOfRangeException($"Ordinal {ordinal} is out of range.");
     }
 
@@ -403,25 +401,19 @@ public class CouchbaseDbDataReader<T> : DbDataReader
 
         // No column names: positional scan of current row.
         EnsureCurrentRow();
-        if (_currentRow is JsonElement jePos)
+        if (_currentRow is JsonElement jePos && jePos.ValueKind == JsonValueKind.Object)
         {
-            if (jePos.ValueKind == JsonValueKind.Object)
+            var i = 0;
+            foreach (var prop in jePos.EnumerateObject())
             {
-                var i = 0;
-                foreach (var prop in jePos.EnumerateObject())
-                {
-                    if (StringComparer.OrdinalIgnoreCase.Equals(prop.Name, name))
-                        return i;
-                    i++;
-                }
+                if (StringComparer.OrdinalIgnoreCase.Equals(prop.Name, name))
+                    return i;
+                i++;
             }
-            else
-            {
-                // Scalar SELECT RAW: any name maps to ordinal 0.
-                return 0;
-            }
+            throw new IndexOutOfRangeException($"Field '{name}' not found.");
         }
-        throw new IndexOutOfRangeException($"Field '{name}' not found.");
+        // Scalar (non-object JsonElement) or null row (SELECT RAW null): any name maps to ordinal 0.
+        return 0;
     }
 
     /// <summary>
@@ -505,6 +497,8 @@ public class CouchbaseDbDataReader<T> : DbDataReader
             if (ordinal == 0)
                 return ConvertJsonElement(jeFallback);
         }
+        else if (_currentRow == null && ordinal == 0)
+            return DBNull.Value; // null row (SELECT RAW null)
         throw new IndexOutOfRangeException($"Ordinal {ordinal} is out of range.");
     }
 
@@ -531,7 +525,7 @@ public class CouchbaseDbDataReader<T> : DbDataReader
         }
         else
         {
-            fieldCount = _currentRow is JsonElement ? 1 : 0;
+            fieldCount = 1; // scalar JsonElement or null row (SELECT RAW null)
         }
 
         var count = Math.Min(values.Length, fieldCount);
@@ -857,31 +851,29 @@ public class CouchbaseDbDataReader<T> : DbDataReader
 
         // No column names: build from current row.
         EnsureCurrentRow();
-        if (_currentRow is JsonElement je)
+        if (_currentRow is JsonElement je && je.ValueKind == JsonValueKind.Object)
         {
-            if (je.ValueKind == JsonValueKind.Object)
+            var i = 0;
+            foreach (var prop in je.EnumerateObject())
             {
-                var i = 0;
-                foreach (var prop in je.EnumerateObject())
-                {
-                    var row = schemaTable.NewRow();
-                    row["ColumnName"] = prop.Name;
-                    row["ColumnOrdinal"] = i++;
-                    row["DataType"] = typeof(object);
-                    row["AllowDBNull"] = true;
-                    schemaTable.Rows.Add(row);
-                }
-            }
-            else
-            {
-                // Scalar SELECT RAW: consistent with FieldCount==1 and GetName(0)=="".
                 var row = schemaTable.NewRow();
-                row["ColumnName"] = string.Empty;
-                row["ColumnOrdinal"] = 0;
+                row["ColumnName"] = prop.Name;
+                row["ColumnOrdinal"] = i++;
                 row["DataType"] = typeof(object);
                 row["AllowDBNull"] = true;
                 schemaTable.Rows.Add(row);
             }
+        }
+        else
+        {
+            // Scalar (non-object JsonElement) or null row (SELECT RAW null):
+            // one column, consistent with FieldCount==1 and GetName(0)=="".
+            var row = schemaTable.NewRow();
+            row["ColumnName"] = string.Empty;
+            row["ColumnOrdinal"] = 0;
+            row["DataType"] = typeof(object);
+            row["AllowDBNull"] = true;
+            schemaTable.Rows.Add(row);
         }
         return schemaTable;
     }
