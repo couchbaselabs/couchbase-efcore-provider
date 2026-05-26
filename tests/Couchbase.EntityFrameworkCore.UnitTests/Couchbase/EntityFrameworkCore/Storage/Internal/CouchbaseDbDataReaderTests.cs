@@ -17,11 +17,17 @@ public class CouchbaseDbDataReaderTests
     }
 
     [Fact]
-    public void Constructor_WithNullColumnNames_ThrowsArgumentNullException()
+    public async Task Constructor_WithNullColumnNames_FallsBackToPositionalPath()
     {
-        var mockQueryResult = new Mock<IQueryResult<object>>();
-        Assert.Throws<ArgumentNullException>(() =>
-            new CouchbaseDbDataReader<object>(mockQueryResult.Object, null!));
+        // null columnNames is valid — it means "no alias mapping; use positional resolution".
+        // This mirrors the raw ADO.NET path and must not throw at construction or at read time.
+        var rows = new List<JsonElement> { ParseElement("{\"id\": 1}") };
+        var mockQueryResult = new Mock<IQueryResult<JsonElement>>();
+        mockQueryResult.Setup(q => q.Rows).Returns(rows.ToAsyncEnumerable());
+
+        var reader = new CouchbaseDbDataReader<JsonElement>(mockQueryResult.Object, (string?[]?)null);
+        Assert.True(await reader.ReadAsync(CancellationToken.None));
+        Assert.Equal(1L, reader.GetInt64(0));
     }
 
     [Fact]
@@ -2111,6 +2117,6 @@ public class CouchbaseDbDataReaderTests
         mockQueryResult.Setup(q => q.MetaData).Returns(metaData);
         mockQueryResult.Setup(q => q.Rows).Returns(rows.ToAsyncEnumerable());
 
-        return new CouchbaseDbDataReader<JsonElement>(mockQueryResult.Object, columnNames!);
+        return new CouchbaseDbDataReader<JsonElement>(mockQueryResult.Object, columnNames);
     }
 }

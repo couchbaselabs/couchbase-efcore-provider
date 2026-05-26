@@ -65,24 +65,27 @@ public class CouchbaseDbDataReader<T> : DbDataReader
     private bool _isClosed;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="CouchbaseDbDataReader{T}"/> class with a
-    /// column-name mapping. The <paramref name="columnNames"/> array must contain the SELECT-clause
-    /// alias for each EF Core <c>readerColumn</c> in order; <c>null</c> elements use positional
-    /// mapping (resolved from the current row after <see cref="ReadAsync"/>).
+    /// Initializes a new instance of the <see cref="CouchbaseDbDataReader{T}"/> class with an
+    /// optional column-name mapping. When <paramref name="columnNames"/> is non-null it must
+    /// contain the SELECT-clause alias for each EF Core <c>readerColumn</c> in order; <c>null</c>
+    /// elements within the array use positional mapping (resolved from the current row after
+    /// <see cref="ReadAsync"/>).  When <paramref name="columnNames"/> itself is <c>null</c> the
+    /// reader operates in the raw positional path (same behaviour as the 4-argument constructor).
     /// </summary>
-    /// <exception cref="ArgumentNullException">
-    /// Thrown when <paramref name="queryResult"/> or <paramref name="columnNames"/> is null.
-    /// </exception>
-    public CouchbaseDbDataReader(IQueryResult<T> queryResult, string?[] columnNames)
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="queryResult"/> is null.</exception>
+    public CouchbaseDbDataReader(IQueryResult<T> queryResult, string?[]? columnNames)
         : this(queryResult, null, CommandBehavior.Default, CancellationToken.None)
     {
-        _columnNames = columnNames ?? throw new ArgumentNullException(nameof(columnNames));
-        _projectionOrdinals = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        for (var i = 0; i < columnNames.Length; i++)
+        if (columnNames != null)
         {
-            var alias = columnNames[i];
-            if (alias != null)
-                _projectionOrdinals.TryAdd(alias, i);
+            _columnNames = columnNames;
+            _projectionOrdinals = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            for (var i = 0; i < columnNames.Length; i++)
+            {
+                var alias = columnNames[i];
+                if (alias != null)
+                    _projectionOrdinals.TryAdd(alias, i);
+            }
         }
     }
 
