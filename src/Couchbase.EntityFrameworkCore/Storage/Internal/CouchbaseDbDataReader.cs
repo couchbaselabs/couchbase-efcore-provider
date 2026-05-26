@@ -204,7 +204,7 @@ public class CouchbaseDbDataReader<T> : DbDataReader
         var hasMore = await _enumerator!.MoveNextAsync().ConfigureAwait(false);
         if (hasMore)
         {
-            _currentRow = _enumerator.Current;
+            _currentRow = ValidateRow(_enumerator.Current);
             _hasCurrentRow = true;
             _hasRows ??= true;
         }
@@ -242,7 +242,7 @@ public class CouchbaseDbDataReader<T> : DbDataReader
         var hasMore = await _enumerator!.MoveNextAsync().ConfigureAwait(false);
         if (hasMore)
         {
-            _bufferedFirstRow = _enumerator.Current;
+            _bufferedFirstRow = ValidateRow(_enumerator.Current);
             _hasBufferedRow = true;
             _hasRows = true;
         }
@@ -880,6 +880,15 @@ public class CouchbaseDbDataReader<T> : DbDataReader
     {
         if (!_hasCurrentRow)
             throw new InvalidOperationException("No current row. Call Read() first.");
+    }
+
+    private static T ValidateRow(T row)
+    {
+        if (row is not null and not JsonElement)
+            throw new NotSupportedException(
+                $"Row type '{row.GetType().Name}' is not supported. " +
+                "The query must be executed with cluster.QueryAsync<JsonElement>().");
+        return row;
     }
 
     private static object ConvertJsonElement(JsonElement element)

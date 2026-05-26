@@ -1930,6 +1930,44 @@ public class CouchbaseDbDataReaderTests
 
     #endregion
 
+    #region Row-type validation — NotSupportedException for non-JsonElement rows
+
+    [Fact]
+    public async Task ReadAsync_NonJsonElementRow_ThrowsNotSupportedException()
+    {
+        var mockQueryResult = new Mock<IQueryResult<object>>();
+        mockQueryResult.Setup(q => q.Rows).Returns(new[] { (object)"not-a-json-element" }.ToAsyncEnumerable());
+        var reader = new CouchbaseDbDataReader<object>(mockQueryResult.Object, connection: null,
+            System.Data.CommandBehavior.Default, CancellationToken.None);
+
+        await Assert.ThrowsAsync<NotSupportedException>(() => reader.ReadAsync(CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task PrimeAsync_NonJsonElementRow_ThrowsNotSupportedException()
+    {
+        var mockQueryResult = new Mock<IQueryResult<object>>();
+        mockQueryResult.Setup(q => q.Rows).Returns(new[] { (object)"not-a-json-element" }.ToAsyncEnumerable());
+        var reader = new CouchbaseDbDataReader<object>(mockQueryResult.Object, connection: null,
+            System.Data.CommandBehavior.Default, CancellationToken.None);
+
+        await Assert.ThrowsAsync<NotSupportedException>(() => reader.PrimeAsync(CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task ReadAsync_NullRow_DoesNotThrow()
+    {
+        // null is allowed (e.g. SELECT RAW null) — only non-null non-JsonElement throws.
+        var mockQueryResult = new Mock<IQueryResult<object>>();
+        mockQueryResult.Setup(q => q.Rows).Returns(new object?[] { null }.ToAsyncEnumerable<object?>());
+        var reader = new CouchbaseDbDataReader<object?>(mockQueryResult.Object!, connection: null,
+            System.Data.CommandBehavior.Default, CancellationToken.None);
+
+        Assert.True(await reader.ReadAsync(CancellationToken.None));
+    }
+
+    #endregion
+
     #region Phase 2 — TryGetPropertyCI and GetOrdinal null-slot guards
 
     // GetValue — case-insensitive property lookup via TryGetPropertyCI

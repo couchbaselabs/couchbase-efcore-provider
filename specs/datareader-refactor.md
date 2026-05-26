@@ -116,8 +116,9 @@ always provided so this infrastructure is never needed.
 
 ### Changes
 
-- Make `columnNames` a required constructor parameter. Add a guard that throws
-  `ArgumentNullException` if null. Remove the optional overload that omits it.
+- Make `columnNames` an optional parameter on the 2-arg constructor (`string?[]?`). A non-null
+  array sets up the alias mapping; `null` falls through to the raw positional path, identical to
+  using the 4-arg constructor. Remove the optional overload that omits it entirely.
 
 - Delete the following fields and their associated logic:
   - `_bufferedRow`, `_hasBufferedRow` — first-row buffer
@@ -159,6 +160,63 @@ To satisfy the ADO.NET contract without reintroducing the sync-over-async call:
 Approximately 150 lines removed. The sync-over-async call is gone. `HasRows` is accurate before
 the first `ReadAsync` call. Reader construction is O(1); the single async peek happens in
 `PrimeAsync` on the command path. Six `PrimeAsync`-specific tests were added.
+
+---
+
+## Post-phase-3 corrections
+
+Four defects were identified and fixed after the phase 3 commit landed.
+
+### 1 — `DbCommand.Cancel()` not propagating to the row enumerator
+
+`PrimeAsync` was invoked with the caller's external `cancellationToken` rather than
+`linkedCts.Token`, so the enumerator was bound to a token that `Cancel()` could never reach.
+Additionally, `linkedCts` was declared with `using var` in `ExecuteDbDataReaderAsync`, which
+disposed the link between `_cancellationTokenSource` and the enumerator's token as soon as the
+method returned — making the fix incomplete even if the token were corrected.
+
+Fix:
+- Pass `linkedCts.Token` to both the reader constructor and `PrimeAsync`.
+- Drop `using` from `var linkedCts`; transfer ownership to the reader via `SetLinkedCts(cts)`.
+- Reader disposes the linked CTS in `Close` / `CloseAsync`.
+- Guard the setup path so `linkedCts` is always disposed on failure (via the reader if it was
+  created, directly otherwise).
+
+### 2 — `PrimeAsync` not idempotent
+
+A second `PrimeAsync` call advanced the underlying enumerator again and overwrote the buffered
+first row, silently dropping data.
+
+Fix: add an early-return guard at the top of `PrimeAsync`:
+```csharp
+if (_hasRows.HasValue || _hasBufferedRow || _hasCurrentRow)
+    return;
+```
+Two tests cover double-prime and prime-after-read scenarios.
+
+### 3 — `GetName` / `GetOrdinal` null-slot throwing wrong exception before first `Read`
+
+In the column-names path, both methods used `if (_hasCurrentRow && ...)` to gate positional
+resolution. When no row had been read the condition was false and they fell through to
+`IndexOutOfRangeException("... not found")` even when the ordinal/name was in range. The
+correct exception for a missing current row is `InvalidOperationException`.
+
+Fix: replace the `_hasCurrentRow` guard with `EnsureCurrentRow()` in both methods, consistent
+with the no-column-names path and each method's own remarks.
+
+### 4 — 2-arg constructor rejecting `null` `columnNames`
+
+`CouchbaseQueryEnumerable` computes column names as:
+```csharp
+var columnNames = _projectionAliases ?? _readerColumns?.Select(rc => rc?.Name).ToArray();
+```
+When both sources are `null` this produces `null`, which the original constructor rejected with
+`ArgumentNullException`. Null is a legitimate "no alias mapping" state that should route through
+the existing positional path.
+
+Fix: change the parameter type to `string?[]?` and make alias setup conditional on non-null,
+leaving `_columnNames` and `_projectionOrdinals` as `null` (positional path) when `null` is
+passed. Replace the `ArgumentNullException` test with one that verifies the positional fallback.
 
 ---
 
