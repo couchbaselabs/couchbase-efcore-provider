@@ -20,11 +20,11 @@ namespace Couchbase.EntityFrameworkCore.Storage.Internal;
 /// </para>
 /// <para>
 /// <b>Column names:</b> When <paramref name="columnNames"/> is supplied the reader maps each
-/// projection alias to its shaper ordinal at construction time. Field-name lookup and
-/// <see cref="FieldCount"/> are O(1) and work before the first <see cref="ReadAsync"/> call.
-/// Null slots in <paramref name="columnNames"/> indicate positional (unaliased) columns; those
-/// resolve against the current row's JSON property order and therefore require a prior
-/// <see cref="ReadAsync"/> call.
+/// projection alias to its shaper ordinal at construction time. <see cref="FieldCount"/> is
+/// always O(1). Non-null alias slots resolve field names and ordinals in O(1) without a prior
+/// <see cref="ReadAsync"/> call. Null slots indicate positional (unaliased) columns; those
+/// resolve against the current row's JSON property order (O(m) scan) and therefore require a
+/// prior <see cref="ReadAsync"/> call.
 /// </para>
 /// <para>
 /// When <paramref name="columnNames"/> is not supplied (raw ADO.NET path via

@@ -268,8 +268,20 @@ return element.HasValue ? ConvertJsonElement(element.Value) : DBNull.Value;
 - `_projectionOrdinals` (built at construction, `OrdinalIgnoreCase`) drives the name → ordinal
   mapping during the per-row scan.
 
+### `GetValues` O(m²) fix
+
+`GetValues` currently calls `GetValue(i)` in a loop. For the no-column-names (positional) path
+and for null-slot columns in the column-names path, each `GetValue` call re-enumerates the
+`JsonElement` properties from the start, making `GetValues` O(m²) for an object row with `m`
+properties.
+
+Once `_currentValues` is populated in `ReadAsync`, `GetValue(ordinal)` becomes an O(1) array
+read, so `GetValues` naturally degrades to O(k) with no changes to its own implementation.
+No targeted fix to `GetValues` is needed; the improvement is a free consequence of the
+`_currentValues` array.
+
 ### Expected outcome
 
 Per-row cost changes from O(k × m) to O(m + k). `GetValue` is a bounds-checked array read with
-no string comparisons. At 100 rows × 10 columns × 10 properties the total comparisons drop from
-10,000 to ~1,000.
+no string comparisons. `GetValues` drops from O(m²) to O(k). At 100 rows × 10 columns × 10
+properties the total comparisons drop from 10,000 to ~1,000.
