@@ -48,6 +48,8 @@ public class CouchbaseDbDataReader<T> : DbDataReader
     private readonly Dictionary<string, int>? _projectionOrdinals;
     private IAsyncEnumerator<T>? _enumerator;
     private CancellationToken _cancellationToken;
+    // Owned linked CTS transferred from CouchbaseCommand so Cancel() propagates for the reader's lifetime.
+    private CancellationTokenSource? _linkedCts;
     private T? _currentRow;
     // First-row buffer populated by PrimeAsync so HasRows is accurate before ReadAsync.
     private T? _bufferedFirstRow;
@@ -235,6 +237,13 @@ public class CouchbaseDbDataReader<T> : DbDataReader
     }
 
     /// <summary>
+    /// Transfers ownership of the linked <see cref="CancellationTokenSource"/> created by
+    /// <see cref="CouchbaseCommand"/> so that <c>DbCommand.Cancel()</c> propagates to the
+    /// enumerator for the reader's full lifetime.  The source is disposed when the reader closes.
+    /// </summary>
+    internal void SetLinkedCts(CancellationTokenSource cts) => _linkedCts = cts;
+
+    /// <summary>
     /// Advances the reader to the next result set. Always returns <c>false</c> for Couchbase.
     /// </summary>
     public override bool NextResult() => false;
@@ -253,6 +262,8 @@ public class CouchbaseDbDataReader<T> : DbDataReader
         {
             _isClosed = true;
             _enumerator?.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            _linkedCts?.Dispose();
+            _linkedCts = null;
 
             if ((_behavior & CommandBehavior.CloseConnection) != 0 && _connection != null)
                 _connection.Close();
@@ -269,6 +280,8 @@ public class CouchbaseDbDataReader<T> : DbDataReader
             _isClosed = true;
             if (_enumerator != null)
                 await _enumerator.DisposeAsync().ConfigureAwait(false);
+            _linkedCts?.Dispose();
+            _linkedCts = null;
 
             if ((_behavior & CommandBehavior.CloseConnection) != 0 && _connection != null)
                 await _connection.CloseAsync().ConfigureAwait(false);

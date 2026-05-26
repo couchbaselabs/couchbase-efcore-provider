@@ -6,6 +6,7 @@
 `IQueryResult<JsonElement>` and EF Core's compiled shapers. It was built incrementally alongside
 the query pipeline and has accumulated complexity for code paths that never execute in the
 provider. This document describes four sequential phases to simplify and optimize it.
+Phases 1–3 are complete. Phase 4 is the next planned work.
 
 The EF Core shaper is the sole consumer of this reader. It calls typed getters by projection
 ordinal (e.g. `GetInt32(3)`, `GetString(7)`) for every column of every result row. The
@@ -14,7 +15,9 @@ projection aliases (`_columnNames`) are always supplied by `CouchbaseQueryEnumer
 
 ---
 
-## Phase 1 — Remove Dead Code Paths
+## Phase 1 — Remove Dead Code Paths ✓
+
+**Status: Complete**
 
 **Goal:** Delete code that never executes. No behavioral change.
 
@@ -41,7 +44,7 @@ projection aliases (`_columnNames`) are always supplied by `CouchbaseQueryEnumer
 
 - Remove `ExtractFirstValueFromObject` and `ExtractFirstValueFromArray` once the above is done.
 
-### Expected outcome
+### Actual outcome
 
 Approximately 50 lines removed. The remaining code reflects only what actually runs in the
 provider. Five tests required updates: the `IsType<CouchbaseDbDataReader<object>>` assertions
@@ -51,7 +54,9 @@ test also needed its N1QL query corrected from an invalid subquery alias to `UNI
 
 ---
 
-## Phase 2 — Eliminate the `_fieldOrdinals` Indirection
+## Phase 2 — Eliminate the `_fieldOrdinals` Indirection ✓
+
+**Status: Complete**
 
 **Goal:** Shorten the `GetValue` hot path from five steps to two. Logically equivalent to current
 behavior.
@@ -91,16 +96,20 @@ two allocations and two lookups without changing the result.
   ensures non-null aliases that somehow bypass `_projectionOrdinals` are rejected rather than
   silently returned. Only the stale comment above the block needs updating.
 
-### Expected outcome
+### Actual outcome
 
-`GetValue` hot path (non-null `_columnNames` slot): array lookup → `_fieldOrdinals` dict lookup
-→ exact `TryGetProperty`. One dictionary lookup replaces two (dict + array); the O(m) linear scan
-is eliminated for the common case. `TryGetPropertyCI` is the fallback for unknown aliases only.
-Approximately 15–20 lines removed from `GetValue`; `GetOrdinal` is comment-only cleanup.
+The intermediate phase 2 fast path (array lookup → `_fieldOrdinals` dict → exact `TryGetProperty`)
+was implemented and then superseded when phase 3 removed `_fieldOrdinals` and `_fieldNames`
+entirely. The final hot path is: `_columnNames[ordinal]` → `je.TryGetPropertyCI(colName)` →
+`ConvertJsonElement`. `TryGetPropertyCI` (extracted to `JsonElementExtensions`) handles
+case-insensitive matching directly on the alias, eliminating the round-trip through the old
+ordinal maps. Approximately 15–20 lines removed; `GetOrdinal` received comment-only cleanup.
 
 ---
 
-## Phase 3 — Remove Schema-Discovery Infrastructure
+## Phase 3 — Remove Schema-Discovery Infrastructure ✓
+
+**Status: Complete**
 
 **Goal:** Delete the first-row peek, buffering, and field-metadata machinery. `_columnNames` is
 always provided so this infrastructure is never needed.
@@ -120,20 +129,36 @@ always provided so this infrastructure is never needed.
   sync-over-async call in the reader (`MoveNextAsync().AsTask().GetAwaiter().GetResult()`).
 
 - Simplify the properties that previously triggered schema discovery:
-  - `HasRows` — cannot be known until `ReadAsync` is called; return `_hasRows ?? false`
-    (populated on first `ReadAsync`) with no peeking.
+  - `HasRows` — see deviation note below.
   - `FieldCount` — `_columnNames.Length`.
   - `GetName(ordinal)` — `_columnNames[ordinal]`.
   - `GetOrdinal(name)` — `_projectionOrdinals[name]` (dictionary built at construction).
 
-- Update `CouchbaseDbDataReaderTests`. Tests that call `HasRows` or `FieldCount` before `ReadAsync`
-  should be adjusted to call `ReadAsync` first, or updated to reflect that `HasRows` returns false
-  until the first read.
+- Update `CouchbaseDbDataReaderTests`. Tests that previously relied on `HasRows` before
+  `ReadAsync` were updated for the new `PrimeAsync` contract (see deviation below).
 
-### Expected outcome
+### Deviation: `HasRows` and `PrimeAsync`
 
-Approximately 150 lines removed. The sync-over-async call is gone. The reader's construction is
-O(1) — no first-row read, no buffering, no schema inference.
+The spec called for `HasRows` to return `_hasRows ?? false` until the first `ReadAsync` call.
+In practice EF Core reads `HasRows` immediately after `ExecuteReaderAsync` returns, before
+calling `ReadAsync`, so returning `false` caused silent empty-result materialisation.
+
+To satisfy the ADO.NET contract without reintroducing the sync-over-async call:
+
+- `internal Task PrimeAsync(CancellationToken)` was added to the reader. It eagerly advances
+  the enumerator to the first row, stores the row in `_bufferedFirstRow`, sets `_hasBufferedRow`,
+  and records `_hasRows = true/false`.
+- `CouchbaseCommand.ExecuteDbDataReaderAsync` calls `PrimeAsync` immediately after constructing
+  the reader, before returning it.
+- `ReadAsync` checks `_hasBufferedRow` first; if set it drains the buffer (returns the buffered
+  row, clears the fields) rather than calling `MoveNextAsync` again. This ensures the first row
+  is never skipped.
+
+### Actual outcome
+
+Approximately 150 lines removed. The sync-over-async call is gone. `HasRows` is accurate before
+the first `ReadAsync` call. Reader construction is O(1); the single async peek happens in
+`PrimeAsync` on the command path. Six `PrimeAsync`-specific tests were added.
 
 ---
 
@@ -144,10 +169,18 @@ property scan over the whole row on read.
 
 ### Current per-row cost
 
+After phase 3, `GetValue(ordinal)` on the EF Core path is:
+
+```
+_columnNames[ordinal]          // O(1) array read → alias string
+je.TryGetPropertyCI(alias)     // O(m) linear scan of JsonElement properties
+ConvertJsonElement(prop)       // O(1)
+```
+
 For a row with `m` JSON properties and a shaper that reads `k` columns:
 
 ```
-k calls × O(m) TryGetProperty scan = O(k × m) per row
+k calls × O(m) TryGetPropertyCI scan = O(k × m) per row
 ```
 
 For a typical entity with 10 columns and 10 properties this is 100 string comparisons per row.
