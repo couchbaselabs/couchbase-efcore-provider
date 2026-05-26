@@ -398,6 +398,8 @@ public class CouchbaseDbDataReader<T> : DbDataReader
                     i++;
                 }
             }
+            else
+                return 0; // scalar or null row (SELECT RAW scalar/null) at null slot — any name maps to 0
             throw new IndexOutOfRangeException($"Field '{name}' not found.");
         }
 

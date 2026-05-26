@@ -1564,6 +1564,30 @@ public class CouchbaseDbDataReaderTests
     }
 
     [Fact]
+    public async Task GetOrdinal_NullSlot_ScalarRow_AnyName_ReturnsZero()
+    {
+        // Scalar (non-object) row at a null slot — any name maps to ordinal 0,
+        // consistent with the no-column-names scalar path.
+        var rows = new List<JsonElement> { ParseElement("42") };
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { null });
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Equal(0, reader.GetOrdinal("anything"));
+    }
+
+    [Fact]
+    public async Task GetOrdinal_NullSlot_NullRow_AnyName_ReturnsZero()
+    {
+        // Null row (SELECT RAW null) at a null slot — any name maps to ordinal 0.
+        var mockQueryResult = new Mock<IQueryResult<object?>>();
+        mockQueryResult.Setup(q => q.Rows).Returns(new object?[] { null }.ToAsyncEnumerable());
+        var reader = new CouchbaseDbDataReader<object?>(mockQueryResult.Object!, (string?[]?)new string?[] { null });
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Equal(0, reader.GetOrdinal("anything"));
+    }
+
+    [Fact]
     public async Task GetOrdinal_NullSlot_AliasNameInNonNullSlotIsNotResolvedViaFallback()
     {
         // "name" is already a non-null alias at slot 1.  If someone asks for ordinal
