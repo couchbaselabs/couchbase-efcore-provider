@@ -1432,6 +1432,27 @@ public class CouchbaseDbDataReaderTests
     }
 
     [Fact]
+    public async Task GetName_NullSlot_ScalarRow_OrdinalZero_ReturnsEmptyString()
+    {
+        // Null slot 0 with a scalar (non-object) row must return "" like the no-column-names path.
+        var rows = new List<JsonElement> { ParseElement("42") };
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { null });
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Equal(string.Empty, reader.GetName(0));
+    }
+
+    [Fact]
+    public async Task GetName_NullSlot_ScalarRow_OrdinalNonZero_ThrowsIndexOutOfRangeException()
+    {
+        var rows = new List<JsonElement> { ParseElement("42") };
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { null, null });
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Throws<IndexOutOfRangeException>(() => reader.GetName(1));
+    }
+
+    [Fact]
     public void FieldCount_WithColumnNames_ReturnsProjectionLength()
     {
         // JSON has 3 fields, but projection only exposes 2.

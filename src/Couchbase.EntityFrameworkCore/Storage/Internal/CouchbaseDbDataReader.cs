@@ -343,6 +343,8 @@ public class CouchbaseDbDataReader<T> : DbDataReader
                 foreach (var prop in je.EnumerateObject())
                     if (i++ == ordinal) return prop.Name;
             }
+            else if (ordinal == 0)
+                return string.Empty; // scalar or null row (SELECT RAW scalar/null) at null slot 0
             throw new IndexOutOfRangeException($"Ordinal {ordinal} is out of range. FieldCount: {_columnNames.Length}");
         }
 
