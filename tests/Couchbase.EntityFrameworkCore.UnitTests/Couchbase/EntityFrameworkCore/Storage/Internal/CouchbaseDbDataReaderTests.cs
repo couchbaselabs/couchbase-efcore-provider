@@ -1510,6 +1510,17 @@ public class CouchbaseDbDataReaderTests
     }
 
     [Fact]
+    public void GetOrdinal_NullSlot_NoCurrentRow_ThrowsInvalidOperationException()
+    {
+        // Null-slot resolution requires a current row. Before ReadAsync is called the
+        // exception must be InvalidOperationException, not IndexOutOfRangeException.
+        var rows = new List<JsonElement> { ParseElement("{\"id\": 1}") };
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { null });
+
+        Assert.Throws<InvalidOperationException>(() => reader.GetOrdinal("id"));
+    }
+
+    [Fact]
     public async Task GetOrdinal_NullSlot_AliasNameInNonNullSlotIsNotResolvedViaFallback()
     {
         // "name" is already a non-null alias at slot 1.  If someone asks for ordinal

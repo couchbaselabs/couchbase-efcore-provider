@@ -381,8 +381,9 @@ public class CouchbaseDbDataReader<T> : DbDataReader
 
         if (_columnNames != null)
         {
-            // Null-slot fallback: find a JSON field with this name at a null-slot position.
-            if (_hasCurrentRow && _currentRow is JsonElement je && je.ValueKind == JsonValueKind.Object)
+            // Null-slot fallback: positional resolution requires a current row.
+            EnsureCurrentRow();
+            if (_currentRow is JsonElement je && je.ValueKind == JsonValueKind.Object)
             {
                 var i = 0;
                 foreach (var prop in je.EnumerateObject())
