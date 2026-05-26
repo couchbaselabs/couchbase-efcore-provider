@@ -130,8 +130,18 @@ public class CouchbaseDbDataReader<T> : DbDataReader
     /// Gets a value indicating whether the result set contains one or more rows.
     /// </summary>
     /// <remarks>
-    /// Returns <c>false</c> before the first <see cref="Read"/> call. Set to <c>true</c> on the
-    /// first successful read and remains constant thereafter.
+    /// <para>
+    /// <b>Primed path (<see cref="CouchbaseCommand"/>):</b> <see cref="CouchbaseCommand"/>
+    /// calls <see cref="PrimeAsync"/> immediately after constructing the reader, which advances
+    /// to the first row and sets this property before the reader is returned to the caller.
+    /// <c>HasRows</c> is therefore accurate before the first <see cref="Read"/> call.
+    /// </para>
+    /// <para>
+    /// <b>Unprimed path (direct construction):</b> When the reader is constructed without a
+    /// subsequent <see cref="PrimeAsync"/> call, <c>HasRows</c> returns <c>false</c> until the
+    /// first <see cref="ReadAsync"/> call populates it.
+    /// </para>
+    /// Once set, the value does not change.
     /// </remarks>
     public override bool HasRows => _hasRows ?? false;
 
