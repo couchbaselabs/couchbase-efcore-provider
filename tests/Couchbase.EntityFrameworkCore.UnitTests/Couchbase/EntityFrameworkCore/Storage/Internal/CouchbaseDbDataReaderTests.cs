@@ -692,6 +692,22 @@ public class CouchbaseDbDataReaderTests
         Assert.Equal(2L, reader.GetInt64(1));
     }
 
+    [Fact]
+    public async Task GetSchemaTable_ScalarSelectRaw_ReturnsSingleEmptyNameRow()
+    {
+        // SELECT RAW 5 / COUNT(*) produces a scalar JsonElement (not an object).
+        // GetSchemaTable must return one row consistent with FieldCount==1 and GetName(0)=="".
+        var rows = new List<JsonElement> { ParseElement("42") };
+        var reader = CreateReader(rows);
+
+        Assert.True(await reader.ReadAsync(CancellationToken.None));
+        var schema = reader.GetSchemaTable();
+
+        Assert.Equal(1, schema.Rows.Count);
+        Assert.Equal(string.Empty, schema.Rows[0]["ColumnName"]);
+        Assert.Equal(0, schema.Rows[0]["ColumnOrdinal"]);
+    }
+
     #region Value-Type Row Tracking Tests
 
     [Fact]

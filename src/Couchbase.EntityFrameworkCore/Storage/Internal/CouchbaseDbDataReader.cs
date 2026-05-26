@@ -857,14 +857,27 @@ public class CouchbaseDbDataReader<T> : DbDataReader
 
         // No column names: build from current row.
         EnsureCurrentRow();
-        if (_currentRow is JsonElement je && je.ValueKind == JsonValueKind.Object)
+        if (_currentRow is JsonElement je)
         {
-            var i = 0;
-            foreach (var prop in je.EnumerateObject())
+            if (je.ValueKind == JsonValueKind.Object)
             {
+                var i = 0;
+                foreach (var prop in je.EnumerateObject())
+                {
+                    var row = schemaTable.NewRow();
+                    row["ColumnName"] = prop.Name;
+                    row["ColumnOrdinal"] = i++;
+                    row["DataType"] = typeof(object);
+                    row["AllowDBNull"] = true;
+                    schemaTable.Rows.Add(row);
+                }
+            }
+            else
+            {
+                // Scalar SELECT RAW: consistent with FieldCount==1 and GetName(0)=="".
                 var row = schemaTable.NewRow();
-                row["ColumnName"] = prop.Name;
-                row["ColumnOrdinal"] = i++;
+                row["ColumnName"] = string.Empty;
+                row["ColumnOrdinal"] = 0;
                 row["DataType"] = typeof(object);
                 row["AllowDBNull"] = true;
                 schemaTable.Rows.Add(row);
