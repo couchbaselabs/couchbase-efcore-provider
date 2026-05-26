@@ -1764,6 +1764,97 @@ public class CouchbaseDbDataReaderTests
 
     #endregion
 
+    #region PrimeAsync — HasRows and buffered-first-row via PrimeAsync
+
+    [Fact]
+    public async Task PrimeAsync_WithRows_HasRowsIsTrueBeforeReadAsync()
+    {
+        // Simulates the ExecuteReaderAsync path: PrimeAsync is called after construction,
+        // and HasRows must return true before any ReadAsync call.
+        var rows = new List<JsonElement> { ParseElement("{\"id\": 1}") };
+        var reader = CreateReader(rows);
+
+        await reader.PrimeAsync(CancellationToken.None);
+
+        Assert.True(reader.HasRows);
+    }
+
+    [Fact]
+    public async Task PrimeAsync_WithNoRows_HasRowsIsFalseBeforeReadAsync()
+    {
+        var reader = CreateReader(new List<JsonElement>());
+
+        await reader.PrimeAsync(CancellationToken.None);
+
+        Assert.False(reader.HasRows);
+    }
+
+    [Fact]
+    public async Task PrimeAsync_FirstReadAsyncReturnsBufferedRow()
+    {
+        // After PrimeAsync, the first ReadAsync must return the buffered first row
+        // without skipping it (no row consumed by the prime peek is lost).
+        var rows = new List<JsonElement>
+        {
+            ParseElement("{\"id\": 1}"),
+            ParseElement("{\"id\": 2}")
+        };
+        var reader = CreateReader(rows);
+
+        await reader.PrimeAsync(CancellationToken.None);
+
+        Assert.True(await reader.ReadAsync(CancellationToken.None));
+        Assert.Equal(1L, reader.GetInt64(0));
+
+        Assert.True(await reader.ReadAsync(CancellationToken.None));
+        Assert.Equal(2L, reader.GetInt64(0));
+
+        Assert.False(await reader.ReadAsync(CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task PrimeAsync_WithNoRows_ReadAsyncReturnsFalse()
+    {
+        var reader = CreateReader(new List<JsonElement>());
+
+        await reader.PrimeAsync(CancellationToken.None);
+
+        Assert.False(await reader.ReadAsync(CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task PrimeAsync_WithCancelledToken_ThrowsOperationCanceledException()
+    {
+        var rows = new List<JsonElement> { ParseElement("{\"id\": 1}") };
+        var reader = CreateReader(rows);
+
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        // PrimeAsync calls EnsureEnumerator then MoveNextAsync; the enumerator
+        // created via GetAsyncEnumerator(cancelledToken) should propagate cancellation.
+        // (The exact throw point is implementation-defined, but cancellation must surface.)
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => reader.PrimeAsync(cts.Token));
+    }
+
+    [Fact]
+    public async Task PrimeAsync_FieldAccessAfterBufferedRead_WorksCorrectly()
+    {
+        // After PrimeAsync + ReadAsync, all field accessors must see the buffered row.
+        var rows = new List<JsonElement> { ParseElement("{\"id\": 99, \"name\": \"alice\"}") };
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { "id", "name" });
+
+        await reader.PrimeAsync(CancellationToken.None);
+        Assert.True(reader.HasRows);
+
+        Assert.True(await reader.ReadAsync(CancellationToken.None));
+        Assert.Equal(99L, reader.GetInt64(0));
+        Assert.Equal("alice", reader.GetString(1));
+    }
+
+    #endregion
+
     #region Phase 2 — TryGetPropertyCI and GetOrdinal null-slot guards
 
     // GetValue — case-insensitive property lookup via TryGetPropertyCI

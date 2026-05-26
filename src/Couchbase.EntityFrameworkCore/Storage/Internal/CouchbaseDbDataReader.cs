@@ -49,6 +49,9 @@ public class CouchbaseDbDataReader<T> : DbDataReader
     private IAsyncEnumerator<T>? _enumerator;
     private CancellationToken _cancellationToken;
     private T? _currentRow;
+    // First-row buffer populated by PrimeAsync so HasRows is accurate before ReadAsync.
+    private T? _bufferedFirstRow;
+    private bool _hasBufferedRow;
 
     /// <summary>
     /// Gets the current row as read by the last <see cref="ReadAsync"/> call.
@@ -169,6 +172,17 @@ public class CouchbaseDbDataReader<T> : DbDataReader
             return false;
 
         cancellationToken.ThrowIfCancellationRequested();
+
+        // If PrimeAsync buffered the first row, return it without re-advancing the enumerator.
+        if (_hasBufferedRow)
+        {
+            _currentRow = _bufferedFirstRow!;
+            _bufferedFirstRow = default;
+            _hasBufferedRow = false;
+            _hasCurrentRow = true;
+            return true;
+        }
+
         EnsureEnumerator(cancellationToken);
 
         var hasMore = await _enumerator!.MoveNextAsync().ConfigureAwait(false);
@@ -194,6 +208,29 @@ public class CouchbaseDbDataReader<T> : DbDataReader
         {
             _cancellationToken = cancellationToken;
             _enumerator = _queryResult.Rows.GetAsyncEnumerator(_cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// Asynchronously advances to the first row and buffers it so that <see cref="HasRows"/>
+    /// returns the correct value before the first <see cref="ReadAsync"/> call, satisfying the
+    /// ADO.NET <see cref="DbDataReader.HasRows"/> contract.  Called by <see cref="CouchbaseCommand"/>
+    /// immediately after constructing the reader.
+    /// </summary>
+    internal async Task PrimeAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        EnsureEnumerator(cancellationToken);
+        var hasMore = await _enumerator!.MoveNextAsync().ConfigureAwait(false);
+        if (hasMore)
+        {
+            _bufferedFirstRow = _enumerator.Current;
+            _hasBufferedRow = true;
+            _hasRows = true;
+        }
+        else
+        {
+            _hasRows = false;
         }
     }
 

@@ -190,7 +190,9 @@ public class CouchbaseCommand : DbCommand
         var cluster = ResolveCluster();
         var queryResult = await cluster.QueryAsync<JsonElement>(CommandText, options).ConfigureAwait(false);
 
-        return new CouchbaseDbDataReader<JsonElement>(queryResult, DbConnection, behavior, cancellationToken);
+        var reader = new CouchbaseDbDataReader<JsonElement>(queryResult, DbConnection, behavior, cancellationToken);
+        await reader.PrimeAsync(cancellationToken).ConfigureAwait(false);
+        return reader;
     }
 
     protected override void Dispose(bool disposing)
