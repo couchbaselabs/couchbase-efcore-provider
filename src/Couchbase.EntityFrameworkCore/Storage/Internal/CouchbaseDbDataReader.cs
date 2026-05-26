@@ -231,6 +231,8 @@ public class CouchbaseDbDataReader<T> : DbDataReader
     /// </summary>
     internal async Task PrimeAsync(CancellationToken cancellationToken)
     {
+        if (_hasRows.HasValue || _hasBufferedRow || _hasCurrentRow)
+            return;
         cancellationToken.ThrowIfCancellationRequested();
         EnsureEnumerator(cancellationToken);
         var hasMore = await _enumerator!.MoveNextAsync().ConfigureAwait(false);

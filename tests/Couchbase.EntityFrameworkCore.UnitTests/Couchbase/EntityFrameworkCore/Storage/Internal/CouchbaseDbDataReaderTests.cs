@@ -1853,6 +1853,53 @@ public class CouchbaseDbDataReaderTests
         Assert.Equal("alice", reader.GetString(1));
     }
 
+    [Fact]
+    public async Task PrimeAsync_CalledTwice_IsIdempotent()
+    {
+        // A second PrimeAsync call must not advance the enumerator again or overwrite
+        // the buffered first row.
+        var rows = new List<JsonElement>
+        {
+            ParseElement("{\"id\": 1}"),
+            ParseElement("{\"id\": 2}")
+        };
+        var reader = CreateReader(rows);
+
+        await reader.PrimeAsync(CancellationToken.None);
+        await reader.PrimeAsync(CancellationToken.None); // second call must be a no-op
+
+        Assert.True(reader.HasRows);
+
+        // Both rows must still be readable — the first row was not skipped.
+        Assert.True(await reader.ReadAsync(CancellationToken.None));
+        Assert.Equal(1L, reader.GetInt64(0));
+        Assert.True(await reader.ReadAsync(CancellationToken.None));
+        Assert.Equal(2L, reader.GetInt64(0));
+        Assert.False(await reader.ReadAsync(CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task PrimeAsync_CalledAfterReadAsync_IsIdempotent()
+    {
+        // PrimeAsync after ReadAsync has already advanced the reader must not
+        // consume another row or alter HasRows.
+        var rows = new List<JsonElement>
+        {
+            ParseElement("{\"id\": 10}"),
+            ParseElement("{\"id\": 20}")
+        };
+        var reader = CreateReader(rows);
+
+        Assert.True(await reader.ReadAsync(CancellationToken.None));
+        Assert.Equal(10L, reader.GetInt64(0));
+
+        await reader.PrimeAsync(CancellationToken.None); // must be a no-op
+
+        Assert.True(await reader.ReadAsync(CancellationToken.None));
+        Assert.Equal(20L, reader.GetInt64(0));
+        Assert.False(await reader.ReadAsync(CancellationToken.None));
+    }
+
     #endregion
 
     #region Phase 2 — TryGetPropertyCI and GetOrdinal null-slot guards
