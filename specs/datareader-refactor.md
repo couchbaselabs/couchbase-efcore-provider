@@ -165,7 +165,7 @@ the first `ReadAsync` call. Reader construction is O(1); the single async peek h
 
 ## Post-phase-3 corrections
 
-Four defects were identified and fixed after the phase 3 commit landed.
+Nine defects were identified and fixed after the phase 3 commit landed.
 
 ### 1 — `DbCommand.Cancel()` not propagating to the row enumerator
 
@@ -217,6 +217,55 @@ the existing positional path.
 Fix: change the parameter type to `string?[]?` and make alias setup conditional on non-null,
 leaving `_columnNames` and `_projectionOrdinals` as `null` (positional path) when `null` is
 passed. Replace the `ArgumentNullException` test with one that verifies the positional fallback.
+
+### 5 — Non-`JsonElement` row types surfacing as `DBNull` / `IndexOutOfRangeException`
+
+The class-level remarks documented `NotSupportedException` for non-`JsonElement` rows, but
+`ReadAsync` and `PrimeAsync` assigned `_currentRow = _enumerator.Current` without validating
+the type, so incompatible rows silently flowed through and surfaced as incorrect values later.
+
+Fix: add `private static T ValidateRow(T row)` which throws `NotSupportedException` (with an
+actionable message) when `row` is non-null and not a `JsonElement`. Called at both
+materialization points: `_currentRow = ValidateRow(...)` in `ReadAsync` and
+`_bufferedFirstRow = ValidateRow(...)` in `PrimeAsync`. `null` is allowed (see correction 7).
+
+### 6 — `GetSchemaTable` returning empty table for scalar `SELECT RAW` rows
+
+In the no-column-names path, `GetSchemaTable` only added rows for `JsonValueKind.Object`; a
+non-object scalar `JsonElement` (e.g. `SELECT RAW 5`) produced an empty `DataTable`,
+inconsistent with `FieldCount == 1` and `GetName(0) == ""`.
+
+Fix: restructure the outer condition to `if (je.ValueKind == JsonValueKind.Object) { ... } else { scalar row }`,
+emitting one row (`ColumnName=""`, `ColumnOrdinal=0`) for any non-object result.
+
+### 7 — Null rows (`SELECT RAW null`) treated as zero-column in positional path
+
+`ValidateRow` permits `null` rows (valid for `SELECT RAW null`), but six methods in the
+no-column-names positional path treated a null `_currentRow` as a zero-column row:
+`FieldCount` returned 0, `GetValue`/`GetName`/`GetOrdinal` threw `IndexOutOfRangeException`
+for ordinal 0, `GetValues` computed `fieldCount = 0`, and `GetSchemaTable` returned an empty
+table.
+
+Fix: unify the scalar and null branches in all six methods so a null row behaves identically
+to a non-object scalar `JsonElement`: one column, `GetName(0) = ""`, `GetValue(0) = DBNull.Value`,
+`GetOrdinal(any) = 0`, `FieldCount = 1`, `GetSchemaTable` emits one row.
+
+### 8 — `GetName` null-slot throwing `IndexOutOfRangeException` for scalar/null rows at ordinal 0
+
+In the `_columnNames` + null-slot branch, `GetName` only handled object rows; a scalar or null
+`_currentRow` fell through to `IndexOutOfRangeException` even for ordinal 0, inconsistent with
+`GetValue` (which returned the scalar/`DBNull`) and the no-column-names path (which returned `""`).
+
+Fix: add `else if (ordinal == 0) return string.Empty;` after the object-enumeration block,
+covering both scalar and null rows at null-slot position 0.
+
+### 9 — `GetOrdinal` null-slot throwing `IndexOutOfRangeException` for scalar/null rows
+
+The same gap as correction 8 but in `GetOrdinal`'s null-slot branch: a scalar or null row
+fell through to `IndexOutOfRangeException("Field not found")` rather than returning 0,
+inconsistent with the no-column-names scalar path which maps any name to ordinal 0.
+
+Fix: add `else return 0;` after the object-enumeration block, mirroring correction 8.
 
 ---
 
