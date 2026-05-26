@@ -1399,6 +1399,17 @@ public class CouchbaseDbDataReaderTests
     }
 
     [Fact]
+    public void GetName_NullSlot_NoCurrentRow_ThrowsInvalidOperationException()
+    {
+        // Ordinal 0 is a null slot (in-range), but no ReadAsync has been called.
+        // Must throw InvalidOperationException (no current row), not IndexOutOfRangeException.
+        var rows = new List<JsonElement> { ParseElement("{\"id\": 1}") };
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { null });
+
+        Assert.Throws<InvalidOperationException>(() => reader.GetName(0));
+    }
+
+    [Fact]
     public void FieldCount_WithColumnNames_ReturnsProjectionLength()
     {
         // JSON has 3 fields, but projection only exposes 2.

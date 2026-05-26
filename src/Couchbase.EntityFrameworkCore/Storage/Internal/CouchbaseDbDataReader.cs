@@ -15,7 +15,8 @@ namespace Couchbase.EntityFrameworkCore.Storage.Internal;
 /// This reader wraps an <see cref="IQueryResult{T}"/> and provides ADO.NET-compatible access to query results.
 /// Rows must be <see cref="JsonElement"/> instances (i.e. the query must be executed with
 /// <c>cluster.QueryAsync&lt;JsonElement&gt;()</c>); any other row type throws
-/// <see cref="NotSupportedException"/> when a row is materialized via <see cref="ReadAsync"/>.
+/// <see cref="NotSupportedException"/> when a row is materialized via <see cref="PrimeAsync"/>
+/// or <see cref="ReadAsync"/>.
 /// </para>
 /// <para>
 /// <b>Column names:</b> When <paramref name="columnNames"/> is supplied the reader maps each
@@ -331,8 +332,9 @@ public class CouchbaseDbDataReader<T> : DbDataReader
             var alias = _columnNames[ordinal];
             if (alias != null)
                 return alias;
-            // null slot: read field name from current row at this position
-            if (_hasCurrentRow && _currentRow is JsonElement je && je.ValueKind == JsonValueKind.Object)
+            // null slot: positional resolution requires a current row
+            EnsureCurrentRow();
+            if (_currentRow is JsonElement je && je.ValueKind == JsonValueKind.Object)
             {
                 var i = 0;
                 foreach (var prop in je.EnumerateObject())
