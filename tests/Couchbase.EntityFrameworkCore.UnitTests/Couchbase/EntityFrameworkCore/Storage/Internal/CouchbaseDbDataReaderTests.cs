@@ -2327,6 +2327,36 @@ public class CouchbaseDbDataReaderTests
 
     #endregion
 
+    #region SetLinkedCts guards
+
+    [Fact]
+    public void SetLinkedCts_WithNullCts_ThrowsArgumentNullException()
+    {
+        var reader = CreateReader(new List<JsonElement>());
+        Assert.Throws<ArgumentNullException>(() => reader.SetLinkedCts(null!));
+    }
+
+    [Fact]
+    public void SetLinkedCts_CalledTwice_ThrowsInvalidOperationException()
+    {
+        var reader = CreateReader(new List<JsonElement>());
+        using var cts1 = new CancellationTokenSource();
+        using var cts2 = new CancellationTokenSource();
+
+        reader.SetLinkedCts(cts1); // first call is fine
+        Assert.Throws<InvalidOperationException>(() => reader.SetLinkedCts(cts2));
+    }
+
+    [Fact]
+    public void SetLinkedCts_CalledOnce_DoesNotThrow()
+    {
+        var reader = CreateReader(new List<JsonElement>());
+        using var cts = new CancellationTokenSource();
+        reader.SetLinkedCts(cts); // must not throw
+    }
+
+    #endregion
+
     private static JsonElement ParseElement(string json)
     {
         using var doc = JsonDocument.Parse(json);

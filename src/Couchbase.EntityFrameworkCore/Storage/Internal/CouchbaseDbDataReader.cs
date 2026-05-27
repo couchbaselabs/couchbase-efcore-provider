@@ -280,7 +280,13 @@ public class CouchbaseDbDataReader<T> : DbDataReader
     /// <see cref="CouchbaseCommand"/> so that <c>DbCommand.Cancel()</c> propagates to the
     /// enumerator for the reader's full lifetime.  The source is disposed when the reader closes.
     /// </summary>
-    internal void SetLinkedCts(CancellationTokenSource cts) => _linkedCts = cts;
+    internal void SetLinkedCts(CancellationTokenSource cts)
+    {
+        ArgumentNullException.ThrowIfNull(cts);
+        if (_linkedCts is not null)
+            throw new InvalidOperationException("A linked CancellationTokenSource is already set. SetLinkedCts may only be called once.");
+        _linkedCts = cts;
+    }
 
     /// <summary>
     /// Advances the reader to the next result set. Always returns <c>false</c> for Couchbase.
