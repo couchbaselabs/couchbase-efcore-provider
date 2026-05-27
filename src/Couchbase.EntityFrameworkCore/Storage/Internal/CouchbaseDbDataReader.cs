@@ -66,6 +66,13 @@ public class CouchbaseDbDataReader<T> : DbDataReader
     // Cached field count for the positional (no-_columnNames) path; -1 means not yet computed.
     // Invalidated on every ReadAsync so it is recomputed from the new row.
     private int _cachedFieldCount = -1;
+    // Per-row value cache for the column-names (EF Core) path.
+    // Allocated at construction from _columnNames.Length; cleared and repopulated by
+    // BuildCurrentValues on each ReadAsync so that GetValue(ordinal) is an O(1) array
+    // read rather than an O(m) TryGetPropertyCI scan per call.
+    // A null entry means the JSON row had no matching property → DBNull.Value.
+    // Null slots in _columnNames are never written here; they fall through to positional scan.
+    private readonly JsonElement?[]? _currentValues;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="CouchbaseDbDataReader{T}"/> class with an
@@ -89,6 +96,7 @@ public class CouchbaseDbDataReader<T> : DbDataReader
                 if (alias != null)
                     _projectionOrdinals.TryAdd(alias, i);
             }
+            _currentValues = new JsonElement?[columnNames.Length];
         }
     }
 
@@ -210,6 +218,7 @@ public class CouchbaseDbDataReader<T> : DbDataReader
             _bufferedFirstRow = default;
             _hasBufferedRow = false;
             _hasCurrentRow = true;
+            BuildCurrentValues();
             return true;
         }
 
@@ -228,6 +237,7 @@ public class CouchbaseDbDataReader<T> : DbDataReader
             _hasCurrentRow = false;
             _hasRows ??= false;
         }
+        BuildCurrentValues();
 
         return hasMore;
     }
@@ -246,6 +256,51 @@ public class CouchbaseDbDataReader<T> : DbDataReader
             if (cancellationToken != CancellationToken.None)
                 _cancellationToken = cancellationToken;
             _enumerator = _queryResult.Rows.GetAsyncEnumerator(_cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// Clears and repopulates <see cref="_currentValues"/> from <see cref="_currentRow"/> in a
+    /// single O(m) pass over the row's JSON properties.  Called by <see cref="ReadAsync"/> after
+    /// every row advance so that <see cref="GetValue"/> can serve subsequent calls as O(1) array
+    /// reads rather than O(m) <c>TryGetPropertyCI</c> scans.
+    /// </summary>
+    /// <remarks>
+    /// Only active on the column-names path (<see cref="_currentValues"/> non-null).  Non-object
+    /// and null rows leave all slots as <c>null</c> (→ <see cref="DBNull.Value"/> in
+    /// <see cref="GetValue"/>).  JSON properties whose names do not match any
+    /// <see cref="_projectionOrdinals"/> entry are skipped.  Null slots in
+    /// <see cref="_columnNames"/> are never written and continue to use positional fallback.
+    /// </remarks>
+    private void BuildCurrentValues()
+    {
+        if (_currentValues == null) return; // positional path — nothing to build
+
+        Array.Clear(_currentValues, 0, _currentValues.Length);
+
+        if (_currentRow is not JsonElement je)
+            return; // null row (SELECT RAW null) — all slots stay null (→ DBNull.Value)
+
+        if (je.ValueKind == JsonValueKind.Object)
+        {
+            // Normal path: one O(m) pass to match JSON properties to projection ordinals.
+            foreach (var prop in je.EnumerateObject())
+            {
+                if (_projectionOrdinals!.TryGetValue(prop.Name, out var ordinal))
+                    _currentValues[ordinal] = prop.Value;
+            }
+        }
+        else
+        {
+            // Scalar row (e.g. SELECT RAW COUNT(*)): broadcast the scalar to all non-null
+            // alias slots so that GetValue(i) returns the scalar for any projection ordinal,
+            // consistent with pre-phase-4 behaviour.  Null slots continue to use the
+            // positional fallback in GetValue.
+            for (var i = 0; i < _currentValues.Length; i++)
+            {
+                if (_columnNames![i] != null)
+                    _currentValues[i] = je;
+            }
         }
     }
 
@@ -493,8 +548,15 @@ public class CouchbaseDbDataReader<T> : DbDataReader
     /// Gets the value of the field at the specified ordinal.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// Scalar JSON values (string, number, boolean, null) are returned as their CLR equivalents.
     /// JSON objects and arrays are returned as a raw <see cref="JsonElement"/>.
+    /// </para>
+    /// <para>
+    /// On the column-names path (EF Core shaper), values are served from the
+    /// <c>_currentValues</c> cache built by a single O(m) pass in <see cref="ReadAsync"/>,
+    /// making each call O(1).
+    /// </para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">Thrown when no current row exists (call <see cref="Read"/> first).</exception>
     /// <exception cref="IndexOutOfRangeException">Thrown when <paramref name="ordinal"/> is out of range.</exception>
@@ -510,12 +572,10 @@ public class CouchbaseDbDataReader<T> : DbDataReader
             var colName = _columnNames[ordinal];
             if (colName != null)
             {
-                if (_currentRow is not JsonElement je) return DBNull.Value;
-                if (je.ValueKind != JsonValueKind.Object)
-                    return ConvertJsonElement(je); // SELECT RAW scalar
-                return je.TryGetPropertyCI(colName, out var prop)
-                    ? ConvertJsonElement(prop)
-                    : DBNull.Value;
+                // O(1): array read from the per-row cache built in ReadAsync.
+                // _currentValues is guaranteed non-null when _columnNames != null (same constructor branch).
+                var element = _currentValues![ordinal];
+                return element.HasValue ? ConvertJsonElement(element.Value) : DBNull.Value;
             }
 
             // null slot: positional access from current row

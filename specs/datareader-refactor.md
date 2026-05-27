@@ -6,7 +6,7 @@
 `IQueryResult<JsonElement>` and EF Core's compiled shapers. It was built incrementally alongside
 the query pipeline and has accumulated complexity for code paths that never execute in the
 provider. This document describes four sequential phases to simplify and optimize it.
-Phases 1–3 are complete. Phase 4 is the next planned work.
+Phases 1–4 are complete.
 
 The EF Core shaper is the sole consumer of this reader. It calls typed getters by projection
 ordinal (e.g. `GetInt32(3)`, `GetString(7)`) for every column of every result row. The
@@ -360,7 +360,9 @@ Fix: four tests added to the `PrimeAsync` region:
 
 ---
 
-## Phase 4 — Pre-Build Per-Row Ordinal → Value Array in `ReadAsync`
+## Phase 4 — Pre-Build Per-Row Ordinal → Value Array in `ReadAsync` ✓
+
+**Status: Complete**
 
 **Goal:** Make `GetValue(ordinal)` O(1) — a single array dereference — by amortizing the JSON
 property scan over the whole row on read.
@@ -435,3 +437,27 @@ positional path, but the positional path is not used by EF Core.
 Per-row cost changes from O(k × m) to O(m + k). `GetValue` is a bounds-checked array read with
 no string comparisons. `GetValues` drops from O(m²) to O(k). At 100 rows × 10 columns × 10
 properties the total comparisons drop from 10,000 to ~1,000.
+
+### Actual outcome
+
+Implemented exactly as described. Key additions to `CouchbaseDbDataReader<T>`:
+
+- `_currentValues` — `JsonElement?[]` allocated once at construction (sized to
+  `_columnNames.Length`); reused across every row.
+- `BuildCurrentValues()` — called from both `ReadAsync` paths (buffered and streaming) after
+  each `MoveNextAsync`. Handles three row shapes:
+  - **Object row** (`JsonValueKind.Object`): single O(m) `EnumerateObject` pass; each property
+    matched against `_projectionOrdinals` (OrdinalIgnoreCase) and written to `_currentValues`.
+  - **Scalar row** (any other `JsonValueKind`): broadcasts the element to all non-null alias
+    slots — covers `SELECT RAW <scalar>` with projection aliases.
+  - **Null row** (`_currentRow` is not a `JsonElement`): all slots remain null.
+- `GetValue(ordinal)` hot path for non-null alias slots replaced with a single array read:
+  ```csharp
+  var element = _currentValues![ordinal];
+  return element.HasValue ? ConvertJsonElement(element.Value) : DBNull.Value;
+  ```
+- `_cachedFieldCount` reset to `-1` at the top of each `ReadAsync` to keep the positional-path
+  `FieldCount` cache per-row.
+
+8 new unit tests added in `CouchbaseDbDataReaderTests` under `#region Phase 4 — _currentValues
+per-row cache`. Total test count: 672 (all passing).
