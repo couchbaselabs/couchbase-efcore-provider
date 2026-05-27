@@ -290,6 +290,7 @@ public class CouchbaseDbDataReader<T> : DbDataReader
         {
             _isClosed = true;
             _enumerator?.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            _queryResult.Dispose();
             _linkedCts?.Dispose();
             _linkedCts = null;
 
@@ -308,6 +309,10 @@ public class CouchbaseDbDataReader<T> : DbDataReader
             _isClosed = true;
             if (_enumerator != null)
                 await _enumerator.DisposeAsync().ConfigureAwait(false);
+            if (_queryResult is IAsyncDisposable asyncDisposable)
+                await asyncDisposable.DisposeAsync().ConfigureAwait(false);
+            else 
+                _queryResult.Dispose();
             _linkedCts?.Dispose();
             _linkedCts = null;
 
