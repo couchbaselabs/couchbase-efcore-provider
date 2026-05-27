@@ -222,6 +222,11 @@ public class CouchbaseDbDataReader<T> : DbDataReader
     {
         if (_enumerator == null)
         {
+            // The token is bound at GetAsyncEnumerator() time and cannot be retargeted.
+            // All callers must pass the same long-lived token (e.g. linkedCts.Token from
+            // CouchbaseCommand) so that CancellationToken bindings remain consistent for
+            // the reader's lifetime.  Tokens passed to subsequent ReadAsync calls only
+            // affect the upfront ThrowIfCancellationRequested check, not in-flight MoveNextAsync.
             _cancellationToken = cancellationToken;
             _enumerator = _queryResult.Rows.GetAsyncEnumerator(_cancellationToken);
         }
@@ -233,6 +238,13 @@ public class CouchbaseDbDataReader<T> : DbDataReader
     /// ADO.NET <see cref="DbDataReader.HasRows"/> contract.  Called by <see cref="CouchbaseCommand"/>
     /// immediately after constructing the reader.
     /// </summary>
+    /// <remarks>
+    /// The token passed here binds the underlying enumerator for the reader's lifetime (see
+    /// <c>EnsureEnumerator</c>).  <see cref="CouchbaseCommand"/> passes <c>linkedCts.Token</c>,
+    /// which combines the external caller token with the command's internal cancellation source,
+    /// ensuring <c>DbCommand.Cancel()</c> and external cancellation both propagate correctly.
+    /// Future callers must pass the same or an equivalent long-lived token.
+    /// </remarks>
     internal async Task PrimeAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
