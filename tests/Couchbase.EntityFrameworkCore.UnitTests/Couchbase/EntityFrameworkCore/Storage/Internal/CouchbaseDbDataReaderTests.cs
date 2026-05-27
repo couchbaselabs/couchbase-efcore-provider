@@ -1928,6 +1928,22 @@ public class CouchbaseDbDataReaderTests
     }
 
     [Fact]
+    public async Task PrimeAsync_AlreadyPrimed_CancelledToken_ThrowsOperationCanceledException()
+    {
+        // Cancellation must be checked before the idempotency guard so a cancelled token
+        // always surfaces as OperationCanceledException, even after priming is complete.
+        var rows = new List<JsonElement> { ParseElement("{\"id\": 1}") };
+        var reader = CreateReader(rows);
+        await reader.PrimeAsync(CancellationToken.None);
+
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => reader.PrimeAsync(cts.Token));
+    }
+
+    [Fact]
     public async Task PrimeAsync_FieldAccessAfterBufferedRead_WorksCorrectly()
     {
         // After PrimeAsync + ReadAsync, all field accessors must see the buffered row.
