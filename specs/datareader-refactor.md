@@ -269,6 +269,97 @@ Fix: add `else return 0;` after the object-enumeration block, mirroring correcti
 
 ---
 
+## Pre-phase-4 code review fixes
+
+Nine additional items were raised in a code review after the post-phase-3 corrections landed.
+
+### 1 — `_queryResult` never disposed
+
+`IQueryResult<T>` (`BlockQueryResult<T>`) holds buffered rows and the underlying HTTP response
+stream. Neither `Close` nor `CloseAsync` released it, leaving the stream open until GC
+finalization.
+
+Fix: dispose the query result after the enumerator in both paths. `CloseAsync` prefers
+`IAsyncDisposable`; `Close` falls back to `IDisposable` via pattern matching.
+
+### 2 — `PrimeAsync` failure leaves enumerator in partially-primed state
+
+If `MoveNextAsync` threw inside `PrimeAsync` (e.g. a cluster error mid-fetch), none of
+`_hasRows`, `_hasBufferedRow`, or `_hasCurrentRow` was set, but `_enumerator` was already
+created. A second `PrimeAsync` call missed the idempotency guard and re-advanced the broken
+enumerator.
+
+Fix: wrap the `MoveNextAsync` body in `try/catch`; set `_hasRows = false` in the catch before
+re-throwing. This poisons the idempotency guard (`_hasRows.HasValue`) so re-entry returns
+immediately. Two new tests cover the failure path.
+
+### 3 — `SetLinkedCts` had no null or double-call guards
+
+A second `SetLinkedCts` call silently leaked the prior `CancellationTokenSource`, retargeting
+`DbCommand.Cancel()` to the wrong source for the remainder of the reader's lifetime.
+
+Fix: add `ArgumentNullException.ThrowIfNull(cts)` and an `InvalidOperationException` on
+double-call. Three tests cover null, double-call, and the happy path.
+
+### 4 — 4-arg constructor accepted but discarded `CancellationToken`
+
+The XML doc admitted "Unused at construction; reserved for future use." Callers
+(`CouchbaseCommand`) passed `linkedCts.Token` at construction expecting it to be used, but
+it was silently ignored — only the token re-passed to `PrimeAsync` actually reached the
+enumerator.
+
+Fix (Option B): store the token in `_cancellationToken` at construction. `EnsureEnumerator`
+uses it as a fallback when called with `CancellationToken.None`, so callers that pass a token
+at construction and later call `ReadAsync(CancellationToken.None)` see correct cancellation
+propagation without needing to re-pass the token. Documented with an `[EnumeratorCancellation]`
+test that verifies the stored token actually reaches the enumerator.
+
+### 5 — `FieldCount` re-walked JSON on every call (positional path)
+
+On the no-column-names positional path, `FieldCount` called `je.EnumerateObject().Count()`
+on every access, re-walking the object each time. Repeated calls per row (e.g. from
+`GetSchemaTable` or user code) each paid the O(m) cost.
+
+Fix: add `_cachedFieldCount` (int, sentinel −1). `FieldCount` populates it lazily on first
+access after each row advance; `ReadAsync` resets it to −1 at the top of every advance attempt.
+The `_columnNames` path (EF Core primary consumer) is unaffected — it returns
+`_columnNames.Length` directly and never reaches the cache.
+
+### 6 — Sync-over-async on `Close()` and `Read()` (documented, not yet fixed)
+
+`Close()` calls `_enumerator?.DisposeAsync().AsTask().GetAwaiter().GetResult()`, and `Read()`
+calls `ReadAsync().GetAwaiter().GetResult()`. Both can deadlock on a UI thread with a captured
+`SynchronizationContext`.
+
+Assessment: `Read()` mirrors the base-class default; EF Core never calls it. `Close()` is
+reachable via `using var reader = ...` (sync `Dispose()`) even in async callers. Routing
+`Close()` through `AsyncHelper.RunSync` (consistent with `CouchbaseCommand`'s sync methods)
+is the recommended fix. Not yet applied; tracked for a follow-up commit.
+
+### 7 — No regression test for `DbCommand.Cancel()` CTS ownership-transfer fix
+
+The headline fix (CTS ownership transfer so `Cancel()` reaches the enumerator for the
+reader's lifetime) had no direct test coverage. The `PrimeAsync_WithCancelledToken_*` tests
+only exercise the reader directly; nothing went through `CouchbaseCommand`.
+
+Fix: `Cancel_AfterExecuteReaderAsync_FaultsNextReadAsync` added to `CouchbaseCommandTests`.
+Uses a `[EnumeratorCancellation]`-annotated async iterator so the token injected via
+`GetAsyncEnumerator(linkedCts.Token)` is actually checked during `MoveNextAsync`. The
+external token is `CancellationToken.None` so the only cancellation source is `command.Cancel()`.
+
+### 8 — No tests for `PrimeAsync` + `Close`/`CloseAsync` without `ReadAsync`
+
+Closing a primed reader without ever calling `ReadAsync` had no coverage — the buffered first
+row and linked CTS cleanup path was untested.
+
+Fix: four tests added to the `PrimeAsync` region:
+- `CloseAsync` leaves `IsClosed = true` with no exception
+- `CloseAsync` → `ReadAsync` returns `false` (closed-reader contract)
+- `Close()` disposes the linked CTS (`Cancel()` on it throws `ObjectDisposedException`)
+- `DisposeAsync()` disposes the linked CTS via the async path
+
+---
+
 ## Phase 4 — Pre-Build Per-Row Ordinal → Value Array in `ReadAsync`
 
 **Goal:** Make `GetValue(ordinal)` O(1) — a single array dereference — by amortizing the JSON
@@ -276,7 +367,8 @@ property scan over the whole row on read.
 
 ### Current per-row cost
 
-After phase 3, `GetValue(ordinal)` on the EF Core path is:
+After phase 3 and the pre-phase-4 code review fixes, `GetValue(ordinal)` on the EF Core path
+(`_columnNames` set) is:
 
 ```
 _columnNames[ordinal]          // O(1) array read → alias string
@@ -291,6 +383,10 @@ k calls × O(m) TryGetPropertyCI scan = O(k × m) per row
 ```
 
 For a typical entity with 10 columns and 10 properties this is 100 string comparisons per row.
+
+Note: `FieldCount` on the positional path (`_columnNames == null`) was improved to O(1) after
+the first call per row via `_cachedFieldCount`. That optimization does not affect the EF Core
+hot path described here, which returns `_columnNames.Length` directly.
 
 ### Proposed approach
 
@@ -317,17 +413,22 @@ return element.HasValue ? ConvertJsonElement(element.Value) : DBNull.Value;
 - `_projectionOrdinals` (built at construction, `OrdinalIgnoreCase`) drives the name → ordinal
   mapping during the per-row scan.
 
-### `GetValues` O(m²) fix
+### `GetValues` O(m²) fix (column-names path)
 
-`GetValues` currently calls `GetValue(i)` in a loop. For the no-column-names (positional) path
-and for null-slot columns in the column-names path, each `GetValue` call re-enumerates the
-`JsonElement` properties from the start, making `GetValues` O(m²) for an object row with `m`
-properties.
+`GetValues` calls `GetValue(i)` in a loop. On the column-names path, each `GetValue` call
+currently re-scans the `JsonElement` properties from the start via `TryGetPropertyCI`, making
+`GetValues` O(k × m) — equivalent to the per-row cost above.
 
 Once `_currentValues` is populated in `ReadAsync`, `GetValue(ordinal)` becomes an O(1) array
 read, so `GetValues` naturally degrades to O(k) with no changes to its own implementation.
 No targeted fix to `GetValues` is needed; the improvement is a free consequence of the
 `_currentValues` array.
+
+Note: the positional path (`_columnNames == null`) is not covered by Phase 4. `GetValues` on
+that path remains O(m²) — each `GetValue(i)` re-walks the JSON properties from the start.
+`FieldCount` is now O(1) after the first call per row (via `_cachedFieldCount`), but individual
+`GetValue` calls still pay the O(m) scan. A future phase could extend `_currentValues` to the
+positional path, but the positional path is not used by EF Core.
 
 ### Expected outcome
 
