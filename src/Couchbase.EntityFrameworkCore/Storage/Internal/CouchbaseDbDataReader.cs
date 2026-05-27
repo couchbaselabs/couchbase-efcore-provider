@@ -96,13 +96,19 @@ public class CouchbaseDbDataReader<T> : DbDataReader
     /// <param name="queryResult">The Couchbase query result to read from.</param>
     /// <param name="connection">The connection to close when <see cref="CommandBehavior.CloseConnection"/> is set.</param>
     /// <param name="behavior">The command behavior flags.</param>
-    /// <param name="cancellationToken">Unused at construction; reserved for future use.</param>
+    /// <param name="cancellationToken">
+    /// The default cancellation token bound to the underlying row enumerator. Used when
+    /// <see cref="PrimeAsync"/> or <see cref="ReadAsync"/> are called with
+    /// <see cref="CancellationToken.None"/>. Typically <c>linkedCts.Token</c> from
+    /// <see cref="CouchbaseCommand"/> so that <c>DbCommand.Cancel()</c> propagates correctly.
+    /// </param>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="queryResult"/> is null.</exception>
     public CouchbaseDbDataReader(IQueryResult<T> queryResult, DbConnection? connection, CommandBehavior behavior, CancellationToken cancellationToken)
     {
         _queryResult = queryResult ?? throw new ArgumentNullException(nameof(queryResult));
         _connection = connection;
         _behavior = behavior;
+        _cancellationToken = cancellationToken;
     }
 
     /// <summary>
@@ -223,11 +229,14 @@ public class CouchbaseDbDataReader<T> : DbDataReader
         if (_enumerator == null)
         {
             // The token is bound at GetAsyncEnumerator() time and cannot be retargeted.
-            // All callers must pass the same long-lived token (e.g. linkedCts.Token from
-            // CouchbaseCommand) so that CancellationToken bindings remain consistent for
-            // the reader's lifetime.  Tokens passed to subsequent ReadAsync calls only
-            // affect the upfront ThrowIfCancellationRequested check, not in-flight MoveNextAsync.
-            _cancellationToken = cancellationToken;
+            // A non-None call-time token (e.g. linkedCts.Token from PrimeAsync) overrides
+            // the construction-time default; CancellationToken.None falls back to the token
+            // stored at construction so that callers using the 4-arg constructor do not need
+            // to re-pass the same token to every ReadAsync call.
+            // Tokens passed to subsequent ReadAsync calls only affect the upfront
+            // ThrowIfCancellationRequested check, not in-flight MoveNextAsync.
+            if (cancellationToken != CancellationToken.None)
+                _cancellationToken = cancellationToken;
             _enumerator = _queryResult.Rows.GetAsyncEnumerator(_cancellationToken);
         }
     }

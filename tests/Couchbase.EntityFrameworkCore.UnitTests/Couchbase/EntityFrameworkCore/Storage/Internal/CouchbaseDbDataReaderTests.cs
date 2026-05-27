@@ -1,4 +1,5 @@
 using System.Data;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Couchbase.EntityFrameworkCore.Storage.Internal;
 using Couchbase.Query;
@@ -917,6 +918,33 @@ public class CouchbaseDbDataReaderTests
         Assert.True(await reader.ReadAsync(cts.Token));
         Assert.True(await reader.ReadAsync(CancellationToken.None));
         Assert.False(await reader.ReadAsync(CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Constructor_4Arg_StoredTokenUsedAsEnumeratorDefault_WhenReadAsyncPassesNone()
+    {
+        // The token passed to the 4-arg constructor must be stored and bound to the
+        // underlying enumerator when ReadAsync is later called with CancellationToken.None,
+        // so that cancellation via the construction-time token propagates correctly.
+        //
+        // CancellableEnumerable uses [EnumeratorCancellation] so the token injected via
+        // GetAsyncEnumerator(token) is actually checked on each MoveNextAsync call,
+        // unlike a plain List.ToAsyncEnumerable() wrapper which does not observe the token.
+        var rows = new List<JsonElement> { ParseElement("{\"id\": 1}") };
+        var mockQueryResult = new Mock<IQueryResult<JsonElement>>();
+        mockQueryResult.Setup(q => q.Rows).Returns(CancellableEnumerable(rows));
+
+        using var cts = new CancellationTokenSource();
+        var reader = new CouchbaseDbDataReader<JsonElement>(
+            mockQueryResult.Object, connection: null,
+            System.Data.CommandBehavior.Default, cts.Token);
+
+        // Cancel before reading — the construction-time token must surface as cancellation
+        // even though ReadAsync is called with CancellationToken.None.
+        cts.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => reader.ReadAsync(CancellationToken.None));
     }
 
     #endregion
@@ -2060,6 +2088,21 @@ public class CouchbaseDbDataReaderTests
         onMoveNext();
         throw new InvalidOperationException("simulated cluster error");
         yield break;
+    }
+
+    // [EnumeratorCancellation] causes the compiler to inject the token passed to
+    // GetAsyncEnumerator(token) into the cancellationToken parameter, so MoveNextAsync
+    // actually observes cancellation — unlike List.ToAsyncEnumerable() which ignores it.
+    private static async IAsyncEnumerable<JsonElement> CancellableEnumerable(
+        IEnumerable<JsonElement> rows,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        foreach (var row in rows)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            await Task.Yield();
+            yield return row;
+        }
     }
 
     #endregion
