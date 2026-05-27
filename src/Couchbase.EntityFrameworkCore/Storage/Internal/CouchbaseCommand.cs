@@ -184,13 +184,29 @@ public class CouchbaseCommand : DbCommand
         CommandBehavior behavior,
         CancellationToken cancellationToken)
     {
-        using var linkedCts = CreateLinkedTokenSource(cancellationToken);
-        var options = BuildQueryOptions(linkedCts.Token);
+        // linkedCts is not disposed here — ownership transfers to the reader so that
+        // Cancel() keeps propagating to the enumerator for the reader's full lifetime.
+        var linkedCts = CreateLinkedTokenSource(cancellationToken);
+        CouchbaseDbDataReader<JsonElement>? reader = null;
+        try
+        {
+            var options = BuildQueryOptions(linkedCts.Token);
+            var cluster = ResolveCluster();
+            var queryResult = await cluster.QueryAsync<JsonElement>(CommandText, options).ConfigureAwait(false);
 
-        var cluster = ResolveCluster();
-        var queryResult = await cluster.QueryAsync<JsonElement>(CommandText, options).ConfigureAwait(false);
-
-        return new CouchbaseDbDataReader<JsonElement>(queryResult, DbConnection, behavior, cancellationToken);
+            reader = new CouchbaseDbDataReader<JsonElement>(queryResult, DbConnection, behavior, linkedCts.Token);
+            reader.SetLinkedCts(linkedCts);
+            await reader.PrimeAsync(linkedCts.Token).ConfigureAwait(false);
+            return reader;
+        }
+        catch
+        {
+            if (reader != null)
+                await reader.DisposeAsync().ConfigureAwait(false); // also disposes linkedCts
+            else
+                linkedCts.Dispose();
+            throw;
+        }
     }
 
     protected override void Dispose(bool disposing)
