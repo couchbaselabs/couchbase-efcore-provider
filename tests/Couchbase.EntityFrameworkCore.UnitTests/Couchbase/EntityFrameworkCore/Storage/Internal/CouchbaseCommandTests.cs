@@ -1,5 +1,6 @@
 using System.Data;
 using System.Data.Common;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.EntityFrameworkCore.Storage.Internal;
@@ -670,6 +671,88 @@ public class CouchbaseCommandTests
         // Should not throw even with CloseConnection and no connection
         var exception = await Record.ExceptionAsync(async () => await reader.CloseAsync());
         Assert.Null(exception);
+    }
+
+    /// <summary>
+    /// Proves the linked-CTS ownership-transfer fix: <see cref="CouchbaseCommand.Cancel"/> must
+    /// propagate to the in-flight enumerator for the full lifetime of the reader.
+    ///
+    /// Before the fix, <c>PrimeAsync</c> was called with the external <c>cancellationToken</c>
+    /// rather than <c>linkedCts.Token</c>, so the enumerator was bound to a token that
+    /// <c>DbCommand.Cancel()</c> could never reach.  The external token here is
+    /// <see cref="CancellationToken.None"/>, so the only source of cancellation is the internal
+    /// command CTS — exactly the path the fix enables.
+    /// </summary>
+    [Fact]
+    public async Task Cancel_AfterExecuteReaderAsync_FaultsNextReadAsync()
+    {
+        var rows = new List<JsonElement>
+        {
+            ParseElement("{\"id\": 1}"),
+            ParseElement("{\"id\": 2}"),
+            ParseElement("{\"id\": 3}")
+        };
+
+        // CancellableEnumerable uses [EnumeratorCancellation] so the token injected via
+        // GetAsyncEnumerator(token) is checked on each MoveNextAsync — unlike
+        // List.ToAsyncEnumerable() which ignores the token entirely.
+        var mockQueryResult = CreateMockQueryResultWithCancellableRows(rows);
+        _mockCluster.Setup(c => c.QueryAsync<JsonElement>(It.IsAny<string>(), It.IsAny<QueryOptions>()))
+            .ReturnsAsync(mockQueryResult);
+
+        var command = new CouchbaseCommand
+        {
+            Cluster = _mockCluster.Object,
+            CommandText = "SELECT * FROM bucket"
+        };
+
+        // ExecuteReaderAsync calls PrimeAsync(linkedCts.Token), binding the enumerator to
+        // a token that command.Cancel() can reach.  The external token is None so it
+        // contributes nothing — if the CTS transfer regressed, Cancel() would be a no-op.
+        var reader = await command.ExecuteReaderAsync(CancellationToken.None);
+
+        // Drain the PrimeAsync-buffered first row.
+        Assert.True(await reader.ReadAsync(CancellationToken.None));
+        Assert.Equal(1L, reader.GetValue(0));
+
+        // Cancel the command mid-stream.
+        command.Cancel();
+
+        // The next ReadAsync must fault because the enumerator's token is now cancelled.
+        // ReadAsync is called with CancellationToken.None to confirm that cancellation
+        // comes solely from command.Cancel(), not from the caller's token.
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => reader.ReadAsync(CancellationToken.None));
+    }
+
+    private static IQueryResult<JsonElement> CreateMockQueryResultWithCancellableRows(
+        List<JsonElement> rows)
+    {
+        var mockResult = new Mock<IQueryResult<JsonElement>>();
+        mockResult.Setup(r => r.Rows).Returns(CancellableEnumerable(rows));
+        mockResult.Setup(r => r.MetaData).Returns((QueryMetaData?)null);
+        return mockResult.Object;
+    }
+
+    // [EnumeratorCancellation] causes the compiler to inject the token passed to
+    // GetAsyncEnumerator(token) into the cancellationToken parameter, so each
+    // MoveNextAsync actually observes cancellation — unlike List.ToAsyncEnumerable().
+    private static async IAsyncEnumerable<JsonElement> CancellableEnumerable(
+        IEnumerable<JsonElement> rows,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        foreach (var row in rows)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            await Task.Yield();
+            yield return row;
+        }
+    }
+
+    private static JsonElement ParseElement(string json)
+    {
+        using var doc = JsonDocument.Parse(json);
+        return doc.RootElement.Clone();
     }
 
     private static IQueryResult<T> CreateMockQueryResultWithRows<T>(List<T> rows)
