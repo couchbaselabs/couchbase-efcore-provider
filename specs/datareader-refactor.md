@@ -440,17 +440,27 @@ properties the total comparisons drop from 10,000 to ~1,000.
 
 ### Actual outcome
 
-Implemented exactly as described. Key additions to `CouchbaseDbDataReader<T>`:
+Implemented exactly as described, plus a correctness fix for duplicate projection aliases.
+Key additions to `CouchbaseDbDataReader<T>`:
 
 - `_currentValues` — `JsonElement?[]` allocated once at construction (sized to
   `_columnNames.Length`); reused across every row.
+- `_secondaryOrdinals` — `List<(int Source, int Target)>?` built at construction alongside
+  `_projectionOrdinals`. `TryAdd` semantics mean `_projectionOrdinals` records only the
+  _first_ ordinal per alias; any later slot with the same non-null alias is a duplicate. The
+  secondary list records `(primaryOrdinal, duplicateOrdinal)` pairs so `BuildCurrentValues`
+  can copy each matched value to all duplicate slots after the main `EnumerateObject` pass.
+  The list is `null` — and incurs zero runtime cost — when all aliases are unique, which is
+  always the case on the EF Core path.
 - `BuildCurrentValues()` — called from both `ReadAsync` paths (buffered and streaming) after
   each `MoveNextAsync`. Handles three row shapes:
   - **Object row** (`JsonValueKind.Object`): single O(m) `EnumerateObject` pass; each property
     matched against `_projectionOrdinals` (OrdinalIgnoreCase) and written to `_currentValues`.
+    Duplicate alias slots are then filled via `_secondaryOrdinals`.
   - **Scalar row** (any other `JsonValueKind`): broadcasts the element to all non-null alias
-    slots — covers `SELECT RAW <scalar>` with projection aliases.
-  - **Null row** (`_currentRow` is not a `JsonElement`): all slots remain null.
+    slots — covers `SELECT RAW <scalar>` with projection aliases. The index-based broadcast
+    naturally covers duplicate alias slots.
+  - **Null row** (`_currentRow` is not a `JsonElement`): all slots remain null (→ `DBNull.Value`).
 - `GetValue(ordinal)` hot path for non-null alias slots replaced with a single array read:
   ```csharp
   var element = _currentValues![ordinal];
@@ -459,5 +469,5 @@ Implemented exactly as described. Key additions to `CouchbaseDbDataReader<T>`:
 - `_cachedFieldCount` reset to `-1` at the top of each `ReadAsync` to keep the positional-path
   `FieldCount` cache per-row.
 
-8 new unit tests added in `CouchbaseDbDataReaderTests` under `#region Phase 4 — _currentValues
-per-row cache`. Total test count: 672 (all passing).
+11 new unit tests added in `CouchbaseDbDataReaderTests` under `#region Phase 4 — _currentValues
+per-row cache` (8 core cache tests + 3 duplicate-alias tests). Total test count: 675 (all passing).
