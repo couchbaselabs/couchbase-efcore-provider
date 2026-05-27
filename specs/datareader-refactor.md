@@ -450,8 +450,10 @@ Key additions to `CouchbaseDbDataReader<T>`:
   _first_ ordinal per alias; any later slot with the same non-null alias is a duplicate. The
   secondary list records `(primaryOrdinal, duplicateOrdinal)` pairs so `BuildCurrentValues`
   can copy each matched value to all duplicate slots after the main `EnumerateObject` pass.
-  The list is `null` — and incurs zero runtime cost — when all aliases are unique, which is
-  always the case on the EF Core path.
+  The list is `null` — and incurs zero runtime cost — when all aliases are unique. EF Core's
+  query compiler typically deduplicates projection aliases, but this is not guaranteed across
+  all query shapes or future compiler versions, so the reader handles duplicates correctly
+  regardless.
 - `BuildCurrentValues()` — called from both `ReadAsync` paths (buffered and streaming) after
   each `MoveNextAsync`. Handles three row shapes:
   - **Object row** (`JsonValueKind.Object`): single O(m) `EnumerateObject` pass; each property
