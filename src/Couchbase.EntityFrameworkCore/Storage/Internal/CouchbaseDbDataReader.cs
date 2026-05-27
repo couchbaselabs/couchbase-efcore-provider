@@ -77,7 +77,7 @@ public class CouchbaseDbDataReader<T> : DbDataReader
     // Only allocated when _columnNames contains repeated non-null alias strings.
     // BuildCurrentValues copies each JSON property value from the primary ordinal (held in
     // _projectionOrdinals) to every duplicate ordinal after the main EnumerateObject pass.
-    // Null when all aliases are unique (the universal EF Core case — zero runtime overhead).
+    // Null when all aliases are unique — zero runtime overhead in the common case.
     private readonly List<(int Source, int Target)>? _secondaryOrdinals;
 
     /// <summary>
@@ -330,7 +330,7 @@ public class CouchbaseDbDataReader<T> : DbDataReader
                     _currentValues[ordinal] = prop.Value;
             }
             // Propagate each matched value to any duplicate ordinals that share the same alias.
-            // No-op in the universal case where _secondaryOrdinals is null.
+            // No-op when all aliases are unique (_secondaryOrdinals is null).
             if (_secondaryOrdinals is not null)
                 foreach (var (src, dst) in _secondaryOrdinals)
                     _currentValues[dst] = _currentValues[src];
