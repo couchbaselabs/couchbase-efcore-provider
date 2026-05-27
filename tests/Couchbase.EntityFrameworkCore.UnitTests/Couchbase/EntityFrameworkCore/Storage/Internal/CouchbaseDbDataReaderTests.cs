@@ -2075,6 +2075,73 @@ public class CouchbaseDbDataReaderTests
         Assert.Equal(1, callCount); // still only one advance attempt
     }
 
+    [Fact]
+    public async Task PrimeAsync_ThenCloseAsync_ReaderIsClosedCleanly()
+    {
+        // Closing after PrimeAsync without any ReadAsync call must succeed — the
+        // buffered first row must not obstruct disposal.
+        var rows = new List<JsonElement> { ParseElement("{\"id\": 1}") };
+        var reader = CreateReader(rows);
+
+        await reader.PrimeAsync(CancellationToken.None);
+
+        Assert.True(reader.HasRows);
+        Assert.False(reader.IsClosed);
+
+        await reader.CloseAsync();
+
+        Assert.True(reader.IsClosed);
+    }
+
+    [Fact]
+    public async Task PrimeAsync_ThenCloseAsync_ReadAsyncReturnsFalse()
+    {
+        // ReadAsync on a closed reader must return false rather than throw.
+        var rows = new List<JsonElement> { ParseElement("{\"id\": 1}") };
+        var reader = CreateReader(rows);
+
+        await reader.PrimeAsync(CancellationToken.None);
+        await reader.CloseAsync();
+
+        Assert.False(await reader.ReadAsync(CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task PrimeAsync_ThenClose_LinkedCtsIsDisposed()
+    {
+        // Close() must dispose the linked CTS transferred from CouchbaseCommand so that
+        // DbCommand.Cancel() no longer has a live token source to operate on.
+        var rows = new List<JsonElement> { ParseElement("{\"id\": 1}") };
+        var reader = CreateReader(rows);
+
+        // CTS ownership is transferred to the reader; the reader is responsible for disposal.
+        // 'using' here provides a safety net if the test fails before Close() is reached.
+        using var cts = new CancellationTokenSource();
+        reader.SetLinkedCts(cts);
+
+        await reader.PrimeAsync(CancellationToken.None);
+        reader.Close();
+
+        // After Close the linked CTS must be disposed — Cancel() on a disposed CTS throws.
+        Assert.Throws<ObjectDisposedException>(() => cts.Cancel());
+    }
+
+    [Fact]
+    public async Task PrimeAsync_ThenDisposeAsync_LinkedCtsIsDisposed()
+    {
+        // Same contract as the Close() path but exercised via DisposeAsync().
+        var rows = new List<JsonElement> { ParseElement("{\"id\": 1}") };
+        var reader = CreateReader(rows);
+
+        using var cts = new CancellationTokenSource();
+        reader.SetLinkedCts(cts);
+
+        await reader.PrimeAsync(CancellationToken.None);
+        await reader.DisposeAsync();
+
+        Assert.Throws<ObjectDisposedException>(() => cts.Cancel());
+    }
+
     private static async IAsyncEnumerable<JsonElement> ThrowingEnumerable()
     {
         await Task.Yield();
