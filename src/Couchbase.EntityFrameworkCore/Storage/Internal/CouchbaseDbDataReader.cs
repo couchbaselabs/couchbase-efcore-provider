@@ -290,11 +290,27 @@ public class CouchbaseDbDataReader<T> : DbDataReader
     /// reads rather than O(m) <c>TryGetPropertyCI</c> scans.
     /// </summary>
     /// <remarks>
-    /// Only active on the column-names path (<see cref="_currentValues"/> non-null).  Non-object
-    /// and null rows leave all slots as <c>null</c> (→ <see cref="DBNull.Value"/> in
-    /// <see cref="GetValue"/>).  JSON properties whose names do not match any
-    /// <see cref="_projectionOrdinals"/> entry are skipped.  Null slots in
-    /// <see cref="_columnNames"/> are never written and continue to use positional fallback.
+    /// Only active on the column-names path (<see cref="_currentValues"/> non-null).
+    /// Three row shapes are handled:
+    /// <list type="bullet">
+    ///   <item><description>
+    ///     <b>Object row</b> (<c>JsonValueKind.Object</c>): single O(m) <c>EnumerateObject</c> pass;
+    ///     each property is matched against <see cref="_projectionOrdinals"/> and written to the
+    ///     corresponding slot.  Duplicate-alias slots are then filled via <see cref="_secondaryOrdinals"/>.
+    ///     JSON properties with no matching alias are skipped; projection slots with no matching
+    ///     property remain <c>null</c> (→ <see cref="DBNull.Value"/> in <see cref="GetValue"/>).
+    ///   </description></item>
+    ///   <item><description>
+    ///     <b>Scalar row</b> (any <c>JsonValueKind</c> other than <c>Object</c>): the scalar element
+    ///     is broadcast to every non-null alias slot so that <see cref="GetValue"/> returns the scalar
+    ///     for any projection ordinal.  Null slots in <see cref="_columnNames"/> are left unset and
+    ///     continue to use the positional fallback in <see cref="GetValue"/>.
+    ///   </description></item>
+    ///   <item><description>
+    ///     <b>Null row</b> (<c>_currentRow</c> is not a <see cref="JsonElement"/>): all slots remain
+    ///     <c>null</c> (→ <see cref="DBNull.Value"/>).
+    ///   </description></item>
+    /// </list>
     /// </remarks>
     private void BuildCurrentValues()
     {
