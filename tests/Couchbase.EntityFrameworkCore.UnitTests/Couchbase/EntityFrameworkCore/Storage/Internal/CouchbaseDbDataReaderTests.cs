@@ -2010,6 +2010,58 @@ public class CouchbaseDbDataReaderTests
         Assert.False(await reader.ReadAsync(CancellationToken.None));
     }
 
+    [Fact]
+    public async Task PrimeAsync_MoveNextThrows_HasRowsIsFalse()
+    {
+        // If MoveNextAsync throws (e.g. cluster error mid-fetch), PrimeAsync must
+        // re-throw and leave HasRows == false so the reader is not silently usable.
+        var mockQueryResult = new Mock<IQueryResult<JsonElement>>();
+        mockQueryResult.Setup(q => q.Rows).Returns(ThrowingEnumerable());
+        var reader = new CouchbaseDbDataReader<JsonElement>(mockQueryResult.Object, (string?[]?)null);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => reader.PrimeAsync(CancellationToken.None));
+
+        Assert.False(reader.HasRows);
+    }
+
+    [Fact]
+    public async Task PrimeAsync_MoveNextThrows_SecondCallIsNoOp()
+    {
+        // After a failed prime the idempotency guard must prevent re-advancing the
+        // enumerator on a second call.  The second call must return without throwing.
+        var callCount = 0;
+        var mockQueryResult = new Mock<IQueryResult<JsonElement>>();
+        mockQueryResult.Setup(q => q.Rows).Returns(CountingThrowingEnumerable(() => callCount++));
+        var reader = new CouchbaseDbDataReader<JsonElement>(mockQueryResult.Object, (string?[]?)null);
+
+        // First call throws; enumerator has been advanced once.
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => reader.PrimeAsync(CancellationToken.None));
+
+        Assert.Equal(1, callCount); // enumerator was tried exactly once
+
+        // Second call must be a no-op — enumerator must NOT be advanced again.
+        await reader.PrimeAsync(CancellationToken.None);
+
+        Assert.Equal(1, callCount); // still only one advance attempt
+    }
+
+    private static async IAsyncEnumerable<JsonElement> ThrowingEnumerable()
+    {
+        await Task.Yield();
+        throw new InvalidOperationException("simulated cluster error");
+        yield break; // unreachable; satisfies the compiler's iterator requirement
+    }
+
+    private static async IAsyncEnumerable<JsonElement> CountingThrowingEnumerable(Action onMoveNext)
+    {
+        await Task.Yield();
+        onMoveNext();
+        throw new InvalidOperationException("simulated cluster error");
+        yield break;
+    }
+
     #endregion
 
     #region Row-type validation — NotSupportedException for non-JsonElement rows

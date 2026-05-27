@@ -251,16 +251,27 @@ public class CouchbaseDbDataReader<T> : DbDataReader
         if (_hasRows.HasValue || _hasBufferedRow || _hasCurrentRow)
             return;
         EnsureEnumerator(cancellationToken);
-        var hasMore = await _enumerator!.MoveNextAsync().ConfigureAwait(false);
-        if (hasMore)
+        try
         {
-            _bufferedFirstRow = ValidateRow(_enumerator.Current);
-            _hasBufferedRow = true;
-            _hasRows = true;
+            var hasMore = await _enumerator!.MoveNextAsync().ConfigureAwait(false);
+            if (hasMore)
+            {
+                _bufferedFirstRow = ValidateRow(_enumerator.Current);
+                _hasBufferedRow = true;
+                _hasRows = true;
+            }
+            else
+            {
+                _hasRows = false;
+            }
         }
-        else
+        catch
         {
+            // Poison the idempotency guard so a second PrimeAsync call cannot re-advance
+            // the enumerator on a broken stream.  HasRows == false is accurate: no rows
+            // are readable from a result whose first fetch threw.
             _hasRows = false;
+            throw;
         }
     }
 
