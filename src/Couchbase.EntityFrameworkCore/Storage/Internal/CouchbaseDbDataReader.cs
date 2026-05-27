@@ -307,8 +307,10 @@ public class CouchbaseDbDataReader<T> : DbDataReader
     ///     continue to use the positional fallback in <see cref="GetValue"/>.
     ///   </description></item>
     ///   <item><description>
-    ///     <b>Null row</b> (<c>_currentRow</c> is not a <see cref="JsonElement"/>): all slots remain
-    ///     <c>null</c> (→ <see cref="DBNull.Value"/>).
+    ///     <b>Null row</b> (<c>_currentRow</c> is <c>null</c>, i.e. <c>SELECT RAW null</c>):
+    ///     all slots remain <c>null</c> (→ <see cref="DBNull.Value"/>).
+    ///     Non-null, non-<see cref="JsonElement"/> rows are rejected earlier by
+    ///     <see cref="ValidateRow"/> and never reach this method.
     ///   </description></item>
     /// </list>
     /// </remarks>
@@ -319,7 +321,7 @@ public class CouchbaseDbDataReader<T> : DbDataReader
         Array.Clear(_currentValues, 0, _currentValues.Length);
 
         if (_currentRow is not JsonElement je)
-            return; // null row (SELECT RAW null) — all slots stay null (→ DBNull.Value)
+            return; // _currentRow is null (SELECT RAW null) — all slots stay null (→ DBNull.Value)
 
         if (je.ValueKind == JsonValueKind.Object)
         {
