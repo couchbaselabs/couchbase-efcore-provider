@@ -462,7 +462,9 @@ Key additions to `CouchbaseDbDataReader<T>`:
   - **Scalar row** (any other `JsonValueKind`): broadcasts the element to all non-null alias
     slots — covers `SELECT RAW <scalar>` with projection aliases. The index-based broadcast
     naturally covers duplicate alias slots.
-  - **Null row** (`_currentRow` is not a `JsonElement`): all slots remain null (→ `DBNull.Value`).
+  - **Null row** (`_currentRow` is `null`, i.e. `SELECT RAW null`): all slots remain null
+    (→ `DBNull.Value`). Non-null non-`JsonElement` rows are rejected earlier by `ValidateRow`
+    and never reach `BuildCurrentValues`.
 - `GetValue(ordinal)` hot path for non-null alias slots replaced with a single array read:
   ```csharp
   var element = _currentValues![ordinal];
