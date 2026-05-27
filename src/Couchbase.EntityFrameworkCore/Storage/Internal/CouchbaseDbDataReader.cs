@@ -63,6 +63,9 @@ public class CouchbaseDbDataReader<T> : DbDataReader
     private bool _hasCurrentRow;
     private bool? _hasRows;
     private bool _isClosed;
+    // Cached field count for the positional (no-_columnNames) path; -1 means not yet computed.
+    // Invalidated on every ReadAsync so it is recomputed from the new row.
+    private int _cachedFieldCount = -1;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="CouchbaseDbDataReader{T}"/> class with an
@@ -125,9 +128,13 @@ public class CouchbaseDbDataReader<T> : DbDataReader
             if (_columnNames != null)
                 return _columnNames.Length;
             EnsureCurrentRow();
+            if (_cachedFieldCount >= 0)
+                return _cachedFieldCount;
             if (_currentRow is JsonElement je)
-                return je.ValueKind == JsonValueKind.Object ? je.EnumerateObject().Count() : 1;
-            return 1; // null row (SELECT RAW null) — one column, value is DBNull
+                return _cachedFieldCount = je.ValueKind == JsonValueKind.Object
+                    ? je.EnumerateObject().Count()
+                    : 1;
+            return _cachedFieldCount = 1; // null row (SELECT RAW null) — one column, value is DBNull
         }
     }
 
@@ -193,6 +200,7 @@ public class CouchbaseDbDataReader<T> : DbDataReader
         if (_isClosed)
             return false;
 
+        _cachedFieldCount = -1; // invalidate per-row cache on every advance attempt
         cancellationToken.ThrowIfCancellationRequested();
 
         // If PrimeAsync buffered the first row, return it without re-advancing the enumerator.
