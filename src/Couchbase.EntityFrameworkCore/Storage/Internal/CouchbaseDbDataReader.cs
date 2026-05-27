@@ -73,6 +73,12 @@ public class CouchbaseDbDataReader<T> : DbDataReader
     // A null entry means the JSON row had no matching property → DBNull.Value.
     // Null slots in _columnNames are never written here; they fall through to positional scan.
     private readonly JsonElement?[]? _currentValues;
+    // Secondary (duplicate-alias) slots: (source-ordinal, target-ordinal) pairs.
+    // Only allocated when _columnNames contains repeated non-null alias strings.
+    // BuildCurrentValues copies each JSON property value from the primary ordinal (held in
+    // _projectionOrdinals) to every duplicate ordinal after the main EnumerateObject pass.
+    // Null when all aliases are unique (the universal EF Core case — zero runtime overhead).
+    private readonly List<(int Source, int Target)>? _secondaryOrdinals;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="CouchbaseDbDataReader{T}"/> class with an
@@ -97,6 +103,24 @@ public class CouchbaseDbDataReader<T> : DbDataReader
                     _projectionOrdinals.TryAdd(alias, i);
             }
             _currentValues = new JsonElement?[columnNames.Length];
+
+            // Detect duplicate aliases. _projectionOrdinals stores only the first ordinal per
+            // alias (TryAdd semantics). Any later slot with the same non-null alias is a
+            // duplicate; record it as (primaryOrdinal, duplicateOrdinal) so BuildCurrentValues
+            // can copy the value across after the main EnumerateObject pass.
+            List<(int, int)>? secondary = null;
+            for (var i = 0; i < columnNames.Length; i++)
+            {
+                var alias = columnNames[i];
+                if (alias != null
+                    && _projectionOrdinals.TryGetValue(alias, out var primaryOrdinal)
+                    && primaryOrdinal != i)
+                {
+                    secondary ??= new List<(int, int)>();
+                    secondary.Add((primaryOrdinal, i));
+                }
+            }
+            _secondaryOrdinals = secondary;
         }
     }
 
@@ -289,6 +313,11 @@ public class CouchbaseDbDataReader<T> : DbDataReader
                 if (_projectionOrdinals!.TryGetValue(prop.Name, out var ordinal))
                     _currentValues[ordinal] = prop.Value;
             }
+            // Propagate each matched value to any duplicate ordinals that share the same alias.
+            // No-op in the universal case where _secondaryOrdinals is null.
+            if (_secondaryOrdinals is not null)
+                foreach (var (src, dst) in _secondaryOrdinals)
+                    _currentValues[dst] = _currentValues[src];
         }
         else
         {

@@ -2602,6 +2602,50 @@ public class CouchbaseDbDataReaderTests
         Assert.Equal(200L, reader.GetValue(0));
     }
 
+    [Fact]
+    public async Task DuplicateAliases_BothOrdinalsReturnSameValue()
+    {
+        // Arrange: column names with a duplicate alias at ordinals 0 and 2.
+        // _projectionOrdinals stores ordinal 0 for "Name"; _secondaryOrdinals must copy to ordinal 2.
+        var row = ParseElement("""{"Name":"Alice","Age":30}""");
+        var columnNames = new string?[] { "Name", "Age", "Name" }; // ordinal 2 duplicates ordinal 0
+        await using var reader = CreateReaderWithColumnNames(new List<JsonElement> { row }, columnNames);
+
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Equal("Alice", reader.GetValue(0)); // primary slot
+        Assert.Equal(30L,     reader.GetValue(1)); // unrelated alias
+        Assert.Equal("Alice", reader.GetValue(2)); // duplicate slot — must NOT be DBNull
+    }
+
+    [Fact]
+    public async Task DuplicateAliases_MissingProperty_BothOrdinalsReturnDBNull()
+    {
+        // When the JSON has no matching property, both the primary and duplicate slots stay null.
+        var row = ParseElement("""{"Age":30}""");
+        var columnNames = new string?[] { "Name", "Age", "Name" };
+        await using var reader = CreateReaderWithColumnNames(new List<JsonElement> { row }, columnNames);
+
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Equal(DBNull.Value, reader.GetValue(0));
+        Assert.Equal(DBNull.Value, reader.GetValue(2));
+    }
+
+    [Fact]
+    public async Task DuplicateAliases_ScalarRow_BothOrdinalsReturnScalar()
+    {
+        // Scalar broadcast must also cover duplicate alias slots.
+        var row = ParseElement("42");
+        var columnNames = new string?[] { "v", "v" }; // both slots share alias "v"
+        await using var reader = CreateReaderWithColumnNames(new List<JsonElement> { row }, columnNames);
+
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Equal(42L, reader.GetValue(0));
+        Assert.Equal(42L, reader.GetValue(1));
+    }
+
     #endregion
 
     private static JsonElement ParseElement(string json)
