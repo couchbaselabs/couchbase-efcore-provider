@@ -1443,13 +1443,18 @@ public class CouchbaseDbDataReaderTests
     }
 
     [Fact]
-    public async Task GetName_NullSlot_ScalarRow_OrdinalNonZero_ThrowsIndexOutOfRangeException()
+    public async Task GetName_NullSlot_ScalarRow_AllInRangeOrdinalsReturnEmptyString()
     {
+        // A scalar row with multiple null slots: GetName must return "" for all in-range
+        // ordinals, symmetric with GetValue which returns DBNull.Value for the same ordinals.
         var rows = new List<JsonElement> { ParseElement("42") };
-        var reader = CreateReaderWithColumnNames(rows, new string?[] { null, null });
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { null, null, null });
         await reader.ReadAsync(CancellationToken.None);
 
-        Assert.Throws<IndexOutOfRangeException>(() => reader.GetName(1));
+        Assert.Equal(string.Empty, reader.GetName(0));
+        Assert.Equal(string.Empty, reader.GetName(1));
+        Assert.Equal(string.Empty, reader.GetName(2));
+        Assert.Throws<IndexOutOfRangeException>(() => reader.GetName(3));
     }
 
     [Fact]
