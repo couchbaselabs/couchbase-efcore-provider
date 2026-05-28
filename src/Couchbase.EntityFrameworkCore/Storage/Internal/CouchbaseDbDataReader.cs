@@ -254,14 +254,18 @@ public class CouchbaseDbDataReader<T> : DbDataReader
             _currentRow = ValidateRow(_enumerator.Current);
             _hasCurrentRow = true;
             _hasRows ??= true;
+            BuildCurrentValues();
         }
         else
         {
             _currentRow = default;
             _hasCurrentRow = false;
             _hasRows ??= false;
+            // BuildCurrentValues is not called: _currentValues retains stale data from the
+            // last row, but EnsureCurrentRow() guards every read path and throws before any
+            // caller can observe those slots.  Skipping the call avoids a redundant
+            // Array.Clear on end-of-stream.
         }
-        BuildCurrentValues();
 
         return hasMore;
     }
