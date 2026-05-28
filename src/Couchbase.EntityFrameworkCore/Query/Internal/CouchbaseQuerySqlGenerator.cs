@@ -80,9 +80,17 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
     /// </remarks>
     private static bool IsOwnedTable(TableExpression tableExpression)
     {
-        var mappings = tableExpression.Table.EntityTypeMappings.ToList();
-        return mappings.Count > 0
-            && mappings.All(m => m.TypeBase is IEntityType et && et.IsOwned());
+        // Single-pass enumeration: track whether any mappings exist and whether every
+        // mapping seen so far is an owned entity type. Avoids the ToList() allocation
+        // that would otherwise occur on every FROM/JOIN clause generation.
+        var any = false;
+        foreach (var mapping in tableExpression.Table.EntityTypeMappings)
+        {
+            if (mapping.TypeBase is not IEntityType et || !et.IsOwned())
+                return false;
+            any = true;
+        }
+        return any;
     }
 
     /// <inheritdoc />
