@@ -566,9 +566,17 @@ callers that construct the reader outside the EF Core pipeline (e.g. raw ADO.NET
 | `Read()` | Low — EF Core never calls it | Secondary |
 | `CloseAsync()` / `ReadAsync()` / `DisposeAsync()` | None — fully async | No change |
 
-### Testing
+### Actual outcome
 
-- Add a unit test that calls `Close()` from a thread with an `ExclusiveSynchronizationContext`
-  (or a mock that would deadlock without `AsyncHelper`) and asserts it returns without
-  deadlocking and `IsClosed == true`.
-- Verify existing 675 tests continue to pass.
+- `Close()` uses `AsyncHelper.RunSync` for both enumerator and `_queryResult` disposal.
+  `_queryResult` is checked for `IAsyncDisposable` first (matching `CloseAsync`), falling
+  back to synchronous `IDisposable.Dispose()`.
+- `Read()` uses `AsyncHelper.RunSync` for symmetry.
+- Two new unit tests added:
+  - `Close_WithNonDefaultSynchronizationContext_DoesNotDeadlock` — runs `Close()` on a
+    dedicated thread with a `CapturingSynchronizationContext` (Post does nothing) and an
+    async iterator whose `finally` block contains `await Task.Yield()`, ensuring
+    `DisposeAsync()` genuinely suspends. Asserts the thread completes within 5 s.
+  - `Read_WithNonDefaultSynchronizationContext_DoesNotDeadlock` — same context, verifies
+    `Read()` returns the first row without hanging.
+- Total test count: 677 (all passing).

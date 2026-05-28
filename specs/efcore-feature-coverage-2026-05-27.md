@@ -197,7 +197,7 @@ Trim / TrimStart / TrimEnd, IsNullOrWhiteSpace
 | Lazy loading / proxies | No proxy generation; explicit Include required |
 | Migrations | No schema migration tracking or execution |
 | Stored procedures | N1QL does not support stored procedures |
-| Synchronous I/O | Only async; sync paths use sync-over-async bridges (deadlock risk — see `datareader-refactor.md` Phase 5) |
+| Synchronous I/O | Only async; sync paths use `AsyncHelper.RunSync` (deadlock-safe — see `datareader-refactor.md` Phase 5) |
 | Average aggregate | Known bug NCBC-3891 |
 | Union / Intersect / Except | Not explicitly implemented or tested |
 | View mapping | Couchbase collections only |
@@ -252,5 +252,5 @@ Trim / TrimStart / TrimEnd, IsNullOrWhiteSpace
    substitution is available.
 
 6. **Async-only** — all database operations are async. Sync paths (`Read`, `Close`,
-   `SaveChanges` in DEBUG) call sync-over-async bridges and can deadlock on a UI thread.
-   See `datareader-refactor.md` Phase 5 for the planned fix.
+   `SaveChanges` in DEBUG) use `AsyncHelper.RunSync` which is safe under any
+   `SynchronizationContext`. See `datareader-refactor.md` Phase 5 for details.
