@@ -2467,6 +2467,187 @@ public class CouchbaseDbDataReaderTests
 
     #endregion
 
+    #region Phase 4 — _currentValues per-row cache
+
+    [Fact]
+    public async Task Phase4_GetValue_ColumnNames_ObjectRow_ReturnsCorrectValues()
+    {
+        // Core correctness: _currentValues populated from a single O(m) pass must produce
+        // the same results as the old TryGetPropertyCI path.
+        var rows = new List<JsonElement>
+        {
+            ParseElement("{\"id\": 1, \"name\": \"Alice\", \"active\": true}")
+        };
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { "id", "name", "active" });
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Equal(1L, reader.GetValue(0));
+        Assert.Equal("Alice", reader.GetValue(1));
+        Assert.Equal(true, reader.GetValue(2));
+    }
+
+    [Fact]
+    public async Task Phase4_GetValue_ColumnNames_CaseInsensitiveMatch()
+    {
+        // Property names in JSON may differ in case from the projection alias.
+        var rows = new List<JsonElement> { ParseElement("{\"BlogId\": 42}") };
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { "blogId" });
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Equal(42L, reader.GetValue(0));
+    }
+
+    [Fact]
+    public async Task Phase4_GetValue_ColumnNames_MissingProperty_ReturnsDBNull()
+    {
+        // A projection alias that has no matching JSON property must return DBNull.
+        var rows = new List<JsonElement> { ParseElement("{\"name\": \"Bob\"}") };
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { "id", "name" });
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Equal(DBNull.Value, reader.GetValue(0)); // "id" absent from row
+        Assert.Equal("Bob", reader.GetValue(1));
+    }
+
+    [Fact]
+    public async Task Phase4_GetValue_ColumnNames_ExtraJsonProperties_Ignored()
+    {
+        // JSON properties not in the projection must not affect the cache or GetValue.
+        var rows = new List<JsonElement>
+        {
+            ParseElement("{\"id\": 7, \"_internal\": \"x\", \"name\": \"Carol\"}")
+        };
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { "id", "name" });
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Equal(7L, reader.GetValue(0));
+        Assert.Equal("Carol", reader.GetValue(1));
+    }
+
+    [Fact]
+    public async Task Phase4_GetValue_ColumnNames_MultipleRows_CacheRefreshedEachRow()
+    {
+        // _currentValues must be cleared and rebuilt for each row — a stale value from
+        // a previous row must never bleed through to the next.
+        var rows = new List<JsonElement>
+        {
+            ParseElement("{\"id\": 1, \"name\": \"Alice\"}"),
+            ParseElement("{\"id\": 2}") // "name" absent on second row
+        };
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { "id", "name" });
+
+        await reader.ReadAsync(CancellationToken.None);
+        Assert.Equal(1L, reader.GetValue(0));
+        Assert.Equal("Alice", reader.GetValue(1));
+
+        await reader.ReadAsync(CancellationToken.None);
+        Assert.Equal(2L, reader.GetValue(0));
+        Assert.Equal(DBNull.Value, reader.GetValue(1)); // must not return "Alice" from row 1
+    }
+
+    [Fact]
+    public async Task Phase4_GetValues_ColumnNames_ReturnsAllCachedValues()
+    {
+        // GetValues loops over GetValue — with the cache each call is O(1) and the full
+        // array must be populated correctly.
+        var rows = new List<JsonElement>
+        {
+            ParseElement("{\"a\": 1, \"b\": 2, \"c\": 3}")
+        };
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { "a", "b", "c" });
+        await reader.ReadAsync(CancellationToken.None);
+
+        var values = new object[3];
+        var count = reader.GetValues(values);
+
+        Assert.Equal(3, count);
+        Assert.Equal(1L, values[0]);
+        Assert.Equal(2L, values[1]);
+        Assert.Equal(3L, values[2]);
+    }
+
+    [Fact]
+    public async Task Phase4_GetValue_ColumnNames_NullSlot_PositionalFallback()
+    {
+        // Null slots in _columnNames are NOT written to _currentValues — they use
+        // positional scan, which must still work correctly alongside the cache.
+        var rows = new List<JsonElement> { ParseElement("{\"x\": 9, \"y\": 8}") };
+        // ordinal 0: alias "x" (non-null, from cache), ordinal 1: null slot (positional)
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { "x", null });
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Equal(9L, reader.GetValue(0)); // from _currentValues cache
+        Assert.Equal(8L, reader.GetValue(1)); // positional fallback (second JSON property)
+    }
+
+    [Fact]
+    public async Task Phase4_GetValue_ColumnNames_PrimedFirstRow_CachePopulated()
+    {
+        // The PrimeAsync / buffered-row path in ReadAsync must also trigger BuildCurrentValues
+        // so the cache is valid for the first row returned from the buffer.
+        var rows = new List<JsonElement>
+        {
+            ParseElement("{\"id\": 100}"),
+            ParseElement("{\"id\": 200}")
+        };
+        var reader = CreateReaderWithColumnNames(rows, new string?[] { "id" });
+        await reader.PrimeAsync(CancellationToken.None); // buffers row 1
+
+        // First ReadAsync drains the buffer — cache must be built for the buffered row.
+        Assert.True(await reader.ReadAsync(CancellationToken.None));
+        Assert.Equal(100L, reader.GetValue(0));
+
+        // Second ReadAsync advances enumerator — cache rebuilt for row 2.
+        Assert.True(await reader.ReadAsync(CancellationToken.None));
+        Assert.Equal(200L, reader.GetValue(0));
+    }
+
+    [Fact]
+    public async Task DuplicateAliases_BothOrdinalsReturnSameValue()
+    {
+        // Arrange: column names with a duplicate alias at ordinals 0 and 2.
+        // _projectionOrdinals stores ordinal 0 for "Name"; _secondaryOrdinals must copy to ordinal 2.
+        var row = ParseElement("""{"Name":"Alice","Age":30}""");
+        var columnNames = new string?[] { "Name", "Age", "Name" }; // ordinal 2 duplicates ordinal 0
+        await using var reader = CreateReaderWithColumnNames(new List<JsonElement> { row }, columnNames);
+
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Equal("Alice", reader.GetValue(0)); // primary slot
+        Assert.Equal(30L,     reader.GetValue(1)); // unrelated alias
+        Assert.Equal("Alice", reader.GetValue(2)); // duplicate slot — must NOT be DBNull
+    }
+
+    [Fact]
+    public async Task DuplicateAliases_MissingProperty_BothOrdinalsReturnDBNull()
+    {
+        // When the JSON has no matching property, both the primary and duplicate slots stay null.
+        var row = ParseElement("""{"Age":30}""");
+        var columnNames = new string?[] { "Name", "Age", "Name" };
+        await using var reader = CreateReaderWithColumnNames(new List<JsonElement> { row }, columnNames);
+
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Equal(DBNull.Value, reader.GetValue(0));
+        Assert.Equal(DBNull.Value, reader.GetValue(2));
+    }
+
+    [Fact]
+    public async Task DuplicateAliases_ScalarRow_BothOrdinalsReturnScalar()
+    {
+        // Scalar broadcast must also cover duplicate alias slots.
+        var row = ParseElement("42");
+        var columnNames = new string?[] { "v", "v" }; // both slots share alias "v"
+        await using var reader = CreateReaderWithColumnNames(new List<JsonElement> { row }, columnNames);
+
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Equal(42L, reader.GetValue(0));
+        Assert.Equal(42L, reader.GetValue(1));
+    }
+
+    #endregion
+
     private static JsonElement ParseElement(string json)
     {
         using var doc = JsonDocument.Parse(json);
