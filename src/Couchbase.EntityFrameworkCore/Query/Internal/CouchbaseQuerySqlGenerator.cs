@@ -6,11 +6,12 @@ using System.Reflection;
 using System.Reflection.Emit;
 using System.Reflection.Metadata;
 using System.Text;
-using Couchbase.Core.Utils;
 using Couchbase.EntityFrameworkCore.Infrastructure;
+using Couchbase.EntityFrameworkCore.Metadata;
 using Couchbase.EntityFrameworkCore.Utils;
 using Couchbase.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Query;
 using Microsoft.EntityFrameworkCore.Query.SqlExpressions;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -21,7 +22,7 @@ namespace Couchbase.EntityFrameworkCore.Query.Internal;
 
 public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
 {
-    private readonly ConcurrentDictionary<string, Keyspace> _tableNameCache = new();
+    private readonly ConcurrentDictionary<string, CouchbaseKeyspace> _tableNameCache = new();
 
     public CouchbaseQuerySqlGenerator(QuerySqlGeneratorDependencies dependencies) : base(dependencies)
     {
@@ -36,17 +37,10 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
     /// <inheritdoc />
     protected override Expression VisitLeftJoin(LeftJoinExpression leftJoinExpression)
     {
-        // Skip LEFT JOINs for owned types - they don't have a proper keyspace (bucket.scope.collection)
-        // Owned types are embedded in their owner's document
-        if (leftJoinExpression.Table is TableExpression tableExpression)
-        {
-            var splitName = tableExpression.Name.Split('.');
-            if (splitName.Length != 3)
-            {
-                // This is an owned type - skip the JOIN entirely
-                return leftJoinExpression;
-            }
-        }
+        // Skip LEFT JOINs for owned types — they are embedded in their owner's document
+        // and have no independent keyspace.
+        if (leftJoinExpression.Table is TableExpression tableExpression && IsOwnedTable(tableExpression))
+            return leftJoinExpression;
 
         return base.VisitLeftJoin(leftJoinExpression);
     }
@@ -54,19 +48,41 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
     /// <inheritdoc />
     protected override Expression VisitInnerJoin(InnerJoinExpression innerJoinExpression)
     {
-        // Skip INNER JOINs for owned types - they don't have a proper keyspace (bucket.scope.collection)
-        // Owned types are embedded in their owner's document
-        if (innerJoinExpression.Table is TableExpression tableExpression)
-        {
-            var splitName = tableExpression.Name.Split('.');
-            if (splitName.Length != 3)
-            {
-                // This is an owned type - skip the JOIN entirely
-                return innerJoinExpression;
-            }
-        }
+        // Skip INNER JOINs for owned types — they are embedded in their owner's document
+        // and have no independent keyspace.
+        if (innerJoinExpression.Table is TableExpression tableExpression && IsOwnedTable(tableExpression))
+            return innerJoinExpression;
 
         return base.VisitInnerJoin(innerJoinExpression);
+    }
+
+    /// <summary>
+    /// Returns <see langword="true"/> when every entity type mapped to
+    /// <paramref name="tableExpression"/> is an owned type.  Such tables have no independent
+    /// Couchbase keyspace — their data is embedded in the owner's document — and must be
+    /// skipped when emitting FROM / JOIN clauses.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The check uses <c>All</c>, not <c>Any</c>.  An owner table that also hosts
+    /// <c>OwnsOne</c> scalar navigations (table-splitting) will have both the owner entity
+    /// type <em>and</em> the owned entity type in <see cref="ITableBase.EntityTypeMappings"/>.
+    /// <c>Any</c> would incorrectly mark the owner's table as owned, causing its FROM clause
+    /// to be suppressed and producing a N1QL syntax error (<c>WHERE</c> with no preceding
+    /// <c>FROM</c>).  <c>All</c> only returns <see langword="true"/> for tables whose
+    /// mappings are exclusively owned types — i.e., a separate OwnsMany-item table that has
+    /// no corresponding Couchbase collection.
+    /// </para>
+    /// <para>
+    /// The empty-collection guard prevents vacuous <c>All</c> from returning
+    /// <see langword="true"/> for unmapped tables.
+    /// </para>
+    /// </remarks>
+    private static bool IsOwnedTable(TableExpression tableExpression)
+    {
+        var mappings = tableExpression.Table.EntityTypeMappings.ToList();
+        return mappings.Count > 0
+            && mappings.All(m => m.TypeBase is IEntityType et && et.IsOwned());
     }
 
     /// <inheritdoc />
@@ -409,54 +425,25 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
         Sql.Append(")");
     }
 
-    private class Keyspace
-    {
-        private readonly string _sqlKeyspace;
-
-        public Keyspace(string originalName)
-        {
-            // Format is now standard: Bucket.Scope.Collection
-            var splitName = originalName.Split('.');
-            if (splitName.Length != 3)
-            {
-                // This may be an owned type which doesn't have a full keyspace - use the name as-is
-                _sqlKeyspace = originalName;
-                return;
-            }
-
-            var bucket = splitName[0].Trim('`');
-            var scope = splitName[1].Trim('`');
-            var collection = splitName[2].Trim('`');
-
-            // Build the SQL keyspace: `bucket`.`scope`.`collection`
-            _sqlKeyspace = $"{bucket.EscapeIfRequired()}.{scope.EscapeIfRequired()}.{collection.EscapeIfRequired()}";
-        }
-
-        public string SqlKeyspace
-        {
-            [DebuggerStepThrough] get => _sqlKeyspace;
-        }
-    }
-
     protected override Expression VisitTable(TableExpression tableExpression)
     {
         //NOTE: TableExpression is a sealed class so cannot be overridden without
         //bring it inside this assembly which then requires the TableExpressionBase to
         //be moved into this assembly as Alias field is internal.
 
-        // Skip owned type tables - they don't have a proper keyspace (bucket.scope.collection)
-        // Owned types are embedded in their owner's document and don't need separate FROM clauses
-        var splitName = tableExpression.Name.Split('.');
-        if (splitName.Length != 3)
-        {
-            // This is an owned type - skip generating FROM clause for it
+        // Skip owned type tables — they are embedded in their owner's document and have no
+        // independent Couchbase keyspace.
+        if (IsOwnedTable(tableExpression))
             return tableExpression;
-        }
 
+        // Parse once per distinct table name and cache. CouchbaseKeyspace stores Bucket,
+        // Scope, and Collection as properties; ToSqlString() produces the backtick-escaped
+        // SQL++ form on demand from those properties.
         var keyspace = _tableNameCache.GetOrAdd(
-            tableExpression.Name, key => new Keyspace(key));
+            tableExpression.Name,
+            static name => CouchbaseKeyspace.Parse(name));
 
-        Sql.Append(keyspace.SqlKeyspace)
+        Sql.Append(keyspace.ToSqlString())
             .Append(AliasSeparator)
             .Append(Dependencies.SqlGenerationHelper.DelimitIdentifier(tableExpression.Alias));
 

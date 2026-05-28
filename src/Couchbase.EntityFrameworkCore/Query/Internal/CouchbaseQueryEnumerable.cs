@@ -304,17 +304,26 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
 
     /// <summary>
     ///     <para>
-    ///         A string representation of the query used.
+    ///         Returns the SQL++ that would be sent to Couchbase for this query.
     ///     </para>
     ///     <para>
-    ///         Warning: this string may not be suitable for direct execution is intended only for use in debugging.
+    ///         This method compiles the LINQ expression to SQL++ without opening a database
+    ///         connection, so it can be used in unit tests and diagnostic tooling without
+    ///         a live Couchbase server.
+    ///     </para>
+    ///     <para>
+    ///         Warning: the returned string may not be suitable for direct execution;
+    ///         it is intended only for debugging and logging.
     ///     </para>
     /// </summary>
-    /// <returns>The query string.</returns>
+    /// <returns>The SQL++ query string.</returns>
     public string ToQueryString()
     {
-        using var dbCommand = CreateDbCommand();
-        return _relationalQueryContext.RelationalQueryStringFactory.Create(dbCommand);
+        // Resolve the compiled IRelationalCommand (SQL text + parameter descriptors) without
+        // opening a database connection.  Reading CommandText is pure in-memory work —
+        // no I/O occurs.  This matches EF Core's documented contract for ToQueryString().
+        var relationalCommand = _relationalCommandResolver(_relationalQueryContext.Parameters);
+        return relationalCommand.CommandText;
     }
 
     /// <summary>
