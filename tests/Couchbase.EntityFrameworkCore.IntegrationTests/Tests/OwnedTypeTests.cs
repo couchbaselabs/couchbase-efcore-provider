@@ -364,4 +364,71 @@ public class OwnedTypeTests(
                 cm => cm.Type == "email" && cm.Value == "alice.new@example.com");
         }
     }
+
+    // -------------------------------------------------------------------------
+    // Content-snapshot regression tests
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task OwnsMany_MutateItemProperty_SaveTwice_SecondSaveIsNoOp()
+    {
+        // After a successful save, RefreshOwnedCollectionSnapshots must update
+        // OriginalItems so that a second SaveChangesAsync on the same context
+        // (with no further mutations) does not falsely detect a change and
+        // trigger a redundant write.
+        await using var ctx = fixture.GetDbContext();
+        var customer = await ctx.Customers.FirstAsync(c => c.CustomerId == 1);
+
+        // First mutation and save
+        customer.ContactMethods.First(cm => cm.Type == "email").Value = "alice.v2@example.com";
+        var firstCount = await ctx.SaveChangesAsync();
+        Assert.Equal(1, firstCount);   // one document written
+
+        // No further mutations — second save must be a no-op
+        var secondCount = await ctx.SaveChangesAsync();
+        Assert.Equal(0, secondCount);  // nothing to write (snapshot was refreshed after save 1)
+    }
+
+    [Fact]
+    public async Task OwnsMany_AddItem_SaveTwice_SecondSaveIsNoOp()
+    {
+        // Same regression check as above but for the .Add() / count-change path.
+        await using var ctx = fixture.GetDbContext();
+        var customer = await ctx.Customers.FirstAsync(c => c.CustomerId == 2);
+
+        customer.ContactMethods.Add(
+            new OwnedTypeFixture.ContactMethod { Id = 2, Type = "fax", Value = "555-0300" });
+        var firstCount = await ctx.SaveChangesAsync();
+        Assert.Equal(1, firstCount);
+
+        var secondCount = await ctx.SaveChangesAsync();
+        Assert.Equal(0, secondCount);
+    }
+
+    [Fact]
+    public async Task OwnsMany_AddAndMutate_BothChangesSaved()
+    {
+        // Add one new item and mutate an existing item's property in the same
+        // SaveChangesAsync call — both changes must appear in the persisted document.
+        await using (var ctx = fixture.GetDbContext())
+        {
+            var customer = await ctx.Customers.FirstAsync(c => c.CustomerId == 2);
+            // Mutate the existing item
+            customer.ContactMethods.First(cm => cm.Type == "email").Value = "bob.updated@example.com";
+            // Add a second item
+            customer.ContactMethods.Add(
+                new OwnedTypeFixture.ContactMethod { Id = 2, Type = "sms", Value = "555-0300" });
+            await ctx.SaveChangesAsync();
+        }
+
+        await using (var ctx = fixture.GetDbContext())
+        {
+            var customer = await ctx.Customers.FirstAsync(c => c.CustomerId == 2);
+            Assert.Equal(2, customer.ContactMethods.Count);
+            Assert.Contains(customer.ContactMethods,
+                cm => cm.Type == "email" && cm.Value == "bob.updated@example.com");
+            Assert.Contains(customer.ContactMethods,
+                cm => cm.Type == "sms"   && cm.Value == "555-0300");
+        }
+    }
 }

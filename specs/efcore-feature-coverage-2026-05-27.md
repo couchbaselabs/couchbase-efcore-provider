@@ -120,7 +120,7 @@ Trim / TrimStart / TrimEnd, IsNullOrWhiteSpace
 |---|---|
 | OwnsOne — single-valued owned entities | ✅ |
 | OwnsMany — collection-valued owned entities | ✅ Query projection complete |
-| OwnsMany — state manager tracking | ✅ Complete (see `ownsmanycollection-state-manager-tracking.md`) |
+| OwnsMany — state manager tracking | ✅ Complete (4 mechanisms; see `ownsmanycollection-state-manager-tracking.md`) |
 | Navigation fixup during materialisation | ✅ Complete |
 
 ### Relationships — Implemented
@@ -219,7 +219,7 @@ Trim / TrimStart / TrimEnd, IsNullOrWhiteSpace
 | Key generation (sequences) | ✅ Implemented | 100% |
 | Transactions | ✅ Implemented | 100% |
 | Relationships & navigation | ✅ Implemented | 90% |
-| Owned entities | ✅ Mostly complete | 95% (write-path integration tests pending live-server run) |
+| Owned entities | ✅ Mostly complete | 95% (write-path integration tests pending live-server verification) |
 | Inheritance (TPH) | ✅ Implemented | 100% |
 | Type mapping | ✅ Implemented | 90% |
 | Migrations | ❌ Not implemented | 0% |

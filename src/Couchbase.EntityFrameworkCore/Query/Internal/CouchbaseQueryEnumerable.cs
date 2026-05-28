@@ -270,16 +270,45 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
         }
     }
 
-    // Record the original collection-object reference for every OwnsMany navigation on
-    // the freshly materialised entity. The save path later compares the current reference
-    // to the stored one; a mismatch (e.g. customer.ContactMethods = []) means the owner
-    // document must be rewritten even when EF Core produced no owned-item change entries.
+    // Record the original collection-object reference and per-item property values for every
+    // OwnsMany navigation on the freshly materialised entity.
+    //
+    // OriginalRefs detects reference replacement (customer.ContactMethods = []).
+    // OriginalItems detects in-place changes: .Add(), .Remove(), or scalar property mutation.
+    // Both are checked in MarkOwnersWithReplacedCollections before SaveChanges.
     private void SnapshotCollectionRefs(T? entity)
     {
         if (entity == null) return;
-        var refs = OwnedCollectionSnapshot.OriginalRefs.GetOrCreateValue(entity);
+        var refs  = OwnedCollectionSnapshot.OriginalRefs.GetOrCreateValue(entity);
+        var items = OwnedCollectionSnapshot.OriginalItems.GetOrCreateValue(entity);
         foreach (var nav in _ownedCollectionNavigations)
-            refs[nav.Name] = nav.PropertyInfo?.GetValue(entity);
+        {
+            var currentCollection = nav.PropertyInfo?.GetValue(entity);
+            refs[nav.Name] = currentCollection;
+
+            // Snapshot per-item property values so in-place mutations can be detected even
+            // when the list reference is unchanged.
+            if (currentCollection is IEnumerable collection)
+            {
+                var itemProps = nav.TargetEntityType.GetProperties()
+                    .Where(p => !p.IsShadowProperty())
+                    .ToList();
+                var snapshot = new List<Dictionary<string, object?>>();
+                foreach (var item in collection)
+                {
+                    if (item == null) continue;
+                    var propSnapshot = new Dictionary<string, object?>();
+                    foreach (var prop in itemProps)
+                        propSnapshot[prop.Name] = prop.PropertyInfo?.GetValue(item);
+                    snapshot.Add(propSnapshot);
+                }
+                items[nav.Name] = snapshot;
+            }
+            else
+            {
+                items[nav.Name] = [];
+            }
+        }
     }
 
 

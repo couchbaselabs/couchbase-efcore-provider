@@ -1,7 +1,7 @@
 # Spec: OwnsMany State Manager Tracking & Owner Propagation
 
-**Status:** Complete (implementation in rdr-phase4; write-path integration tests pending
-live-server verification)
+**Status:** Complete (implementation in rdr-phase4/rdr-phase5; write-path integration tests
+pending live-server verification)
 
 ---
 
@@ -19,27 +19,23 @@ sees no entries to save and skips the root entity entirely.
 
 ---
 
-## Approach: Three cooperating mechanisms
+## Approach: Four cooperating mechanisms
 
 ### 1. State manager registration via `forMaterialization: true`
 
 `PopulateCollectionNavigations` adds each owned item to the collection via EF Core's
 `IClrCollectionAccessor.Add(owner, item, forMaterialization: true)`. The
-`forMaterialization: true` flag routes through EF Core's collection accessor
-infrastructure, which:
+`forMaterialization: true` flag is a pure CLR-level add — it places the item in the
+collection object but **does not** register it with EF Core's `IStateManager`. Items are
+therefore not tracked individually.
 
-- Creates an `InternalEntityEntry` for the item and registers it with the state manager.
-- Sets its initial state to `Unchanged`.
-- Takes a property snapshot so that scalar mutations are detectable by AutoDetectChanges.
+This is sufficient for:
+- Navigation fixup during materialisation
+- Deduplication (the accessor clear before the add loop prevents double-population)
 
-With items registered this way, the following mutations are all tracked automatically:
-
-| Mutation | How EF Core detects it |
-|---|---|
-| `collection.Add(newItem)` | AutoDetectChanges finds the item in the collection but not in the snapshot → `Added` |
-| `collection.Remove(item)` | AutoDetectChanges finds the item in the snapshot but not in the collection → `Deleted` |
-| `item.Property = value` | Snapshot comparison detects property change → `Modified` |
-| OwnsOne scalar mutation | Same snapshot mechanism → owned entity `Modified` |
+OwnsOne scalars **are** tracked individually because EF Core's shaper materialises them as
+owned entity entries in the state manager automatically. In-place OwnsMany mutations
+(.Add, .Remove, scalar mutation) require mechanism 4 below.
 
 ### 2. Deferred second pass in `CouchbaseDatabaseWrapper.SaveChangesAsync`
 
@@ -81,8 +77,37 @@ Detection and fix:
   `HydrateObjectFromEntity`).
 
 - **`CouchbaseSaveChangesInterceptor.RefreshOwnedCollectionSnapshots`** — fires after a
-  successful save, updating `OriginalRefs` to the current collection references so
-  subsequent saves do not see a stale mismatch.
+  successful save, updating both `OriginalRefs` and `OriginalItems` to the current state
+  so subsequent saves do not see stale mismatches.
+
+### 4. In-place OwnsMany mutation via content-snapshot
+
+When the user mutates an existing collection **in place** — `collection.Add(item)`,
+`collection.Remove(item)`, or `item.Property = value` — the collection object reference
+does not change. Mechanism 3's `ReferenceEquals` check passes, and EF Core's change
+tracker does not see any owned-item state changes (because items are not individually
+tracked — see mechanism 1). Without additional detection, `SaveChangesAsync` would skip
+the owner entirely and the mutation would be lost.
+
+Detection and fix:
+
+- **`OwnedCollectionSnapshot.OriginalItems`** — a
+  `ConditionalWeakTable<object, Dictionary<string, IReadOnlyList<Dictionary<string, object?>>>>`
+  that stores an ordered snapshot of per-item property values for every OwnsMany navigation
+  on a just-materialised entity. Populated alongside `OriginalRefs` in
+  `CouchbaseQueryEnumerable.SnapshotCollectionRefs`.
+
+- **`CouchbaseSaveChangesInterceptor.HasCollectionChanged`** — compares the current
+  collection to the stored snapshot. Returns `true` if:
+  - Item count differs (`.Add()` or `.Remove()`).
+  - Any item's property value differs from the snapshot (in-place scalar mutation).
+
+- `MarkOwnersWithReplacedCollections` calls `HasCollectionChanged` when the reference
+  comparison passes. A detected content change marks the owner as `Modified` so EF Core
+  includes it in the entries list and the document is rewritten.
+
+- **`RefreshOwnedCollectionSnapshots`** also updates `OriginalItems` after a successful
+  save so the snapshot stays in sync with the committed state.
 
 ---
 
@@ -117,16 +142,16 @@ All tests are in `OwnedTypeTests.cs`.
 - `OwnsMany_ItemOrderIsPreserved`
 - `OwnsMany_EmptyCollectionDocument_ReadsAsEmpty`
 
-### Write path (mechanisms 2 and 3 above; pending live-server verification)
+### Write path (mechanisms 2–4 above; pending live-server verification)
 
 | Test | Mechanism | Mutation type |
 |---|---|---|
-| `OwnsOne_Update_RoundTrips` | Deferred second pass | OwnsOne scalar |
-| `OwnsOne_NullScalars_RoundTrip` | Deferred second pass | OwnsOne null scalars |
-| `OwnsMany_Update_RoundTrips` | Collection ref replacement | Full collection replacement |
-| `OwnsMany_ClearCollection_RoundTrips` | Collection ref replacement | Empty list assignment |
+| `OwnsOne_Update_RoundTrips` | 2 — Deferred second pass | OwnsOne scalar |
+| `OwnsOne_NullScalars_RoundTrip` | 2 — Deferred second pass | OwnsOne null scalars |
+| `OwnsMany_Update_RoundTrips` | 3 — Collection ref replacement | Full collection replacement |
+| `OwnsMany_ClearCollection_RoundTrips` | 3 — Collection ref replacement | Empty list assignment |
 | `Customer_Add_WithOwnedTypes_RoundTrips` | Normal Add path | Root entity insert |
 | `Customer_Delete_RemovesDocument` | Normal Delete path | Root entity delete |
-| `OwnsMany_AddSingleItem_RoundTrips` | Deferred second pass | `.Add()` on existing collection |
-| `OwnsMany_RemoveSingleItem_RoundTrips` | Deferred second pass | `.Remove()` from collection |
-| `OwnsMany_MutateItemProperty_RoundTrips` | Deferred second pass | In-place scalar mutation |
+| `OwnsMany_AddSingleItem_RoundTrips` | 4 — Content-snapshot (count change) | `.Add()` on existing collection |
+| `OwnsMany_RemoveSingleItem_RoundTrips` | 4 — Content-snapshot (count change) | `.Remove()` from collection |
+| `OwnsMany_MutateItemProperty_RoundTrips` | 4 — Content-snapshot (value change) | In-place scalar mutation |

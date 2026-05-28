@@ -2,16 +2,21 @@ using System.Runtime.CompilerServices;
 
 namespace Couchbase.EntityFrameworkCore.Query.Internal;
 
-// Stores the original collection-object reference for each OwnsMany navigation on a just-
-// materialised entity. The database wrapper's save path compares the current reference to the
-// stored one: if they differ the owner document must be rewritten even when EF Core's own
-// change tracker produced no owned-item entries (e.g. customer.ContactMethods = []).
+// Stores the original collection-object reference and per-item property value snapshots for
+// every OwnsMany navigation on a just-materialised entity.
+//
+// OriginalRefs — detects reference replacement (customer.ContactMethods = []).
+// OriginalItems — detects in-place content changes: Add, Remove, or scalar mutation.
 //
 // ConditionalWeakTable uses weak keys so entities that fall out of scope are GC'd without any
 // manual cleanup.
 internal static class OwnedCollectionSnapshot
 {
+    // nav.Name → original collection object reference
     internal static readonly ConditionalWeakTable<object, Dictionary<string, object?>> OriginalRefs = new();
+
+    // nav.Name → ordered list of per-item property value dictionaries (prop.Name → value)
+    internal static readonly ConditionalWeakTable<object, Dictionary<string, IReadOnlyList<Dictionary<string, object?>>>> OriginalItems = new();
 }
 
 

@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Runtime.CompilerServices;
 using Couchbase.EntityFrameworkCore.Query.Internal;
 using Couchbase.EntityFrameworkCore.ValueGeneration;
@@ -212,9 +213,10 @@ public class CouchbaseSaveChangesInterceptor : SaveChangesInterceptor
         return base.SavedChanges(eventData, result);
     }
 
-    // For each tracked Unchanged/Detached root entity whose OwnsMany collection reference
-    // was replaced (e.g. customer.ContactMethods = []), mark it as Modified so EF Core
-    // includes it in GetEntriesToSave and our SaveChangesAsync is not skipped entirely.
+    // For each tracked Unchanged/Detached root entity whose OwnsMany collection has changed
+    // (reference replaced, items added/removed, or item property mutated), mark it as Modified
+    // so EF Core includes it in GetEntriesToSave and our SaveChangesAsync rewrites the document.
+    //
     // GenerateSequenceValuesAsync (called just before this) already triggered DetectChanges,
     // so we disable AutoDetectChanges here to avoid a redundant second pass.
     private static void MarkOwnersWithReplacedCollections(DbContext context)
@@ -231,14 +233,31 @@ public class CouchbaseSaveChangesInterceptor : SaveChangesInterceptor
                 var owner = entry.Entity;
                 if (!OwnedCollectionSnapshot.OriginalRefs.TryGetValue(owner, out var origRefs)) continue;
 
+                OwnedCollectionSnapshot.OriginalItems.TryGetValue(owner, out var origItems);
+
                 foreach (var nav in entry.Metadata.GetNavigations()
                              .Where(n => n.TargetEntityType.IsOwned() && n.IsCollection && n.PropertyInfo != null))
                 {
                     if (!origRefs.TryGetValue(nav.Name, out var origRef)) continue;
-                    if (ReferenceEquals(origRef, nav.PropertyInfo!.GetValue(owner))) continue;
 
-                    entry.State = EntityState.Modified;
-                    break;
+                    var current = nav.PropertyInfo!.GetValue(owner);
+
+                    // Reference replaced (e.g. customer.ContactMethods = [])
+                    if (!ReferenceEquals(origRef, current))
+                    {
+                        entry.State = EntityState.Modified;
+                        break;
+                    }
+
+                    // Same reference — check item count and property values for in-place changes
+                    // (.Add(), .Remove(), or scalar mutation on an existing item).
+                    if (origItems != null
+                        && origItems.TryGetValue(nav.Name, out var origItemSnapshots)
+                        && HasCollectionChanged(current, nav, origItemSnapshots))
+                    {
+                        entry.State = EntityState.Modified;
+                        break;
+                    }
                 }
             }
         }
@@ -248,8 +267,42 @@ public class CouchbaseSaveChangesInterceptor : SaveChangesInterceptor
         }
     }
 
-    // After a successful save, update OwnedCollectionSnapshot with current collection
-    // references so subsequent SaveChanges won't see a stale mismatch.
+    // Returns true when the current collection differs from the original item-value snapshot:
+    // count changed (Add / Remove) or any scalar property value changed (mutation).
+    private static bool HasCollectionChanged(
+        object? current,
+        INavigation nav,
+        IReadOnlyList<Dictionary<string, object?>> origItemSnapshots)
+    {
+        if (current is not IEnumerable collection) return false;
+
+        var itemProps = nav.TargetEntityType.GetProperties()
+            .Where(p => !p.IsShadowProperty())
+            .ToList();
+
+        var currentItems = new List<object>();
+        foreach (var item in collection)
+            if (item != null) currentItems.Add(item);
+
+        if (currentItems.Count != origItemSnapshots.Count) return true;
+
+        for (var i = 0; i < currentItems.Count; i++)
+        {
+            var origSnapshot = origItemSnapshots[i];
+            foreach (var prop in itemProps)
+            {
+                var currentValue = prop.PropertyInfo?.GetValue(currentItems[i]);
+                if (!origSnapshot.TryGetValue(prop.Name, out var origValue)) return true;
+                if (!Equals(currentValue, origValue)) return true;
+            }
+        }
+
+        return false;
+    }
+
+    // After a successful save, update OwnedCollectionSnapshot with the current collection
+    // reference AND current item property values so subsequent SaveChanges calls won't see
+    // a stale mismatch from the just-written state.
     private static void RefreshOwnedCollectionSnapshots(DbContext context)
     {
         foreach (var entry in context.ChangeTracker.Entries())
@@ -260,10 +313,35 @@ public class CouchbaseSaveChangesInterceptor : SaveChangesInterceptor
             var owner = entry.Entity;
             if (!OwnedCollectionSnapshot.OriginalRefs.TryGetValue(owner, out var refs)) continue;
 
+            var itemsTable = OwnedCollectionSnapshot.OriginalItems.GetOrCreateValue(owner);
+
             foreach (var nav in entry.Metadata.GetNavigations()
                          .Where(n => n.TargetEntityType.IsOwned() && n.IsCollection && n.PropertyInfo != null))
             {
-                refs[nav.Name] = nav.PropertyInfo!.GetValue(owner);
+                var current = nav.PropertyInfo!.GetValue(owner);
+                refs[nav.Name] = current;
+
+                // Refresh item-level snapshots so subsequent saves detect mutations correctly.
+                if (current is IEnumerable collection)
+                {
+                    var itemProps = nav.TargetEntityType.GetProperties()
+                        .Where(p => !p.IsShadowProperty())
+                        .ToList();
+                    var snapshot = new List<Dictionary<string, object?>>();
+                    foreach (var item in collection)
+                    {
+                        if (item == null) continue;
+                        var propSnapshot = new Dictionary<string, object?>();
+                        foreach (var prop in itemProps)
+                            propSnapshot[prop.Name] = prop.PropertyInfo?.GetValue(item);
+                        snapshot.Add(propSnapshot);
+                    }
+                    itemsTable[nav.Name] = snapshot;
+                }
+                else
+                {
+                    itemsTable[nav.Name] = [];
+                }
             }
         }
     }
