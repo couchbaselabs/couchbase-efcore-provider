@@ -334,7 +334,7 @@ calls `ReadAsync().GetAwaiter().GetResult()`. Both can deadlock on a UI thread w
 Assessment: `Read()` mirrors the base-class default; EF Core never calls it. `Close()` is
 reachable via `using var reader = ...` (sync `Dispose()`) even in async callers. Routing
 `Close()` through `AsyncHelper.RunSync` (consistent with `CouchbaseCommand`'s sync methods)
-is the recommended fix. Not yet applied; tracked as Phase 5.
+is the recommended fix. Applied in Phase 5: both `Close()` and `Read()` now route through `AsyncHelper.RunSync`.
 
 ### 7 — No regression test for `DbCommand.Cancel()` CTS ownership-transfer fix
 

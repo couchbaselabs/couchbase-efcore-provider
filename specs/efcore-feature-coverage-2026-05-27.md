@@ -197,7 +197,7 @@ Trim / TrimStart / TrimEnd, IsNullOrWhiteSpace
 | Lazy loading / proxies | No proxy generation; explicit Include required |
 | Migrations | No schema migration tracking or execution |
 | Stored procedures | N1QL does not support stored procedures |
-| Synchronous I/O | Only async; sync paths use `AsyncHelper.RunSync` (deadlock-safe — see `datareader-refactor.md` Phase 5) |
+| Synchronous I/O | Only async; `CouchbaseDbDataReader.Close()` and `Read()` use `AsyncHelper.RunSync` (deadlock-safe — Phase 5). Other sync paths (`CouchbaseConnection.Open()`, DEBUG `SaveChanges()`) still call `.GetAwaiter().GetResult()` directly and may deadlock under a captured `SynchronizationContext` |
 | Average aggregate | Known bug NCBC-3891 |
 | Union / Intersect / Except | Not explicitly implemented or tested |
 | View mapping | Couchbase collections only |
@@ -251,6 +251,8 @@ Trim / TrimStart / TrimEnd, IsNullOrWhiteSpace
 5. **No ADO.NET parameters** — `FromSqlRaw` uses string interpolation; no parameter
    substitution is available.
 
-6. **Async-only** — all database operations are async. Sync paths (`Read`, `Close`,
-   `SaveChanges` in DEBUG) use `AsyncHelper.RunSync` which is safe under any
-   `SynchronizationContext`. See `datareader-refactor.md` Phase 5 for details.
+6. **Async-only** — all database operations are async. `CouchbaseDbDataReader.Close()` and
+   `Read()` use `AsyncHelper.RunSync` (deadlock-safe under any `SynchronizationContext` —
+   see `datareader-refactor.md` Phase 5). Other sync entry points (`CouchbaseConnection.Open()`,
+   DEBUG `CouchbaseDatabaseWrapper.SaveChanges()`) still call `.GetAwaiter().GetResult()`
+   directly and may deadlock on a UI or ASP.NET Classic thread.

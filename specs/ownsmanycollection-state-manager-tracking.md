@@ -120,10 +120,14 @@ acceptChanges: true)`, and `SetRelationshipSnapshotValue(nav, list)` from within
 EF Core APIs (`#pragma warning disable EF1001`) and replicating logic that
 `IClrCollectionAccessor.Add(owner, item, forMaterialization: true)` already performs.
 
-The `forMaterialization: true` flag is the intended EF Core API for exactly this purpose
-and handles state manager registration, snapshot creation, and navigation fixup
-transparently. The separate `OwnedCollectionSnapshot` mechanism covers the
-collection-reference-replacement edge case that the original spec did not anticipate.
+The `forMaterialization: true` flag is the intended EF Core API for placing owned items into
+a collection during materialisation; it handles navigation fixup and deduplication
+transparently but is a CLR-only add — it does **not** register owned items with
+`IStateManager`. In-place mutations (`.Add()`, `.Remove()`, scalar property changes) are
+therefore invisible to EF Core's change tracker and require the `OwnedCollectionSnapshot`
+content-snapshot mechanism (mechanism 4) to detect. The `OwnedCollectionSnapshot` reference
+mechanism (mechanism 3) additionally covers the collection-reference-replacement edge case
+that the original spec did not anticipate.
 
 ---
 
