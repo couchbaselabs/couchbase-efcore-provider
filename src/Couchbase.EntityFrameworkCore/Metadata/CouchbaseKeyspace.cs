@@ -52,9 +52,17 @@ public readonly record struct CouchbaseKeyspace
     public override string ToString() => $"{Bucket}.{Scope}.{Collection}";
 
     /// <summary>
-    /// Returns the keyspace in SQL++ format with backtick escaping: <c>`Bucket`.`Scope`.`Collection`</c>.
+    /// Returns the keyspace in SQL++ format with each segment backtick-delimited and any
+    /// embedded backtick characters doubled: <c>`Bucket`.`Scope`.`Collection`</c>.
     /// </summary>
-    public string ToSqlString() => $"`{Bucket}`.`{Scope}`.`{Collection}`";
+    /// <remarks>
+    /// Prefer <c>ISqlGenerationHelper.DelimitIdentifier(keyspace.ToString())</c> inside the
+    /// query-SQL generation pipeline — that path uses the provider's authoritative escaping
+    /// logic.  This method is provided for contexts that do not have access to the helper
+    /// (e.g. display, logging, serialisation).
+    /// </remarks>
+    public string ToSqlString() =>
+        $"`{Bucket.Replace("`", "``")}`.`{Scope.Replace("`", "``")}`.`{Collection.Replace("`", "``")}`";
 
     /// <summary>
     /// Parses a keyspace string in the format <c>Bucket.Scope.Collection</c>.

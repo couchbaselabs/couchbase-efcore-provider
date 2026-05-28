@@ -436,14 +436,16 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
         if (IsOwnedTable(tableExpression))
             return tableExpression;
 
-        // Parse once per distinct table name and cache. CouchbaseKeyspace stores Bucket,
-        // Scope, and Collection as properties; ToSqlString() produces the backtick-escaped
-        // SQL++ form on demand from those properties.
+        // Parse once per distinct table name and cache.
         var keyspace = _tableNameCache.GetOrAdd(
             tableExpression.Name,
             static name => CouchbaseKeyspace.Parse(name));
 
-        Sql.Append(keyspace.ToSqlString())
+        // Use the provider's SqlGenerationHelper to quote and escape each keyspace segment.
+        // DelimitIdentifier splits on '.' and applies EscapeIdentifier (backtick-doubling)
+        // per segment, keeping this path consistent with all other identifier quoting in
+        // the provider and safe against names that might contain backtick characters.
+        Sql.Append(Dependencies.SqlGenerationHelper.DelimitIdentifier(keyspace.ToString()))
             .Append(AliasSeparator)
             .Append(Dependencies.SqlGenerationHelper.DelimitIdentifier(tableExpression.Alias));
 
