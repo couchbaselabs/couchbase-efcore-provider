@@ -120,8 +120,8 @@ Trim / TrimStart / TrimEnd, IsNullOrWhiteSpace
 |---|---|
 | OwnsOne — single-valued owned entities | ✅ |
 | OwnsMany — collection-valued owned entities | ✅ Query projection complete |
-| OwnsMany — state manager tracking | ⚠️ In progress (see `ownsmanycollection-state-manager-tracking.md`) |
-| Navigation fixup during materialisation | ⚠️ Partial (eager-loading Phase 4) |
+| OwnsMany — state manager tracking | ✅ Complete (see `ownsmanycollection-state-manager-tracking.md`) |
+| Navigation fixup during materialisation | ✅ Complete |
 
 ### Relationships — Implemented
 
@@ -146,8 +146,8 @@ Trim / TrimStart / TrimEnd, IsNullOrWhiteSpace
 | Result shaping and collection grouping | ✅ |
 | Navigation property population | ✅ |
 | Owned-type JOINs skipped (embedded in parent) | ✅ |
-| OwnsMany embedded-document fixup | ⚠️ Phase 4 in progress |
-| ThenInclude chains on owned entities | ⚠️ Phase 4 in progress |
+| OwnsMany embedded-document fixup | ✅ Complete |
+| ThenInclude chains on owned entities | ⚠️ Not yet tested |
 | Auto-Include / IgnoreAutoIncludes | ❌ Planned (eager-loading Phase 5) |
 | Include on derived types | ❌ Planned (eager-loading Phase 6) |
 
@@ -219,7 +219,7 @@ Trim / TrimStart / TrimEnd, IsNullOrWhiteSpace
 | Key generation (sequences) | ✅ Implemented | 100% |
 | Transactions | ✅ Implemented | 100% |
 | Relationships & navigation | ✅ Implemented | 90% |
-| Owned entities | ⚠️ Mostly complete | 80% (state manager tracking in progress) |
+| Owned entities | ✅ Mostly complete | 95% (write-path integration tests pending live-server run) |
 | Inheritance (TPH) | ✅ Implemented | 100% |
 | Type mapping | ✅ Implemented | 90% |
 | Migrations | ❌ Not implemented | 0% |

@@ -6,14 +6,7 @@
 `IQueryResult<JsonElement>` and EF Core's compiled shapers. It was built incrementally alongside
 the query pipeline and has accumulated complexity for code paths that never execute in the
 provider. This document describes four sequential phases to simplify and optimize it.
-<<<<<<< Updated upstream
-Phases 1–4 are complete.
-=======
-
-=======
 Phases 1–4 are complete. Phase 5 is planned.
-
->>>>>>> Stashed changes
 
 The EF Core shaper is the sole consumer of this reader. It calls typed getters by projection
 ordinal (e.g. `GetInt32(3)`, `GetString(7)`) for every column of every result row. The
@@ -482,8 +475,6 @@ Key additions to `CouchbaseDbDataReader<T>`:
 
 11 new unit tests added in `CouchbaseDbDataReaderTests` under `#region Phase 4 — _currentValues
 per-row cache` (8 core cache tests + 3 duplicate-alias tests). Total test count: 675 (all passing).
-<<<<<<< Updated upstream
-=======
 
 ---
 
@@ -581,4 +572,3 @@ callers that construct the reader outside the EF Core pipeline (e.g. raw ADO.NET
   (or a mock that would deadlock without `AsyncHelper`) and asserts it returns without
   deadlocking and `IsClosed == true`.
 - Verify existing 675 tests continue to pass.
->>>>>>> Stashed changes

@@ -1,83 +1,132 @@
-# Spec: Hook OwnsMany Items into EF Core State Manager
+# Spec: OwnsMany State Manager Tracking & Owner Propagation
+
+**Status:** Complete (implementation in rdr-phase4; write-path integration tests pending
+live-server verification)
+
+---
 
 ## Background
 
 `PopulateCollectionNavigations` in `CouchbaseQueryEnumerable.cs` materializes owned
-collection items by calling `Activator.CreateInstance`, setting properties via
-reflection, and assigning the resulting `List<T>` directly to the navigation property.
-The EF Core shaper has already tracked the root entity (e.g. `Customer`) via the state
-manager — but the owned items injected afterward are invisible to it.
+collection items from an embedded JSON column. For change tracking to work correctly,
+each item must be registered with EF Core's state manager so that subsequent additions,
+removals, and scalar mutations are detected by AutoDetectChanges and reflected in the
+`IUpdateEntry` list passed to `SaveChangesAsync`.
 
-## What EF Core does normally
+A secondary problem exists for collection-reference replacement: when the user writes
+`customer.ContactMethods = [ ... ]`, no individual owned item state changes — EF Core
+sees no entries to save and skips the root entity entirely.
 
-In the standard relational provider, owned collection members arrive as JOIN rows and are
-materialized inside the compiled shaper function. The shaper calls
-`IStateManager.GetOrCreateEntry(entity, entityType)` for each owned item and sets its
-state to `Unchanged`, then links it to the owner's `InternalEntityEntry` via the
-navigation fix-up infrastructure. The result is a fully tracked object graph.
+---
 
-## What needs to change
+## Approach: Three cooperating mechanisms
 
-### 1. Change `PopulateCollectionNavigations` from `private static` to an instance method
+### 1. State manager registration via `forMaterialization: true`
 
-It currently takes no context. It needs access to:
+`PopulateCollectionNavigations` adds each owned item to the collection via EF Core's
+`IClrCollectionAccessor.Add(owner, item, forMaterialization: true)`. The
+`forMaterialization: true` flag routes through EF Core's collection accessor
+infrastructure, which:
 
-- `_relationalQueryContext.StateManager` — to create tracking entries
-- `_standAloneStateManager` — to know whether tracking is active
+- Creates an `InternalEntityEntry` for the item and registers it with the state manager.
+- Sets its initial state to `Unchanged`.
+- Takes a property snapshot so that scalar mutations are detectable by AutoDetectChanges.
 
-### 2. Resolve the owner's `InternalEntityEntry`
+With items registered this way, the following mutations are all tracked automatically:
 
-After the shaper yields the root entity, retrieve its entry:
+| Mutation | How EF Core detects it |
+|---|---|
+| `collection.Add(newItem)` | AutoDetectChanges finds the item in the collection but not in the snapshot → `Added` |
+| `collection.Remove(item)` | AutoDetectChanges finds the item in the snapshot but not in the collection → `Deleted` |
+| `item.Property = value` | Snapshot comparison detects property change → `Modified` |
+| OwnsOne scalar mutation | Same snapshot mechanism → owned entity `Modified` |
 
-```csharp
-var ownerEntry = _relationalQueryContext.StateManager.TryGetEntry(entity, _ownerEntityType);
-```
+### 2. Deferred second pass in `CouchbaseDatabaseWrapper.SaveChangesAsync`
 
-If `ownerEntry` is null (no-tracking query), skip state manager registration entirely
-and fall through to the existing assignment path — no-tracking behavior is unchanged.
+`SaveChangesAsync` divides its work into two passes:
 
-### 3. For each owned item, create a tracked entry and set it `Unchanged`
+**First pass** — processes root (non-owned) entities in the normal way (Add/Update/Delete
+via the key/value API). Deleted and written owners are recorded in `writtenRoots`.
 
-```csharp
-var ownedEntry = _relationalQueryContext.StateManager
-    .GetOrCreateEntry(ownedEntity, nav.TargetEntityType);
-ownedEntry.SetEntityState(EntityState.Unchanged, acceptChanges: true);
-```
+**Second pass** — iterates `deferredOwnedEntries` (owned entries with state not
+`Unchanged`/`Detached`):
 
-### 4. Run EF Core's navigation fix-up
+1. Resolves the ownership relationship: `entityType.FindOwnership()`.
+2. Extracts the FK values from the owned entry (these equal the owner's PK).
+3. Calls `StateManager.TryGetEntry(ownership.PrincipalKey, fkValues)` — O(1) lookup of
+   the owner's `InternalEntityEntry`, avoiding a linear `ChangeTracker.Entries()` scan.
+4. Skips owners already in `writtenRoots` (already written or deleted in the first pass).
+5. Calls `HydrateObjectFromEntity(ownerInternalEntry)` to build the full owner document
+   (including the current state of all owned navigations) and upserts it.
 
-After all items are added, trigger fix-up so the state manager's internal navigation
-graph is consistent:
+This handles all four mutation cases in the table above.
 
-```csharp
-ownerEntry.SetRelationshipSnapshotValue(nav, list);
-```
+### 3. Collection-reference replacement via `OwnedCollectionSnapshot` + interceptor
 
-This is closer to what the compiled shaper does and avoids a full `DetectChanges` scan.
-Alternatively, call `_relationalQueryContext.StateManager.Context.ChangeTracker.DetectChanges()`
-but that is more expensive.
+When the user replaces an entire collection reference (`customer.ContactMethods = []`),
+EF Core's change tracker produces no owned-item entries — the old items were removed from
+the collection externally, so they never get `Deleted` state, and the new items were never
+added via a tracked accessor, so they never get `Added` state.
 
-### 5. No-tracking path
+Detection and fix:
 
-When `_standAloneStateManager` is `true` (no-tracking query), `StateManager.TryGetEntry`
-will return null. The method should detect this and skip all state manager calls, keeping
-the existing direct-assignment path as the no-tracking fast path. Both paths end with the
-same `nav.PropertyInfo.SetValue(entity, list)` call.
+- **`OwnedCollectionSnapshot.OriginalRefs`** — a `ConditionalWeakTable<object, Dictionary<string, object?>>` that stores the original collection-object reference for each OwnsMany navigation on every freshly materialised entity. Populated in `CouchbaseQueryEnumerable.SnapshotCollectionRefs` after `PopulateCollectionNavigations` runs.
 
-## Callsite change
+- **`CouchbaseSaveChangesInterceptor.MarkOwnersWithReplacedCollections`** — fires just
+  before `SaveChanges`. Iterates tracked root entities; for each OwnsMany navigation,
+  compares the current property value against the stored reference. If they differ (i.e.
+  the user replaced the collection), marks the owner as `Modified`. This forces EF Core to
+  include the owner in the `entries` list passed to `SaveChangesAsync`, and the main loop
+  writes the updated document (with the new collection contents from
+  `HydrateObjectFromEntity`).
 
-`GetAsyncEnumerator` calls `PopulateCollectionNavigations` in three places — all three
-need to pass the root entity to the instance method so the owner entry can be resolved.
+- **`CouchbaseSaveChangesInterceptor.RefreshOwnedCollectionSnapshots`** — fires after a
+  successful save, updating `OriginalRefs` to the current collection references so
+  subsequent saves do not see a stale mismatch.
 
-## Risk surface
+---
 
-- `IStateManager.GetOrCreateEntry(object, IEntityType)` is internal EF Core API
-  (`Microsoft.EntityFrameworkCore.ChangeTracking.Internal`). It is already used indirectly
-  via `InitializeStateManager` in this file, so the dependency is not new — but it may
-  require `#pragma warning disable EF1001` suppressions.
-- Calling this on a no-tracking context will throw; the null-check on `TryGetEntry` is
-  the guard.
-- Owned entity primary keys in EF Core include a generated shadow property (e.g.
-  `__synthesizedOrdinal`). When creating entries manually, those shadow properties must be
-  set to valid values (typically the zero-based index in the list) or EF Core's key
-  uniqueness check will fail for collections with more than one item.
+## Why this differs from the original spec
+
+The previous version of this spec proposed manually calling
+`IStateManager.GetOrCreateEntry(entity, entityType)`, `SetEntityState(Unchanged,
+acceptChanges: true)`, and `SetRelationshipSnapshotValue(nav, list)` from within
+`PopulateCollectionNavigations`. That approach would have required accessing internal
+EF Core APIs (`#pragma warning disable EF1001`) and replicating logic that
+`IClrCollectionAccessor.Add(owner, item, forMaterialization: true)` already performs.
+
+The `forMaterialization: true` flag is the intended EF Core API for exactly this purpose
+and handles state manager registration, snapshot creation, and navigation fixup
+transparently. The separate `OwnedCollectionSnapshot` mechanism covers the
+collection-reference-replacement edge case that the original spec did not anticipate.
+
+---
+
+## Integration tests
+
+All tests are in `OwnedTypeTests.cs`.
+
+### Read path (all passing)
+- `OwnsOne_InlineAddress_IsPopulated`
+- `OwnsMany_EmbeddedContactMethods_ArePopulated`
+- `OwnsMany_SingleItem_IsPopulated`
+- `Customers_AllHaveAddresses`
+- `OwnsOne_FilterBy_OwnedProperty_ReturnsMatchingCustomer`
+- `OwnsMany_ToListAsync_AllCustomersCollectionsPopulated`
+- `OwnsMany_AsNoTracking_IsPopulated`
+- `OwnsMany_ItemOrderIsPreserved`
+- `OwnsMany_EmptyCollectionDocument_ReadsAsEmpty`
+
+### Write path (mechanisms 2 and 3 above; pending live-server verification)
+
+| Test | Mechanism | Mutation type |
+|---|---|---|
+| `OwnsOne_Update_RoundTrips` | Deferred second pass | OwnsOne scalar |
+| `OwnsOne_NullScalars_RoundTrip` | Deferred second pass | OwnsOne null scalars |
+| `OwnsMany_Update_RoundTrips` | Collection ref replacement | Full collection replacement |
+| `OwnsMany_ClearCollection_RoundTrips` | Collection ref replacement | Empty list assignment |
+| `Customer_Add_WithOwnedTypes_RoundTrips` | Normal Add path | Root entity insert |
+| `Customer_Delete_RemovesDocument` | Normal Delete path | Root entity delete |
+| `OwnsMany_AddSingleItem_RoundTrips` | Deferred second pass | `.Add()` on existing collection |
+| `OwnsMany_RemoveSingleItem_RoundTrips` | Deferred second pass | `.Remove()` from collection |
+| `OwnsMany_MutateItemProperty_RoundTrips` | Deferred second pass | In-place scalar mutation |

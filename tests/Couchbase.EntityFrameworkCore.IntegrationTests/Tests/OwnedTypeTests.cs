@@ -58,8 +58,8 @@ public class OwnedTypeTests(
     public async Task OwnsOne_Update_RoundTrips()
     {
         // Write a new address via SaveChangesAsync and confirm a fresh context reads it back.
-        // The owner must be marked Modified explicitly: EF Core tracks the OwnsOne entity
-        // in its own entry and our provider skips owned entries in the SaveChanges loop.
+        // No manual State = Modified needed: the deferred second pass in SaveChangesAsync
+        // detects the owned-entry state change and writes the owner document automatically.
         await using (var ctx = fixture.GetDbContext())
         {
             var customer = await ctx.Customers.FirstAsync(c => c.CustomerId == 1);
