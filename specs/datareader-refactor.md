@@ -6,7 +6,14 @@
 `IQueryResult<JsonElement>` and EF Core's compiled shapers. It was built incrementally alongside
 the query pipeline and has accumulated complexity for code paths that never execute in the
 provider. This document describes four sequential phases to simplify and optimize it.
+<<<<<<< Updated upstream
 Phases 1–4 are complete.
+=======
+
+=======
+Phases 1–4 are complete. Phase 5 is planned.
+
+>>>>>>> Stashed changes
 
 The EF Core shaper is the sole consumer of this reader. It calls typed getters by projection
 ordinal (e.g. `GetInt32(3)`, `GetString(7)`) for every column of every result row. The
@@ -334,7 +341,7 @@ calls `ReadAsync().GetAwaiter().GetResult()`. Both can deadlock on a UI thread w
 Assessment: `Read()` mirrors the base-class default; EF Core never calls it. `Close()` is
 reachable via `using var reader = ...` (sync `Dispose()`) even in async callers. Routing
 `Close()` through `AsyncHelper.RunSync` (consistent with `CouchbaseCommand`'s sync methods)
-is the recommended fix. Not yet applied; tracked for a follow-up commit.
+is the recommended fix. Not yet applied; tracked as Phase 5.
 
 ### 7 — No regression test for `DbCommand.Cancel()` CTS ownership-transfer fix
 
@@ -475,3 +482,103 @@ Key additions to `CouchbaseDbDataReader<T>`:
 
 11 new unit tests added in `CouchbaseDbDataReaderTests` under `#region Phase 4 — _currentValues
 per-row cache` (8 core cache tests + 3 duplicate-alias tests). Total test count: 675 (all passing).
+<<<<<<< Updated upstream
+=======
+
+---
+
+## Phase 5 — Fix Sync-over-Async in `Close()`
+
+**Goal:** Eliminate the deadlock risk in `Close()` by routing `DisposeAsync` through
+`AsyncHelper.RunSync`, consistent with how `CouchbaseCommand`'s synchronous methods already
+handle async operations.
+
+### Problem
+
+`Close()` currently calls:
+
+```csharp
+_enumerator?.DisposeAsync().AsTask().GetAwaiter().GetResult();
+```
+
+`.GetAwaiter().GetResult()` on a thread that has a captured `SynchronizationContext` (UI thread,
+ASP.NET Classic, xUnit's default context) will deadlock: the async continuation tries to resume
+on the same captured context, which is blocked waiting for it to complete.
+
+`Read()` has the same pattern:
+
+```csharp
+return ReadAsync(CancellationToken.None).GetAwaiter().GetResult();
+```
+
+`Read()` is lower priority because EF Core never calls it (the shaper always uses `ReadAsync`),
+and the base-class `DbDataReader.Read` default also uses `.GetAwaiter().GetResult()`. `Close()` is
+the primary target because it is reachable via `using var reader = ...` (sync `Dispose()`) even
+in otherwise-async callers.
+
+### Proposed fix
+
+Replace the raw `.GetAwaiter().GetResult()` calls in `Close()` with `AsyncHelper.RunSync`:
+
+```csharp
+public override void Close()
+{
+    if (!_isClosed)
+    {
+        _isClosed = true;
+        if (_enumerator != null)
+            AsyncHelper.RunSync(static e => e.DisposeAsync().AsTask(), _enumerator);
+        (_queryResult as IAsyncDisposable)?.DisposeAsync().AsTask()
+            .GetAwaiter().GetResult(); // intentional: _queryResult sync fallback only
+        (_queryResult as IDisposable)?.Dispose();
+        _linkedCts?.Dispose();
+        _linkedCts = null;
+
+        if ((_behavior & CommandBehavior.CloseConnection) != 0 && _connection != null)
+            _connection.Close();
+    }
+}
+```
+
+`AsyncHelper.RunSync` (in `Couchbase.EntityFrameworkCore.Internal`) installs an
+`ExclusiveSynchronizationContext` when a captured `SynchronizationContext` is present,
+preventing the continuation from re-entering the blocked thread.
+
+For `_queryResult` disposal, check `IAsyncDisposable` first and use `AsyncHelper.RunSync` for
+it too; fall back to `IDisposable` if neither is available:
+
+```csharp
+if (_queryResult is IAsyncDisposable asyncDisposable)
+    AsyncHelper.RunSync(static d => d.DisposeAsync().AsTask(), asyncDisposable);
+else
+    (_queryResult as IDisposable)?.Dispose();
+```
+
+### `Read()` — secondary fix
+
+Optionally route `Read()` through `AsyncHelper.RunSync` for symmetry:
+
+```csharp
+public override bool Read() =>
+    AsyncHelper.RunSync(static (ct, self) => self.ReadAsync(ct),
+        (CancellationToken.None, this));
+```
+
+This is lower priority. EF Core never calls `Read()`, but fixing it makes the sync API safe for
+callers that construct the reader outside the EF Core pipeline (e.g. raw ADO.NET tests).
+
+### Scope
+
+| Method | Risk | Priority |
+|---|---|---|
+| `Close()` / `Dispose()` | High — reachable from any `using` block | **Primary** |
+| `Read()` | Low — EF Core never calls it | Secondary |
+| `CloseAsync()` / `ReadAsync()` / `DisposeAsync()` | None — fully async | No change |
+
+### Testing
+
+- Add a unit test that calls `Close()` from a thread with an `ExclusiveSynchronizationContext`
+  (or a mock that would deadlock without `AsyncHelper`) and asserts it returns without
+  deadlocking and `IsClosed == true`.
+- Verify existing 675 tests continue to pass.
+>>>>>>> Stashed changes
