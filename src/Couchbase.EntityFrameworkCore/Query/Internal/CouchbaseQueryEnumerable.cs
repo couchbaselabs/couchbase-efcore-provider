@@ -123,7 +123,11 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
     public async IAsyncEnumerator<T> GetAsyncEnumerator(CancellationToken cancellationToken = new CancellationToken())
     {
         using var dbCommand = CreateDbCommand();
-        var queryString = _relationalQueryContext.RelationalQueryStringFactory.Create(dbCommand);
+        // Use CommandText directly — RelationalQueryStringFactory.Create() would prepend
+        // per-parameter comment blocks (for debugging) before the SQL, but those comment
+        // blocks are not part of the actual query and should not be sent to the server.
+        // Using CommandText keeps the executed SQL identical to what ToQueryString() returns.
+        var queryString = dbCommand.CommandText;
         var logger = (CouchbaseRelationalDiagnosticsCommandLogger)_relationalQueryContext.CommandLogger;
 #if DEBUG
         logger.LogStatement(dbCommand, TimeSpan.Zero);

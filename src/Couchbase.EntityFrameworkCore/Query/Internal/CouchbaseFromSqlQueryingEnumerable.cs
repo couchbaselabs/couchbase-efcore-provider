@@ -104,13 +104,14 @@ public class CouchbaseFromSqlQueryingEnumerable<T> : IEnumerable<T>, IAsyncEnume
     public async IAsyncEnumerator<T> GetAsyncEnumerator(CancellationToken cancellationToken = new CancellationToken())
     {
         using var dbCommand = CreateDbCommand();
-        var queryString = _relationalQueryContext.RelationalQueryStringFactory.Create(dbCommand);
+        // Use CommandText directly — RelationalQueryStringFactory.Create() would prepend
+        // per-parameter comment blocks before the SQL, which must not be sent to the server.
+        // Using CommandText keeps the executed SQL identical to what ToQueryString() returns.
+        var queryString = dbCommand.CommandText;
 
         var logger = (CouchbaseRelationalDiagnosticsCommandLogger)_relationalQueryContext.CommandLogger;
 #if DEBUG
-        //This likely needs to be refactored and just use the relational command instead
-        var loggingCommand = CreateDbCommand();
-        logger.LogStatement(loggingCommand, TimeSpan.Zero);
+        logger.LogStatement(dbCommand, TimeSpan.Zero);
 #endif
         var queryOptions = GetParameters(dbCommand);
 
@@ -158,8 +159,11 @@ public class CouchbaseFromSqlQueryingEnumerable<T> : IEnumerable<T>, IAsyncEnume
 
     public string ToQueryString()
     {
-        using var dbCommand = CreateDbCommand();
-        return _relationalQueryContext.RelationalQueryStringFactory.Create(dbCommand);
+        // Compile the SQL without opening a database connection.  This matches
+        // EF Core's contract for ToQueryString() and the implementation in
+        // CouchbaseQueryEnumerable.ToQueryString().
+        var relationalCommand = _relationalCommandResolver(_relationalQueryContext.Parameters);
+        return relationalCommand.CommandText;
     }
 
     public virtual DbCommand CreateDbCommand()
