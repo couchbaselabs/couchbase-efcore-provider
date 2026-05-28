@@ -1,7 +1,7 @@
 # Spec: OwnsMany State Manager Tracking & Owner Propagation
 
-**Status:** Complete (implementation in rdr-phase4/rdr-phase5; write-path integration tests
-pending live-server verification)
+**Status:** Complete (implementation in rdr-phase4/rdr-phase5; all 21 integration tests verified
+on live server)
 
 ---
 
@@ -142,7 +142,7 @@ All tests are in `OwnedTypeTests.cs`.
 - `OwnsMany_ItemOrderIsPreserved`
 - `OwnsMany_EmptyCollectionDocument_ReadsAsEmpty`
 
-### Write path (mechanisms 2–4 above; pending live-server verification)
+### Write path (mechanisms 2–4 above; all passing)
 
 | Test | Mechanism | Mutation type |
 |---|---|---|
@@ -155,3 +155,6 @@ All tests are in `OwnedTypeTests.cs`.
 | `OwnsMany_AddSingleItem_RoundTrips` | 4 — Content-snapshot (count change) | `.Add()` on existing collection |
 | `OwnsMany_RemoveSingleItem_RoundTrips` | 4 — Content-snapshot (count change) | `.Remove()` from collection |
 | `OwnsMany_MutateItemProperty_RoundTrips` | 4 — Content-snapshot (value change) | In-place scalar mutation |
+| `OwnsMany_MutateItemProperty_SaveTwice_SecondSaveIsNoOp` | 4 — Content-snapshot + refresh | No-op second save after snapshot refresh |
+| `OwnsMany_AddItem_SaveTwice_SecondSaveIsNoOp` | 4 — Content-snapshot + refresh | No-op second save (count-change path) |
+| `OwnsMany_AddAndMutate_BothChangesSaved` | 4 — Content-snapshot | Combined `.Add()` + in-place scalar mutation |

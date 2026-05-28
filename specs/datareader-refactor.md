@@ -6,7 +6,7 @@
 `IQueryResult<JsonElement>` and EF Core's compiled shapers. It was built incrementally alongside
 the query pipeline and has accumulated complexity for code paths that never execute in the
 provider. This document describes four sequential phases to simplify and optimize it.
-Phases 1–4 are complete. Phase 5 is planned.
+Phases 1–5 are complete.
 
 The EF Core shaper is the sole consumer of this reader. It calls typed getters by projection
 ordinal (e.g. `GetInt32(3)`, `GetString(7)`) for every column of every result row. The
@@ -478,7 +478,7 @@ per-row cache` (8 core cache tests + 3 duplicate-alias tests). Total test count:
 
 ---
 
-## Phase 5 — Fix Sync-over-Async in `Close()`
+## Phase 5 — Fix Sync-over-Async in `Close()` ✓
 
 **Goal:** Eliminate the deadlock risk in `Close()` by routing `DisposeAsync` through
 `AsyncHelper.RunSync`, consistent with how `CouchbaseCommand`'s synchronous methods already
@@ -579,4 +579,4 @@ callers that construct the reader outside the EF Core pipeline (e.g. raw ADO.NET
     `DisposeAsync()` genuinely suspends. Asserts the thread completes within 5 s.
   - `Read_WithNonDefaultSynchronizationContext_DoesNotDeadlock` — same context, verifies
     `Read()` returns the first row without hanging.
-- Total test count: 677 (all passing).
+- Total test count: 697 (all passing; includes 20 additional content-snapshot unit tests added post-phase-5).

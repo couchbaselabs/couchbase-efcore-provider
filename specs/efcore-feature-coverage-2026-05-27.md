@@ -135,7 +135,7 @@ Trim / TrimStart / TrimEnd, IsNullOrWhiteSpace
 
 ## Eager Loading
 
-**Status: Mostly implemented — owned-entity fixup in progress**
+**Status: Mostly implemented**
 
 | Feature | Status |
 |---|---|
@@ -219,7 +219,7 @@ Trim / TrimStart / TrimEnd, IsNullOrWhiteSpace
 | Key generation (sequences) | ✅ Implemented | 100% |
 | Transactions | ✅ Implemented | 100% |
 | Relationships & navigation | ✅ Implemented | 90% |
-| Owned entities | ✅ Mostly complete | 95% (write-path integration tests pending live-server verification) |
+| Owned entities | ✅ Mostly complete | 95% (all write-path integration tests passing) |
 | Inheritance (TPH) | ✅ Implemented | 100% |
 | Type mapping | ✅ Implemented | 90% |
 | Migrations | ❌ Not implemented | 0% |
