@@ -49,7 +49,15 @@ public readonly record struct CouchbaseKeyspace
     /// <summary>
     /// Returns the keyspace in standard format: <c>Bucket.Scope.Collection</c>.
     /// </summary>
-    public override string ToString() => $"{Bucket}.{Scope}.{Collection}";
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when the instance was default-initialized (e.g. <c>default(CouchbaseKeyspace)</c>)
+    /// and has null segments. Use the constructor or <see cref="Parse"/> instead.
+    /// </exception>
+    public override string ToString()
+    {
+        ThrowIfDefaultInitialized();
+        return $"{Bucket}.{Scope}.{Collection}";
+    }
 
     /// <summary>
     /// Returns the keyspace in SQL++ format with each segment backtick-delimited and any
@@ -61,8 +69,27 @@ public readonly record struct CouchbaseKeyspace
     /// logic.  This method is provided for contexts that do not have access to the helper
     /// (e.g. display, logging, serialisation).
     /// </remarks>
-    public string ToSqlString() =>
-        $"`{Bucket.Replace("`", "``")}`.`{Scope.Replace("`", "``")}`.`{Collection.Replace("`", "``")}`";
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when the instance was default-initialized (e.g. <c>default(CouchbaseKeyspace)</c>)
+    /// and has null segments. Use the constructor or <see cref="Parse"/> instead.
+    /// </exception>
+    public string ToSqlString()
+    {
+        ThrowIfDefaultInitialized();
+        return $"`{Bucket.Replace("`", "``")}`.`{Scope.Replace("`", "``")}`.`{Collection.Replace("`", "``")}`";
+    }
+
+    /// <summary>
+    /// Throws <see cref="InvalidOperationException"/> when the struct was default-initialized,
+    /// leaving <see cref="Bucket"/>, <see cref="Scope"/>, or <see cref="Collection"/> null.
+    /// </summary>
+    private void ThrowIfDefaultInitialized()
+    {
+        if (Bucket is null || Scope is null || Collection is null)
+            throw new InvalidOperationException(
+                "This CouchbaseKeyspace instance was default-initialized and has null segments. " +
+                "Use the constructor or Parse() to create a valid instance.");
+    }
 
     /// <summary>
     /// Parses a keyspace string in the format <c>Bucket.Scope.Collection</c>.
