@@ -299,13 +299,7 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
                     if (item == null) continue;
                     var propSnapshot = new Dictionary<string, object?>();
                     foreach (var prop in itemProps)
-                    {
-                        var raw = prop.PropertyInfo?.GetValue(item);
-                        // Use EF Core's ValueComparer.Snapshot so mutable reference types
-                        // (e.g. byte[]) are deep-copied. For immutable types (string, int, …)
-                        // Snapshot is a no-op that returns the same reference.
-                        propSnapshot[prop.Name] = raw is null ? null : prop.GetValueComparer().Snapshot(raw);
-                    }
+                        propSnapshot[prop.Name] = prop.PropertyInfo?.GetValue(item);
                     snapshot.Add(propSnapshot);
                 }
                 items[nav.Name] = snapshot;
