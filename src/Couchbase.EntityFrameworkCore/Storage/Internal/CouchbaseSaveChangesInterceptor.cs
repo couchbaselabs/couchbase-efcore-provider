@@ -293,7 +293,7 @@ public class CouchbaseSaveChangesInterceptor : SaveChangesInterceptor
             {
                 var currentValue = prop.PropertyInfo?.GetValue(currentItems[i]);
                 if (!origSnapshot.TryGetValue(prop.Name, out var origValue)) return true;
-                if (!Equals(currentValue, origValue)) return true;
+                if (!prop.GetValueComparer().Equals(currentValue, origValue)) return true;
             }
         }
 
@@ -333,7 +333,13 @@ public class CouchbaseSaveChangesInterceptor : SaveChangesInterceptor
                         if (item == null) continue;
                         var propSnapshot = new Dictionary<string, object?>();
                         foreach (var prop in itemProps)
-                            propSnapshot[prop.Name] = prop.PropertyInfo?.GetValue(item);
+                        {
+                            var raw = prop.PropertyInfo?.GetValue(item);
+                            // Use EF Core's ValueComparer.Snapshot so mutable reference types
+                            // (e.g. byte[]) are deep-copied. For immutable types (string, int, …)
+                            // Snapshot is a no-op that returns the same reference.
+                            propSnapshot[prop.Name] = raw is null ? null : prop.GetValueComparer().Snapshot(raw);
+                        }
                         snapshot.Add(propSnapshot);
                     }
                     itemsTable[nav.Name] = snapshot;
