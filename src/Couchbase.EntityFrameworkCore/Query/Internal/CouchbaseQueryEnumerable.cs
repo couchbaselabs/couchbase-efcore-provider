@@ -30,6 +30,7 @@ public static class CouchbaseQueryEnumerable
         Func<QueryContext, DbDataReader, ResultContext, SingleQueryResultCoordinator, T> shaper,
         Type contextType,
         bool standAloneStateManager,
+        bool isTracking,
         bool detailedErrorsEnabled,
         bool threadSafetyChecksEnabled,
         IBucketProvider bucketProvider,
@@ -42,6 +43,7 @@ public static class CouchbaseQueryEnumerable
             shaper,
             contextType,
             standAloneStateManager,
+            isTracking,
             detailedErrorsEnabled,
             threadSafetyChecksEnabled,
             bucketProvider,
@@ -53,6 +55,9 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
     private readonly bool _threadSafetyChecksEnabled;
     private readonly bool _detailedErrorsEnabled;
     private readonly bool _standAloneStateManager;
+    // True only for QueryTrackingBehavior.TrackAll — the only mode where SnapshotCollectionRefs
+    // produces a snapshot that the interceptor can ever consume via ChangeTracker.Entries().
+    private readonly bool _isTracking;
     private readonly IDiagnosticsLogger<DbLoggerCategory.Query> _queryLogger;
     private readonly Type _contextType;
     private readonly Func<QueryContext, DbDataReader, ResultContext, SingleQueryResultCoordinator, T> _shaper;
@@ -75,6 +80,7 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
         Func<QueryContext, DbDataReader, ResultContext, SingleQueryResultCoordinator, T> shaper,
         Type contextType,
         bool standAloneStateManager,
+        bool isTracking,
         bool detailedErrorsEnabled,
         bool threadSafetyChecksEnabled,
         IBucketProvider bucketProvider,
@@ -88,6 +94,7 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
         _contextType = contextType;
         _queryLogger = relationalQueryContext.QueryLogger;
         _standAloneStateManager = standAloneStateManager;
+        _isTracking = isTracking;
         _detailedErrorsEnabled = detailedErrorsEnabled;
         _threadSafetyChecksEnabled = threadSafetyChecksEnabled;
         _couchbaseDbContextOptionsBuilder = couchbaseDbContextOptionsBuilder;
@@ -278,7 +285,10 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
     // Both are checked in MarkOwnersWithReplacedCollections before SaveChanges.
     private void SnapshotCollectionRefs(T? entity)
     {
-        if (entity == null) return;
+        // Skip entirely for non-tracking queries: the interceptor walks ChangeTracker.Entries(),
+        // so snapshots built for NoTracking / NoTrackingWithIdentityResolution entities are
+        // never consumed and would be immediately GC'd.
+        if (entity == null || !_isTracking) return;
         var refs  = OwnedCollectionSnapshot.OriginalRefs.GetOrCreateValue(entity);
         var items = OwnedCollectionSnapshot.OriginalItems.GetOrCreateValue(entity);
         foreach (var nav in _ownedCollectionNavigations)

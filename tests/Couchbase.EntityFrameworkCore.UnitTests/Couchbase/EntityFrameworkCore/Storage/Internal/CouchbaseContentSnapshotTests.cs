@@ -1,6 +1,7 @@
 using System.Reflection;
 using Couchbase.EntityFrameworkCore.Query.Internal;
 using Couchbase.EntityFrameworkCore.Storage.Internal;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Moq;
 using Xunit;
@@ -66,13 +67,22 @@ public class CouchbaseContentSnapshotTests
         var typePropInfo  = typeof(ContactItem).GetProperty(nameof(ContactItem.Type))!;
         var valuePropInfo = typeof(ContactItem).GetProperty(nameof(ContactItem.Value))!;
 
+        // Default string comparer: ordinal equality, null-safe.
+        // GetValueComparer() is an IReadOnlyProperty interface method — Moq returns null by
+        // default, so it must be set up explicitly or HasCollectionChanged will NullRef.
+        var stringComparer = new ValueComparer<string?>(
+            (l, r) => l == r,
+            v => v == null ? 0 : v.GetHashCode());
+
         var typeProp = new Mock<IProperty>();
         typeProp.Setup(p => p.Name).Returns("Type");
         typeProp.Setup(p => p.PropertyInfo).Returns(typePropInfo);
+        typeProp.Setup(p => p.GetValueComparer()).Returns(stringComparer);
 
         var valueProp = new Mock<IProperty>();
         valueProp.Setup(p => p.Name).Returns("Value");
         valueProp.Setup(p => p.PropertyInfo).Returns(valuePropInfo);
+        valueProp.Setup(p => p.GetValueComparer()).Returns(stringComparer);
 
         var targetType = new Mock<IEntityType>();
         targetType.Setup(t => t.GetProperties()).Returns([typeProp.Object, valueProp.Object]);

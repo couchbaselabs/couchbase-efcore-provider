@@ -257,6 +257,7 @@ public class CouchbaseShapedQueryCompilingExpressionVisitor : RelationalShapedQu
                 shaper,
                 Expression.Constant(_contextType),
                 Expression.Constant(QueryCompilationContext.QueryTrackingBehavior == QueryTrackingBehavior.NoTrackingWithIdentityResolution),
+                Expression.Constant(QueryCompilationContext.QueryTrackingBehavior == QueryTrackingBehavior.TrackAll),
                 Expression.Constant(_detailedErrorsEnabled),
                 Expression.Constant(_threadSafetyChecksEnabled),
                 Expression.Constant(_bucketProvider),
