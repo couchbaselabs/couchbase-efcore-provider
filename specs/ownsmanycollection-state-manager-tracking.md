@@ -8,14 +8,16 @@ on live server)
 ## Background
 
 `PopulateCollectionNavigations` in `CouchbaseQueryEnumerable.cs` materializes owned
-collection items from an embedded JSON column. For change tracking to work correctly,
-each item must be registered with EF Core's state manager so that subsequent additions,
-removals, and scalar mutations are detected by AutoDetectChanges and reflected in the
-`IUpdateEntry` list passed to `SaveChangesAsync`.
+collection items from an embedded JSON column. Because Couchbase stores owned collections
+as embedded JSON in the owner document, the goal is to detect any change to the owner
+document — whether that change comes from adding or removing items, mutating a scalar
+property on an existing item, or replacing the collection reference entirely — and ensure
+`SaveChangesAsync` rewrites the owner document to reflect the new state.
 
-A secondary problem exists for collection-reference replacement: when the user writes
-`customer.ContactMethods = [ ... ]`, no individual owned item state changes — EF Core
-sees no entries to save and skips the root entity entirely.
+OwnsMany items are not individually registered with EF Core's state manager (see
+mechanism 1), so AutoDetectChanges cannot observe them. The mechanisms below work
+around this by detecting changes at the owner level and marking the owner as `Modified`
+so it is included in the `IUpdateEntry` list passed to `SaveChangesAsync`.
 
 ---
 

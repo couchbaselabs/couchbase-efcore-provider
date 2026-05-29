@@ -197,7 +197,7 @@ Trim / TrimStart / TrimEnd, IsNullOrWhiteSpace
 | Lazy loading / proxies | No proxy generation; explicit Include required |
 | Migrations | No schema migration tracking or execution |
 | Stored procedures | N1QL does not support stored procedures |
-| Synchronous I/O | Only async; sync shims such as `CouchbaseDbDataReader.Close()` and `Read()` use `AsyncHelper.RunSync` (deadlock-safe — Phase 5). `CouchbaseConnection.Open()` and DEBUG `CouchbaseDatabaseWrapper.SaveChanges()` were updated to use `AsyncHelper.RunSync` as well, so they are no longer raw `.GetAwaiter().GetResult()` callers |
+| Synchronous I/O | Only async; all sync shims (`Close()`, `Read()`, `Open()`, DEBUG `SaveChanges()`) route through `AsyncHelper.RunSync` (deadlock-safe under any `SynchronizationContext` — see Phase 5) |
 | Average aggregate | Known bug NCBC-3891 |
 | Union / Intersect / Except | Not explicitly implemented or tested |
 | View mapping | Couchbase collections only |
@@ -213,7 +213,7 @@ Trim / TrimStart / TrimEnd, IsNullOrWhiteSpace
 |---|---|---|
 | Core CRUD & SaveChanges | ✅ Implemented | 95% |
 | Basic querying (Where, Select, OrderBy) | ✅ Implemented | 95% |
-| Eager loading (Include / ThenInclude) | ✅ Mostly complete | 85% (owned-entity fixup in progress) |
+| Eager loading (Include / ThenInclude) | ✅ Mostly complete | 90% (owned-entity fixup complete; ThenInclude on owned entities and auto-include not yet tested) |
 | Aggregations | ⚠️ Partial | 80% (no Average) |
 | String functions | ✅ Implemented | 90% |
 | Key generation (sequences) | ✅ Implemented | 100% |
@@ -251,8 +251,8 @@ Trim / TrimStart / TrimEnd, IsNullOrWhiteSpace
 5. **No ADO.NET parameters** — `FromSqlRaw` uses string interpolation; no parameter
    substitution is available.
 
-6. **Async-only** — all database operations are async. `CouchbaseDbDataReader.Close()` and
-   `Read()` use `AsyncHelper.RunSync` (deadlock-safe under any `SynchronizationContext` —
-   see `datareader-refactor.md` Phase 5). Other sync entry points (`CouchbaseConnection.Open()`,
-   DEBUG `CouchbaseDatabaseWrapper.SaveChanges()`) still call `.GetAwaiter().GetResult()`
-   directly and may deadlock on a UI or ASP.NET Classic thread.
+6. **Async-only** — all database operations are async. All sync shims
+   (`CouchbaseDbDataReader.Close()`, `Read()`, `CouchbaseConnection.Open()`, and DEBUG
+   `CouchbaseDatabaseWrapper.SaveChanges()`) route through `AsyncHelper.RunSync`, which is
+   deadlock-safe under any `SynchronizationContext`. See `datareader-refactor.md` Phase 5
+   for details.

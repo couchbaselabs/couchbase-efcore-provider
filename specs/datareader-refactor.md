@@ -560,11 +560,13 @@ callers that construct the reader outside the EF Core pipeline (e.g. raw ADO.NET
 
 ### Scope
 
-| Method | Risk | Priority |
+| Method | Risk | Status |
 |---|---|---|
-| `Close()` / `Dispose()` | High — reachable from any `using` block | **Primary** |
-| `Read()` | Low — EF Core never calls it | Secondary |
-| `CloseAsync()` / `ReadAsync()` / `DisposeAsync()` | None — fully async | No change |
+| `CouchbaseDbDataReader.Close()` / `Dispose()` | High — reachable from any `using` block | ✅ Fixed — `AsyncHelper.RunSync` |
+| `CouchbaseDbDataReader.Read()` | Low — EF Core never calls it | ✅ Fixed — `AsyncHelper.RunSync` |
+| `CouchbaseConnection.Open()` | Medium — called on every query execution | ✅ Fixed — `AsyncHelper.RunSync` |
+| DEBUG `CouchbaseDatabaseWrapper.SaveChanges()` | Low — DEBUG builds only | ✅ Fixed — `AsyncHelper.RunSync` |
+| `CloseAsync()` / `ReadAsync()` / `DisposeAsync()` | None — fully async | No change needed |
 
 ### Actual outcome
 
