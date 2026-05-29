@@ -2667,6 +2667,8 @@ public class CouchbaseDbDataReaderTests
             reader.Close();
             completed = true;
         });
+        // Background so a deadlock doesn't block the test runner after the Join timeout.
+        thread.IsBackground = true;
         thread.Start();
         Assert.True(thread.Join(TimeSpan.FromSeconds(5)),
             "Close() deadlocked when run under a non-default SynchronizationContext");
@@ -2686,6 +2688,8 @@ public class CouchbaseDbDataReaderTests
             SynchronizationContext.SetSynchronizationContext(new CapturingSynchronizationContext());
             result = reader.Read();
         });
+        // Background so a deadlock doesn't block the test runner after the Join timeout.
+        thread.IsBackground = true;
         thread.Start();
         Assert.True(thread.Join(TimeSpan.FromSeconds(5)),
             "Read() deadlocked when run under a non-default SynchronizationContext");
