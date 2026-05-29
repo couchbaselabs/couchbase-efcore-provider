@@ -197,7 +197,7 @@ Trim / TrimStart / TrimEnd, IsNullOrWhiteSpace
 | Lazy loading / proxies | No proxy generation; explicit Include required |
 | Migrations | No schema migration tracking or execution |
 | Stored procedures | N1QL does not support stored procedures |
-| Synchronous I/O | Only async; `CouchbaseDbDataReader.Close()` and `Read()` use `AsyncHelper.RunSync` (deadlock-safe — Phase 5). Other sync paths (`CouchbaseConnection.Open()`, DEBUG `SaveChanges()`) still call `.GetAwaiter().GetResult()` directly and may deadlock under a captured `SynchronizationContext` |
+| Synchronous I/O | Only async; sync shims such as `CouchbaseDbDataReader.Close()` and `Read()` use `AsyncHelper.RunSync` (deadlock-safe — Phase 5). `CouchbaseConnection.Open()` and DEBUG `CouchbaseDatabaseWrapper.SaveChanges()` were updated to use `AsyncHelper.RunSync` as well, so they are no longer raw `.GetAwaiter().GetResult()` callers |
 | Average aggregate | Known bug NCBC-3891 |
 | Union / Intersect / Except | Not explicitly implemented or tested |
 | View mapping | Couchbase collections only |
