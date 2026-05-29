@@ -276,9 +276,7 @@ public class CouchbaseSaveChangesInterceptor : SaveChangesInterceptor
     {
         if (current is not IEnumerable collection) return false;
 
-        var itemProps = nav.TargetEntityType.GetProperties()
-            .Where(p => !p.IsShadowProperty())
-            .ToList();
+        var itemProps = OwnedCollectionSnapshot.GetTrackedProperties(nav);
 
         var currentItems = new List<object>();
         foreach (var item in collection)
@@ -324,9 +322,7 @@ public class CouchbaseSaveChangesInterceptor : SaveChangesInterceptor
                 // Refresh item-level snapshots so subsequent saves detect mutations correctly.
                 if (current is IEnumerable collection)
                 {
-                    var itemProps = nav.TargetEntityType.GetProperties()
-                        .Where(p => !p.IsShadowProperty())
-                        .ToList();
+                    var itemProps = OwnedCollectionSnapshot.GetTrackedProperties(nav);
                     var snapshot = new List<Dictionary<string, object?>>();
                     foreach (var item in collection)
                     {

@@ -243,8 +243,7 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
 
             var accessor = nav.GetCollectionAccessor();
             var clrType = nav.TargetEntityType.ClrType;
-            var properties = nav.TargetEntityType.GetProperties()
-                .Where(p => !p.IsShadowProperty()).ToList();
+            var properties = OwnedCollectionSnapshot.GetTrackedProperties(nav);
 
             if (accessor != null)
             {
@@ -300,9 +299,7 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
             // when the list reference is unchanged.
             if (currentCollection is IEnumerable collection)
             {
-                var itemProps = nav.TargetEntityType.GetProperties()
-                    .Where(p => !p.IsShadowProperty())
-                    .ToList();
+                var itemProps = OwnedCollectionSnapshot.GetTrackedProperties(nav);
                 var snapshot = new List<Dictionary<string, object?>>();
                 foreach (var item in collection)
                 {

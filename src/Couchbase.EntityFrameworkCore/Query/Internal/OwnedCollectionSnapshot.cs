@@ -1,4 +1,6 @@
+using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
+using Microsoft.EntityFrameworkCore.Metadata;
 
 namespace Couchbase.EntityFrameworkCore.Query.Internal;
 
@@ -17,6 +19,17 @@ internal static class OwnedCollectionSnapshot
 
     // nav.Name → ordered list of per-item property value dictionaries (prop.Name → value)
     internal static readonly ConditionalWeakTable<object, Dictionary<string, IReadOnlyList<Dictionary<string, object?>>>> OriginalItems = new();
+
+    // EF Core model metadata is immutable after OnModelCreating completes. Cache the
+    // non-shadow property list per navigation so it is computed at most once per navigation
+    // for the process lifetime, rather than on every materialisation and every SaveChanges.
+    private static readonly ConcurrentDictionary<INavigation, IReadOnlyList<IProperty>> _trackedPropsCache = new();
+
+    internal static IReadOnlyList<IProperty> GetTrackedProperties(INavigation nav)
+        => _trackedPropsCache.GetOrAdd(nav, static n =>
+            n.TargetEntityType.GetProperties()
+                .Where(p => !p.IsShadowProperty())
+                .ToArray());
 }
 
 
