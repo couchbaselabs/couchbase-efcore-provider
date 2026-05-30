@@ -580,11 +580,17 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
         // N1QL's AVG() natively returns a double for any numeric input. Strip the TONUMBER()
         // that EF Core injects for int/long arguments — it is unnecessary in SQL++ and can
         // trigger a CouchbaseParsingException on some server versions (NCBC-3891).
+        //
+        // Guard: only strip the Convert node when the target type is numeric (the same set that
+        // VisitSqlUnary routes to TONUMBER). ExpressionType.Convert is also used for TOSTRING and
+        // TOBOOLEAN — those must be left intact even though AVG(TOSTRING/TOBOOLEAN) is not valid
+        // standard SQL, because a custom translator could theoretically produce such a tree.
         if (sqlFunctionExpression.IsBuiltIn
             && sqlFunctionExpression.Name == "AVG"
             && sqlFunctionExpression.Arguments.Count == 1
             && sqlFunctionExpression.Arguments[0] is SqlUnaryExpression
-                { OperatorType: ExpressionType.Convert } numericCast)
+                { OperatorType: ExpressionType.Convert } numericCast
+            && IsNumericType(numericCast.Type))
         {
             Sql.Append("AVG(");
             Visit(numericCast.Operand);
@@ -660,7 +666,7 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
         Action<IRelationalCommandBuilder>? joinAction = null)
     {
         joinAction ??= (isb => isb.Append(", "));
-        
+
         for (var i = 0; i < items.Count; i++)
         {
             if (i > 0)
@@ -671,6 +677,23 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
             generationAction(items[i]);
         }
     }
+
+    /// <summary>
+    /// Returns <c>true</c> for CLR types that <see cref="VisitSqlUnary"/> maps to
+    /// <c>TONUMBER()</c> — the same exhaustive list used in that switch statement.
+    /// Used to narrow the AVG-stripping guard so that Convert-to-string and
+    /// Convert-to-bool cases are not accidentally removed (NCBC-3891).
+    /// </summary>
+    private static bool IsNumericType(Type type)
+        => type == typeof(double)
+        || type == typeof(float)
+        || type == typeof(decimal)
+        || type == typeof(int)
+        || type == typeof(uint)
+        || type == typeof(long)
+        || type == typeof(ulong)
+        || type == typeof(short)
+        || type == typeof(ushort);
 }
 
 /* ************************************************************
