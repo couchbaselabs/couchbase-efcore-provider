@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Metadata;
 
 namespace Couchbase.EntityFrameworkCore.Query.Internal;
@@ -30,6 +31,17 @@ internal static class OwnedCollectionSnapshot
             n.TargetEntityType.GetProperties()
                 .Where(p => !p.IsShadowProperty())
                 .ToArray());
+
+    // IProperty.GetValueComparer() can return null when no custom comparer is configured.
+    // Fall back through the type-mapping comparer then ValueComparer.CreateDefault so callers
+    // always receive a non-null comparer. Cached per property — metadata is immutable.
+    private static readonly ConcurrentDictionary<IProperty, ValueComparer> _comparerCache = new();
+
+    internal static ValueComparer GetComparer(IProperty prop)
+        => _comparerCache.GetOrAdd(prop, static p =>
+            p.GetValueComparer()
+                ?? p.FindTypeMapping()?.Comparer
+                ?? ValueComparer.CreateDefault(p.ClrType, favorStructuralComparisons: false));
 }
 
 

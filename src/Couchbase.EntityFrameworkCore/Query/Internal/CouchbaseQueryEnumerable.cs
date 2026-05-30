@@ -311,7 +311,7 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
                         // Use EF Core's ValueComparer.Snapshot so mutable reference types
                         // (e.g. byte[]) are deep-copied. For immutable types (string, int, …)
                         // Snapshot is a no-op that returns the same reference.
-                        propSnapshot[prop.Name] = raw is null ? null : prop.GetValueComparer().Snapshot(raw);
+                        propSnapshot[prop.Name] = raw is null ? null : OwnedCollectionSnapshot.GetComparer(prop).Snapshot(raw);
                     }
                     snapshot.Add(propSnapshot);
                 }
