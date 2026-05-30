@@ -2,6 +2,7 @@ using System.Collections;
 using System.Text.Json;
 using Couchbase.EntityFrameworkCore.Extensions;
 using Couchbase.EntityFrameworkCore.Infrastructure;
+using Couchbase.EntityFrameworkCore.Internal;
 using Couchbase.EntityFrameworkCore.Utils;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking.Internal;
@@ -33,7 +34,9 @@ public class CouchbaseDatabaseWrapper : Database
     public override int SaveChanges(IList<IUpdateEntry> entries)
     {
 #if DEBUG
-        return SaveChangesAsync(entries).ConfigureAwait(false).GetAwaiter().GetResult();
+        return AsyncHelper.RunSync(
+            static state => state.self.SaveChangesAsync(state.entries),
+            (self: this, entries));
 #else
         throw ExceptionHelper.SyncroIONotSupportedException();
 #endif

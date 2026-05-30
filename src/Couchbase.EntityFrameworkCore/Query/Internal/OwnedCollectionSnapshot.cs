@@ -1,17 +1,47 @@
+using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Microsoft.EntityFrameworkCore.Metadata;
 
 namespace Couchbase.EntityFrameworkCore.Query.Internal;
 
-// Stores the original collection-object reference for each OwnsMany navigation on a just-
-// materialised entity. The database wrapper's save path compares the current reference to the
-// stored one: if they differ the owner document must be rewritten even when EF Core's own
-// change tracker produced no owned-item entries (e.g. customer.ContactMethods = []).
+// Stores the original collection-object reference and per-item property value snapshots for
+// every OwnsMany navigation on a just-materialised entity.
+//
+// OriginalRefs — detects reference replacement (customer.ContactMethods = []).
+// OriginalItems — detects in-place content changes: Add, Remove, or scalar mutation.
 //
 // ConditionalWeakTable uses weak keys so entities that fall out of scope are GC'd without any
 // manual cleanup.
 internal static class OwnedCollectionSnapshot
 {
+    // nav.Name → original collection object reference
     internal static readonly ConditionalWeakTable<object, Dictionary<string, object?>> OriginalRefs = new();
+
+    // nav.Name → ordered list of per-item property value dictionaries (prop.Name → value)
+    internal static readonly ConditionalWeakTable<object, Dictionary<string, IReadOnlyList<Dictionary<string, object?>>>> OriginalItems = new();
+
+    // EF Core model metadata is immutable after OnModelCreating completes. Cache the
+    // non-shadow property list per navigation so it is computed at most once per navigation
+    // for the process lifetime, rather than on every materialisation and every SaveChanges.
+    private static readonly ConcurrentDictionary<INavigation, IReadOnlyList<IProperty>> _trackedPropsCache = new();
+
+    internal static IReadOnlyList<IProperty> GetTrackedProperties(INavigation nav)
+        => _trackedPropsCache.GetOrAdd(nav, static n =>
+            n.TargetEntityType.GetProperties()
+                .Where(p => !p.IsShadowProperty())
+                .ToArray());
+
+    // IProperty.GetValueComparer() can return null when no custom comparer is configured.
+    // Fall back through the type-mapping comparer then ValueComparer.CreateDefault so callers
+    // always receive a non-null comparer. Cached per property — metadata is immutable.
+    private static readonly ConcurrentDictionary<IProperty, ValueComparer> _comparerCache = new();
+
+    internal static ValueComparer GetComparer(IProperty prop)
+        => _comparerCache.GetOrAdd(prop, static p =>
+            p.GetValueComparer()
+                ?? p.FindTypeMapping()?.Comparer
+                ?? ValueComparer.CreateDefault(p.ClrType, favorStructuralComparisons: false));
 }
 
 

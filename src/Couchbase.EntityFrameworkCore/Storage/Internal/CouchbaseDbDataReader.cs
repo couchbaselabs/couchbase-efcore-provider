@@ -3,6 +3,7 @@ using System.Data;
 using System.Data.Common;
 using System.Text.Json;
 using Couchbase.EntityFrameworkCore.Extensions;
+using Couchbase.EntityFrameworkCore.Internal;
 using Couchbase.Query;
 
 namespace Couchbase.EntityFrameworkCore.Storage.Internal;
@@ -217,10 +218,8 @@ public class CouchbaseDbDataReader<T> : DbDataReader
     /// <summary>
     /// Advances the reader to the next row synchronously.
     /// </summary>
-    public override bool Read()
-    {
-        return ReadAsync(CancellationToken.None).GetAwaiter().GetResult();
-    }
+    public override bool Read() =>
+        AsyncHelper.RunSync(static self => self.ReadAsync(CancellationToken.None), this);
 
     /// <summary>
     /// Asynchronously advances the reader to the next row.
@@ -254,14 +253,18 @@ public class CouchbaseDbDataReader<T> : DbDataReader
             _currentRow = ValidateRow(_enumerator.Current);
             _hasCurrentRow = true;
             _hasRows ??= true;
+            BuildCurrentValues();
         }
         else
         {
             _currentRow = default;
             _hasCurrentRow = false;
             _hasRows ??= false;
+            // BuildCurrentValues is not called: _currentValues retains stale data from the
+            // last row, but EnsureCurrentRow() guards every read path and throws before any
+            // caller can observe those slots.  Skipping the call avoids a redundant
+            // Array.Clear on end-of-stream.
         }
-        BuildCurrentValues();
 
         return hasMore;
     }
@@ -425,8 +428,12 @@ public class CouchbaseDbDataReader<T> : DbDataReader
         if (!_isClosed)
         {
             _isClosed = true;
-            _enumerator?.DisposeAsync().AsTask().GetAwaiter().GetResult();
-            _queryResult.Dispose();
+            if (_enumerator != null)
+                AsyncHelper.RunSync(static e => e.DisposeAsync().AsTask(), _enumerator);
+            if (_queryResult is IAsyncDisposable asyncDisposable)
+                AsyncHelper.RunSync(static d => d.DisposeAsync().AsTask(), asyncDisposable);
+            else
+                _queryResult.Dispose();
             _linkedCts?.Dispose();
             _linkedCts = null;
 

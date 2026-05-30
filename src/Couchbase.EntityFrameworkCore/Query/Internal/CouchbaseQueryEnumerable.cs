@@ -30,6 +30,7 @@ public static class CouchbaseQueryEnumerable
         Func<QueryContext, DbDataReader, ResultContext, SingleQueryResultCoordinator, T> shaper,
         Type contextType,
         bool standAloneStateManager,
+        bool isTracking,
         bool detailedErrorsEnabled,
         bool threadSafetyChecksEnabled,
         IBucketProvider bucketProvider,
@@ -42,6 +43,7 @@ public static class CouchbaseQueryEnumerable
             shaper,
             contextType,
             standAloneStateManager,
+            isTracking,
             detailedErrorsEnabled,
             threadSafetyChecksEnabled,
             bucketProvider,
@@ -53,6 +55,9 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
     private readonly bool _threadSafetyChecksEnabled;
     private readonly bool _detailedErrorsEnabled;
     private readonly bool _standAloneStateManager;
+    // True only for QueryTrackingBehavior.TrackAll — the only mode where SnapshotCollectionRefs
+    // produces a snapshot that the interceptor can ever consume via ChangeTracker.Entries().
+    private readonly bool _isTracking;
     private readonly IDiagnosticsLogger<DbLoggerCategory.Query> _queryLogger;
     private readonly Type _contextType;
     private readonly Func<QueryContext, DbDataReader, ResultContext, SingleQueryResultCoordinator, T> _shaper;
@@ -75,6 +80,7 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
         Func<QueryContext, DbDataReader, ResultContext, SingleQueryResultCoordinator, T> shaper,
         Type contextType,
         bool standAloneStateManager,
+        bool isTracking,
         bool detailedErrorsEnabled,
         bool threadSafetyChecksEnabled,
         IBucketProvider bucketProvider,
@@ -88,6 +94,7 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
         _contextType = contextType;
         _queryLogger = relationalQueryContext.QueryLogger;
         _standAloneStateManager = standAloneStateManager;
+        _isTracking = isTracking;
         _detailedErrorsEnabled = detailedErrorsEnabled;
         _threadSafetyChecksEnabled = threadSafetyChecksEnabled;
         _couchbaseDbContextOptionsBuilder = couchbaseDbContextOptionsBuilder;
@@ -240,8 +247,7 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
 
             var accessor = nav.GetCollectionAccessor();
             var clrType = nav.TargetEntityType.ClrType;
-            var properties = nav.TargetEntityType.GetProperties()
-                .Where(p => !p.IsShadowProperty()).ToList();
+            var properties = OwnedCollectionSnapshot.GetTrackedProperties(nav);
 
             if (accessor != null)
             {
@@ -274,16 +280,52 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
         }
     }
 
-    // Record the original collection-object reference for every OwnsMany navigation on
-    // the freshly materialised entity. The save path later compares the current reference
-    // to the stored one; a mismatch (e.g. customer.ContactMethods = []) means the owner
-    // document must be rewritten even when EF Core produced no owned-item change entries.
+    // Record the original collection-object reference and per-item property values for every
+    // OwnsMany navigation on the freshly materialised entity.
+    //
+    // OriginalRefs detects reference replacement (customer.ContactMethods = []).
+    // OriginalItems detects in-place changes: .Add(), .Remove(), or scalar property mutation.
+    // Both are checked in MarkOwnersWithReplacedCollections before SaveChanges.
     private void SnapshotCollectionRefs(T? entity)
     {
-        if (entity == null) return;
-        var refs = OwnedCollectionSnapshot.OriginalRefs.GetOrCreateValue(entity);
+        // Skip entirely for non-tracking queries: the interceptor walks ChangeTracker.Entries(),
+        // so snapshots built for NoTracking / NoTrackingWithIdentityResolution entities are
+        // never consumed and would be immediately GC'd.
+        if (entity == null || !_isTracking) return;
+        var refs  = OwnedCollectionSnapshot.OriginalRefs.GetOrCreateValue(entity);
+        var items = OwnedCollectionSnapshot.OriginalItems.GetOrCreateValue(entity);
         foreach (var nav in _ownedCollectionNavigations)
-            refs[nav.Name] = nav.PropertyInfo?.GetValue(entity);
+        {
+            var currentCollection = nav.PropertyInfo?.GetValue(entity);
+            refs[nav.Name] = currentCollection;
+
+            // Snapshot per-item property values so in-place mutations can be detected even
+            // when the list reference is unchanged.
+            if (currentCollection is IEnumerable collection)
+            {
+                var itemProps = OwnedCollectionSnapshot.GetTrackedProperties(nav);
+                var snapshot = new List<Dictionary<string, object?>>();
+                foreach (var item in collection)
+                {
+                    if (item == null) continue;
+                    var propSnapshot = new Dictionary<string, object?>();
+                    foreach (var prop in itemProps)
+                    {
+                        var raw = prop.PropertyInfo?.GetValue(item);
+                        // Use EF Core's ValueComparer.Snapshot so mutable reference types
+                        // (e.g. byte[]) are deep-copied. For immutable types (string, int, …)
+                        // Snapshot is a no-op that returns the same reference.
+                        propSnapshot[prop.Name] = raw is null ? null : OwnedCollectionSnapshot.GetComparer(prop).Snapshot(raw);
+                    }
+                    snapshot.Add(propSnapshot);
+                }
+                items[nav.Name] = snapshot;
+            }
+            else
+            {
+                items[nav.Name] = [];
+            }
+        }
     }
 
 

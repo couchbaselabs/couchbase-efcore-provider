@@ -1,6 +1,7 @@
 using System.Data;
 using System.Data.Common;
 using Couchbase.EntityFrameworkCore.Infrastructure;
+using Couchbase.EntityFrameworkCore.Internal;
 using Couchbase.Extensions.DependencyInjection;
 using Couchbase.KeyValue;
 using Microsoft.Extensions.Logging;
@@ -150,7 +151,7 @@ public class CouchbaseConnection : DbConnection
 
     public override void Open()
     {
-        OpenAsync(CancellationToken.None).GetAwaiter().GetResult();
+        AsyncHelper.RunSync(static self => self.OpenAsync(CancellationToken.None), this);
     }
 
     public override async Task OpenAsync(CancellationToken cancellationToken)

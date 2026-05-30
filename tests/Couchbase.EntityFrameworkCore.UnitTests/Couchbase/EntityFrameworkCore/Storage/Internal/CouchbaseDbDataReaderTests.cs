@@ -2648,6 +2648,56 @@ public class CouchbaseDbDataReaderTests
 
     #endregion
 
+    #region Phase 5 — Close() and Read() via AsyncHelper
+
+    [Fact]
+    public async Task Close_WithNonDefaultSynchronizationContext_DoesNotDeadlock()
+    {
+        // Uses an async iterator with an async finally block so that DisposeAsync()
+        // genuinely suspends. Without AsyncHelper.RunSync, .GetAwaiter().GetResult() on a
+        // thread with a capturing SynchronizationContext would deadlock because the
+        // continuation never gets posted back to the blocked thread.
+        var reader = CreateReaderWithAsyncDispose();
+        await reader.PrimeAsync(CancellationToken.None); // creates the enumerator
+
+        var completed = false;
+        var thread = new Thread(() =>
+        {
+            SynchronizationContext.SetSynchronizationContext(new CapturingSynchronizationContext());
+            reader.Close();
+            completed = true;
+        });
+        // Background so a deadlock doesn't block the test runner after the Join timeout.
+        thread.IsBackground = true;
+        thread.Start();
+        Assert.True(thread.Join(TimeSpan.FromSeconds(5)),
+            "Close() deadlocked when run under a non-default SynchronizationContext");
+        Assert.True(completed);
+        Assert.True(reader.IsClosed);
+    }
+
+    [Fact]
+    public void Read_WithNonDefaultSynchronizationContext_DoesNotDeadlock()
+    {
+        var rows = new List<JsonElement> { ParseElement("{\"id\": 1}") };
+        var reader = CreateReaderWithYieldingRows(rows);
+
+        var result = false;
+        var thread = new Thread(() =>
+        {
+            SynchronizationContext.SetSynchronizationContext(new CapturingSynchronizationContext());
+            result = reader.Read();
+        });
+        // Background so a deadlock doesn't block the test runner after the Join timeout.
+        thread.IsBackground = true;
+        thread.Start();
+        Assert.True(thread.Join(TimeSpan.FromSeconds(5)),
+            "Read() deadlocked when run under a non-default SynchronizationContext");
+        Assert.True(result);
+    }
+
+    #endregion
+
     private static JsonElement ParseElement(string json)
     {
         using var doc = JsonDocument.Parse(json);
@@ -2680,5 +2730,59 @@ public class CouchbaseDbDataReaderTests
         mockQueryResult.Setup(q => q.Rows).Returns(rows.ToAsyncEnumerable());
 
         return new CouchbaseDbDataReader<JsonElement>(mockQueryResult.Object, columnNames);
+    }
+
+    // Reader whose enumerator has an async finally block so DisposeAsync() genuinely suspends.
+    private static CouchbaseDbDataReader<JsonElement> CreateReaderWithAsyncDispose()
+    {
+        var mockQueryResult = new Mock<IQueryResult<JsonElement>>();
+        mockQueryResult.Setup(q => q.MetaData).Returns(new QueryMetaData { Status = QueryStatus.Success });
+        mockQueryResult.Setup(q => q.Rows).Returns(AsyncEnumerableWithAsyncDispose());
+        return new CouchbaseDbDataReader<JsonElement>(
+            mockQueryResult.Object, connection: null, CommandBehavior.Default, CancellationToken.None);
+    }
+
+    // Reader whose MoveNextAsync genuinely yields so Read() must await through AsyncHelper.
+    private static CouchbaseDbDataReader<JsonElement> CreateReaderWithYieldingRows(List<JsonElement> rows)
+    {
+        var mockQueryResult = new Mock<IQueryResult<JsonElement>>();
+        mockQueryResult.Setup(q => q.MetaData).Returns(new QueryMetaData { Status = QueryStatus.Success });
+        mockQueryResult.Setup(q => q.Rows).Returns(YieldingEnumerable(rows));
+        return new CouchbaseDbDataReader<JsonElement>(
+            mockQueryResult.Object, connection: null, CommandBehavior.Default, CancellationToken.None);
+    }
+
+    // The async finally makes DisposeAsync() genuinely async: when the enumerator is disposed
+    // mid-stream the finally block runs 'await Task.Yield()', suspending the disposal and
+    // posting its continuation to whatever SynchronizationContext is current at that moment.
+    private static async IAsyncEnumerable<JsonElement> AsyncEnumerableWithAsyncDispose()
+    {
+        try
+        {
+            await Task.Yield();
+            yield return ParseElement("{\"id\": 0}");
+        }
+        finally
+        {
+            await Task.Yield();
+        }
+    }
+
+    private static async IAsyncEnumerable<JsonElement> YieldingEnumerable(IEnumerable<JsonElement> rows)
+    {
+        foreach (var row in rows)
+        {
+            await Task.Yield();
+            yield return row;
+        }
+    }
+
+    // Captures Post callbacks without executing them, simulating a UI-thread context where
+    // the thread is blocked. Any .GetAwaiter().GetResult() that relies on Post to run its
+    // continuation will deadlock; AsyncHelper.RunSync avoids this by replacing the context.
+    private sealed class CapturingSynchronizationContext : SynchronizationContext
+    {
+        public override void Post(SendOrPostCallback d, object? state) { }
+        public override void Send(SendOrPostCallback d, object? state) => d(state);
     }
 }
