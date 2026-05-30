@@ -577,6 +577,21 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
 
     protected override Expression VisitSqlFunction(SqlFunctionExpression sqlFunctionExpression)
     {
+        // N1QL's AVG() natively returns a double for any numeric input. Strip the TONUMBER()
+        // that EF Core injects for int/long arguments — it is unnecessary in SQL++ and can
+        // trigger a CouchbaseParsingException on some server versions (NCBC-3891).
+        if (sqlFunctionExpression.IsBuiltIn
+            && sqlFunctionExpression.Name == "AVG"
+            && sqlFunctionExpression.Arguments.Count == 1
+            && sqlFunctionExpression.Arguments[0] is SqlUnaryExpression
+                { OperatorType: ExpressionType.Convert } numericCast)
+        {
+            Sql.Append("AVG(");
+            Visit(numericCast.Operand);
+            Sql.Append(")");
+            return sqlFunctionExpression;
+        }
+
         if (sqlFunctionExpression.IsBuiltIn)
         {
             if (sqlFunctionExpression.Instance != null)
