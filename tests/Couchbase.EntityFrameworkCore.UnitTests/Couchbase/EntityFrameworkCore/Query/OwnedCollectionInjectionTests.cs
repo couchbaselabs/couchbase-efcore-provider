@@ -38,36 +38,11 @@ public class CouchbaseQueryEnumerableTests
 
 public class NestedOwnedSqlGenerationTests
 {
+    // ---- ToList (no subquery) ----
     [Fact]
     public void NestedOwnsMany_ToList_GeneratesValidN1QL()
     {
         using var ctx = CreateContext();
-        var sql = ctx.Customers.AsQueryable().ToQueryString();
-        // Must not contain aliases from skipped owned JOINs
-        Assert.DoesNotContain("cm0", sql);
-        Assert.DoesNotContain("ct0", sql);
-        // Must not have a stray closing paren at start of a line
-        foreach (var line in sql.Split('\n'))
-            Assert.False(line.TrimStart().StartsWith(")") && line.Trim().Length == 1,
-                $"Stray closing paren found in N1QL:\n{sql}");
-    }
-
-
-    private static CustomerContext CreateContext()
-    {
-        var clusterOptions = new global::Couchbase.ClusterOptions()
-            .WithConnectionString("couchbase://localhost")
-            .WithPasswordAuthentication("Administrator", "password");
-        var builder = new Microsoft.EntityFrameworkCore.DbContextOptionsBuilder<CustomerContext>();
-        builder.UseCouchbaseProvider(clusterOptions);
-        return new CustomerContext(builder.Options);
-    }
-
-    // ---- ToList (no subquery) ----
-    [Fact]
-    public void NestedOwnsMany_WithOwnsOneRoot_ToList_GeneratesValidN1QL()
-    {
-        using var ctx = CreateContextWithOwnsOne();
         var sql = ctx.Customers.AsQueryable().ToQueryString();
         Assert.DoesNotContain("cm0", sql);
         Assert.DoesNotContain("ct0", sql);
@@ -77,9 +52,9 @@ public class NestedOwnedSqlGenerationTests
 
     // ---- First (subquery with LIMIT 1) ----
     [Fact]
-    public void NestedOwnsMany_WithOwnsOneRoot_First_GeneratesValidN1QL()
+    public void NestedOwnsMany_First_GeneratesValidN1QL()
     {
-        using var ctx = CreateContextWithOwnsOne();
+        using var ctx = CreateContext();
         var sql = ctx.Customers.Where(c => c.CustomerId == 1).Take(1).AsQueryable().ToQueryString();
         Assert.DoesNotContain("cm0", sql);
         Assert.DoesNotContain("ct0", sql);
@@ -87,7 +62,7 @@ public class NestedOwnedSqlGenerationTests
             Assert.False(line.TrimStart() == ")", $"Stray ) found:\n{sql}");
     }
 
-    private static CustomerContext CreateContextWithOwnsOne()
+    private static CustomerContext CreateContext()
     {
         var clusterOptions = new global::Couchbase.ClusterOptions()
             .WithConnectionString("couchbase://localhost")
