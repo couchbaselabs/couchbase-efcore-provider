@@ -133,9 +133,8 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
     /// <see cref="VisitInnerJoin"/> will suppress when generating SQL.
     /// Includes both direct-table joins (<c>LEFT JOIN owned AS alias</c>) and lateral-join
     /// subqueries (<c>LEFT JOIN (SELECT … FROM owned …) AS alias</c>).
-    /// Used by both the SQL generator (to filter the SELECT projection) and by
-    /// <see cref="CouchbaseShapedQueryCompilingExpressionVisitor"/> (to keep
-    /// <c>projectionAliases</c> aligned with the actual N1QL result columns).
+    /// Used by <see cref="VisitSelect"/> to filter owned-join columns from the emitted
+    /// SELECT projection so N1QL does not see references to undefined table aliases.
     /// </summary>
     internal static HashSet<string> CollectOwnedJoinAliases(SelectExpression selectExpression)
     {
