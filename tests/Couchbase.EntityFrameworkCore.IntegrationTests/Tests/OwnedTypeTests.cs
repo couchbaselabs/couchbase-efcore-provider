@@ -163,7 +163,7 @@ public class OwnedTypeTests(
         await using var ctx = fixture.GetDbContext();
         var customers = await ctx.Customers.ToListAsync();
 
-        Assert.Equal(2, customers.Count);
+        Assert.Equal(3, customers.Count);
         var alice = customers.Single(c => c.Name == "Alice");
         var bob   = customers.Single(c => c.Name == "Bob");
         Assert.Equal(2, alice.ContactMethods.Count);
@@ -403,6 +403,74 @@ public class OwnedTypeTests(
 
         var secondCount = await ctx.SaveChangesAsync();
         Assert.Equal(0, secondCount);
+    }
+
+    // -------------------------------------------------------------------------
+    // Nested owned-type materialisation (Phase 4.3)
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task OwnsOne_Nested_InOwnsMany_IsPopulated()
+    {
+        // ContactMethod.Label is an OwnsOne nested inside an OwnsMany.
+        // MaterializeOwnedItem must recurse into the nested object and set the property.
+        await using var ctx = fixture.GetDbContext();
+        var customer = await ctx.Customers.FirstAsync(c => c.CustomerId == 3);
+
+        Assert.Equal(2, customer.ContactMethods.Count);
+        var email = customer.ContactMethods.First(cm => cm.Type == "email");
+        Assert.NotNull(email.Label);
+        Assert.Equal("Work Email", email.Label.DisplayName);
+        var phone = customer.ContactMethods.First(cm => cm.Type == "phone");
+        Assert.NotNull(phone.Label);
+        Assert.Equal("Mobile", phone.Label.DisplayName);
+    }
+
+    [Fact]
+    public async Task OwnsMany_Nested_InOwnsMany_IsPopulated()
+    {
+        // ContactMethod.Tags is an OwnsMany nested inside an OwnsMany.
+        // MaterializeOwnedItem must recurse into the nested array and materialise each element.
+        await using var ctx = fixture.GetDbContext();
+        var customer = await ctx.Customers.FirstAsync(c => c.CustomerId == 3);
+
+        var email = customer.ContactMethods.First(cm => cm.Type == "email");
+        Assert.Equal(2, email.Tags.Count);
+        Assert.Contains(email.Tags, t => t.Key == "priority" && t.Val == "high");
+        Assert.Contains(email.Tags, t => t.Key == "verified" && t.Val == "true");
+
+        var phone = customer.ContactMethods.First(cm => cm.Type == "phone");
+        Assert.Empty(phone.Tags);
+    }
+
+    [Fact]
+    public async Task OwnsOne_WithExplicitInclude_IsPopulated()
+    {
+        // Explicit .Include(c => c.Address) on an OwnsOne must not break materialisation.
+        // The EF Core relational shaper already projects OwnsOne columns, so Include is a no-op.
+        await using var ctx = fixture.GetDbContext();
+        var customer = await ctx.Customers
+            .Include(c => c.Address)
+            .FirstAsync(c => c.CustomerId == 1);
+
+        Assert.NotNull(customer.Address);
+        Assert.Equal("1 Main St", customer.Address.Street);
+        Assert.Equal("Springfield", customer.Address.City);
+    }
+
+    [Fact]
+    public async Task OwnsMany_NestedOwned_ExistingCustomers_HaveNullOrEmpty()
+    {
+        // Customers 1 and 2 were seeded without Label/Tags on their ContactMethods.
+        // Nested owned navigations must default to null / empty — not throw.
+        await using var ctx = fixture.GetDbContext();
+        var customer = await ctx.Customers.FirstAsync(c => c.CustomerId == 1);
+
+        Assert.All(customer.ContactMethods, cm =>
+        {
+            Assert.Null(cm.Label);
+            Assert.Empty(cm.Tags);
+        });
     }
 
     [Fact]

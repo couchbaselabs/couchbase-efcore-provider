@@ -14,7 +14,11 @@ public class OwnedTypeDbContext(DbContextOptions<OwnedTypeDbContext> options) : 
         {
             b.ToCouchbaseCollection(this, "customer");
             b.OwnsOne(c => c.Address);
-            b.OwnsMany(c => c.ContactMethods);
+            b.OwnsMany(c => c.ContactMethods, cm =>
+            {
+                cm.OwnsOne(m => m.Label);
+                cm.OwnsMany(m => m.Tags);
+            });
         });
 
         modelBuilder.ConfigureToCouchbase(this, true);

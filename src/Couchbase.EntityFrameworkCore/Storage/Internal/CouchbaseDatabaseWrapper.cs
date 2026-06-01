@@ -148,36 +148,50 @@ public class CouchbaseDatabaseWrapper : Database
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var ownership = ownedEntry.EntityType.FindOwnership();
-            if (ownership == null) continue;
+            // Walk the ownership chain up to the root (non-owned) entity.
+            // Deeply nested owned types (e.g. ContactTag → ContactMethod → Customer) require
+            // multiple hops; stop at the first entity type that has its own collection keyspace.
+            var currentEntry = (InternalEntityEntry)ownedEntry;
+            InternalEntityEntry? rootInternalEntry = null;
+            IEntityType? rootEntityType = null;
 
-            // FK values on the owned entry are equal to the owner's PK values.
-            var fkValues = ownership.Properties
-                .Select(p => ownedEntry.GetCurrentValue(p))
-                .ToArray();
+            while (true)
+            {
+                var ownership = currentEntry.EntityType.FindOwnership();
+                if (ownership == null) break;
 
-            var ownerEntityType = ownership.PrincipalEntityType;
+                var fkValues = ownership.Properties
+                    .Select(p => currentEntry.GetCurrentValue(p))
+                    .ToArray();
 
-            // Use StateManager.TryGetEntry for O(1) owner lookup instead of a linear
-            // ChangeTracker.Entries() scan, and get the InternalEntityEntry directly so
-            // the IInfrastructure<InternalEntityEntry> unwrap is no longer needed.
-            var stateManager = ((InternalEntityEntry)ownedEntry).StateManager;
-            var ownerInternalEntry = stateManager.TryGetEntry(ownership.PrincipalKey, fkValues);
-            if (ownerInternalEntry == null) continue;
+                var ownerEntry = currentEntry.StateManager.TryGetEntry(ownership.PrincipalKey, fkValues);
+                if (ownerEntry == null) break;
 
-            var ownerEntity = ownerInternalEntry.Entity;
-            var ownerPrimaryKey = ownerEntityType.GetPrimaryKey(ownerEntity);
-            var rootKey = $"{ownerEntityType.ClrType.Name}:{ownerPrimaryKey}";
+                if (!ownership.PrincipalEntityType.IsOwned())
+                {
+                    rootInternalEntry = ownerEntry;
+                    rootEntityType = ownership.PrincipalEntityType;
+                    break;
+                }
+
+                currentEntry = ownerEntry;
+            }
+
+            if (rootInternalEntry == null || rootEntityType == null) continue;
+
+            var ownerEntity = rootInternalEntry.Entity;
+            var ownerPrimaryKey = rootEntityType.GetPrimaryKey(ownerEntity);
+            var rootKey = $"{rootEntityType.ClrType.Name}:{ownerPrimaryKey}";
 
             if (writtenRoots.Contains(rootKey)) continue;
             writtenRoots.Add(rootKey);
 
-            var ownerKeyspace = ownerEntityType.GetCollectionName()
+            var ownerKeyspace = rootEntityType.GetCollectionName()
                 ?? throw new InvalidOperationException(
-                    $"Owner entity type '{ownerEntityType.ClrType.Name}' has no mapped table name. " +
+                    $"Owner entity type '{rootEntityType.ClrType.Name}' has no mapped table name. " +
                     "Ensure the entity is mapped to a Couchbase collection via ToCouchbaseCollection().");
 
-            var ownerDocument = HydrateObjectFromEntity(ownerInternalEntry, _fieldNamingPolicy);
+            var ownerDocument = HydrateObjectFromEntity(rootInternalEntry, _fieldNamingPolicy);
 
             if (transaction != null)
             {
@@ -275,16 +289,9 @@ public class CouchbaseDatabaseWrapper : Database
                 var fieldName = fieldNamingPolicy?.ConvertName(nav.Name) ?? nav.Name;
                 if (navValue is IEnumerable items)
                 {
-                    var itemProps = nav.TargetEntityType.GetProperties()
-                        .Where(p => !p.IsShadowProperty()).ToList();
                     var list = new List<Dictionary<string, object?>>();
                     foreach (var item in items)
-                    {
-                        var itemDoc = new Dictionary<string, object?>();
-                        foreach (var p in itemProps)
-                            itemDoc[fieldNamingPolicy?.ConvertName(p.Name) ?? p.Name] = p.PropertyInfo?.GetValue(item);
-                        list.Add(itemDoc);
-                    }
+                        list.Add(SerializeOwnedItem(item, nav.TargetEntityType, fieldNamingPolicy));
                     doc[fieldName] = list;
                 }
                 else
@@ -295,6 +302,59 @@ public class CouchbaseDatabaseWrapper : Database
             else
             {
                 FillOwnsOneIntoDoc(doc, nav, navValue);
+            }
+        }
+
+        return doc;
+    }
+
+    /// <summary>
+    /// Recursively serializes a single owned-item CLR instance to a dictionary,
+    /// including any nested OwnsOne / OwnsMany navigations at arbitrary depth.
+    /// </summary>
+    private static Dictionary<string, object?> SerializeOwnedItem(
+        object item,
+        IEntityType entityType,
+        JsonNamingPolicy? fieldNamingPolicy)
+    {
+        var doc = new Dictionary<string, object?>();
+
+        foreach (var p in entityType.GetProperties())
+        {
+            if (p.IsShadowProperty()) continue;
+            doc[fieldNamingPolicy?.ConvertName(p.Name) ?? p.Name] = p.PropertyInfo?.GetValue(item);
+        }
+
+        foreach (var nav in entityType.GetNavigations())
+        {
+            if (!nav.TargetEntityType.IsOwned() || nav.PropertyInfo == null) continue;
+            var navValue = nav.PropertyInfo.GetValue(item);
+            var fieldName = fieldNamingPolicy?.ConvertName(nav.Name) ?? nav.Name;
+
+            if (nav.IsCollection)
+            {
+                if (navValue is IEnumerable nested)
+                {
+                    var list = new List<Dictionary<string, object?>>();
+                    foreach (var nestedItem in nested)
+                        list.Add(SerializeOwnedItem(nestedItem, nav.TargetEntityType, fieldNamingPolicy));
+                    doc[fieldName] = list;
+                }
+                else
+                {
+                    doc[fieldName] = null;
+                }
+            }
+            else
+            {
+                if (navValue == null)
+                {
+                    doc[fieldName] = null;
+                }
+                else
+                {
+                    doc[fieldName] = SerializeOwnedItem(navValue, nav.TargetEntityType, fieldNamingPolicy);
+                }
             }
         }
 
