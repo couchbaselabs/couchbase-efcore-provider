@@ -47,7 +47,7 @@ public class NestedOwnedSqlGenerationTests
         Assert.DoesNotContain("cm0", sql);
         Assert.DoesNotContain("ct0", sql);
         foreach (var line in sql.Split('\n'))
-            Assert.False(line.TrimStart() == ")", $"Stray ) found:\n{sql}");
+            Assert.False(line.Trim() == ")", $"Stray ) found:\n{sql}");
     }
 
     // ---- First (subquery with LIMIT 1) ----
@@ -59,7 +59,7 @@ public class NestedOwnedSqlGenerationTests
         Assert.DoesNotContain("cm0", sql);
         Assert.DoesNotContain("ct0", sql);
         foreach (var line in sql.Split('\n'))
-            Assert.False(line.TrimStart() == ")", $"Stray ) found:\n{sql}");
+            Assert.False(line.Trim() == ")", $"Stray ) found:\n{sql}");
     }
 
     private static CustomerContext CreateContext()
