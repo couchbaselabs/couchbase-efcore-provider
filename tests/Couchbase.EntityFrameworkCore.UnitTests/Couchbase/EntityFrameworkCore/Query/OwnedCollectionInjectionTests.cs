@@ -52,15 +52,6 @@ public class NestedOwnedSqlGenerationTests
                 $"Stray closing paren found in N1QL:\n{sql}");
     }
 
-    [Fact]
-    public void NestedOwnsMany_ToList_CaptureSQL()
-    {
-        using var ctx = CreateContext();
-        var sql = ctx.Customers.AsQueryable().ToQueryString();
-        // Output the SQL so it appears in the test runner log
-        Assert.NotNull(sql);
-        _ = sql; // set breakpoint here to inspect
-    }
 
     private static CustomerContext CreateContext()
     {
