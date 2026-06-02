@@ -58,7 +58,9 @@ internal sealed class CouchbaseCollectionSnapshot
 
         foreach (var nav in ownedCollections)
         {
-            var currentCollection = nav.PropertyInfo?.GetValue(entity);
+            var currentCollection = nav.PropertyInfo != null
+                ? nav.PropertyInfo.GetValue(entity)
+                : nav.FieldInfo?.GetValue(entity);
             refs[nav.Name] = currentCollection;
 
             // Snapshot per-item property values so in-place mutations can be detected
