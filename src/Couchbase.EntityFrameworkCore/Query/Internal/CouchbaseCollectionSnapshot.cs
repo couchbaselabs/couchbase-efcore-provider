@@ -76,7 +76,9 @@ internal sealed class CouchbaseCollectionSnapshot
                     var propSnapshot = new Dictionary<string, object?>();
                     foreach (var prop in itemProps)
                     {
-                        var raw = prop.PropertyInfo?.GetValue(item);
+                        var raw = prop.PropertyInfo != null
+                        ? prop.PropertyInfo.GetValue(item)
+                        : prop.FieldInfo?.GetValue(item);
                         // Use EF Core's ValueComparer.Snapshot so mutable reference types
                         // (e.g. byte[]) are deep-copied; for immutable types it is a no-op.
                         propSnapshot[prop.Name] = raw is null
