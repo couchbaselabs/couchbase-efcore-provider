@@ -148,9 +148,10 @@ public class CouchbaseDatabaseWrapper : Database
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            // Walk the ownership chain up to the root (non-owned) entity.
+            // Walk the ownership chain up to the root non-owned entity.
             // Deeply nested owned types (e.g. ContactTag → ContactMethod → Customer) require
-            // multiple hops; stop at the first entity type that has its own collection keyspace.
+            // multiple hops; stop at the first principal whose entity type is not owned —
+            // only non-owned types have an independent Couchbase keyspace to write to.
             var currentEntry = (InternalEntityEntry)ownedEntry;
             InternalEntityEntry? rootInternalEntry = null;
             IEntityType? rootEntityType = null;
