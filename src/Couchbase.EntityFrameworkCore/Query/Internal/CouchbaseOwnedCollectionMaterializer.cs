@@ -214,7 +214,7 @@ internal sealed class CouchbaseOwnedCollectionMaterializer
             _ when t == typeof(bool)     => element.GetBoolean(),
             _ when t == typeof(Guid)     => element.GetGuid(),
             _ when t == typeof(DateTime) => element.GetDateTime(),
-            _ => JsonSerializer.Deserialize(element.GetRawText(), t, options)
+            _ => JsonSerializer.Deserialize(element, t, options)
         };
     }
 }
