@@ -156,8 +156,8 @@ internal sealed class CouchbaseOwnedCollectionMaterializer
             {
                 if (nestedElement.ValueKind != JsonValueKind.Array) continue;
                 var accessor = ownedNav.GetCollectionAccessor();
-                // Skip navigations with no accessor and no PropertyInfo — nothing to set.
-                if (accessor == null && ownedNav.PropertyInfo == null) continue;
+                // Skip navigations with no accessor and no way to assign — nothing to set.
+                if (accessor == null && ownedNav.PropertyInfo == null && ownedNav.FieldInfo == null) continue;
                 var nestedClrType = ownedNav.TargetEntityType.ClrType;
                 if (accessor != null)
                 {
@@ -175,7 +175,12 @@ internal sealed class CouchbaseOwnedCollectionMaterializer
                 else
                 {
                     var list = (IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(nestedClrType))!;
-                    ownedNav.PropertyInfo!.SetValue(ownedEntity, list);
+                    // Use the property setter when one exists; fall back to FieldInfo for
+                    // backing-field navigations where PropertyInfo is null or has no setter.
+                    if (ownedNav.PropertyInfo?.GetSetMethod(nonPublic: true) != null)
+                        ownedNav.PropertyInfo.SetValue(ownedEntity, list);
+                    else if (ownedNav.FieldInfo != null)
+                        ownedNav.FieldInfo.SetValue(ownedEntity, list);
                 }
                 foreach (var nestedItemElement in nestedElement.EnumerateArray())
                 {
@@ -184,20 +189,25 @@ internal sealed class CouchbaseOwnedCollectionMaterializer
                         accessor.Add(ownedEntity, nestedEntity, forMaterialization: true);
                     else
                     {
-                        // PropertyInfo is guaranteed non-null here: we skipped above when both
-                        // accessor and PropertyInfo are null, and accessor is null in this branch.
-                        var existingList = (IList)ownedNav.PropertyInfo!.GetValue(ownedEntity)!;
-                        existingList.Add(nestedEntity);
+                        // Read back via the same PropertyInfo → FieldInfo fallback.
+                        var existingList = (IList?)(ownedNav.PropertyInfo != null
+                            ? ownedNav.PropertyInfo.GetValue(ownedEntity)
+                            : ownedNav.FieldInfo?.GetValue(ownedEntity));
+                        existingList?.Add(nestedEntity);
                     }
                 }
             }
             else
             {
                 if (nestedElement.ValueKind != JsonValueKind.Object) continue;
-                // Skip shadow/field-only navigations — no PropertyInfo means nowhere to assign.
-                if (ownedNav.PropertyInfo == null) continue;
+                // Skip navigations with no way to assign.
+                if (ownedNav.PropertyInfo == null && ownedNav.FieldInfo == null) continue;
                 var nestedEntity = MaterializeOwnedItem(nestedElement, ownedNav.TargetEntityType, fieldNamingPolicy, options);
-                ownedNav.PropertyInfo.SetValue(ownedEntity, nestedEntity);
+                // Use property setter when available; fall back to FieldInfo.
+                if (ownedNav.PropertyInfo?.GetSetMethod(nonPublic: true) != null)
+                    ownedNav.PropertyInfo.SetValue(ownedEntity, nestedEntity);
+                else if (ownedNav.FieldInfo != null)
+                    ownedNav.FieldInfo.SetValue(ownedEntity, nestedEntity);
             }
         }
 
