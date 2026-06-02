@@ -1,5 +1,4 @@
 using System.Collections;
-using System.Reflection;
 using System.Text.Json;
 using Couchbase.EntityFrameworkCore.Query.Internal;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -28,14 +27,12 @@ public class PopulateCollectionNavigationsTests
         public string? Value { get; set; }
     }
 
-    // Reflection entry point — PopulateCollectionNavigations is private static on the generic class.
-    private static readonly MethodInfo PopulateMethod =
-        typeof(CouchbaseQueryEnumerable<OwnerEntity>)
-            .GetMethod("PopulateCollectionNavigations", BindingFlags.NonPublic | BindingFlags.Static)!;
+    // Direct call — PopulateCollectionNavigations now lives in CouchbaseOwnedCollectionMaterializer.
+    private static readonly CouchbaseOwnedCollectionMaterializer _materializer = new();
 
     private static void Populate(OwnerEntity entity, JsonElement doc, IReadOnlyList<INavigation> navs,
         JsonNamingPolicy? policy = null, JsonSerializerOptions? serializerOptions = null)
-        => PopulateMethod.Invoke(null, [entity, doc, navs, policy, serializerOptions]);
+        => _materializer.Populate(entity, doc, navs, policy, serializerOptions);
 
     /// <summary>
     /// Builds a mock INavigation whose single owned property has CLR name "Value"
