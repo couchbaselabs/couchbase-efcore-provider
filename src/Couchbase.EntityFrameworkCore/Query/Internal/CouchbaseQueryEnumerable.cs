@@ -55,7 +55,7 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
     private readonly bool _threadSafetyChecksEnabled;
     private readonly bool _detailedErrorsEnabled;
     private readonly bool _standAloneStateManager;
-    // True only for QueryTrackingBehavior.TrackAll — the only mode where SnapshotCollectionRefs
+    // True only for QueryTrackingBehavior.TrackAll — the only mode where CouchbaseCollectionSnapshot.Record
     // produces a snapshot that the interceptor can ever consume via ChangeTracker.Entries().
     private readonly bool _isTracking;
     private readonly IDiagnosticsLogger<DbLoggerCategory.Query> _queryLogger;
@@ -72,6 +72,7 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
     private readonly DbContext _dbContext;
     private readonly IReadOnlyList<INavigation> _ownedCollectionNavigations;
     private readonly CouchbaseOwnedCollectionMaterializer _materializer = new();
+    private readonly CouchbaseCollectionSnapshot _snapshot = new();
 
     public CouchbaseQueryEnumerable(
         RelationalQueryContext relationalQueryContext,
@@ -192,7 +193,7 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
                     && rowElement.ValueKind == JsonValueKind.Object)
                 {
                     _materializer.Populate(result, rowElement, _ownedCollectionNavigations, _couchbaseDbContextOptionsBuilder.FieldNamingPolicy, _couchbaseDbContextOptionsBuilder.SerializerOptions);
-                    SnapshotCollectionRefs(result);
+                    _snapshot.Record(result, _ownedCollectionNavigations, _isTracking);
                 }
                 pendingEntityRow = null;
                 yield return result;
@@ -224,7 +225,7 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
                         && lastRow.ValueKind == JsonValueKind.Object)
                     {
                         _materializer.Populate(last, lastRow, _ownedCollectionNavigations, _couchbaseDbContextOptionsBuilder.FieldNamingPolicy, _couchbaseDbContextOptionsBuilder.SerializerOptions);
-                        SnapshotCollectionRefs(last);
+                        _snapshot.Record(last, _ownedCollectionNavigations, _isTracking);
                     }
                     pendingEntityRow = null;
                     yield return last;
@@ -233,55 +234,6 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
             }
         }
     }
-
-    // Record the original collection-object reference and per-item property values for every
-    // OwnsMany navigation on the freshly materialised entity.
-    //
-    // OriginalRefs detects reference replacement (customer.ContactMethods = []).
-    // OriginalItems detects in-place changes: .Add(), .Remove(), or scalar property mutation.
-    // Both are checked in MarkOwnersWithReplacedCollections before SaveChanges.
-    private void SnapshotCollectionRefs(T? entity)
-    {
-        // Skip entirely for non-tracking queries: the interceptor walks ChangeTracker.Entries(),
-        // so snapshots built for NoTracking / NoTrackingWithIdentityResolution entities are
-        // never consumed and would be immediately GC'd.
-        if (entity == null || !_isTracking) return;
-        var refs  = OwnedCollectionSnapshot.OriginalRefs.GetOrCreateValue(entity);
-        var items = OwnedCollectionSnapshot.OriginalItems.GetOrCreateValue(entity);
-        foreach (var nav in _ownedCollectionNavigations)
-        {
-            var currentCollection = nav.PropertyInfo?.GetValue(entity);
-            refs[nav.Name] = currentCollection;
-
-            // Snapshot per-item property values so in-place mutations can be detected even
-            // when the list reference is unchanged.
-            if (currentCollection is IEnumerable collection)
-            {
-                var itemProps = OwnedCollectionSnapshot.GetTrackedProperties(nav);
-                var snapshot = new List<Dictionary<string, object?>>();
-                foreach (var item in collection)
-                {
-                    if (item == null) continue;
-                    var propSnapshot = new Dictionary<string, object?>();
-                    foreach (var prop in itemProps)
-                    {
-                        var raw = prop.PropertyInfo?.GetValue(item);
-                        // Use EF Core's ValueComparer.Snapshot so mutable reference types
-                        // (e.g. byte[]) are deep-copied. For immutable types (string, int, …)
-                        // Snapshot is a no-op that returns the same reference.
-                        propSnapshot[prop.Name] = raw is null ? null : OwnedCollectionSnapshot.GetComparer(prop).Snapshot(raw);
-                    }
-                    snapshot.Add(propSnapshot);
-                }
-                items[nav.Name] = snapshot;
-            }
-            else
-            {
-                items[nav.Name] = [];
-            }
-        }
-    }
-
 
     /// <summary>
     ///     <para>
