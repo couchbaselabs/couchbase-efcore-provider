@@ -51,7 +51,7 @@ internal sealed class CouchbaseCollectionSnapshot
     /// </param>
     public void Record<T>(T entity, IReadOnlyList<INavigation> ownedCollections, bool isTracking)
     {
-        if (entity == null || !isTracking) return;
+        if (entity is null || !isTracking) return;
 
         var refs  = OwnedCollectionSnapshot.OriginalRefs.GetOrCreateValue(entity);
         var items = OwnedCollectionSnapshot.OriginalItems.GetOrCreateValue(entity);
