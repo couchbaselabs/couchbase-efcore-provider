@@ -109,7 +109,8 @@ public class CouchbaseOwnedCollectionMaterializerTests
         var base64 = Convert.ToBase64String(bytes);
         var el = JsonDocument.Parse($"\"{base64}\"").RootElement;
         var result = CouchbaseOwnedCollectionMaterializer.ConvertJsonValue(el, typeof(byte[]), _webOptions);
-        Assert.Equal(bytes, result);
+        var typed = Assert.IsType<byte[]>(result);
+        Assert.Equal(bytes, typed);
     }
 
     // -------------------------------------------------------------------------
