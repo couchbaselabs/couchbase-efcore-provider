@@ -311,7 +311,15 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
                 if (accessor != null)
                 {
                     var coll = accessor.GetOrCreate(ownedEntity, forMaterialization: true);
-                    (coll as IList)?.Clear();
+                    // Clear via IList for the common List<T> case; otherwise cast through
+                    // ICollection<T> which every mutable .NET collection implements and which
+                    // guarantees Clear() — this correctly handles HashSet<T>, SortedSet<T>, etc.
+                    if (coll is IList list)
+                        list.Clear();
+                    else if (coll != null)
+                        typeof(ICollection<>).MakeGenericType(nestedClrType)
+                            .GetMethod("Clear")!
+                            .Invoke(coll, null);
                 }
                 else
                 {

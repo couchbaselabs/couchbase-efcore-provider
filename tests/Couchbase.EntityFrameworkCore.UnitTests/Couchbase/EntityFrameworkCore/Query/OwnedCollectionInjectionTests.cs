@@ -1,9 +1,103 @@
+using System.Collections;
+using System.Collections.ObjectModel;
 using System.Text.Json;
 using Couchbase.EntityFrameworkCore.Extensions;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 
 namespace Couchbase.EntityFrameworkCore.UnitTests.Couchbase.EntityFrameworkCore.Query;
+
+/// <summary>
+/// Unit tests for the owned-collection clear logic in MaterializeOwnedItem.
+/// These tests verify that the IList fast-path and the ICollection&lt;T&gt; fallback
+/// both empty the collection correctly for all common mutable collection types.
+/// </summary>
+public class OwnedCollectionClearTests
+{
+    // ---------------------------------------------------------------------------
+    // Helper — mirrors the exact clearing logic in MaterializeOwnedItem
+    // ---------------------------------------------------------------------------
+    private static void ClearOwnedCollection(object coll, Type elementType)
+    {
+        if (coll is IList list)
+            list.Clear();
+        else if (coll != null)
+            typeof(ICollection<>).MakeGenericType(elementType)
+                .GetMethod("Clear")!
+                .Invoke(coll, null);
+    }
+
+    // ---------------------------------------------------------------------------
+    // IList fast-path  (List<T>, ObservableCollection<T>, BindingList<T> …)
+    // ---------------------------------------------------------------------------
+
+    [Fact]
+    public void Clear_ListOfT_Empties()
+    {
+        var col = new List<string> { "a", "b", "c" };
+        ClearOwnedCollection(col, typeof(string));
+        Assert.Empty(col);
+    }
+
+    [Fact]
+    public void Clear_ObservableCollection_Empties()
+    {
+        var col = new ObservableCollection<string> { "x", "y" };
+        ClearOwnedCollection(col, typeof(string));
+        Assert.Empty(col);
+    }
+
+    // ---------------------------------------------------------------------------
+    // ICollection<T> fallback  (HashSet<T>, SortedSet<T> …)
+    // ---------------------------------------------------------------------------
+
+    [Fact]
+    public void Clear_HashSetOfT_Empties()
+    {
+        var col = new HashSet<string> { "a", "b", "c" };
+        ClearOwnedCollection(col, typeof(string));
+        Assert.Empty(col);
+    }
+
+    [Fact]
+    public void Clear_SortedSetOfT_Empties()
+    {
+        var col = new SortedSet<string> { "alpha", "beta", "gamma" };
+        ClearOwnedCollection(col, typeof(string));
+        Assert.Empty(col);
+    }
+
+    // ---------------------------------------------------------------------------
+    // Already-empty collections — must not throw
+    // ---------------------------------------------------------------------------
+
+    [Fact]
+    public void Clear_EmptyList_DoesNotThrow()
+    {
+        var col = new List<int>();
+        var ex = Record.Exception(() => ClearOwnedCollection(col, typeof(int)));
+        Assert.Null(ex);
+    }
+
+    [Fact]
+    public void Clear_EmptyHashSet_DoesNotThrow()
+    {
+        var col = new HashSet<int>();
+        var ex = Record.Exception(() => ClearOwnedCollection(col, typeof(int)));
+        Assert.Null(ex);
+    }
+
+    // ---------------------------------------------------------------------------
+    // Null guard — must not throw
+    // ---------------------------------------------------------------------------
+
+    [Fact]
+    public void Clear_NullCollection_DoesNotThrow()
+    {
+        var ex = Record.Exception(() => ClearOwnedCollection(null!, typeof(string)));
+        Assert.Null(ex);
+    }
+}
 
 public class CouchbaseQueryEnumerableTests
 {

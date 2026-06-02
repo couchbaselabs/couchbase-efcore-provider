@@ -111,4 +111,26 @@ public class OwnedTypeFixture : CouchbaseFixture<OwnedTypeDbContext>
         public string Key { get; set; } = "";
         public string Val { get; set; } = "";
     }
+
+    // -------------------------------------------------------------------------
+    // HashSet<T>-backed model — used by OwnedCollectionClearIntegrationTests
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// An entity whose OwnsMany navigation uses HashSet&lt;T&gt; instead of List&lt;T&gt;.
+    /// This exercises the ICollection&lt;T&gt; fallback clear path in MaterializeOwnedItem.
+    /// </summary>
+    public class HashSetCustomer
+    {
+        public int Id { get; set; }
+        public string Name { get; set; } = "";
+        /// <summary>Intentionally HashSet, not List — tests the non-IList clear path.</summary>
+        public HashSet<HashSetTag> Tags { get; set; } = [];
+    }
+
+    public class HashSetTag
+    {
+        public int Id { get; set; }
+        public string Value { get; set; } = "";
+    }
 }

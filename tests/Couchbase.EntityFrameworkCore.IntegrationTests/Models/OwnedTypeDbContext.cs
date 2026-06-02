@@ -8,6 +8,12 @@ public class OwnedTypeDbContext(DbContextOptions<OwnedTypeDbContext> options) : 
 {
     public DbSet<OwnedTypeFixture.Customer> Customers { get; set; }
 
+    /// <summary>
+    /// HashSet&lt;T&gt;-backed entity — exercises the ICollection&lt;T&gt; fallback clear path
+    /// in MaterializeOwnedItem (the non-IList branch).
+    /// </summary>
+    public DbSet<OwnedTypeFixture.HashSetCustomer> HashSetCustomers { get; set; }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<OwnedTypeFixture.Customer>(b =>
@@ -19,6 +25,13 @@ public class OwnedTypeDbContext(DbContextOptions<OwnedTypeDbContext> options) : 
                 cm.OwnsOne(m => m.Label);
                 cm.OwnsMany(m => m.Tags);
             });
+        });
+
+        modelBuilder.Entity<OwnedTypeFixture.HashSetCustomer>(b =>
+        {
+            b.ToCouchbaseCollection(this, "hashsetcustomer");
+            b.HasKey(c => c.Id);
+            b.OwnsMany(c => c.Tags, t => t.HasKey(t => t.Id));
         });
 
         modelBuilder.ConfigureToCouchbase(this, true);
