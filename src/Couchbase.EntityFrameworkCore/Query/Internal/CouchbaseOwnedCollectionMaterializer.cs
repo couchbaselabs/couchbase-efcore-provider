@@ -122,7 +122,16 @@ internal sealed class CouchbaseOwnedCollectionMaterializer
             if (prop.IsShadowProperty()) continue;
             var jsonKey = fieldNamingPolicy?.ConvertName(prop.Name) ?? prop.Name;
             if (itemElement.TryGetPropertyCI(jsonKey, out var propElement))
-                prop.PropertyInfo?.SetValue(ownedEntity, ConvertJsonValue(propElement, prop.ClrType, options));
+            {
+                var converted = ConvertJsonValue(propElement, prop.ClrType, options);
+                // Use the property setter when one exists (public or non-public).
+                // Fall back to FieldInfo for backing-field / field-access properties where
+                // PropertyInfo is null or has no setter (e.g. init-only / get-only).
+                if (prop.PropertyInfo?.GetSetMethod(nonPublic: true) != null)
+                    prop.PropertyInfo.SetValue(ownedEntity, converted);
+                else if (prop.FieldInfo != null)
+                    prop.FieldInfo.SetValue(ownedEntity, converted);
+            }
         }
 
         // Nested owned navigations
