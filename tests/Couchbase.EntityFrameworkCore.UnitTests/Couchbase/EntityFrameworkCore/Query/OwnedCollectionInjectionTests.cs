@@ -44,10 +44,10 @@ public class NestedOwnedSqlGenerationTests
     {
         using var ctx = CreateContext();
         var sql = ctx.Customers.AsQueryable().ToQueryString();
-        Assert.DoesNotContain("cm0", sql);
-        Assert.DoesNotContain("ct0", sql);
-        foreach (var line in sql.Split('\n'))
-            Assert.False(line.Trim() == ")", $"Stray ) found:\n{sql}");
+        // Owned types are embedded JSON — no JOIN should be emitted.
+        Assert.DoesNotContain("JOIN", sql, StringComparison.OrdinalIgnoreCase);
+        // Parentheses must be balanced (catches stray-paren regressions regardless of formatting).
+        Assert.Equal(sql.Count(c => c == '('), sql.Count(c => c == ')'));
     }
 
     // ---- First (subquery with LIMIT 1) ----
@@ -56,10 +56,8 @@ public class NestedOwnedSqlGenerationTests
     {
         using var ctx = CreateContext();
         var sql = ctx.Customers.Where(c => c.CustomerId == 1).Take(1).AsQueryable().ToQueryString();
-        Assert.DoesNotContain("cm0", sql);
-        Assert.DoesNotContain("ct0", sql);
-        foreach (var line in sql.Split('\n'))
-            Assert.False(line.Trim() == ")", $"Stray ) found:\n{sql}");
+        Assert.DoesNotContain("JOIN", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(sql.Count(c => c == '('), sql.Count(c => c == ')'));
     }
 
     private static CustomerContext CreateContext()
