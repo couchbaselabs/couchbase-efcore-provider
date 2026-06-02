@@ -305,6 +305,8 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
             {
                 if (nestedElement.ValueKind != JsonValueKind.Array) continue;
                 var accessor = ownedNav.GetCollectionAccessor();
+                // Skip navigations with no accessor and no PropertyInfo — nothing to set.
+                if (accessor == null && ownedNav.PropertyInfo == null) continue;
                 var nestedClrType = ownedNav.TargetEntityType.ClrType;
                 if (accessor != null)
                 {
@@ -314,7 +316,7 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
                 else
                 {
                     var list = (IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(nestedClrType))!;
-                    ownedNav.PropertyInfo?.SetValue(ownedEntity, list);
+                    ownedNav.PropertyInfo!.SetValue(ownedEntity, list);
                 }
                 foreach (var nestedItemElement in nestedElement.EnumerateArray())
                 {
@@ -322,14 +324,21 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
                     if (accessor != null)
                         accessor.Add(ownedEntity, nestedEntity, forMaterialization: true);
                     else
-                        ((IList)ownedNav.PropertyInfo!.GetValue(ownedEntity)!).Add(nestedEntity);
+                    {
+                        // PropertyInfo is guaranteed non-null here: we skipped above when both
+                        // accessor and PropertyInfo are null, and accessor is null in this branch.
+                        var existingList = (IList)ownedNav.PropertyInfo!.GetValue(ownedEntity)!;
+                        existingList.Add(nestedEntity);
+                    }
                 }
             }
             else
             {
                 if (nestedElement.ValueKind != JsonValueKind.Object) continue;
+                // Skip shadow/field-only navigations — no PropertyInfo means nowhere to assign.
+                if (ownedNav.PropertyInfo == null) continue;
                 var nestedEntity = MaterializeOwnedItem(nestedElement, ownedNav.TargetEntityType, fieldNamingPolicy, options);
-                ownedNav.PropertyInfo?.SetValue(ownedEntity, nestedEntity);
+                ownedNav.PropertyInfo.SetValue(ownedEntity, nestedEntity);
             }
         }
 
