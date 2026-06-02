@@ -213,7 +213,13 @@ public class CouchbaseDatabaseWrapper : Database
     internal static void FillOwnsOneIntoDoc(Dictionary<string, object?> doc, INavigation nav, object? navValue)
     {
         foreach (var p in nav.TargetEntityType.GetProperties().Where(p => !p.IsShadowProperty()))
-            doc[p.GetColumnName()] = navValue == null ? null : p.PropertyInfo?.GetValue(navValue);
+        {
+            // Read via PropertyInfo when available; fall back to FieldInfo for field-access properties.
+            var value = navValue == null ? null
+                : p.PropertyInfo != null ? p.PropertyInfo.GetValue(navValue)
+                : p.FieldInfo?.GetValue(navValue);
+            doc[p.GetColumnName()] = value;
+        }
     }
 
     private CouchbaseDbTransaction? GetCurrentTransaction()
@@ -284,7 +290,11 @@ public class CouchbaseDatabaseWrapper : Database
         var entity = updateEntry.ToEntityEntry().Entity;
         foreach (var nav in ownedNavs)
         {
-            var navValue = nav.PropertyInfo!.GetValue(entity);
+            // Read via PropertyInfo when available; fall back to FieldInfo for field-access
+            // properties (backing-field or [BackingField]-annotated) where PropertyInfo is null.
+            var navValue = nav.PropertyInfo != null
+                ? nav.PropertyInfo.GetValue(entity)
+                : nav.FieldInfo?.GetValue(entity);
             if (nav.IsCollection)
             {
                 var fieldName = fieldNamingPolicy?.ConvertName(nav.Name) ?? nav.Name;
@@ -292,7 +302,18 @@ public class CouchbaseDatabaseWrapper : Database
                 {
                     var list = new List<Dictionary<string, object?>>();
                     foreach (var item in items)
-                        list.Add(SerializeOwnedItem(item, nav.TargetEntityType, fieldNamingPolicy));
+                    {
+                        var itemDoc = new Dictionary<string, object?>();
+                        foreach (var p in itemProps)
+                        {
+                            // Same PropertyInfo → FieldInfo fallback for each owned-item scalar.
+                            var value = p.PropertyInfo != null
+                                ? p.PropertyInfo.GetValue(item)
+                                : p.FieldInfo?.GetValue(item);
+                            itemDoc[fieldNamingPolicy?.ConvertName(p.Name) ?? p.Name] = value;
+                        }
+                        list.Add(itemDoc);
+                    }
                     doc[fieldName] = list;
                 }
                 else
