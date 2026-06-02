@@ -81,7 +81,12 @@ internal sealed class CouchbaseOwnedCollectionMaterializer
             else
             {
                 var list = (IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(clrType))!;
-                nav.PropertyInfo?.SetValue(entity, list);
+                // Use the property setter when one exists; fall back to FieldInfo for
+                // backing-field navigations where PropertyInfo is null or has no setter.
+                if (nav.PropertyInfo?.GetSetMethod(nonPublic: true) != null)
+                    nav.PropertyInfo.SetValue(entity, list);
+                else if (nav.FieldInfo != null)
+                    nav.FieldInfo.SetValue(entity, list);
             }
 
             foreach (var itemElement in arrayElement.EnumerateArray())
@@ -90,7 +95,13 @@ internal sealed class CouchbaseOwnedCollectionMaterializer
                 if (accessor != null)
                     accessor.Add(entity!, ownedEntity, forMaterialization: true);
                 else
-                    ((IList)nav.PropertyInfo!.GetValue(entity)!).Add(ownedEntity);
+                {
+                    // Read the list back via the same PropertyInfo → FieldInfo fallback.
+                    var existingList = (IList?)(nav.PropertyInfo != null
+                        ? nav.PropertyInfo.GetValue(entity)
+                        : nav.FieldInfo?.GetValue(entity));
+                    existingList?.Add(ownedEntity);
+                }
             }
         }
     }
