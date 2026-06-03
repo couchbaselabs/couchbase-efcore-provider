@@ -42,6 +42,12 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
         if (leftJoinExpression.Table is TableExpression tableExpression && IsOwnedTable(tableExpression))
             return leftJoinExpression;
 
+        // EF Core generates a lateral-join subquery (LEFT JOIN (SELECT ...) AS s) when
+        // OwnsMany items have nested owned navigations (OwnsOne/OwnsMany within OwnsMany).
+        // Skip the entire lateral join when its subquery only reads from owned tables.
+        if (leftJoinExpression.Table is SelectExpression innerSelect && IsAllOwnedTablesSelect(innerSelect))
+            return leftJoinExpression;
+
         return base.VisitLeftJoin(leftJoinExpression);
     }
 
@@ -51,6 +57,10 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
         // Skip INNER JOINs for owned types — they are embedded in their owner's document
         // and have no independent keyspace.
         if (innerJoinExpression.Table is TableExpression tableExpression && IsOwnedTable(tableExpression))
+            return innerJoinExpression;
+
+        // Lateral-join subquery form — same logic as VisitLeftJoin above.
+        if (innerJoinExpression.Table is SelectExpression innerSelect && IsAllOwnedTablesSelect(innerSelect))
             return innerJoinExpression;
 
         return base.VisitInnerJoin(innerJoinExpression);
@@ -78,7 +88,7 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
     /// <see langword="true"/> for unmapped tables.
     /// </para>
     /// </remarks>
-    private static bool IsOwnedTable(TableExpression tableExpression)
+    internal static bool IsOwnedTable(TableExpression tableExpression)
     {
         // Single-pass enumeration: track whether any mappings exist and whether every
         // mapping seen so far is an owned entity type. Avoids the ToList() allocation
@@ -91,6 +101,66 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
             any = true;
         }
         return any;
+    }
+
+    /// <summary>
+    /// Returns <see langword="true"/> when every table referenced by
+    /// <paramref name="selectExpression"/> (directly and through its own JOINs) is an owned
+    /// type.  Used to detect EF Core's lateral-join subquery pattern for OwnsMany items that
+    /// have nested owned navigations — the whole subquery can be skipped because its data is
+    /// embedded in the parent document.
+    /// </summary>
+    internal static bool IsAllOwnedTablesSelect(SelectExpression selectExpression)
+    {
+        if (selectExpression.Tables.Count == 0) return false;
+        foreach (var table in selectExpression.Tables)
+        {
+            TableExpression? te = table switch
+            {
+                TableExpression t                                       => t,
+                LeftJoinExpression  lj when lj.Table is TableExpression t => t,
+                InnerJoinExpression ij when ij.Table is TableExpression t => t,
+                _ => null
+            };
+            if (te == null || !IsOwnedTable(te)) return false;
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// Returns the set of table aliases for owned-type LEFT JOIN / INNER JOIN entries in
+    /// <paramref name="selectExpression"/> — those that <see cref="VisitLeftJoin"/> and
+    /// <see cref="VisitInnerJoin"/> will suppress when generating SQL.
+    /// Includes both direct-table joins (<c>LEFT JOIN owned AS alias</c>) and lateral-join
+    /// subqueries (<c>LEFT JOIN (SELECT … FROM owned …) AS alias</c>).
+    /// Used by <see cref="VisitSelect"/> to filter owned-join columns from the emitted
+    /// SELECT projection so N1QL does not see references to undefined table aliases.
+    /// </summary>
+    internal static HashSet<string> CollectOwnedJoinAliases(SelectExpression selectExpression)
+    {
+        var aliases = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var table in selectExpression.Tables)
+        {
+            switch (table)
+            {
+                // Direct owned-table join: LEFT JOIN ownedTable AS alias
+                case LeftJoinExpression lj when lj.Table is TableExpression te && IsOwnedTable(te):
+                    aliases.Add(te.Alias);
+                    break;
+                case InnerJoinExpression ij when ij.Table is TableExpression te && IsOwnedTable(te):
+                    aliases.Add(te.Alias);
+                    break;
+
+                // Lateral-join subquery: LEFT JOIN (SELECT … FROM owned …) AS s
+                case LeftJoinExpression lj when lj.Table is SelectExpression inner && IsAllOwnedTablesSelect(inner):
+                    if (inner.Alias != null) aliases.Add(inner.Alias);
+                    break;
+                case InnerJoinExpression ij when ij.Table is SelectExpression inner && IsAllOwnedTablesSelect(inner):
+                    if (inner.Alias != null) aliases.Add(inner.Alias);
+                    break;
+            }
+        }
+        return aliases;
     }
 
     /// <inheritdoc />
@@ -334,6 +404,20 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
 
             if (selectExpression.Projection.Any())
             {
+                // Collect aliases of owned-type JOINs that will be suppressed in FROM/JOIN.
+                // Columns referencing those aliases are excluded from the SELECT list so N1QL
+                // does not see undefined table alias references (e.g. `cm0`.`id` when the
+                // contactMethod LEFT JOIN is skipped). The EF Core shaper's baked-in ordinals
+                // still expect those slots — they are kept as null placeholders in
+                // projectionAliases so CouchbaseDbDataReader returns DBNull for them, which
+                // the shaper interprets as "no collection rows". PopulateCollectionNavigations
+                // then populates the collection from the embedded JSON array.
+                var skippedAliases = CollectOwnedJoinAliases(selectExpression);
+                bool IsFromSkippedJoin(ProjectionExpression pe) =>
+                    skippedAliases.Count > 0
+                    && pe.Expression is ColumnExpression col
+                    && skippedAliases.Contains(col.TableAlias);
+
                 if (selectExpression.Projection.Count == 1)
                 {
                     var expression = selectExpression.Projection.First().Expression;
@@ -355,12 +439,12 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
                     var dedupedProjections = new Dictionary<string, ProjectionExpression>();
                     foreach (var expression in selectExpression.Projection)
                     {
-                        dedupedProjections.TryAdd(expression.Alias, expression);
+                        if (!IsFromSkippedJoin(expression))
+                            dedupedProjections.TryAdd(expression.Alias, expression);
                     }
 
                     GenerateList(dedupedProjections.Values.ToList(), e => Visit(e));
                 }
-                // GenerateList(selectExpression.Projection, e => Visit(e));
             }
             else
             {

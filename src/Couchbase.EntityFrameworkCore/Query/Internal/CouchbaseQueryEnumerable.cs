@@ -247,7 +247,6 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
 
             var accessor = nav.GetCollectionAccessor();
             var clrType = nav.TargetEntityType.ClrType;
-            var properties = OwnedCollectionSnapshot.GetTrackedProperties(nav);
 
             if (accessor != null)
             {
@@ -265,19 +264,93 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
 
             foreach (var itemElement in arrayElement.EnumerateArray())
             {
-                var ownedEntity = Activator.CreateInstance(clrType)!;
-                foreach (var prop in properties)
-                {
-                    var jsonKey = fieldNamingPolicy?.ConvertName(prop.Name) ?? prop.Name;
-                    if (itemElement.TryGetPropertyCI(jsonKey, out var propElement))
-                        prop.PropertyInfo?.SetValue(ownedEntity, ConvertJsonValue(propElement, prop.ClrType, options));
-                }
+                var ownedEntity = MaterializeOwnedItem(itemElement, nav.TargetEntityType, fieldNamingPolicy, options);
                 if (accessor != null)
                     accessor.Add(entity!, ownedEntity, forMaterialization: true);
                 else
                     ((IList)nav.PropertyInfo!.GetValue(entity)!).Add(ownedEntity);
             }
         }
+    }
+
+    /// <summary>
+    /// Materialises a single owned entity from a <see cref="JsonElement"/> by setting its scalar
+    /// properties and recursively populating any nested owned navigations (OwnsOne / OwnsMany).
+    /// Called for every element of a top-level OwnsMany array, and recursively for nested owned
+    /// types within those elements.
+    /// </summary>
+    private static object MaterializeOwnedItem(
+        JsonElement itemElement,
+        IEntityType entityType,
+        JsonNamingPolicy? fieldNamingPolicy,
+        JsonSerializerOptions options)
+    {
+        var ownedEntity = Activator.CreateInstance(entityType.ClrType)!;
+
+        foreach (var prop in entityType.GetProperties())
+        {
+            if (prop.IsShadowProperty()) continue;
+            var jsonKey = fieldNamingPolicy?.ConvertName(prop.Name) ?? prop.Name;
+            if (itemElement.TryGetPropertyCI(jsonKey, out var propElement))
+                prop.PropertyInfo?.SetValue(ownedEntity, ConvertJsonValue(propElement, prop.ClrType, options));
+        }
+
+        foreach (var ownedNav in entityType.GetNavigations())
+        {
+            if (!ownedNav.TargetEntityType.IsOwned()) continue;
+            var fieldName = fieldNamingPolicy?.ConvertName(ownedNav.Name) ?? ownedNav.Name;
+            if (!itemElement.TryGetPropertyCI(fieldName, out var nestedElement)) continue;
+
+            if (ownedNav.IsCollection)
+            {
+                if (nestedElement.ValueKind != JsonValueKind.Array) continue;
+                var accessor = ownedNav.GetCollectionAccessor();
+                // Skip navigations with no accessor and no PropertyInfo — nothing to set.
+                if (accessor == null && ownedNav.PropertyInfo == null) continue;
+                var nestedClrType = ownedNav.TargetEntityType.ClrType;
+                if (accessor != null)
+                {
+                    var coll = accessor.GetOrCreate(ownedEntity, forMaterialization: true);
+                    // Clear via IList for the common List<T> case; otherwise cast through
+                    // ICollection<T> which every mutable .NET collection implements and which
+                    // guarantees Clear() — this correctly handles HashSet<T>, SortedSet<T>, etc.
+                    if (coll is IList list)
+                        list.Clear();
+                    else if (coll != null)
+                        typeof(ICollection<>).MakeGenericType(nestedClrType)
+                            .GetMethod("Clear")!
+                            .Invoke(coll, null);
+                }
+                else
+                {
+                    var list = (IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(nestedClrType))!;
+                    ownedNav.PropertyInfo!.SetValue(ownedEntity, list);
+                }
+                foreach (var nestedItemElement in nestedElement.EnumerateArray())
+                {
+                    var nestedEntity = MaterializeOwnedItem(nestedItemElement, ownedNav.TargetEntityType, fieldNamingPolicy, options);
+                    if (accessor != null)
+                        accessor.Add(ownedEntity, nestedEntity, forMaterialization: true);
+                    else
+                    {
+                        // PropertyInfo is guaranteed non-null here: we skipped above when both
+                        // accessor and PropertyInfo are null, and accessor is null in this branch.
+                        var existingList = (IList)ownedNav.PropertyInfo!.GetValue(ownedEntity)!;
+                        existingList.Add(nestedEntity);
+                    }
+                }
+            }
+            else
+            {
+                if (nestedElement.ValueKind != JsonValueKind.Object) continue;
+                // Skip shadow/field-only navigations — no PropertyInfo means nowhere to assign.
+                if (ownedNav.PropertyInfo == null) continue;
+                var nestedEntity = MaterializeOwnedItem(nestedElement, ownedNav.TargetEntityType, fieldNamingPolicy, options);
+                ownedNav.PropertyInfo.SetValue(ownedEntity, nestedEntity);
+            }
+        }
+
+        return ownedEntity;
     }
 
     // Record the original collection-object reference and per-item property values for every

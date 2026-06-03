@@ -163,7 +163,7 @@ public class OwnedTypeTests(
         await using var ctx = fixture.GetDbContext();
         var customers = await ctx.Customers.ToListAsync();
 
-        Assert.Equal(2, customers.Count);
+        Assert.Equal(3, customers.Count);
         var alice = customers.Single(c => c.Name == "Alice");
         var bob   = customers.Single(c => c.Name == "Bob");
         Assert.Equal(2, alice.ContactMethods.Count);
@@ -405,6 +405,74 @@ public class OwnedTypeTests(
         Assert.Equal(0, secondCount);
     }
 
+    // -------------------------------------------------------------------------
+    // Nested owned-type materialisation (Phase 4.3)
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task OwnsOne_Nested_InOwnsMany_IsPopulated()
+    {
+        // ContactMethod.Label is an OwnsOne nested inside an OwnsMany.
+        // MaterializeOwnedItem must recurse into the nested object and set the property.
+        await using var ctx = fixture.GetDbContext();
+        var customer = await ctx.Customers.FirstAsync(c => c.CustomerId == 3);
+
+        Assert.Equal(2, customer.ContactMethods.Count);
+        var email = customer.ContactMethods.First(cm => cm.Type == "email");
+        Assert.NotNull(email.Label);
+        Assert.Equal("Work Email", email.Label.DisplayName);
+        var phone = customer.ContactMethods.First(cm => cm.Type == "phone");
+        Assert.NotNull(phone.Label);
+        Assert.Equal("Mobile", phone.Label.DisplayName);
+    }
+
+    [Fact]
+    public async Task OwnsMany_Nested_InOwnsMany_IsPopulated()
+    {
+        // ContactMethod.Tags is an OwnsMany nested inside an OwnsMany.
+        // MaterializeOwnedItem must recurse into the nested array and materialise each element.
+        await using var ctx = fixture.GetDbContext();
+        var customer = await ctx.Customers.FirstAsync(c => c.CustomerId == 3);
+
+        var email = customer.ContactMethods.First(cm => cm.Type == "email");
+        Assert.Equal(2, email.Tags.Count);
+        Assert.Contains(email.Tags, t => t.Key == "priority" && t.Val == "high");
+        Assert.Contains(email.Tags, t => t.Key == "verified" && t.Val == "true");
+
+        var phone = customer.ContactMethods.First(cm => cm.Type == "phone");
+        Assert.Empty(phone.Tags);
+    }
+
+    [Fact]
+    public async Task OwnsOne_WithExplicitInclude_IsPopulated()
+    {
+        // Explicit .Include(c => c.Address) on an OwnsOne must not break materialisation.
+        // The EF Core relational shaper already projects OwnsOne columns, so Include is a no-op.
+        await using var ctx = fixture.GetDbContext();
+        var customer = await ctx.Customers
+            .Include(c => c.Address)
+            .FirstAsync(c => c.CustomerId == 1);
+
+        Assert.NotNull(customer.Address);
+        Assert.Equal("1 Main St", customer.Address.Street);
+        Assert.Equal("Springfield", customer.Address.City);
+    }
+
+    [Fact]
+    public async Task OwnsMany_NestedOwned_ExistingCustomers_HaveNullOrEmpty()
+    {
+        // Customers 1 and 2 were seeded without Label/Tags on their ContactMethods.
+        // Nested owned navigations must default to null / empty — not throw.
+        await using var ctx = fixture.GetDbContext();
+        var customer = await ctx.Customers.FirstAsync(c => c.CustomerId == 1);
+
+        Assert.All(customer.ContactMethods, cm =>
+        {
+            Assert.Null(cm.Label);
+            Assert.Empty(cm.Tags);
+        });
+    }
+
     [Fact]
     public async Task OwnsMany_AddAndMutate_BothChangesSaved()
     {
@@ -429,6 +497,168 @@ public class OwnedTypeTests(
                 cm => cm.Type == "email" && cm.Value == "bob.updated@example.com");
             Assert.Contains(customer.ContactMethods,
                 cm => cm.Type == "sms"   && cm.Value == "555-0300");
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // HashSet<T> collection type — ICollection<T> fallback clear path
+    // -------------------------------------------------------------------------
+    // These tests verify that MaterializeOwnedItem correctly clears and repopulates
+    // a HashSet<T>-backed OwnsMany navigation.  Before the fix, the non-IList branch
+    // silently skipped the clear, which could leave pre-populated items in the set.
+
+    [Fact]
+    public async Task OwnsMany_HashSet_IsPopulated_OnFirstRead()
+    {
+        // Baseline: a HashSet<T> navigation is populated correctly from JSON.
+        const int id = 200;
+        try
+        {
+            await using (var ctx = fixture.GetDbContext())
+            {
+                ctx.Update(new OwnedTypeFixture.HashSetCustomer
+                {
+                    Id = id,
+                    Name = "HashSet Alice",
+                    Tags =
+                    [
+                        new OwnedTypeFixture.HashSetTag { Id = 1, Value = "tag-a" },
+                        new OwnedTypeFixture.HashSetTag { Id = 2, Value = "tag-b" }
+                    ]
+                });
+                await ctx.SaveChangesAsync();
+            }
+
+            await using (var ctx = fixture.GetDbContext())
+            {
+                var customer = await ctx.HashSetCustomers.FirstAsync(c => c.Id == id);
+                Assert.Equal(2, customer.Tags.Count);
+                Assert.Contains(customer.Tags, t => t.Value == "tag-a");
+                Assert.Contains(customer.Tags, t => t.Value == "tag-b");
+            }
+        }
+        finally
+        {
+            await using var ctx = fixture.GetDbContext();
+            var customer = await ctx.HashSetCustomers.FirstOrDefaultAsync(c => c.Id == id);
+            if (customer != null) { ctx.Remove(customer); await ctx.SaveChangesAsync(); }
+        }
+    }
+
+    [Fact]
+    public async Task OwnsMany_HashSet_NoDuplicates_WhenQueriedMultipleTimes()
+    {
+        // Regression guard: querying the same HashSet<T>-backed entity multiple times
+        // must not accumulate duplicate items.  Before the fix, the non-IList clear
+        // was a no-op so each rematerialization appended to the existing set.
+        const int id = 201;
+        try
+        {
+            await using (var ctx = fixture.GetDbContext())
+            {
+                ctx.Update(new OwnedTypeFixture.HashSetCustomer
+                {
+                    Id = id,
+                    Name = "HashSet Bob",
+                    Tags =
+                    [
+                        new OwnedTypeFixture.HashSetTag { Id = 1, Value = "only-tag" }
+                    ]
+                });
+                await ctx.SaveChangesAsync();
+            }
+
+            // Query twice in the same logical scope (fresh context each time to
+            // rule out EF identity-cache short-circuits).
+            for (var pass = 1; pass <= 2; pass++)
+            {
+                await using var ctx = fixture.GetDbContext();
+                var customer = await ctx.HashSetCustomers.FirstAsync(c => c.Id == id);
+                Assert.Single(customer.Tags);
+                Assert.Equal("only-tag", customer.Tags.Single().Value);
+            }
+        }
+        finally
+        {
+            await using var ctx = fixture.GetDbContext();
+            var customer = await ctx.HashSetCustomers.FirstOrDefaultAsync(c => c.Id == id);
+            if (customer != null) { ctx.Remove(customer); await ctx.SaveChangesAsync(); }
+        }
+    }
+
+    [Fact]
+    public async Task OwnsMany_HashSet_Update_RoundTrips()
+    {
+        // Mutating a HashSet<T>-backed OwnsMany must persist and read back correctly.
+        const int id = 202;
+        try
+        {
+            await using (var ctx = fixture.GetDbContext())
+            {
+                ctx.Update(new OwnedTypeFixture.HashSetCustomer
+                {
+                    Id = id,
+                    Name = "HashSet Carol",
+                    Tags =
+                    [
+                        new OwnedTypeFixture.HashSetTag { Id = 1, Value = "original" }
+                    ]
+                });
+                await ctx.SaveChangesAsync();
+            }
+
+            await using (var ctx = fixture.GetDbContext())
+            {
+                var customer = await ctx.HashSetCustomers.FirstAsync(c => c.Id == id);
+                customer.Tags = [new OwnedTypeFixture.HashSetTag { Id = 1, Value = "updated" }];
+                await ctx.SaveChangesAsync();
+            }
+
+            await using (var ctx = fixture.GetDbContext())
+            {
+                var customer = await ctx.HashSetCustomers.FirstAsync(c => c.Id == id);
+                Assert.Single(customer.Tags);
+                Assert.Equal("updated", customer.Tags.Single().Value);
+            }
+        }
+        finally
+        {
+            await using var ctx = fixture.GetDbContext();
+            var customer = await ctx.HashSetCustomers.FirstOrDefaultAsync(c => c.Id == id);
+            if (customer != null) { ctx.Remove(customer); await ctx.SaveChangesAsync(); }
+        }
+    }
+
+    [Fact]
+    public async Task OwnsMany_HashSet_EmptyCollection_ReadsAsEmpty()
+    {
+        // A HashSet<T> navigation stored with zero items must read back as empty, not null.
+        const int id = 203;
+        try
+        {
+            await using (var ctx = fixture.GetDbContext())
+            {
+                ctx.Update(new OwnedTypeFixture.HashSetCustomer
+                {
+                    Id = id,
+                    Name = "HashSet Dave",
+                    Tags = []
+                });
+                await ctx.SaveChangesAsync();
+            }
+
+            await using (var ctx = fixture.GetDbContext())
+            {
+                var customer = await ctx.HashSetCustomers.FirstAsync(c => c.Id == id);
+                Assert.NotNull(customer.Tags);
+                Assert.Empty(customer.Tags);
+            }
+        }
+        finally
+        {
+            await using var ctx = fixture.GetDbContext();
+            var customer = await ctx.HashSetCustomers.FirstOrDefaultAsync(c => c.Id == id);
+            if (customer != null) { ctx.Remove(customer); await ctx.SaveChangesAsync(); }
         }
     }
 }

@@ -234,6 +234,11 @@ public class CouchbaseShapedQueryCompilingExpressionVisitor : RelationalShapedQu
                     : pe.Expression is ColumnExpression c ? c.Name
                     : string.Empty;
 
+            // Keep the FULL unfiltered projection alias array so the EF Core shaper's baked-in
+            // ordinals remain correct. Columns from skipped owned-type JOINs (e.g. cm0.id) are
+            // absent from the N1QL result and return DBNull via CouchbaseDbDataReader, which is
+            // the expected signal for "no collection rows" — PopulateCollectionNavigations then
+            // fills the actual collection from the embedded JSON array.
             var projectionAliasesExpression = Dependencies.LiftableConstantFactory.CreateLiftableConstant(
                 selectExpression.Projection.Select(EffectiveAlias).ToArray(),
 #pragma warning disable EF9100

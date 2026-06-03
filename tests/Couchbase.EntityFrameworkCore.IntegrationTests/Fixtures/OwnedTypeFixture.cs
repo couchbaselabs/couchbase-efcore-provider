@@ -44,6 +44,35 @@ public class OwnedTypeFixture : CouchbaseFixture<OwnedTypeDbContext>
                 [
                     new ContactMethod { Id = 1, Type = "email", Value = "bob@example.com" }
                 ]
+            },
+            new Customer
+            {
+                CustomerId = 3,
+                Name = "Carol",
+                Address = new Address { Street = "3 Oak Ave", City = "Shelbyville" },
+                ContactMethods =
+                [
+                    new ContactMethod
+                    {
+                        Id = 1,
+                        Type = "email",
+                        Value = "carol@example.com",
+                        Label = new ContactLabel { DisplayName = "Work Email" },
+                        Tags =
+                        [
+                            new ContactTag { Id = 1, Key = "priority", Val = "high" },
+                            new ContactTag { Id = 2, Key = "verified", Val = "true" }
+                        ]
+                    },
+                    new ContactMethod
+                    {
+                        Id = 2,
+                        Type = "phone",
+                        Value = "555-0303",
+                        Label = new ContactLabel { DisplayName = "Mobile" },
+                        Tags = []
+                    }
+                ]
             });
         await ctx.SaveChangesAsync();
     }
@@ -66,6 +95,42 @@ public class OwnedTypeFixture : CouchbaseFixture<OwnedTypeDbContext>
     {
         public int Id { get; set; }
         public string Type { get; set; } = "";
+        public string Value { get; set; } = "";
+        public ContactLabel? Label { get; set; }
+        public List<ContactTag> Tags { get; set; } = [];
+    }
+
+    public class ContactLabel
+    {
+        public string? DisplayName { get; set; }
+    }
+
+    public class ContactTag
+    {
+        public int Id { get; set; }
+        public string Key { get; set; } = "";
+        public string Val { get; set; } = "";
+    }
+
+    // -------------------------------------------------------------------------
+    // HashSet<T>-backed model — used by OwnedCollectionClearIntegrationTests
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// An entity whose OwnsMany navigation uses HashSet&lt;T&gt; instead of List&lt;T&gt;.
+    /// This exercises the ICollection&lt;T&gt; fallback clear path in MaterializeOwnedItem.
+    /// </summary>
+    public class HashSetCustomer
+    {
+        public int Id { get; set; }
+        public string Name { get; set; } = "";
+        /// <summary>Intentionally HashSet, not List — tests the non-IList clear path.</summary>
+        public HashSet<HashSetTag> Tags { get; set; } = [];
+    }
+
+    public class HashSetTag
+    {
+        public int Id { get; set; }
         public string Value { get; set; } = "";
     }
 }
