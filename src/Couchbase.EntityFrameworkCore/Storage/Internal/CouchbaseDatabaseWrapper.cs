@@ -213,7 +213,13 @@ public class CouchbaseDatabaseWrapper : Database
     internal static void FillOwnsOneIntoDoc(Dictionary<string, object?> doc, INavigation nav, object? navValue)
     {
         foreach (var p in nav.TargetEntityType.GetProperties().Where(p => !p.IsShadowProperty()))
-            doc[p.GetColumnName()] = navValue == null ? null : p.PropertyInfo?.GetValue(navValue);
+        {
+            // Read via PropertyInfo when available; fall back to FieldInfo for field-access properties.
+            var value = navValue == null ? null
+                : p.PropertyInfo != null ? p.PropertyInfo.GetValue(navValue)
+                : p.FieldInfo?.GetValue(navValue);
+            doc[p.GetColumnName()] = value;
+        }
     }
 
     private CouchbaseDbTransaction? GetCurrentTransaction()
@@ -284,12 +290,20 @@ public class CouchbaseDatabaseWrapper : Database
         var entity = updateEntry.ToEntityEntry().Entity;
         foreach (var nav in ownedNavs)
         {
-            var navValue = nav.PropertyInfo!.GetValue(entity);
+            // Read via PropertyInfo when available; fall back to FieldInfo for field-access
+            // properties (backing-field or [BackingField]-annotated) where PropertyInfo is null.
+            var navValue = nav.PropertyInfo != null
+                ? nav.PropertyInfo.GetValue(entity)
+                : nav.FieldInfo?.GetValue(entity);
             if (nav.IsCollection)
             {
                 var fieldName = fieldNamingPolicy?.ConvertName(nav.Name) ?? nav.Name;
                 if (navValue is IEnumerable items)
                 {
+                    // Use SerializeOwnedItem so that nested OwnsOne / OwnsMany navigations
+                    // within each item (e.g. ContactMethod.Label, ContactMethod.Tags) are
+                    // recursively included.  The flat scalar-only loop it replaces silently
+                    // dropped all nested navigations.
                     var list = new List<Dictionary<string, object?>>();
                     foreach (var item in items)
                         list.Add(SerializeOwnedItem(item, nav.TargetEntityType, fieldNamingPolicy));

@@ -60,8 +60,16 @@ public class OwnedTypeFixture : CouchbaseFixture<OwnedTypeDbContext>
                         Label = new ContactLabel { DisplayName = "Work Email" },
                         Tags =
                         [
-                            new ContactTag { Id = 1, Key = "priority", Val = "high" },
-                            new ContactTag { Id = 2, Key = "verified", Val = "true" }
+                            new ContactTag
+                            {
+                                Id = 1, Key = "priority", Val = "high",
+                                Audits =
+                                [
+                                    new TagAudit { Id = 1, Note = "set by admin" },
+                                    new TagAudit { Id = 2, Note = "confirmed" }
+                                ]
+                            },
+                            new ContactTag { Id = 2, Key = "verified", Val = "true", Audits = [] }
                         ]
                     },
                     new ContactMethod
@@ -110,6 +118,74 @@ public class OwnedTypeFixture : CouchbaseFixture<OwnedTypeDbContext>
         public int Id { get; set; }
         public string Key { get; set; } = "";
         public string Val { get; set; } = "";
+        /// <summary>
+        /// Depth-3 OwnsMany — exercises the recursive <c>IsAllOwnedTablesSelect</c> path.
+        /// </summary>
+        public List<TagAudit> Audits { get; set; } = [];
+    }
+
+    /// <summary>
+    /// Owned entity at depth 3 (Customer → ContactMethod → ContactTag → TagAudit).
+    /// Used to verify that <c>IsAllOwnedTablesSelect</c> recurses correctly and does
+    /// not leave an empty FROM clause or dangling ORDER BY alias in the generated N1QL.
+    /// </summary>
+    public class TagAudit
+    {
+        public int Id { get; set; }
+        public string Note { get; set; } = "";
+    }
+
+    // -------------------------------------------------------------------------
+    // Field-access / get-only model
+    // Exercises FieldInfo fallback in MaterializeOwnedItem (read) and
+    // SerializeOwnedItem / FillOwnsOneIntoDoc (write).
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Root entity whose OwnsOne and OwnsMany items have get-only scalar properties
+    /// (no setter) so EF Core must read/write them via the compiler-generated backing
+    /// field — the code path hardened by the FieldInfo fallback fixes.
+    /// <para>
+    /// <see cref="FieldContact.Tags"/> is a <see cref="HashSet{T}"/> nested inside
+    /// an OwnsMany item, exercising the <c>ICollection&lt;T&gt;</c> non-<c>IList</c>
+    /// clear path inside <c>MaterializeOwnedItem</c>'s nested navigation loop.
+    /// </para>
+    /// </summary>
+    public class FieldAccessCustomer
+    {
+        public int Id { get; set; }
+        public string Name { get; set; } = "";
+        public FieldAddress Address { get; set; } = new();
+        public List<FieldContact> Contacts { get; set; } = [];
+    }
+
+    /// <summary>OwnsOne with get-only scalars — written via backing field.</summary>
+    public class FieldAddress
+    {
+        public string? Street { get; }
+        public string? City { get; }
+
+        // Parameterless ctor required for EF Core materialisation.
+        public FieldAddress() { }
+        public FieldAddress(string? street, string? city) { Street = street; City = city; }
+    }
+
+    /// <summary>OwnsMany item with a get-only scalar and a HashSet nested OwnsMany.</summary>
+    public class FieldContact
+    {
+        public int Id { get; set; }
+        public string? Label { get; }
+        /// <summary>Non-IList nested collection — exercises the ICollection&lt;T&gt; clear path.</summary>
+        public HashSet<FieldTag> Tags { get; set; } = [];
+
+        public FieldContact() { }
+        public FieldContact(int id, string? label) { Id = id; Label = label; }
+    }
+
+    public class FieldTag
+    {
+        public int Id { get; set; }
+        public string Key { get; set; } = "";
     }
 
     // -------------------------------------------------------------------------

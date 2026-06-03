@@ -55,7 +55,7 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
     private readonly bool _threadSafetyChecksEnabled;
     private readonly bool _detailedErrorsEnabled;
     private readonly bool _standAloneStateManager;
-    // True only for QueryTrackingBehavior.TrackAll — the only mode where SnapshotCollectionRefs
+    // True only for QueryTrackingBehavior.TrackAll — the only mode where CouchbaseCollectionSnapshot.Record
     // produces a snapshot that the interceptor can ever consume via ChangeTracker.Entries().
     private readonly bool _isTracking;
     private readonly IDiagnosticsLogger<DbLoggerCategory.Query> _queryLogger;
@@ -71,6 +71,8 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
     private readonly IBucketProvider _bucketProvider;
     private readonly DbContext _dbContext;
     private readonly IReadOnlyList<INavigation> _ownedCollectionNavigations;
+    private readonly CouchbaseOwnedCollectionMaterializer _materializer = new();
+    private readonly CouchbaseCollectionSnapshot _snapshot = new();
 
     public CouchbaseQueryEnumerable(
         RelationalQueryContext relationalQueryContext,
@@ -190,8 +192,8 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
                     && navRow is JsonElement rowElement
                     && rowElement.ValueKind == JsonValueKind.Object)
                 {
-                    PopulateCollectionNavigations(result, rowElement, _ownedCollectionNavigations, _couchbaseDbContextOptionsBuilder.FieldNamingPolicy, _couchbaseDbContextOptionsBuilder.SerializerOptions);
-                    SnapshotCollectionRefs(result);
+                    _materializer.Populate(result, rowElement, _ownedCollectionNavigations, _couchbaseDbContextOptionsBuilder.FieldNamingPolicy, _couchbaseDbContextOptionsBuilder.SerializerOptions);
+                    _snapshot.Record(result, _ownedCollectionNavigations, _isTracking);
                 }
                 pendingEntityRow = null;
                 yield return result;
@@ -222,8 +224,8 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
                         && pendingEntityRow is JsonElement lastRow
                         && lastRow.ValueKind == JsonValueKind.Object)
                     {
-                        PopulateCollectionNavigations(last, lastRow, _ownedCollectionNavigations, _couchbaseDbContextOptionsBuilder.FieldNamingPolicy, _couchbaseDbContextOptionsBuilder.SerializerOptions);
-                        SnapshotCollectionRefs(last);
+                        _materializer.Populate(last, lastRow, _ownedCollectionNavigations, _couchbaseDbContextOptionsBuilder.FieldNamingPolicy, _couchbaseDbContextOptionsBuilder.SerializerOptions);
+                        _snapshot.Record(last, _ownedCollectionNavigations, _isTracking);
                     }
                     pendingEntityRow = null;
                     yield return last;
@@ -231,194 +233,6 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
                 }
             }
         }
-    }
-
-    private static readonly JsonSerializerOptions _defaultSerializerOptions = new(JsonSerializerDefaults.Web);
-
-    private static void PopulateCollectionNavigations(T entity, JsonElement docElement, IReadOnlyList<INavigation> collections, JsonNamingPolicy? fieldNamingPolicy, JsonSerializerOptions? serializerOptions)
-    {
-        var options = serializerOptions ?? _defaultSerializerOptions;
-        foreach (var nav in collections)
-        {
-            var fieldName = fieldNamingPolicy?.ConvertName(nav.Name) ?? nav.Name;
-            if (!docElement.TryGetPropertyCI(fieldName, out var arrayElement)
-                || arrayElement.ValueKind != JsonValueKind.Array)
-                continue;
-
-            var accessor = nav.GetCollectionAccessor();
-            var clrType = nav.TargetEntityType.ClrType;
-
-            if (accessor != null)
-            {
-                // Clear any items the EF Core shaper may have pre-populated from the injected
-                // OwnsMany column (observed with AsNoTracking queries). We are the authoritative
-                // source for owned-collection data; clearing before adding prevents duplicates.
-                var coll = accessor.GetOrCreate(entity!, forMaterialization: true);
-                (coll as IList)?.Clear();
-            }
-            else
-            {
-                var list = (IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(clrType))!;
-                nav.PropertyInfo?.SetValue(entity, list);
-            }
-
-            foreach (var itemElement in arrayElement.EnumerateArray())
-            {
-                var ownedEntity = MaterializeOwnedItem(itemElement, nav.TargetEntityType, fieldNamingPolicy, options);
-                if (accessor != null)
-                    accessor.Add(entity!, ownedEntity, forMaterialization: true);
-                else
-                    ((IList)nav.PropertyInfo!.GetValue(entity)!).Add(ownedEntity);
-            }
-        }
-    }
-
-    /// <summary>
-    /// Materialises a single owned entity from a <see cref="JsonElement"/> by setting its scalar
-    /// properties and recursively populating any nested owned navigations (OwnsOne / OwnsMany).
-    /// Called for every element of a top-level OwnsMany array, and recursively for nested owned
-    /// types within those elements.
-    /// </summary>
-    private static object MaterializeOwnedItem(
-        JsonElement itemElement,
-        IEntityType entityType,
-        JsonNamingPolicy? fieldNamingPolicy,
-        JsonSerializerOptions options)
-    {
-        var ownedEntity = Activator.CreateInstance(entityType.ClrType)!;
-
-        foreach (var prop in entityType.GetProperties())
-        {
-            if (prop.IsShadowProperty()) continue;
-            var jsonKey = fieldNamingPolicy?.ConvertName(prop.Name) ?? prop.Name;
-            if (itemElement.TryGetPropertyCI(jsonKey, out var propElement))
-                prop.PropertyInfo?.SetValue(ownedEntity, ConvertJsonValue(propElement, prop.ClrType, options));
-        }
-
-        foreach (var ownedNav in entityType.GetNavigations())
-        {
-            if (!ownedNav.TargetEntityType.IsOwned()) continue;
-            var fieldName = fieldNamingPolicy?.ConvertName(ownedNav.Name) ?? ownedNav.Name;
-            if (!itemElement.TryGetPropertyCI(fieldName, out var nestedElement)) continue;
-
-            if (ownedNav.IsCollection)
-            {
-                if (nestedElement.ValueKind != JsonValueKind.Array) continue;
-                var accessor = ownedNav.GetCollectionAccessor();
-                // Skip navigations with no accessor and no PropertyInfo — nothing to set.
-                if (accessor == null && ownedNav.PropertyInfo == null) continue;
-                var nestedClrType = ownedNav.TargetEntityType.ClrType;
-                if (accessor != null)
-                {
-                    var coll = accessor.GetOrCreate(ownedEntity, forMaterialization: true);
-                    // Clear via IList for the common List<T> case; otherwise cast through
-                    // ICollection<T> which every mutable .NET collection implements and which
-                    // guarantees Clear() — this correctly handles HashSet<T>, SortedSet<T>, etc.
-                    if (coll is IList list)
-                        list.Clear();
-                    else if (coll != null)
-                        typeof(ICollection<>).MakeGenericType(nestedClrType)
-                            .GetMethod("Clear")!
-                            .Invoke(coll, null);
-                }
-                else
-                {
-                    var list = (IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(nestedClrType))!;
-                    ownedNav.PropertyInfo!.SetValue(ownedEntity, list);
-                }
-                foreach (var nestedItemElement in nestedElement.EnumerateArray())
-                {
-                    var nestedEntity = MaterializeOwnedItem(nestedItemElement, ownedNav.TargetEntityType, fieldNamingPolicy, options);
-                    if (accessor != null)
-                        accessor.Add(ownedEntity, nestedEntity, forMaterialization: true);
-                    else
-                    {
-                        // PropertyInfo is guaranteed non-null here: we skipped above when both
-                        // accessor and PropertyInfo are null, and accessor is null in this branch.
-                        var existingList = (IList)ownedNav.PropertyInfo!.GetValue(ownedEntity)!;
-                        existingList.Add(nestedEntity);
-                    }
-                }
-            }
-            else
-            {
-                if (nestedElement.ValueKind != JsonValueKind.Object) continue;
-                // Skip shadow/field-only navigations — no PropertyInfo means nowhere to assign.
-                if (ownedNav.PropertyInfo == null) continue;
-                var nestedEntity = MaterializeOwnedItem(nestedElement, ownedNav.TargetEntityType, fieldNamingPolicy, options);
-                ownedNav.PropertyInfo.SetValue(ownedEntity, nestedEntity);
-            }
-        }
-
-        return ownedEntity;
-    }
-
-    // Record the original collection-object reference and per-item property values for every
-    // OwnsMany navigation on the freshly materialised entity.
-    //
-    // OriginalRefs detects reference replacement (customer.ContactMethods = []).
-    // OriginalItems detects in-place changes: .Add(), .Remove(), or scalar property mutation.
-    // Both are checked in MarkOwnersWithReplacedCollections before SaveChanges.
-    private void SnapshotCollectionRefs(T? entity)
-    {
-        // Skip entirely for non-tracking queries: the interceptor walks ChangeTracker.Entries(),
-        // so snapshots built for NoTracking / NoTrackingWithIdentityResolution entities are
-        // never consumed and would be immediately GC'd.
-        if (entity == null || !_isTracking) return;
-        var refs  = OwnedCollectionSnapshot.OriginalRefs.GetOrCreateValue(entity);
-        var items = OwnedCollectionSnapshot.OriginalItems.GetOrCreateValue(entity);
-        foreach (var nav in _ownedCollectionNavigations)
-        {
-            var currentCollection = nav.PropertyInfo?.GetValue(entity);
-            refs[nav.Name] = currentCollection;
-
-            // Snapshot per-item property values so in-place mutations can be detected even
-            // when the list reference is unchanged.
-            if (currentCollection is IEnumerable collection)
-            {
-                var itemProps = OwnedCollectionSnapshot.GetTrackedProperties(nav);
-                var snapshot = new List<Dictionary<string, object?>>();
-                foreach (var item in collection)
-                {
-                    if (item == null) continue;
-                    var propSnapshot = new Dictionary<string, object?>();
-                    foreach (var prop in itemProps)
-                    {
-                        var raw = prop.PropertyInfo?.GetValue(item);
-                        // Use EF Core's ValueComparer.Snapshot so mutable reference types
-                        // (e.g. byte[]) are deep-copied. For immutable types (string, int, …)
-                        // Snapshot is a no-op that returns the same reference.
-                        propSnapshot[prop.Name] = raw is null ? null : OwnedCollectionSnapshot.GetComparer(prop).Snapshot(raw);
-                    }
-                    snapshot.Add(propSnapshot);
-                }
-                items[nav.Name] = snapshot;
-            }
-            else
-            {
-                items[nav.Name] = [];
-            }
-        }
-    }
-
-
-    private static object? ConvertJsonValue(JsonElement element, Type targetType, JsonSerializerOptions options)
-    {
-        if (element.ValueKind == JsonValueKind.Null) return null;
-        var t = Nullable.GetUnderlyingType(targetType) ?? targetType;
-        return t switch
-        {
-            _ when t == typeof(string)   => element.GetString(),
-            _ when t == typeof(int)      => element.GetInt32(),
-            _ when t == typeof(long)     => element.GetInt64(),
-            _ when t == typeof(double)   => element.GetDouble(),
-            _ when t == typeof(decimal)  => element.GetDecimal(),
-            _ when t == typeof(float)    => (float)element.GetDouble(),
-            _ when t == typeof(bool)     => element.GetBoolean(),
-            _ when t == typeof(Guid)     => element.GetGuid(),
-            _ when t == typeof(DateTime) => element.GetDateTime(),
-            _ => JsonSerializer.Deserialize(element.GetRawText(), t, options)
-        };
     }
 
     /// <summary>

@@ -14,6 +14,12 @@ public class OwnedTypeDbContext(DbContextOptions<OwnedTypeDbContext> options) : 
     /// </summary>
     public DbSet<OwnedTypeFixture.HashSetCustomer> HashSetCustomers { get; set; }
 
+    /// <summary>
+    /// Get-only OwnsOne / OwnsMany + HashSet nested collection —
+    /// exercises FieldInfo fallback and ICollection&lt;T&gt; nested clear.
+    /// </summary>
+    public DbSet<OwnedTypeFixture.FieldAccessCustomer> FieldAccessCustomers { get; set; }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<OwnedTypeFixture.Customer>(b =>
@@ -23,7 +29,10 @@ public class OwnedTypeDbContext(DbContextOptions<OwnedTypeDbContext> options) : 
             b.OwnsMany(c => c.ContactMethods, cm =>
             {
                 cm.OwnsOne(m => m.Label);
-                cm.OwnsMany(m => m.Tags);
+                cm.OwnsMany(m => m.Tags, t =>
+                {
+                    t.OwnsMany(t => t.Audits);
+                });
             });
         });
 
@@ -32,6 +41,24 @@ public class OwnedTypeDbContext(DbContextOptions<OwnedTypeDbContext> options) : 
             b.ToCouchbaseCollection(this, "hashsetcustomer");
             b.HasKey(c => c.Id);
             b.OwnsMany(c => c.Tags, t => t.HasKey(t => t.Id));
+        });
+
+        modelBuilder.Entity<OwnedTypeFixture.FieldAccessCustomer>(b =>
+        {
+            b.ToCouchbaseCollection(this, "fieldaccesscustomer");
+            b.HasKey(c => c.Id);
+            // Use field access so EF reads/writes get-only properties via backing fields.
+            b.OwnsOne(c => c.Address, a =>
+            {
+                a.Property(x => x.Street).UsePropertyAccessMode(PropertyAccessMode.Field);
+                a.Property(x => x.City).UsePropertyAccessMode(PropertyAccessMode.Field);
+            });
+            b.OwnsMany(c => c.Contacts, cm =>
+            {
+                cm.HasKey(c => c.Id);
+                cm.Property(c => c.Label).UsePropertyAccessMode(PropertyAccessMode.Field);
+                cm.OwnsMany(c => c.Tags, t => t.HasKey(t => t.Id));
+            });
         });
 
         modelBuilder.ConfigureToCouchbase(this, true);

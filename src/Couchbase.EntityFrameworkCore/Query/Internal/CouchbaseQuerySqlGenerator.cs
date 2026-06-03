@@ -39,12 +39,12 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
     {
         // Skip LEFT JOINs for owned types — they are embedded in their owner's document
         // and have no independent keyspace.
+        // Direct-table form: LEFT JOIN ownedTable AS alias ON …
         if (leftJoinExpression.Table is TableExpression tableExpression && IsOwnedTable(tableExpression))
             return leftJoinExpression;
 
-        // EF Core generates a lateral-join subquery (LEFT JOIN (SELECT ...) AS s) when
-        // OwnsMany items have nested owned navigations (OwnsOne/OwnsMany within OwnsMany).
-        // Skip the entire lateral join when its subquery only reads from owned tables.
+        // Lateral-subquery form: LEFT JOIN (SELECT … FROM ownedTable) AS alias ON …
+        // EF Core emits this shape when OwnsMany items have nested owned navigations.
         if (leftJoinExpression.Table is SelectExpression innerSelect && IsAllOwnedTablesSelect(innerSelect))
             return leftJoinExpression;
 
@@ -56,10 +56,11 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
     {
         // Skip INNER JOINs for owned types — they are embedded in their owner's document
         // and have no independent keyspace.
+        // Direct-table form: INNER JOIN ownedTable AS alias ON …
         if (innerJoinExpression.Table is TableExpression tableExpression && IsOwnedTable(tableExpression))
             return innerJoinExpression;
 
-        // Lateral-join subquery form — same logic as VisitLeftJoin above.
+        // Lateral-subquery form: INNER JOIN (SELECT … FROM ownedTable) AS alias ON …
         if (innerJoinExpression.Table is SelectExpression innerSelect && IsAllOwnedTablesSelect(innerSelect))
             return innerJoinExpression;
 
@@ -88,7 +89,54 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
     /// <see langword="true"/> for unmapped tables.
     /// </para>
     /// </remarks>
-    internal static bool IsOwnedTable(TableExpression tableExpression)
+    /// <summary>
+    /// Emits the <c>ORDER BY</c> clause, dropping any ordering terms that reference a
+    /// suppressed owned-join alias.  Without this filter the alias appears in
+    /// <c>ORDER BY</c> but never in <c>FROM</c>/<c>JOIN</c>, producing malformed SQL
+    /// that survives only because N1QL evaluates undefined identifiers as
+    /// <c>MISSING</c> rather than raising an error.
+    /// </summary>
+    protected override void GenerateOrderings(SelectExpression selectExpression)
+    {
+        // Collect the aliases of every owned-type JOIN that VisitLeftJoin/VisitInnerJoin
+        // will suppress so that their ORDER BY terms can be dropped symmetrically.
+        var skippedAliases = CollectOwnedJoinAliases(selectExpression);
+        if (skippedAliases.Count == 0)
+        {
+            base.GenerateOrderings(selectExpression);
+            return;
+        }
+
+        // Filter out orderings whose sole column reference is to a suppressed alias.
+        // Orderings on owner columns or literals are kept unchanged.
+        var filtered = selectExpression.Orderings
+            .Where(o => o.Expression is not ColumnExpression col
+                        || !skippedAliases.Contains(col.TableAlias))
+            .ToList();
+
+        if (filtered.Count == 0) return;
+
+        // EF Core 10 does not expose a per-ordering virtual hook (GenerateOrdering was
+        // removed in modern versions; only GenerateOrderings(SelectExpression) exists).
+        // Emit each surviving ordering via a private helper so the formatting is defined
+        // in one place and stays in sync with the base class's simple ASC/DESC convention.
+        Sql.AppendLine().Append("ORDER BY ");
+        GenerateList(filtered, EmitOrdering);
+    }
+
+    /// <summary>
+    /// Emits a single ordering term (<c>expression ASC|DESC</c>) into the SQL buffer.
+    /// Extracted so <see cref="GenerateOrderings"/> does not inline formatting logic
+    /// that would silently diverge if the base class ever adds NULLS FIRST/LAST or
+    /// collation support.
+    /// </summary>
+    private void EmitOrdering(OrderingExpression ordering)
+    {
+        Visit(ordering.Expression);
+        Sql.Append(ordering.IsAscending ? " ASC" : " DESC");
+    }
+
+    private static bool IsOwnedTable(TableExpression tableExpression)
     {
         // Single-pass enumeration: track whether any mappings exist and whether every
         // mapping seen so far is an owned entity type. Avoids the ToList() allocation
@@ -115,14 +163,30 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
         if (selectExpression.Tables.Count == 0) return false;
         foreach (var table in selectExpression.Tables)
         {
-            TableExpression? te = table switch
+            switch (table)
             {
-                TableExpression t                                       => t,
-                LeftJoinExpression  lj when lj.Table is TableExpression t => t,
-                InnerJoinExpression ij when ij.Table is TableExpression t => t,
-                _ => null
-            };
-            if (te == null || !IsOwnedTable(te)) return false;
+                // Direct owned table — base case.
+                case TableExpression te when IsOwnedTable(te):
+                    break;
+
+                // JOIN whose inner table is a direct owned table.
+                case LeftJoinExpression  lj when lj.Table is TableExpression ljTe && IsOwnedTable(ljTe):
+                    break;
+                case InnerJoinExpression ij when ij.Table is TableExpression ijTe && IsOwnedTable(ijTe):
+                    break;
+
+                // JOIN whose inner table is itself a lateral subquery — recurse so that
+                // depth ≥ 3 nested OwnsMany chains (e.g. Customer → Methods → Tags → Audits)
+                // are correctly identified and their JOINs suppressed.
+                case LeftJoinExpression  lj when lj.Table is SelectExpression ljInner && IsAllOwnedTablesSelect(ljInner):
+                    break;
+                case InnerJoinExpression ij when ij.Table is SelectExpression ijInner && IsAllOwnedTablesSelect(ijInner):
+                    break;
+
+                // Anything else (non-owned table, unrecognised shape) → not all owned.
+                default:
+                    return false;
+            }
         }
         return true;
     }
