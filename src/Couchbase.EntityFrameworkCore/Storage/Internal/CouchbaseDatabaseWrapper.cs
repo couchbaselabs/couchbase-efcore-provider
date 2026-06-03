@@ -300,22 +300,13 @@ public class CouchbaseDatabaseWrapper : Database
                 var fieldName = fieldNamingPolicy?.ConvertName(nav.Name) ?? nav.Name;
                 if (navValue is IEnumerable items)
                 {
-                    var itemProps = nav.TargetEntityType.GetProperties()
-                        .Where(p => !p.IsShadowProperty()).ToList();
+                    // Use SerializeOwnedItem so that nested OwnsOne / OwnsMany navigations
+                    // within each item (e.g. ContactMethod.Label, ContactMethod.Tags) are
+                    // recursively included.  The flat scalar-only loop it replaces silently
+                    // dropped all nested navigations.
                     var list = new List<Dictionary<string, object?>>();
                     foreach (var item in items)
-                    {
-                        var itemDoc = new Dictionary<string, object?>();
-                        foreach (var p in itemProps)
-                        {
-                            // Same PropertyInfo → FieldInfo fallback for each owned-item scalar.
-                            var value = p.PropertyInfo != null
-                                ? p.PropertyInfo.GetValue(item)
-                                : p.FieldInfo?.GetValue(item);
-                            itemDoc[fieldNamingPolicy?.ConvertName(p.Name) ?? p.Name] = value;
-                        }
-                        list.Add(itemDoc);
-                    }
+                        list.Add(SerializeOwnedItem(item, nav.TargetEntityType, fieldNamingPolicy));
                     doc[fieldName] = list;
                 }
                 else

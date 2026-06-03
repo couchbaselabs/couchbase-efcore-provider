@@ -39,12 +39,12 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
     {
         // Skip LEFT JOINs for owned types — they are embedded in their owner's document
         // and have no independent keyspace.
+        // Direct-table form: LEFT JOIN ownedTable AS alias ON …
         if (leftJoinExpression.Table is TableExpression tableExpression && IsOwnedTable(tableExpression))
             return leftJoinExpression;
 
-        // EF Core generates a lateral-join subquery (LEFT JOIN (SELECT ...) AS s) when
-        // OwnsMany items have nested owned navigations (OwnsOne/OwnsMany within OwnsMany).
-        // Skip the entire lateral join when its subquery only reads from owned tables.
+        // Lateral-subquery form: LEFT JOIN (SELECT … FROM ownedTable) AS alias ON …
+        // EF Core emits this shape when OwnsMany items have nested owned navigations.
         if (leftJoinExpression.Table is SelectExpression innerSelect && IsAllOwnedTablesSelect(innerSelect))
             return leftJoinExpression;
 
@@ -56,10 +56,11 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
     {
         // Skip INNER JOINs for owned types — they are embedded in their owner's document
         // and have no independent keyspace.
+        // Direct-table form: INNER JOIN ownedTable AS alias ON …
         if (innerJoinExpression.Table is TableExpression tableExpression && IsOwnedTable(tableExpression))
             return innerJoinExpression;
 
-        // Lateral-join subquery form — same logic as VisitLeftJoin above.
+        // Lateral-subquery form: INNER JOIN (SELECT … FROM ownedTable) AS alias ON …
         if (innerJoinExpression.Table is SelectExpression innerSelect && IsAllOwnedTablesSelect(innerSelect))
             return innerJoinExpression;
 
@@ -88,7 +89,45 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
     /// <see langword="true"/> for unmapped tables.
     /// </para>
     /// </remarks>
-    internal static bool IsOwnedTable(TableExpression tableExpression)
+    /// <summary>
+    /// Emits the <c>ORDER BY</c> clause, dropping any ordering terms that reference a
+    /// suppressed owned-join alias.  Without this filter the alias appears in
+    /// <c>ORDER BY</c> but never in <c>FROM</c>/<c>JOIN</c>, producing malformed SQL
+    /// that survives only because N1QL evaluates undefined identifiers as
+    /// <c>MISSING</c> rather than raising an error.
+    /// </summary>
+    protected override void GenerateOrderings(SelectExpression selectExpression)
+    {
+        // Collect the aliases of every owned-type JOIN that VisitLeftJoin/VisitInnerJoin
+        // will suppress so that their ORDER BY terms can be dropped symmetrically.
+        var skippedAliases = CollectOwnedJoinAliases(selectExpression);
+        if (skippedAliases.Count == 0)
+        {
+            base.GenerateOrderings(selectExpression);
+            return;
+        }
+
+        // Filter out orderings whose sole column reference is to a suppressed alias.
+        // Orderings on owner columns or literals are kept unchanged.
+        var filtered = selectExpression.Orderings
+            .Where(o => o.Expression is not ColumnExpression col
+                        || !skippedAliases.Contains(col.TableAlias))
+            .ToList();
+
+        if (filtered.Count == 0) return;
+
+        // Re-emit only the surviving orderings using the base helper so that
+        // ASC/DESC, NULLS FIRST/LAST, and any provider-specific formatting are
+        // applied consistently.
+        Sql.AppendLine().Append("ORDER BY ");
+        GenerateList(filtered, o =>
+        {
+            Visit(o.Expression);
+            if (o.IsAscending) Sql.Append(" ASC"); else Sql.Append(" DESC");
+        });
+    }
+
+    private static bool IsOwnedTable(TableExpression tableExpression)
     {
         // Single-pass enumeration: track whether any mappings exist and whether every
         // mapping seen so far is an owned entity type. Avoids the ToList() allocation
