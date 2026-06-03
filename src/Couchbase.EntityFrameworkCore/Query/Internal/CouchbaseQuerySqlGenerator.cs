@@ -154,14 +154,30 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
         if (selectExpression.Tables.Count == 0) return false;
         foreach (var table in selectExpression.Tables)
         {
-            TableExpression? te = table switch
+            switch (table)
             {
-                TableExpression t                                       => t,
-                LeftJoinExpression  lj when lj.Table is TableExpression t => t,
-                InnerJoinExpression ij when ij.Table is TableExpression t => t,
-                _ => null
-            };
-            if (te == null || !IsOwnedTable(te)) return false;
+                // Direct owned table — base case.
+                case TableExpression te when IsOwnedTable(te):
+                    break;
+
+                // JOIN whose inner table is a direct owned table.
+                case LeftJoinExpression  lj when lj.Table is TableExpression ljTe && IsOwnedTable(ljTe):
+                    break;
+                case InnerJoinExpression ij when ij.Table is TableExpression ijTe && IsOwnedTable(ijTe):
+                    break;
+
+                // JOIN whose inner table is itself a lateral subquery — recurse so that
+                // depth ≥ 3 nested OwnsMany chains (e.g. Customer → Methods → Tags → Audits)
+                // are correctly identified and their JOINs suppressed.
+                case LeftJoinExpression  lj when lj.Table is SelectExpression ljInner && IsAllOwnedTablesSelect(ljInner):
+                    break;
+                case InnerJoinExpression ij when ij.Table is SelectExpression ijInner && IsAllOwnedTablesSelect(ijInner):
+                    break;
+
+                // Anything else (non-owned table, unrecognised shape) → not all owned.
+                default:
+                    return false;
+            }
         }
         return true;
     }

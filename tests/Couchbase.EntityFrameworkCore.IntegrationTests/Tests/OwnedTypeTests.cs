@@ -661,4 +661,102 @@ public class OwnedTypeTests(
             if (customer != null) { ctx.Remove(customer); await ctx.SaveChangesAsync(); }
         }
     }
+
+    // -------------------------------------------------------------------------
+    // Depth-3 OwnsMany (Customer → ContactMethod → ContactTag → TagAudit)
+    // These tests verify that IsAllOwnedTablesSelect recurses correctly so that
+    // the lateral-join subquery for TagAudit is suppressed (no empty FROM) and
+    // its ORDER BY alias is dropped (no dangling alias).
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task OwnsMany_Depth3_Audits_ArePopulated()
+    {
+        // Carol's first tag (priority=high) has two audits; the second has none.
+        await using var ctx = fixture.GetDbContext();
+        var customer = await ctx.Customers.FirstAsync(c => c.CustomerId == 3);
+
+        var email = customer.ContactMethods.First(cm => cm.Type == "email");
+        var priority = email.Tags.First(t => t.Key == "priority");
+
+        Assert.Equal(2, priority.Audits.Count);
+        Assert.Contains(priority.Audits, a => a.Note == "set by admin");
+        Assert.Contains(priority.Audits, a => a.Note == "confirmed");
+    }
+
+    [Fact]
+    public async Task OwnsMany_Depth3_EmptyAudits_ReadsAsEmpty()
+    {
+        // The "verified" tag has an empty Audits list — must read back as empty, not null.
+        await using var ctx = fixture.GetDbContext();
+        var customer = await ctx.Customers.FirstAsync(c => c.CustomerId == 3);
+
+        var email = customer.ContactMethods.First(cm => cm.Type == "email");
+        var verified = email.Tags.First(t => t.Key == "verified");
+
+        Assert.NotNull(verified.Audits);
+        Assert.Empty(verified.Audits);
+    }
+
+    [Fact]
+    public async Task OwnsMany_Depth3_ToList_DoesNotThrow()
+    {
+        // ToListAsync on a depth-3 model previously caused N1QL error 3000
+        // (empty FROM clause) due to the non-recursive IsAllOwnedTablesSelect.
+        await using var ctx = fixture.GetDbContext();
+        var customers = await ctx.Customers.ToListAsync();
+        Assert.NotEmpty(customers);
+    }
+
+    [Fact]
+    public async Task OwnsMany_Depth3_Audits_RoundTrip()
+    {
+        // Write a new customer with depth-3 data and confirm it reads back correctly.
+        const int id = 300;
+        try
+        {
+            await using (var ctx = fixture.GetDbContext())
+            {
+                ctx.Update(new OwnedTypeFixture.Customer
+                {
+                    CustomerId = id,
+                    Name = "Depth3 Test",
+                    Address = new OwnedTypeFixture.Address { Street = "1 Deep St", City = "Recursion" },
+                    ContactMethods =
+                    [
+                        new OwnedTypeFixture.ContactMethod
+                        {
+                            Id = 1, Type = "email", Value = "deep@test.com",
+                            Tags =
+                            [
+                                new OwnedTypeFixture.ContactTag
+                                {
+                                    Id = 1, Key = "level", Val = "3",
+                                    Audits =
+                                    [
+                                        new OwnedTypeFixture.TagAudit { Id = 1, Note = "depth-3 note" }
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                });
+                await ctx.SaveChangesAsync();
+            }
+
+            await using (var ctx = fixture.GetDbContext())
+            {
+                var customer = await ctx.Customers.FirstAsync(c => c.CustomerId == id);
+                var tag = customer.ContactMethods.Single().Tags.Single();
+                Assert.Single(tag.Audits);
+                Assert.Equal("depth-3 note", tag.Audits[0].Note);
+            }
+        }
+        finally
+        {
+            await using var ctx = fixture.GetDbContext();
+            var customer = await ctx.Customers.FirstOrDefaultAsync(c => c.CustomerId == id);
+            if (customer != null) { ctx.Remove(customer); await ctx.SaveChangesAsync(); }
+        }
+    }
 }

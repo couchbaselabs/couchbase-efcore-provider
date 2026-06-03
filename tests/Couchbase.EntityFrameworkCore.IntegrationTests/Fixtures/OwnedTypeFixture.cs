@@ -60,8 +60,16 @@ public class OwnedTypeFixture : CouchbaseFixture<OwnedTypeDbContext>
                         Label = new ContactLabel { DisplayName = "Work Email" },
                         Tags =
                         [
-                            new ContactTag { Id = 1, Key = "priority", Val = "high" },
-                            new ContactTag { Id = 2, Key = "verified", Val = "true" }
+                            new ContactTag
+                            {
+                                Id = 1, Key = "priority", Val = "high",
+                                Audits =
+                                [
+                                    new TagAudit { Id = 1, Note = "set by admin" },
+                                    new TagAudit { Id = 2, Note = "confirmed" }
+                                ]
+                            },
+                            new ContactTag { Id = 2, Key = "verified", Val = "true", Audits = [] }
                         ]
                     },
                     new ContactMethod
@@ -110,6 +118,21 @@ public class OwnedTypeFixture : CouchbaseFixture<OwnedTypeDbContext>
         public int Id { get; set; }
         public string Key { get; set; } = "";
         public string Val { get; set; } = "";
+        /// <summary>
+        /// Depth-3 OwnsMany — exercises the recursive <c>IsAllOwnedTablesSelect</c> path.
+        /// </summary>
+        public List<TagAudit> Audits { get; set; } = [];
+    }
+
+    /// <summary>
+    /// Owned entity at depth 3 (Customer → ContactMethod → ContactTag → TagAudit).
+    /// Used to verify that <c>IsAllOwnedTablesSelect</c> recurses correctly and does
+    /// not leave an empty FROM clause or dangling ORDER BY alias in the generated N1QL.
+    /// </summary>
+    public class TagAudit
+    {
+        public int Id { get; set; }
+        public string Note { get; set; } = "";
     }
 
     // -------------------------------------------------------------------------

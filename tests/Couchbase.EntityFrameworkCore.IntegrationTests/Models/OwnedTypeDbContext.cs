@@ -23,7 +23,10 @@ public class OwnedTypeDbContext(DbContextOptions<OwnedTypeDbContext> options) : 
             b.OwnsMany(c => c.ContactMethods, cm =>
             {
                 cm.OwnsOne(m => m.Label);
-                cm.OwnsMany(m => m.Tags);
+                cm.OwnsMany(m => m.Tags, t =>
+                {
+                    t.OwnsMany(t => t.Audits);
+                });
             });
         });
 
