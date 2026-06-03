@@ -300,6 +300,8 @@ public class CouchbaseDatabaseWrapper : Database
                 var fieldName = fieldNamingPolicy?.ConvertName(nav.Name) ?? nav.Name;
                 if (navValue is IEnumerable items)
                 {
+                    var itemProps = nav.TargetEntityType.GetProperties()
+                        .Where(p => !p.IsShadowProperty()).ToList();
                     var list = new List<Dictionary<string, object?>>();
                     foreach (var item in items)
                     {
