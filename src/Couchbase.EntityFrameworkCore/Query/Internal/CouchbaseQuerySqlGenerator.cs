@@ -116,15 +116,24 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
 
         if (filtered.Count == 0) return;
 
-        // Re-emit only the surviving orderings using the base helper so that
-        // ASC/DESC, NULLS FIRST/LAST, and any provider-specific formatting are
-        // applied consistently.
+        // EF Core 10 does not expose a per-ordering virtual hook (GenerateOrdering was
+        // removed in modern versions; only GenerateOrderings(SelectExpression) exists).
+        // Emit each surviving ordering via a private helper so the formatting is defined
+        // in one place and stays in sync with the base class's simple ASC/DESC convention.
         Sql.AppendLine().Append("ORDER BY ");
-        GenerateList(filtered, o =>
-        {
-            Visit(o.Expression);
-            if (o.IsAscending) Sql.Append(" ASC"); else Sql.Append(" DESC");
-        });
+        GenerateList(filtered, EmitOrdering);
+    }
+
+    /// <summary>
+    /// Emits a single ordering term (<c>expression ASC|DESC</c>) into the SQL buffer.
+    /// Extracted so <see cref="GenerateOrderings"/> does not inline formatting logic
+    /// that would silently diverge if the base class ever adds NULLS FIRST/LAST or
+    /// collation support.
+    /// </summary>
+    private void EmitOrdering(OrderingExpression ordering)
+    {
+        Visit(ordering.Expression);
+        Sql.Append(ordering.IsAscending ? " ASC" : " DESC");
     }
 
     private static bool IsOwnedTable(TableExpression tableExpression)

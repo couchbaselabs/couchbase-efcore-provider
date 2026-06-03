@@ -200,4 +200,81 @@ public class OwnedJoinOrderByFilterTests
         var sql = ctx.Customers.Where(c => c.CustomerId == 1).Take(1).ToQueryString();
         Assert.Equal(sql.Count(c => c == '('), sql.Count(c => c == ')'));
     }
+
+    // -----------------------------------------------------------------------
+    // EmitOrdering — verifies that the extracted helper correctly emits
+    // ASC / DESC and that surviving owner-column orderings are preserved
+    // after the suppressed-alias filter runs.
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public void EmitOrdering_AscendingOrderBy_EmitsAsc()
+    {
+        // Default OrderBy is ascending — verify "ASC" appears in the ORDER BY clause.
+        using var ctx = CreateContext();
+        var sql = ctx.Customers
+            .OrderBy(c => c.CustomerId)
+            .ToQueryString();
+
+        var orderByIndex = sql.IndexOf("ORDER BY", StringComparison.OrdinalIgnoreCase);
+        Assert.True(orderByIndex >= 0, "Expected an ORDER BY clause");
+        Assert.Contains("ASC", sql[orderByIndex..], StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void EmitOrdering_DescendingOrderBy_EmitsDesc()
+    {
+        // OrderByDescending — verify "DESC" appears in the ORDER BY clause.
+        using var ctx = CreateContext();
+        var sql = ctx.Customers
+            .OrderByDescending(c => c.CustomerId)
+            .ToQueryString();
+
+        var orderByIndex = sql.IndexOf("ORDER BY", StringComparison.OrdinalIgnoreCase);
+        Assert.True(orderByIndex >= 0, "Expected an ORDER BY clause");
+        Assert.Contains("DESC", sql[orderByIndex..], StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void EmitOrdering_OwnerColumnPreserved_AfterSuppressedAliasFiltered()
+    {
+        // When suppressed-alias orderings are dropped, surviving owner-column
+        // orderings must still appear with the correct direction.
+        using var ctx = CreateContext();
+        var sql = ctx.Customers
+            .OrderByDescending(c => c.CustomerId)
+            .ToQueryString();
+
+        var orderByIndex = sql.IndexOf("ORDER BY", StringComparison.OrdinalIgnoreCase);
+        Assert.True(orderByIndex >= 0, "Expected an ORDER BY clause");
+        var orderByClause = sql[orderByIndex..];
+
+        // Owner column must be present.
+        Assert.Contains("CustomerId", orderByClause, StringComparison.OrdinalIgnoreCase);
+        // Direction must be DESC as requested.
+        Assert.Contains("DESC", orderByClause, StringComparison.OrdinalIgnoreCase);
+        // No suppressed alias must leak through.
+        AssertNoSuppressedAliasInOrderBy(sql);
+    }
+
+    [Fact]
+    public void EmitOrdering_MultipleOwnerColumns_AllPreserved()
+    {
+        // Multiple surviving ORDER BY terms must all appear — none should be dropped.
+        using var ctx = CreateContext();
+        var sql = ctx.Customers
+            .OrderBy(c => c.CustomerId)
+            .ThenByDescending(c => c.Name)
+            .ToQueryString();
+
+        var orderByIndex = sql.IndexOf("ORDER BY", StringComparison.OrdinalIgnoreCase);
+        Assert.True(orderByIndex >= 0, "Expected an ORDER BY clause");
+        var orderByClause = sql[orderByIndex..];
+
+        Assert.Contains("CustomerId", orderByClause, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Name",       orderByClause, StringComparison.OrdinalIgnoreCase);
+        // First column ASC, second DESC.
+        Assert.Contains("ASC",  orderByClause, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("DESC", orderByClause, StringComparison.OrdinalIgnoreCase);
+    }
 }
