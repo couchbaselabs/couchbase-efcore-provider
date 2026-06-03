@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Couchbase.EntityFrameworkCore.Extensions;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
@@ -90,16 +91,34 @@ public class OwnedJoinOrderByFilterTests
     // Helpers
     // -----------------------------------------------------------------------
 
+    /// <summary>
+    /// Asserts that every table alias referenced in the ORDER BY clause is also
+    /// defined as a live alias in the FROM/JOIN clauses of the same SQL statement.
+    /// This is alias-name-agnostic — it does not hard-code "s", "s0", etc., so it
+    /// correctly catches any dangling suppressed alias regardless of what EF assigns.
+    /// </summary>
     private static void AssertNoSuppressedAliasInOrderBy(string sql)
     {
         var orderByIndex = sql.IndexOf("ORDER BY", StringComparison.OrdinalIgnoreCase);
         if (orderByIndex < 0) return;
+
+        // Collect every alias defined in FROM/AS and JOIN/AS clauses before ORDER BY.
+        // Pattern: AS `alias`  (EF always uses backtick-quoted aliases)
+        var fromSection = sql[..orderByIndex];
+        var definedAliases = new HashSet<string>(
+            Regex.Matches(fromSection, @"AS\s+`([^`]+)`")
+                 .Select(m => m.Groups[1].Value),
+            StringComparer.Ordinal);
+
+        // Collect every alias *used* in ORDER BY: `alias`.`column`
         var orderByClause = sql[orderByIndex..];
-        // No backtick-quoted alias referencing a suppressed owned-join table
-        // should appear after ORDER BY.
-        Assert.DoesNotContain("`s`.",  orderByClause, StringComparison.Ordinal);
-        Assert.DoesNotContain("`s0`.", orderByClause, StringComparison.Ordinal);
-        Assert.DoesNotContain("`s1`.", orderByClause, StringComparison.Ordinal);
+        var usedAliases = Regex.Matches(orderByClause, @"`([^`]+)`\.")
+                               .Select(m => m.Groups[1].Value)
+                               .Distinct();
+
+        foreach (var alias in usedAliases)
+            Assert.Contains(alias, definedAliases,
+                $"ORDER BY references alias `{alias}` which is not defined in FROM/JOIN — dangling suppressed alias.");
     }
 
     // -----------------------------------------------------------------------
