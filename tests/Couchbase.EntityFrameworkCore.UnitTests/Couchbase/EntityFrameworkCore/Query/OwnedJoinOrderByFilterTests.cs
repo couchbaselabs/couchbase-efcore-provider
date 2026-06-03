@@ -117,7 +117,7 @@ public class OwnedJoinOrderByFilterTests
                                .Distinct();
 
         foreach (var alias in usedAliases)
-            Assert.Contains(alias, definedAliases,
+            Assert.True(definedAliases.Contains(alias),
                 $"ORDER BY references alias `{alias}` which is not defined in FROM/JOIN — dangling suppressed alias.");
     }
 

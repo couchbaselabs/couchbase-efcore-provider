@@ -136,6 +136,59 @@ public class OwnedTypeFixture : CouchbaseFixture<OwnedTypeDbContext>
     }
 
     // -------------------------------------------------------------------------
+    // Field-access / get-only model
+    // Exercises FieldInfo fallback in MaterializeOwnedItem (read) and
+    // SerializeOwnedItem / FillOwnsOneIntoDoc (write).
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Root entity whose OwnsOne and OwnsMany items have get-only scalar properties
+    /// (no setter) so EF Core must read/write them via the compiler-generated backing
+    /// field — the code path hardened by the FieldInfo fallback fixes.
+    /// <para>
+    /// <see cref="FieldContact.Tags"/> is a <see cref="HashSet{T}"/> nested inside
+    /// an OwnsMany item, exercising the <c>ICollection&lt;T&gt;</c> non-<c>IList</c>
+    /// clear path inside <c>MaterializeOwnedItem</c>'s nested navigation loop.
+    /// </para>
+    /// </summary>
+    public class FieldAccessCustomer
+    {
+        public int Id { get; set; }
+        public string Name { get; set; } = "";
+        public FieldAddress Address { get; set; } = new();
+        public List<FieldContact> Contacts { get; set; } = [];
+    }
+
+    /// <summary>OwnsOne with get-only scalars — written via backing field.</summary>
+    public class FieldAddress
+    {
+        public string? Street { get; }
+        public string? City { get; }
+
+        // Parameterless ctor required for EF Core materialisation.
+        public FieldAddress() { }
+        public FieldAddress(string? street, string? city) { Street = street; City = city; }
+    }
+
+    /// <summary>OwnsMany item with a get-only scalar and a HashSet nested OwnsMany.</summary>
+    public class FieldContact
+    {
+        public int Id { get; set; }
+        public string? Label { get; }
+        /// <summary>Non-IList nested collection — exercises the ICollection&lt;T&gt; clear path.</summary>
+        public HashSet<FieldTag> Tags { get; set; } = [];
+
+        public FieldContact() { }
+        public FieldContact(int id, string? label) { Id = id; Label = label; }
+    }
+
+    public class FieldTag
+    {
+        public int Id { get; set; }
+        public string Key { get; set; } = "";
+    }
+
+    // -------------------------------------------------------------------------
     // HashSet<T>-backed model — used by OwnedCollectionClearIntegrationTests
     // -------------------------------------------------------------------------
 

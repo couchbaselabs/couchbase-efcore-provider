@@ -759,4 +759,174 @@ public class OwnedTypeTests(
             if (customer != null) { ctx.Remove(customer); await ctx.SaveChangesAsync(); }
         }
     }
+
+    // -------------------------------------------------------------------------
+    // Field-access / get-only owned properties
+    // Verifies that FieldInfo fallback in MaterializeOwnedItem and SerializeOwnedItem
+    // correctly reads and writes properties that have no setter.
+    // Also exercises the ICollection<T> non-IList nested clear path via
+    // FieldContact.Tags (HashSet<FieldTag>).
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task FieldAccess_OwnsOne_GetOnlyScalars_RoundTrip()
+    {
+        // A FieldAddress with get-only Street/City must survive a write → read cycle.
+        const int id = 400;
+        try
+        {
+            await using (var ctx = fixture.GetDbContext())
+            {
+                ctx.Update(new OwnedTypeFixture.FieldAccessCustomer
+                {
+                    Id = id,
+                    Name = "FieldAccess Alice",
+                    Address = new OwnedTypeFixture.FieldAddress("10 Elm St", "Greenfield")
+                });
+                await ctx.SaveChangesAsync();
+            }
+
+            await using (var ctx = fixture.GetDbContext())
+            {
+                var customer = await ctx.FieldAccessCustomers.FirstAsync(c => c.Id == id);
+                Assert.NotNull(customer.Address);
+                Assert.Equal("10 Elm St",  customer.Address.Street);
+                Assert.Equal("Greenfield", customer.Address.City);
+            }
+        }
+        finally
+        {
+            await using var ctx = fixture.GetDbContext();
+            var c = await ctx.FieldAccessCustomers.FirstOrDefaultAsync(c => c.Id == id);
+            if (c != null) { ctx.Remove(c); await ctx.SaveChangesAsync(); }
+        }
+    }
+
+    [Fact]
+    public async Task FieldAccess_OwnsMany_GetOnlyScalar_RoundTrip()
+    {
+        // FieldContact.Label has no setter — must be written and read back via FieldInfo.
+        const int id = 401;
+        try
+        {
+            await using (var ctx = fixture.GetDbContext())
+            {
+                ctx.Update(new OwnedTypeFixture.FieldAccessCustomer
+                {
+                    Id = id,
+                    Name = "FieldAccess Bob",
+                    Address = new OwnedTypeFixture.FieldAddress("2 Oak Ave", "Lakewood"),
+                    Contacts =
+                    [
+                        new OwnedTypeFixture.FieldContact(1, "work"),
+                        new OwnedTypeFixture.FieldContact(2, "home")
+                    ]
+                });
+                await ctx.SaveChangesAsync();
+            }
+
+            await using (var ctx = fixture.GetDbContext())
+            {
+                var customer = await ctx.FieldAccessCustomers.FirstAsync(c => c.Id == id);
+                Assert.Equal(2, customer.Contacts.Count);
+                Assert.Contains(customer.Contacts, c => c.Label == "work");
+                Assert.Contains(customer.Contacts, c => c.Label == "home");
+            }
+        }
+        finally
+        {
+            await using var ctx = fixture.GetDbContext();
+            var c = await ctx.FieldAccessCustomers.FirstOrDefaultAsync(c => c.Id == id);
+            if (c != null) { ctx.Remove(c); await ctx.SaveChangesAsync(); }
+        }
+    }
+
+    [Fact]
+    public async Task FieldAccess_NestedHashSet_RoundTrip()
+    {
+        // FieldContact.Tags is a HashSet<FieldTag> nested inside an OwnsMany item.
+        // Exercises the ICollection<T> non-IList clear path inside MaterializeOwnedItem.
+        const int id = 402;
+        try
+        {
+            await using (var ctx = fixture.GetDbContext())
+            {
+                ctx.Update(new OwnedTypeFixture.FieldAccessCustomer
+                {
+                    Id = id,
+                    Name = "FieldAccess Carol",
+                    Address = new OwnedTypeFixture.FieldAddress("3 Pine Rd", "Riverdale"),
+                    Contacts =
+                    [
+                        new OwnedTypeFixture.FieldContact(1, "primary")
+                        {
+                            Tags =
+                            [
+                                new OwnedTypeFixture.FieldTag { Id = 1, Key = "vip" },
+                                new OwnedTypeFixture.FieldTag { Id = 2, Key = "active" }
+                            ]
+                        }
+                    ]
+                });
+                await ctx.SaveChangesAsync();
+            }
+
+            await using (var ctx = fixture.GetDbContext())
+            {
+                var customer = await ctx.FieldAccessCustomers.FirstAsync(c => c.Id == id);
+                var contact = customer.Contacts.Single();
+                Assert.Equal("primary", contact.Label);
+                Assert.Equal(2, contact.Tags.Count);
+                Assert.Contains(contact.Tags, t => t.Key == "vip");
+                Assert.Contains(contact.Tags, t => t.Key == "active");
+            }
+        }
+        finally
+        {
+            await using var ctx = fixture.GetDbContext();
+            var c = await ctx.FieldAccessCustomers.FirstOrDefaultAsync(c => c.Id == id);
+            if (c != null) { ctx.Remove(c); await ctx.SaveChangesAsync(); }
+        }
+    }
+
+    [Fact]
+    public async Task FieldAccess_NestedHashSet_NoDuplicatesOnRequery()
+    {
+        // Querying the same HashSet<FieldTag>-backed contact twice (fresh context each
+        // time) must not accumulate duplicates — the ICollection<T> clear must fire.
+        const int id = 403;
+        try
+        {
+            await using (var ctx = fixture.GetDbContext())
+            {
+                ctx.Update(new OwnedTypeFixture.FieldAccessCustomer
+                {
+                    Id = id,
+                    Name = "FieldAccess Dave",
+                    Address = new OwnedTypeFixture.FieldAddress("4 Maple Ln", "Springdale"),
+                    Contacts =
+                    [
+                        new OwnedTypeFixture.FieldContact(1, "only")
+                        {
+                            Tags = [new OwnedTypeFixture.FieldTag { Id = 1, Key = "solo" }]
+                        }
+                    ]
+                });
+                await ctx.SaveChangesAsync();
+            }
+
+            for (var pass = 1; pass <= 2; pass++)
+            {
+                await using var ctx = fixture.GetDbContext();
+                var customer = await ctx.FieldAccessCustomers.FirstAsync(c => c.Id == id);
+                Assert.Single(customer.Contacts.Single().Tags);
+            }
+        }
+        finally
+        {
+            await using var ctx = fixture.GetDbContext();
+            var c = await ctx.FieldAccessCustomers.FirstOrDefaultAsync(c => c.Id == id);
+            if (c != null) { ctx.Remove(c); await ctx.SaveChangesAsync(); }
+        }
+    }
 }
