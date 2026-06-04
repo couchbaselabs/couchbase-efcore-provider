@@ -9,6 +9,7 @@
     </PropertyGroup>
 
     <ItemGroup>
+      <PackageReference Include="Aspire.Hosting.AppHost" />
       <PackageReference Include="Couchbase.Aspire.Hosting" />
       <PackageReference Include="CouchbaseNetClient" />
     </ItemGroup>
