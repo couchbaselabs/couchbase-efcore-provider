@@ -8,7 +8,7 @@ namespace Couchbase.EntityFrameworkCore.UnitTests.Couchbase.EntityFrameworkCore.
 /// <summary>
 /// Verifies that EF Core's skip-navigation (HasMany/WithMany) queries generate
 /// valid N1QL — no dangling aliases, balanced parentheses, no empty FROM, and
-/// no owned-table JOIN leakage — before implementing Pattern B many-to-many support.
+/// no owned-table JOIN leakage — as a regression test for many-to-many support.
 /// </summary>
 public class SkipNavigationSqlGenerationTests
 {
