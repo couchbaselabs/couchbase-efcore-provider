@@ -70,7 +70,12 @@ public class CouchbaseDatabaseWrapper : Database
                 continue;
             }
 
-            var primaryKey = entityType.GetPrimaryKey(entity);
+            // Shared entity types (e.g. hidden join table from HasMany().WithMany()) have
+            // all PK columns as shadow properties — use the IUpdateEntry overload so the
+            // values are read from the entry rather than the CLR Dictionary<string,object>.
+            var primaryKey = entityType.HasSharedClrType
+                ? entityType.GetPrimaryKey(updateEntry)
+                : entityType.GetPrimaryKey(entity);
             var keyspace = entityType.GetCollectionName()
                 ?? throw new InvalidOperationException(
                     $"Entity type '{entityType.ClrType.Name}' has no mapped table name. " +
@@ -241,8 +246,29 @@ public class CouchbaseDatabaseWrapper : Database
 
         // No owned navigations: use CLR instance so the SDK's camelCase serializer produces
         // the same field names that already work for all existing entity types.
+        //
+        // Exception: shared entity types (HasSharedClrType == true, e.g. the hidden join
+        // entity for skip navigations / HasMany().WithMany()) use Dictionary<string,object>
+        // as their CLR type.  All their FK properties are shadow properties — the standard
+        // IsShadowProperty filter would produce an empty document.  Additionally, Dictionary's
+        // indexer throws TargetParameterCountException when PropertyInfo.SetValue is called
+        // without index arguments.  For shared types we therefore build a plain dictionary
+        // keyed by column name from ALL (including shadow) properties.
         if (ownedNavs.Count == 0)
         {
+            if (entityType.HasSharedClrType)
+            {
+                // Shared entity type (skip-navigation join table): all FK columns are shadow
+                // properties — write every property value by column name.
+                var joinDoc = new Dictionary<string, object?>();
+                foreach (var property in entityType.GetProperties())
+                {
+                    var fieldName = fieldNamingPolicy?.ConvertName(property.GetColumnName()) ?? property.GetColumnName();
+                    joinDoc[fieldName] = updateEntry.GetCurrentValue(property);
+                }
+                return joinDoc;
+            }
+
             var obj = Activator.CreateInstance(entityType.ClrType)!;
             foreach (var property in entityType.GetProperties())
             {

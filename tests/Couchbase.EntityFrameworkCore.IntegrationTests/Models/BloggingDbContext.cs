@@ -113,11 +113,22 @@ public class BloggingDbContext(DbContextOptions<BloggingDbContext> options) : Db
                 });
 
         modelBuilder.Entity<BloggingFixture.Tag>()
+            .ToCouchbaseCollection(this, "tag")
             .HasData(
                 new BloggingFixture.Tag { TagId = "general" },
                 new BloggingFixture.Tag { TagId = "classic" },
                 new BloggingFixture.Tag { TagId = "opinion" },
                 new BloggingFixture.Tag { TagId = "informative" });
+
+        // Skip navigation: Post ↔ Tag via EF Core's transparent join table.
+        // ConfigureToCouchbase (called below) automatically maps the hidden join
+        // entity to bucket.scope.postdirecttag using EF Core's default naming.
+        // "PostDirectTag" avoids collision with the explicit PostTag join entity.
+        // ConfigureToCouchbase maps it to bucket.scope.postdirecttag automatically.
+        modelBuilder.Entity<BloggingFixture.Post>()
+            .HasMany(p => p.DirectTags)
+            .WithMany(t => t.DirectPosts)
+            .UsingEntity("PostDirectTag");
 
         modelBuilder.Entity<BloggingFixture.PostTag>()
             .HasData(

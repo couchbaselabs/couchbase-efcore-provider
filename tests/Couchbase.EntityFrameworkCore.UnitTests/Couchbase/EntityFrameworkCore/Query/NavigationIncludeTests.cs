@@ -186,8 +186,11 @@ public class NavigationIncludeTests
     }
 
     [Fact]
-    public void ExtractNavigationIncludes_SkipNavigation_IsExcluded()
+    public void ExtractNavigationIncludes_SkipNavigation_IsIncluded()
     {
+        // Skip navigations (HasMany/WithMany) are now recorded alongside FK navigations
+        // because the EF Core shaper handles their collection accumulation via the
+        // standard SingleQueryResultCoordinator path — no separate population needed.
         var postsNav = MockNavigation("Posts");
         var skipNav = new Mock<ISkipNavigation>();
         skipNav.Setup(n => n.Name).Returns("Tags");
@@ -199,8 +202,9 @@ public class NavigationIncludeTests
         var result = CouchbaseShapedQueryCompilingExpressionVisitor
             .ExtractNavigationIncludes(outer);
 
-        Assert.Single(result);
+        Assert.Equal(2, result.Count);
         Assert.Equal("Posts", result[0].Navigation.Name);
+        Assert.Equal("Tags",  result[1].Navigation.Name);
     }
 
     // ---------------------------------------------------------------
