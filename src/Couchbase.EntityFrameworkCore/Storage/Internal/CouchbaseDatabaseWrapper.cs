@@ -236,7 +236,7 @@ public class CouchbaseDatabaseWrapper : Database
         return null;
     }
 
-    private static object HydrateObjectFromEntity(IUpdateEntry updateEntry, JsonNamingPolicy? fieldNamingPolicy = null)
+    internal static object HydrateObjectFromEntity(IUpdateEntry updateEntry, JsonNamingPolicy? fieldNamingPolicy = null)
     {
         var entityType = updateEntry.EntityType;
 
@@ -263,8 +263,12 @@ public class CouchbaseDatabaseWrapper : Database
                 var joinDoc = new Dictionary<string, object?>();
                 foreach (var property in entityType.GetProperties())
                 {
-                    var fieldName = fieldNamingPolicy?.ConvertName(property.GetColumnName()) ?? property.GetColumnName();
-                    joinDoc[fieldName] = updateEntry.GetCurrentValue(property);
+                    // Use GetColumnName() verbatim — do NOT apply fieldNamingPolicy here.
+                    // The SQL generation path projects these columns by their exact column
+                    // name (e.g. "PostsPostId", "TagsTagId"), so the written document keys
+                    // must match. Applying a naming policy would silently diverge from the
+                    // SQL projection and make join documents unreadable on the query path.
+                    joinDoc[property.GetColumnName()] = updateEntry.GetCurrentValue(property);
                 }
                 return joinDoc;
             }
