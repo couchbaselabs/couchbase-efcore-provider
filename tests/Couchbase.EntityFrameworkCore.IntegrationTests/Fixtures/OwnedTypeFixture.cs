@@ -215,6 +215,38 @@ public class OwnedTypeFixture : CouchbaseFixture<OwnedTypeDbContext>
     }
 
     // -------------------------------------------------------------------------
+    // ConvertsNulls model — exercises ValueConverter.ConvertsNulls on owned scalars
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Converter that maps <c>null</c> ↔ the sentinel string <c>"NULL_VALUE"</c>.
+    /// <see cref="Microsoft.EntityFrameworkCore.Storage.ValueConversion.ValueConverter.ConvertsNulls"/>
+    /// is <see langword="true"/>, so the converter is called even when the model or
+    /// stored value is <c>null</c>.
+    /// </summary>
+    public sealed class NullToSentinelConverter
+        : Microsoft.EntityFrameworkCore.Storage.ValueConversion.ValueConverter<string?, string>
+    {
+        public NullToSentinelConverter()
+            : base(v => v ?? "NULL_VALUE", v => v == "NULL_VALUE" ? null : v) { }
+        public override bool ConvertsNulls => true;
+    }
+
+    public class NullSentinelCustomer
+    {
+        public int Id { get; set; }
+        public string Name { get; set; } = "";
+        public List<NullSentinelContact> Contacts { get; set; } = [];
+    }
+
+    public class NullSentinelContact
+    {
+        public int     Id    { get; set; }
+        /// <summary>null in the model is stored as "NULL_VALUE" via <see cref="NullToSentinelConverter"/>.</summary>
+        public string? Note  { get; set; }
+    }
+
+    // -------------------------------------------------------------------------
     // HashSet<T>-backed model — used by OwnedCollectionClearIntegrationTests
     // -------------------------------------------------------------------------
 

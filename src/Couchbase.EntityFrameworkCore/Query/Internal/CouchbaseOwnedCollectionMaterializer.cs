@@ -240,7 +240,15 @@ internal sealed class CouchbaseOwnedCollectionMaterializer
     /// </summary>
     internal static object? ConvertFromJson(JsonElement element, IProperty property, JsonSerializerOptions options)
     {
-        if (element.ValueKind == JsonValueKind.Null) return null;
+        var typeMapping = property.FindTypeMapping();
+        var converter   = property.GetValueConverter() ?? typeMapping?.Converter;
+
+        // For JSON null: bypass conversion unless the converter has ConvertsNulls=true,
+        // in which case it expects to receive null and may return a non-null model value.
+        if (element.ValueKind == JsonValueKind.Null)
+            return converter is { ConvertsNulls: true }
+                ? converter.ConvertFromProvider(null)
+                : null;
 
         // 1. Value converter from HasConversion — checked first because it is the most
         //    common user-facing path and avoids a format mismatch with JsonValueReaderWriter
@@ -248,8 +256,6 @@ internal sealed class CouchbaseOwnedCollectionMaterializer
         //    GetValueConverter() delegates to FindTypeMapping()?.Converter in EF Core 10;
         //    we also check FindTypeMapping().Converter directly as a belt-and-suspenders
         //    fallback for owned-entity properties where the two may diverge.
-        var typeMapping = property.FindTypeMapping();
-        var converter   = property.GetValueConverter() ?? typeMapping?.Converter;
         if (converter != null)
         {
             var providerValue = ConvertJsonValue(element, converter.ProviderClrType, options);
