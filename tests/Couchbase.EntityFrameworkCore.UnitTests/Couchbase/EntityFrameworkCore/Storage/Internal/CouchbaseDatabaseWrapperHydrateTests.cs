@@ -304,7 +304,13 @@ public class CouchbaseDatabaseWrapperHydrateTests
         prop.Setup(p => p.PropertyInfo).Returns((PropertyInfo?)null);
         prop.Setup(p => p.FieldInfo).Returns((FieldInfo?)null);
         prop.Setup(p => p.IsShadowProperty()).Returns(true);
-        prop.Setup(p => p.GetColumnName()).Returns(columnName);
+        // GetColumnName() is an EF Core extension method — Moq cannot mock it directly.
+        // Wire the column name via the relational annotation it reads internally,
+        // matching the pattern used by BuildOwnedProperty above.
+        var annotation = new Mock<IAnnotation>();
+        annotation.Setup(a => a.Value).Returns(columnName);
+        prop.Setup(p => p.FindAnnotation("Relational:ColumnName")).Returns(annotation.Object);
+        prop.Setup(p => p["Relational:ColumnName"]).Returns(columnName);
         entryMock.Setup(e => e.GetCurrentValue(prop.Object)).Returns(value);
         return prop;
     }
