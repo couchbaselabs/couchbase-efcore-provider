@@ -376,9 +376,12 @@ public class CouchbaseDatabaseWrapper : Database
             // GetValueConverter() delegates to FindTypeMapping()?.Converter in EF Core 10;
             // check FindTypeMapping().Converter directly as a fallback for owned-entity
             // properties where the two may diverge.
-            var converter  = p.GetValueConverter() ?? p.FindTypeMapping()?.Converter;
+            var converter   = p.GetValueConverter() ?? p.FindTypeMapping()?.Converter;
+            // Apply the converter when present — even if ConvertToProvider returns null
+            // (a valid scenario for converters that intentionally map some values to null).
+            // Only bypass the converter when none is configured.
             var storedValue = rawValue is null ? null
-                : converter?.ConvertToProvider(rawValue) ?? rawValue;
+                : converter is not null ? converter.ConvertToProvider(rawValue) : rawValue;
             doc[fieldNamingPolicy?.ConvertName(p.Name) ?? p.Name] = storedValue;
         }
 
