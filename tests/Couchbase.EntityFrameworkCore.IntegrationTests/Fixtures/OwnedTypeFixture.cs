@@ -189,6 +189,32 @@ public class OwnedTypeFixture : CouchbaseFixture<OwnedTypeDbContext>
     }
 
     // -------------------------------------------------------------------------
+    // HasConversion model — exercises value-converter round-trip on owned scalars
+    // -------------------------------------------------------------------------
+
+    public enum ContactStatus { Active, Inactive, Pending }
+
+    /// <summary>
+    /// Customer whose OwnsMany items have a <see cref="ContactStatus"/> property
+    /// stored as a string via <c>HasConversion&lt;string&gt;</c>.
+    /// Verifies that <see cref="CouchbaseOwnedCollectionMaterializer.ConvertFromJson"/> and
+    /// <see cref="CouchbaseDatabaseWrapper.SerializeOwnedItem"/> both apply the converter.
+    /// </summary>
+    public class ConvertedCustomer
+    {
+        public int Id { get; set; }
+        public string Name { get; set; } = "";
+        public List<ConvertedContact> Contacts { get; set; } = [];
+    }
+
+    public class ConvertedContact
+    {
+        public int Id { get; set; }
+        public string Label { get; set; } = "";
+        public ContactStatus Status { get; set; }
+    }
+
+    // -------------------------------------------------------------------------
     // HashSet<T>-backed model — used by OwnedCollectionClearIntegrationTests
     // -------------------------------------------------------------------------
 

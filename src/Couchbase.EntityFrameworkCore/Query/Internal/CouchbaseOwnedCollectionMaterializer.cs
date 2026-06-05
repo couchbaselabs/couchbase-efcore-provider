@@ -5,6 +5,7 @@ using System.Collections;
 using System.Text.Json;
 using Couchbase.EntityFrameworkCore.Extensions;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Storage.Json;
 
 namespace Couchbase.EntityFrameworkCore.Query.Internal;
 
@@ -134,7 +135,7 @@ internal sealed class CouchbaseOwnedCollectionMaterializer
             var jsonKey = fieldNamingPolicy?.ConvertName(prop.Name) ?? prop.Name;
             if (itemElement.TryGetPropertyCI(jsonKey, out var propElement))
             {
-                var converted = ConvertJsonValue(propElement, prop.ClrType, options);
+                var converted = ConvertFromJson(propElement, prop, options);
                 // Use the property setter when one exists (public or non-public).
                 // Fall back to FieldInfo for backing-field / field-access properties where
                 // PropertyInfo is null or has no setter (e.g. init-only / get-only).
@@ -219,15 +220,61 @@ internal sealed class CouchbaseOwnedCollectionMaterializer
     // ---------------------------------------------------------------------------
 
     /// <summary>
+    /// Converts a <see cref="JsonElement"/> to the CLR type for <paramref name="property"/>,
+    /// respecting the EF Core type-mapping pipeline in priority order:
+    /// <list type="number">
+    ///   <item><description>
+    ///     <see cref="JsonValueReaderWriter"/> from the property's type mapping — used when a
+    ///     custom <c>IRelationalTypeMappingSource</c> or built-in mapping (e.g. <c>JsonObject</c>)
+    ///     registers a reader.
+    ///   </description></item>
+    ///   <item><description>
+    ///     <see cref="Microsoft.EntityFrameworkCore.Storage.ValueConversion.ValueConverter"/> from
+    ///     <c>HasConversion</c> — the JSON element is first deserialized as the provider CLR type,
+    ///     then <c>ConvertFromProvider</c> converts it to the model CLR type.
+    ///   </description></item>
+    ///   <item><description>
+    ///     <see cref="ConvertJsonValue"/> — the hand-rolled primitive switch, used when neither
+    ///     a type-mapping reader nor a value converter is present.
+    ///   </description></item>
+    /// </list>
+    /// </summary>
+    internal static object? ConvertFromJson(JsonElement element, IProperty property, JsonSerializerOptions options)
+    {
+        if (element.ValueKind == JsonValueKind.Null) return null;
+
+        // 1. Value converter from HasConversion — checked first because it is the most
+        //    common user-facing path and avoids a format mismatch with JsonValueReaderWriter
+        //    (e.g. an enum stored as an integer would fail the string reader).
+        //    GetValueConverter() delegates to FindTypeMapping()?.Converter in EF Core 10;
+        //    we also check FindTypeMapping().Converter directly as a belt-and-suspenders
+        //    fallback for owned-entity properties where the two may diverge.
+        var typeMapping = property.FindTypeMapping();
+        var converter   = property.GetValueConverter() ?? typeMapping?.Converter;
+        if (converter != null)
+        {
+            var providerValue = ConvertJsonValue(element, converter.ProviderClrType, options);
+            return converter.ConvertFromProvider(providerValue);
+        }
+
+        // 2. Type-mapping JsonValueReaderWriter (e.g. JsonObject, JsonArray, custom mappings
+        //    that do not use a ValueConverter but register their own JSON reader).
+        var readerWriter = typeMapping?.JsonValueReaderWriter;
+        if (readerWriter != null)
+            return readerWriter.FromJsonString(element.GetRawText(), existingObject: null);
+
+        // 3. Primitive switch fallback.
+        return ConvertJsonValue(element, property.ClrType, options);
+    }
+
+    /// <summary>
     /// Converts a <see cref="JsonElement"/> to the requested CLR <paramref name="targetType"/>.
     /// Handles nullable wrappers, common primitives, and falls back to
     /// <see cref="JsonSerializer.Deserialize"/> for unknown types.
     /// </summary>
     /// <remarks>
-    /// Exposed as <c>internal static</c> for unit testing.
-    /// Note (Phase 3): this will be replaced by a lookup into
-    /// <c>IProperty.FindTypeMapping()?.JsonValueReaderWriter</c> / <c>IProperty.GetValueConverter()</c>
-    /// so that EF Core value converters and custom type mappings are respected.
+    /// Exposed as <c>internal static</c> for unit testing. Used by <see cref="ConvertFromJson"/>
+    /// as its primitive fallback and for deserializing value-converter provider types.
     /// </remarks>
     internal static object? ConvertJsonValue(JsonElement element, Type targetType, JsonSerializerOptions options)
     {

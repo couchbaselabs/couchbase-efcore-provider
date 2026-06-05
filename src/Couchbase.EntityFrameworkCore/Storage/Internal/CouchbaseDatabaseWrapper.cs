@@ -367,7 +367,19 @@ public class CouchbaseDatabaseWrapper : Database
         foreach (var p in entityType.GetProperties())
         {
             if (p.IsShadowProperty()) continue;
-            doc[fieldNamingPolicy?.ConvertName(p.Name) ?? p.Name] = p.PropertyInfo?.GetValue(item);
+            // Read via PropertyInfo → FieldInfo fallback (field-access support).
+            var rawValue = p.PropertyInfo != null
+                ? p.PropertyInfo.GetValue(item)
+                : p.FieldInfo?.GetValue(item);
+            // Apply value converter (HasConversion) so the stored value is the
+            // provider/storage representation, not the raw CLR model value.
+            // GetValueConverter() delegates to FindTypeMapping()?.Converter in EF Core 10;
+            // check FindTypeMapping().Converter directly as a fallback for owned-entity
+            // properties where the two may diverge.
+            var converter  = p.GetValueConverter() ?? p.FindTypeMapping()?.Converter;
+            var storedValue = rawValue is null ? null
+                : converter?.ConvertToProvider(rawValue) ?? rawValue;
+            doc[fieldNamingPolicy?.ConvertName(p.Name) ?? p.Name] = storedValue;
         }
 
         foreach (var nav in entityType.GetNavigations())

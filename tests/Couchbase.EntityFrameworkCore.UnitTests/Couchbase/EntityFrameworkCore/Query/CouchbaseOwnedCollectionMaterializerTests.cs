@@ -255,6 +255,98 @@ public class CouchbaseOwnedCollectionMaterializerTests
         Assert.Single(result2.Tags);
     }
 
+    // -------------------------------------------------------------------------
+    // ConvertFromJson — type-mapping pipeline
+    // -------------------------------------------------------------------------
+
+    private class ConverterOwner
+    {
+        public int Id { get; set; }
+        public StatusEnum Status { get; set; }
+        public int? NullableInt { get; set; }
+    }
+
+    private enum StatusEnum { Active, Inactive }
+
+    private class ConverterContext(DbContextOptions<ConverterContext> options) : DbContext(options)
+    {
+        public DbSet<ConverterOwner> Owners { get; set; } = null!;
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            modelBuilder.Entity<ConverterOwner>(b =>
+            {
+                b.ToCouchbaseCollection("bucket", "scope", "owner");
+                b.HasKey(o => o.Id);
+                // HasConversion: StatusEnum ↔ string
+                b.Property(o => o.Status).HasConversion<string>();
+            });
+        }
+    }
+
+    private static ConverterContext CreateConverterContext()
+    {
+        var opts = new global::Couchbase.ClusterOptions()
+            .WithConnectionString("couchbase://localhost")
+            .WithPasswordAuthentication("Administrator", "password");
+        var builder = new DbContextOptionsBuilder<ConverterContext>();
+        builder.UseCouchbaseProvider(opts);
+        return new ConverterContext(builder.Options);
+    }
+
+    [Fact]
+    public void ConvertFromJson_WithValueConverter_AppliesConvertFromProvider()
+    {
+        // HasConversion<string> on StatusEnum — JSON "Active" should round-trip to StatusEnum.Active.
+        using var ctx = CreateConverterContext();
+        var prop = ctx.Model.FindEntityType(typeof(ConverterOwner))!
+                             .FindProperty(nameof(ConverterOwner.Status))!;
+
+        var element = JsonDocument.Parse("\"Active\"").RootElement;
+        var result  = CouchbaseOwnedCollectionMaterializer.ConvertFromJson(element, prop, _webOptions);
+
+        Assert.Equal(StatusEnum.Active, result);
+    }
+
+    [Fact]
+    public void ConvertFromJson_WithValueConverter_InactiveValue()
+    {
+        using var ctx = CreateConverterContext();
+        var prop = ctx.Model.FindEntityType(typeof(ConverterOwner))!
+                             .FindProperty(nameof(ConverterOwner.Status))!;
+
+        var element = JsonDocument.Parse("\"Inactive\"").RootElement;
+        var result  = CouchbaseOwnedCollectionMaterializer.ConvertFromJson(element, prop, _webOptions);
+
+        Assert.Equal(StatusEnum.Inactive, result);
+    }
+
+    [Fact]
+    public void ConvertFromJson_NoConverter_PrimitiveFallback()
+    {
+        // No converter on NullableInt — should fall through to ConvertJsonValue.
+        using var ctx = CreateConverterContext();
+        var prop = ctx.Model.FindEntityType(typeof(ConverterOwner))!
+                             .FindProperty(nameof(ConverterOwner.NullableInt))!;
+
+        var element = JsonDocument.Parse("42").RootElement;
+        var result  = CouchbaseOwnedCollectionMaterializer.ConvertFromJson(element, prop, _webOptions);
+
+        Assert.Equal(42, result);
+    }
+
+    [Fact]
+    public void ConvertFromJson_JsonNull_ReturnsNull()
+    {
+        using var ctx = CreateConverterContext();
+        var prop = ctx.Model.FindEntityType(typeof(ConverterOwner))!
+                             .FindProperty(nameof(ConverterOwner.NullableInt))!;
+
+        var element = JsonDocument.Parse("null").RootElement;
+        var result  = CouchbaseOwnedCollectionMaterializer.ConvertFromJson(element, prop, _webOptions);
+
+        Assert.Null(result);
+    }
+
     // Note: MaterializeOwnedItem requires IEntityType from an EF Core model, which
     // requires model-building infrastructure. Those scenarios are covered by the
     // existing integration tests (OwnedTypeTests). The pure JSON → CLR conversion

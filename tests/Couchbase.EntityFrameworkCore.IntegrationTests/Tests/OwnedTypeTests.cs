@@ -929,4 +929,90 @@ public class OwnedTypeTests(
             if (c != null) { ctx.Remove(c); await ctx.SaveChangesAsync(); }
         }
     }
+
+    // -------------------------------------------------------------------------
+    // HasConversion on OwnsMany item scalars (CQE Phase 3)
+    // Verifies that ConvertFromJson (read) and SerializeOwnedItem (write) both
+    // apply the value converter so the stored representation is the provider type
+    // (string) and the materialised value is the model CLR type (ContactStatus).
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task HasConversion_OwnsMany_Scalar_RoundTrips()
+    {
+        // ContactStatus is stored as a string but materialised as the enum.
+        const int id = 500;
+        try
+        {
+            await using (var ctx = fixture.GetDbContext())
+            {
+                ctx.Update(new OwnedTypeFixture.ConvertedCustomer
+                {
+                    Id   = id,
+                    Name = "Converted Alice",
+                    Contacts =
+                    [
+                        new OwnedTypeFixture.ConvertedContact { Id = 1, Label = "work",  Status = OwnedTypeFixture.ContactStatus.Active   },
+                        new OwnedTypeFixture.ConvertedContact { Id = 2, Label = "home",  Status = OwnedTypeFixture.ContactStatus.Inactive  },
+                        new OwnedTypeFixture.ConvertedContact { Id = 3, Label = "other", Status = OwnedTypeFixture.ContactStatus.Pending   }
+                    ]
+                });
+                await ctx.SaveChangesAsync();
+            }
+
+            await using (var ctx = fixture.GetDbContext())
+            {
+                var customer = await ctx.ConvertedCustomers.FirstAsync(c => c.Id == id);
+                Assert.Equal(3, customer.Contacts.Count);
+                Assert.Equal(OwnedTypeFixture.ContactStatus.Active,   customer.Contacts.First(c => c.Label == "work").Status);
+                Assert.Equal(OwnedTypeFixture.ContactStatus.Inactive, customer.Contacts.First(c => c.Label == "home").Status);
+                Assert.Equal(OwnedTypeFixture.ContactStatus.Pending,  customer.Contacts.First(c => c.Label == "other").Status);
+            }
+        }
+        finally
+        {
+            await using var ctx = fixture.GetDbContext();
+            var c = await ctx.ConvertedCustomers.FirstOrDefaultAsync(c => c.Id == id);
+            if (c != null) { ctx.Remove(c); await ctx.SaveChangesAsync(); }
+        }
+    }
+
+    [Fact]
+    public async Task HasConversion_OwnsMany_Scalar_Update_RoundTrips()
+    {
+        // Mutate the converted scalar and confirm the new value round-trips.
+        const int id = 501;
+        try
+        {
+            await using (var ctx = fixture.GetDbContext())
+            {
+                ctx.Update(new OwnedTypeFixture.ConvertedCustomer
+                {
+                    Id      = id,
+                    Name    = "Converted Bob",
+                    Contacts = [new OwnedTypeFixture.ConvertedContact { Id = 1, Label = "main", Status = OwnedTypeFixture.ContactStatus.Active }]
+                });
+                await ctx.SaveChangesAsync();
+            }
+
+            await using (var ctx = fixture.GetDbContext())
+            {
+                var customer = await ctx.ConvertedCustomers.FirstAsync(c => c.Id == id);
+                customer.Contacts[0].Status = OwnedTypeFixture.ContactStatus.Inactive;
+                await ctx.SaveChangesAsync();
+            }
+
+            await using (var ctx = fixture.GetDbContext())
+            {
+                var customer = await ctx.ConvertedCustomers.FirstAsync(c => c.Id == id);
+                Assert.Equal(OwnedTypeFixture.ContactStatus.Inactive, customer.Contacts[0].Status);
+            }
+        }
+        finally
+        {
+            await using var ctx = fixture.GetDbContext();
+            var c = await ctx.ConvertedCustomers.FirstOrDefaultAsync(c => c.Id == id);
+            if (c != null) { ctx.Remove(c); await ctx.SaveChangesAsync(); }
+        }
+    }
 }
