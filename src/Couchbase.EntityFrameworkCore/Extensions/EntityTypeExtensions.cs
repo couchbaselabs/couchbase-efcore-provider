@@ -44,9 +44,13 @@ public static class EntityTypeExtensions
     /// </summary>
     public static string GetPrimaryKey(this IEntityType entityType, Microsoft.EntityFrameworkCore.Update.IUpdateEntry updateEntry)
     {
-        var keys = entityType.FindPrimaryKey().Properties.ToArray();
+        var primaryKey = entityType.FindPrimaryKey()
+            ?? throw new InvalidOperationException(
+                $"Entity type '{entityType.DisplayName()}' has no primary key defined. " +
+                "Keyless entity types cannot be used with GetPrimaryKey.");
+
         var compositeKey = new StringBuilder();
-        foreach (var key in keys)
+        foreach (var key in primaryKey.Properties)
         {
             if (compositeKey.Length > 0)
                 compositeKey.Append('_');

@@ -270,6 +270,23 @@ public class EntityTypeExtensionsTests
     }
 
     [Fact]
+    public void GetPrimaryKey_UpdateEntry_KeylessEntity_ThrowsInvalidOperationException()
+    {
+        var entityType = new Moq.Mock<Microsoft.EntityFrameworkCore.Metadata.IEntityType>();
+        entityType.Setup(e => e.FindPrimaryKey()).Returns((Microsoft.EntityFrameworkCore.Metadata.IKey?)null);
+        entityType.Setup(e => e.DisplayName()).Returns("KeylessEntity");
+
+        var entry = new Moq.Mock<IUpdateEntry>();
+        entry.Setup(e => e.EntityType).Returns(entityType.Object);
+
+        var ex = Assert.Throws<InvalidOperationException>(
+            () => entityType.Object.GetPrimaryKey(entry.Object));
+
+        Assert.Contains("KeylessEntity", ex.Message);
+        Assert.Contains("primary key", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void GetPrimaryKey_UpdateEntry_SharedEntityType_DifferentValues_ProduceDifferentKeys()
     {
         var entityType = BuildSharedEntityType();
