@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Reflection;
+using System.Text.Json;
 using Couchbase.EntityFrameworkCore.Storage.Internal;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
@@ -10,20 +11,15 @@ using Xunit;
 namespace Couchbase.EntityFrameworkCore.UnitTests.Couchbase.EntityFrameworkCore.Storage.Internal;
 
 /// <summary>
-/// Tests for CouchbaseDatabaseWrapper.HydrateObjectFromEntity via reflection.
+/// Tests for <see cref="CouchbaseDatabaseWrapper.HydrateObjectFromEntity"/>.
 ///
-/// The method is private static, so we invoke it directly rather than going through
-/// the full SaveChangesAsync stack (which requires live EF Core model infrastructure
-/// for GetPrimaryKey, GetCollectionName, IsOwned, etc.).
+/// The method is <c>internal static</c> and called directly to avoid requiring
+/// the full <c>SaveChangesAsync</c> stack (GetPrimaryKey, GetCollectionName, IsOwned, …).
 /// </summary>
 public class CouchbaseDatabaseWrapperHydrateTests
 {
-    private static readonly MethodInfo HydrateMethod =
-        typeof(CouchbaseDatabaseWrapper)
-            .GetMethod("HydrateObjectFromEntity", BindingFlags.NonPublic | BindingFlags.Static)!;
-
-    private static object Hydrate(IUpdateEntry entry)
-        => HydrateMethod.Invoke(null, [entry, null])!;
+    private static object Hydrate(IUpdateEntry entry, System.Text.Json.JsonNamingPolicy? policy = null)
+        => CouchbaseDatabaseWrapper.HydrateObjectFromEntity(entry, policy)!;
 
     // -----------------------------------------------------------------------
     // Helpers
@@ -293,6 +289,111 @@ public class CouchbaseDatabaseWrapperHydrateTests
         var result = (EntityWithSetter)Hydrate(entry.Object);
 
         Assert.Equal("real", result.Name);
+    }
+
+    // -----------------------------------------------------------------------
+    // Shared entity type (HasMany/WithMany hidden join table)
+    // -----------------------------------------------------------------------
+
+    private static Mock<IProperty> MakeSharedProperty(
+        string columnName,
+        object? value,
+        Mock<IUpdateEntry> entryMock)
+    {
+        var prop = new Mock<IProperty>();
+        prop.Setup(p => p.PropertyInfo).Returns((PropertyInfo?)null);
+        prop.Setup(p => p.FieldInfo).Returns((FieldInfo?)null);
+        prop.Setup(p => p.IsShadowProperty()).Returns(true);
+        // GetColumnName() is an EF Core extension method — Moq cannot mock it directly.
+        // Wire the column name via the relational annotation it reads internally,
+        // matching the pattern used by BuildOwnedProperty above.
+        var annotation = new Mock<IAnnotation>();
+        annotation.Setup(a => a.Value).Returns(columnName);
+        prop.Setup(p => p.FindAnnotation("Relational:ColumnName")).Returns(annotation.Object);
+        prop.Setup(p => p["Relational:ColumnName"]).Returns(columnName);
+        entryMock.Setup(e => e.GetCurrentValue(prop.Object)).Returns(value);
+        return prop;
+    }
+
+    private static Mock<IEntityType> MakeSharedEntityType(params Mock<IProperty>[] props)
+    {
+        var entityType = new Mock<IEntityType>();
+        entityType.Setup(t => t.HasSharedClrType).Returns(true);
+        entityType.Setup(t => t.ClrType).Returns(typeof(Dictionary<string, object>));
+        entityType.Setup(t => t.GetProperties()).Returns(props.Select(p => p.Object).ToArray());
+        entityType.Setup(t => t.GetNavigations()).Returns([]);
+        return entityType;
+    }
+
+    [Fact]
+    public void Hydrate_SharedEntityType_UseColumnNameVerbatim()
+    {
+        // The join document keys must be GetColumnName() verbatim — not policy-transformed.
+        // If camelCase were applied, "PostsPostId" → "postsPostId" which would diverge
+        // from the SQL projection alias and make the document unreadable on the query path.
+        var entry = new Mock<IUpdateEntry>();
+        var postsPostId = MakeSharedProperty("PostsPostId", 1,    entry);
+        var tagsTagId   = MakeSharedProperty("TagsTagId",   "abc", entry);
+        var entityType  = MakeSharedEntityType(postsPostId, tagsTagId);
+        entry.Setup(e => e.EntityType).Returns(entityType.Object);
+
+        // Pass camelCase policy — must NOT be applied to column names.
+        var result = (Dictionary<string, object?>)Hydrate(entry.Object, JsonNamingPolicy.CamelCase);
+
+        Assert.True(result.ContainsKey("PostsPostId"),
+            "Expected verbatim column name 'PostsPostId' — naming policy must not be applied.");
+        Assert.True(result.ContainsKey("TagsTagId"),
+            "Expected verbatim column name 'TagsTagId' — naming policy must not be applied.");
+        Assert.Equal(1,     result["PostsPostId"]);
+        Assert.Equal("abc", result["TagsTagId"]);
+    }
+
+    [Fact]
+    public void Hydrate_SharedEntityType_DoesNotContainPolicyTransformedKeys()
+    {
+        // Negative assertion: camelCased variants of the column names must NOT appear.
+        var entry = new Mock<IUpdateEntry>();
+        var postsPostId = MakeSharedProperty("PostsPostId", 1,    entry);
+        var tagsTagId   = MakeSharedProperty("TagsTagId",   "abc", entry);
+        var entityType  = MakeSharedEntityType(postsPostId, tagsTagId);
+        entry.Setup(e => e.EntityType).Returns(entityType.Object);
+
+        var result = (Dictionary<string, object?>)Hydrate(entry.Object, JsonNamingPolicy.CamelCase);
+
+        Assert.False(result.ContainsKey("postsPostId"),
+            "camelCase-transformed key 'postsPostId' must not appear — naming policy must not be applied.");
+        Assert.False(result.ContainsKey("tagsTagId"),
+            "camelCase-transformed key 'tagsTagId' must not appear — naming policy must not be applied.");
+    }
+
+    [Fact]
+    public void Hydrate_SharedEntityType_NullPolicyAlso_UsesColumnNameVerbatim()
+    {
+        // Sanity check: null policy also uses GetColumnName() verbatim.
+        var entry = new Mock<IUpdateEntry>();
+        var prop = MakeSharedProperty("PostsPostId", 42, entry);
+        var entityType = MakeSharedEntityType(prop);
+        entry.Setup(e => e.EntityType).Returns(entityType.Object);
+
+        var result = (Dictionary<string, object?>)Hydrate(entry.Object, policy: null);
+
+        Assert.True(result.ContainsKey("PostsPostId"));
+        Assert.Equal(42, result["PostsPostId"]);
+    }
+
+    [Fact]
+    public void Hydrate_SharedEntityType_IncludesAllProperties()
+    {
+        // All properties (shadow or not) must appear in the join document.
+        var entry = new Mock<IUpdateEntry>();
+        var p1 = MakeSharedProperty("PostsPostId", 5,       entry);
+        var p2 = MakeSharedProperty("TagsTagId",   "tag1",  entry);
+        var entityType = MakeSharedEntityType(p1, p2);
+        entry.Setup(e => e.EntityType).Returns(entityType.Object);
+
+        var result = (Dictionary<string, object?>)Hydrate(entry.Object);
+
+        Assert.Equal(2, result.Count);
     }
 }
 

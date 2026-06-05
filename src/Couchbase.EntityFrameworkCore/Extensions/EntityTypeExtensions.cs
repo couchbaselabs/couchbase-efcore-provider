@@ -34,6 +34,30 @@ public static class EntityTypeExtensions
 
         return compositeKey.ToString();
     }
+
+    /// <summary>
+    /// Returns the document key for <paramref name="updateEntry"/>, reading PK values
+    /// from the update entry directly.  This handles shared entity types (e.g. the hidden
+    /// join table created by <c>HasMany().WithMany()</c>) whose PK columns are shadow
+    /// properties — <see cref="GetPrimaryKey(IEntityType,object)"/> cannot read these via
+    /// CLR <c>PropertyInfo</c>.
+    /// </summary>
+    public static string GetPrimaryKey(this IEntityType entityType, Microsoft.EntityFrameworkCore.Update.IUpdateEntry updateEntry)
+    {
+        var primaryKey = entityType.FindPrimaryKey()
+            ?? throw new InvalidOperationException(
+                $"Entity type '{entityType.DisplayName()}' has no primary key defined. " +
+                "Keyless entity types cannot be used with GetPrimaryKey.");
+
+        var compositeKey = new StringBuilder();
+        foreach (var key in primaryKey.Properties)
+        {
+            if (compositeKey.Length > 0)
+                compositeKey.Append('_');
+            compositeKey.Append(updateEntry.GetCurrentValue(key));
+        }
+        return compositeKey.ToString();
+    }
 }
 
 /* ************************************************************

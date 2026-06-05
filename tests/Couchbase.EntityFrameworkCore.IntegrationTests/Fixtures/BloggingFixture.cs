@@ -14,6 +14,8 @@ public class BloggingFixture : CouchbaseFixture<BloggingDbContext>
     public override async Task InitializeAsync()
     {
         await base.InitializeAsync();
+        await using var ctx = GetDbContext();
+        await ctx.Database.EnsureCreatedAsync();
         await LoadDataAsync();
     }
 
@@ -156,6 +158,9 @@ public class BloggingFixture : CouchbaseFixture<BloggingDbContext>
         public Person Author { get; set; }
 
         public List<PostTag> Tags { get; set; }
+
+        /// <summary>Skip navigation — Post ↔ Tag via EF Core's transparent join table.</summary>
+        public ICollection<Tag> DirectTags { get; set; } = [];
     }
 
     public class Person
@@ -184,6 +189,9 @@ public class BloggingFixture : CouchbaseFixture<BloggingDbContext>
         public string TagId { get; set; }
 
         public List<PostTag> Posts { get; set; }
+
+        /// <summary>Inverse skip navigation for Post.DirectTags.</summary>
+        public ICollection<Post> DirectPosts { get; set; } = [];
     }
 
     public class PostTag

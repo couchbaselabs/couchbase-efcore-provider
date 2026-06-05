@@ -83,17 +83,20 @@ public class CouchbaseShapedQueryCompilingExpressionVisitor : RelationalShapedQu
 
         while (current is IncludeExpression include)
         {
-            // ISkipNavigation (many-to-many) is intentionally excluded here — Phase 4 will
-            // address skip navigations as a distinct case with their own representation.
+            // Both INavigation (FK-based) and ISkipNavigation (HasMany/WithMany) are recorded.
+            // The EF Core shaper handles collection accumulation for both via the standard
+            // SingleQueryResultCoordinator path — no custom population code is needed.
             //
             // Filter is always null here: by the time VisitShapedQuery runs, any filter
             // lambda from a filtered include (.Include(b => b.Posts.Where(...))) has already
             // been translated into a SQL predicate inside the SelectExpression and is no
             // longer recoverable as a LambdaExpression from IncludeExpression.NavigationExpression.
-            // Phase 4 must detect filtered includes by inspecting RelationalCollectionShaperExpression
+            // Filtered includes must be detected by inspecting RelationalCollectionShaperExpression
             // or the inner SelectExpression's WHERE clause rather than relying on Filter here.
             if (include.Navigation is INavigation nav)
                 collected.Add(new NavigationInclude(nav, null, ExtractChildren(include.NavigationExpression)));
+            else if (include.Navigation is ISkipNavigation skipNav)
+                collected.Add(new NavigationInclude(skipNav, null, ExtractChildren(include.NavigationExpression)));
 
             current = include.EntityExpression;
         }

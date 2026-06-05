@@ -30,6 +30,32 @@ public class EagerLoadingTests(BloggingFixture fixture) : IAsyncLifetime
         ctx.Update(new BloggingFixture.PersonPhoto { PersonPhotoId = 1, Caption = "SN", Photo = [0x00, 0x01] });
         ctx.Update(new BloggingFixture.PersonPhoto { PersonPhotoId = 2, Caption = "PF", Photo = [0x01, 0x02, 0x03] });
         ctx.Update(new BloggingFixture.PersonPhoto { PersonPhotoId = 3, Caption = "JD", Photo = [0x01, 0x01, 0x01] });
+        ctx.Update(new BloggingFixture.Tag { TagId = "general" });
+        ctx.Update(new BloggingFixture.Tag { TagId = "classic" });
+        ctx.Update(new BloggingFixture.Tag { TagId = "opinion" });
+        ctx.Update(new BloggingFixture.Tag { TagId = "informative" });
+        ctx.Update(new BloggingFixture.PostTag { PostTagId = 1, PostId = 1, TagId = "general" });
+        ctx.Update(new BloggingFixture.PostTag { PostTagId = 2, PostId = 1, TagId = "informative" });
+        ctx.Update(new BloggingFixture.PostTag { PostTagId = 3, PostId = 2, TagId = "classic" });
+        ctx.Update(new BloggingFixture.PostTag { PostTagId = 4, PostId = 3, TagId = "opinion" });
+        ctx.Update(new BloggingFixture.PostTag { PostTagId = 5, PostId = 4, TagId = "opinion" });
+        ctx.Update(new BloggingFixture.PostTag { PostTagId = 6, PostId = 4, TagId = "informative" });
+        await ctx.SaveChangesAsync();
+
+        // Seed skip-navigation join table data for Posts 1 and 4 only.
+        // Posts 2 and 3 intentionally have no DirectTags (exercises the empty-collection path).
+        // Load with Include so Clear() can remove existing join entries (idempotent reseed).
+        var post1 = await ctx.Posts.Include(p => p.DirectTags).FirstAsync(p => p.PostId == 1);
+        var post4 = await ctx.Posts.Include(p => p.DirectTags).FirstAsync(p => p.PostId == 4);
+        var tagGeneral     = await ctx.Set<BloggingFixture.Tag>().FindAsync("general");
+        var tagInformative = await ctx.Set<BloggingFixture.Tag>().FindAsync("informative");
+        var tagOpinion     = await ctx.Set<BloggingFixture.Tag>().FindAsync("opinion");
+        post1.DirectTags.Clear();
+        post1.DirectTags.Add(tagGeneral!);
+        post1.DirectTags.Add(tagInformative!);
+        post4.DirectTags.Clear();
+        post4.DirectTags.Add(tagOpinion!);
+        post4.DirectTags.Add(tagInformative!);
         await ctx.SaveChangesAsync();
     }
 
@@ -193,4 +219,230 @@ public class EagerLoadingTests(BloggingFixture fixture) : IAsyncLifetime
     [Fact(Skip = "Requires a derived-type model (e.g. Student : Person with School navigation). Deferred to Phase 6.")]
     public Task Include_OnDerivedType_PopulatesDerivedNavigation()
         => Task.CompletedTask;
+
+    // -----------------------------------------------------------------------
+    // 9 — Explicit join-entity many-to-many (Post → PostTag → Tag)
+    // Verifies that the existing FK-navigation Include chain works for the
+    // explicit join-entity pattern before tackling true skip navigation.
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public async Task Include_Post_Tags_ViaExplicitJoinEntity_PopulatesPostTags()
+    {
+        // Post 1 has two PostTags (general, informative).
+        await using var context = fixture.GetDbContext();
+
+        var post = await context.Posts
+            .Include(p => p.Tags)
+            .FirstAsync(p => p.PostId == 1);
+
+        Assert.NotNull(post.Tags);
+        Assert.Equal(2, post.Tags.Count);
+        Assert.Contains(post.Tags, pt => pt.TagId == "general");
+        Assert.Contains(post.Tags, pt => pt.TagId == "informative");
+    }
+
+    [Fact]
+    public async Task Include_Post_Tags_ThenInclude_Tag_PopulatesTagEntities()
+    {
+        // Include the join entity then ThenInclude the Tag itself — both hops
+        // must resolve correctly through two FK JOINs.
+        await using var context = fixture.GetDbContext();
+
+        var post = await context.Posts
+            .Include(p => p.Tags)
+                .ThenInclude(pt => pt.Tag)
+            .FirstAsync(p => p.PostId == 1);
+
+        Assert.NotNull(post.Tags);
+        Assert.Equal(2, post.Tags.Count);
+        Assert.All(post.Tags, pt => Assert.NotNull(pt.Tag));
+        Assert.Contains(post.Tags, pt => pt.Tag.TagId == "general");
+        Assert.Contains(post.Tags, pt => pt.Tag.TagId == "informative");
+    }
+
+    // -----------------------------------------------------------------------
+    // 10 — True skip navigation many-to-many (Post.DirectTags ↔ Tag.DirectPosts)
+    // Verifies that EF Core's HasMany/WithMany transparent join-table pattern
+    // works with the Couchbase provider without any custom population code.
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public async Task SkipNav_Include_DirectTags_PopulatesTags()
+    {
+        // Post 1 has two DirectTags (general, informative) via skip navigation.
+        await using var context = fixture.GetDbContext();
+
+        var post = await context.Posts
+            .Include(p => p.DirectTags)
+            .FirstAsync(p => p.PostId == 1);
+
+        Assert.NotNull(post.DirectTags);
+        Assert.Equal(2, post.DirectTags.Count);
+        Assert.Contains(post.DirectTags, t => t.TagId == "general");
+        Assert.Contains(post.DirectTags, t => t.TagId == "informative");
+    }
+
+    [Fact]
+    public async Task SkipNav_Include_DirectTags_EmptyCollection_IsEmpty()
+    {
+        // Posts without DirectTags should have an empty collection, not null.
+        await using var context = fixture.GetDbContext();
+
+        var post = await context.Posts
+            .Include(p => p.DirectTags)
+            .FirstAsync(p => p.PostId == 2);
+
+        Assert.NotNull(post.DirectTags);
+        Assert.Empty(post.DirectTags);
+    }
+
+    [Fact]
+    public async Task SkipNav_Include_DirectTags_MultiplePostsCorrectlyGrouped()
+    {
+        // Each post gets only its own tags — no cross-contamination.
+        await using var context = fixture.GetDbContext();
+
+        var posts = await context.Posts
+            .Include(p => p.DirectTags)
+            .OrderBy(p => p.PostId)
+            .ToListAsync();
+
+        var post1 = posts.First(p => p.PostId == 1);
+        Assert.Equal(2, post1.DirectTags.Count);
+        Assert.Contains(post1.DirectTags, t => t.TagId == "general");
+        Assert.Contains(post1.DirectTags, t => t.TagId == "informative");
+
+        var post4 = posts.First(p => p.PostId == 4);
+        Assert.Equal(2, post4.DirectTags.Count);
+        Assert.Contains(post4.DirectTags, t => t.TagId == "opinion");
+        Assert.Contains(post4.DirectTags, t => t.TagId == "informative");
+    }
+
+    [Fact]
+    public async Task SkipNav_Inverse_Include_DirectPosts_PopulatesPosts()
+    {
+        // Query from the Tag side — Tag.DirectPosts should be populated.
+        await using var context = fixture.GetDbContext();
+
+        var tag = await context.Set<BloggingFixture.Tag>()
+            .Include(t => t.DirectPosts)
+            .FirstAsync(t => t.TagId == "general");
+
+        Assert.NotNull(tag.DirectPosts);
+        Assert.Single(tag.DirectPosts);
+        Assert.Equal(1, tag.DirectPosts.First().PostId);
+    }
+
+    [Fact]
+    public async Task Include_Post_Tags_ThenInclude_Tag_MultiplePostsCorrectlyGrouped()
+    {
+        // Blog 2 has three posts with different tag sets — verify each post
+        // gets only its own PostTags, not tags from other posts.
+        await using var context = fixture.GetDbContext();
+
+        var posts = await context.Posts
+            .Include(p => p.Tags)
+                .ThenInclude(pt => pt.Tag)
+            .Where(p => p.BlogId == 2)
+            .OrderBy(p => p.PostId)
+            .ToListAsync();
+
+        Assert.Equal(3, posts.Count);
+
+        // Post 2: one tag (classic)
+        var post2 = posts.First(p => p.PostId == 2);
+        Assert.Single(post2.Tags);
+        Assert.Equal("classic", post2.Tags[0].TagId);
+
+        // Post 3: one tag (opinion)
+        var post3 = posts.First(p => p.PostId == 3);
+        Assert.Single(post3.Tags);
+        Assert.Equal("opinion", post3.Tags[0].TagId);
+
+        // Post 4: two tags (opinion, informative)
+        var post4 = posts.First(p => p.PostId == 4);
+        Assert.Equal(2, post4.Tags.Count);
+        Assert.Contains(post4.Tags, pt => pt.TagId == "opinion");
+        Assert.Contains(post4.Tags, pt => pt.TagId == "informative");
+    }
+
+    // -----------------------------------------------------------------------
+    // GetPrimaryKey integration — verifies correct document key generation
+    // for shared entity types (skip navigation join table) against the live DB.
+    // These tests exercise both overloads indirectly via write/read round-trips.
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public async Task SkipNav_AddRelationship_WritesJoinDocumentWithCorrectKey()
+    {
+        // Add a new skip-navigation relationship and read it back — confirms
+        // the join document was written with a non-empty composite key.
+        await using var context = fixture.GetDbContext();
+
+        var post = await context.Posts
+            .Include(p => p.DirectTags)
+            .FirstAsync(p => p.PostId == 3);
+        var tag = await context.Set<BloggingFixture.Tag>().FindAsync("classic");
+
+        Assert.DoesNotContain(post.DirectTags, t => t.TagId == "classic");
+        post.DirectTags.Add(tag!);
+        await context.SaveChangesAsync();
+
+        await using var verify = fixture.GetDbContext();
+        var reloaded = await verify.Posts
+            .Include(p => p.DirectTags)
+            .FirstAsync(p => p.PostId == 3);
+
+        Assert.Contains(reloaded.DirectTags, t => t.TagId == "classic");
+    }
+
+    [Fact]
+    public async Task SkipNav_RemoveRelationship_DeletesJoinDocument()
+    {
+        // Remove a skip-navigation relationship — confirms the join document
+        // is deleted (the relationship is no longer present after reload).
+        await using var context = fixture.GetDbContext();
+
+        var post = await context.Posts
+            .Include(p => p.DirectTags)
+            .FirstAsync(p => p.PostId == 1);
+
+        Assert.Contains(post.DirectTags, t => t.TagId == "general");
+        var tagToRemove = post.DirectTags.First(t => t.TagId == "general");
+        post.DirectTags.Remove(tagToRemove);
+        await context.SaveChangesAsync();
+
+        await using var verify = fixture.GetDbContext();
+        var reloaded = await verify.Posts
+            .Include(p => p.DirectTags)
+            .FirstAsync(p => p.PostId == 1);
+
+        Assert.DoesNotContain(reloaded.DirectTags, t => t.TagId == "general");
+    }
+
+    [Fact]
+    public async Task SkipNav_ReplaceAllRelationships_RoundTrips()
+    {
+        // Clear all DirectTags on a post and replace with a new set —
+        // verifies both delete (Clear) and insert (Add) paths generate valid keys.
+        await using var context = fixture.GetDbContext();
+
+        var post = await context.Posts
+            .Include(p => p.DirectTags)
+            .FirstAsync(p => p.PostId == 4);
+        var tagClassic = await context.Set<BloggingFixture.Tag>().FindAsync("classic");
+
+        post.DirectTags.Clear();
+        post.DirectTags.Add(tagClassic!);
+        await context.SaveChangesAsync();
+
+        await using var verify = fixture.GetDbContext();
+        var reloaded = await verify.Posts
+            .Include(p => p.DirectTags)
+            .FirstAsync(p => p.PostId == 4);
+
+        Assert.Single(reloaded.DirectTags);
+        Assert.Equal("classic", reloaded.DirectTags.First().TagId);
+    }
 }
