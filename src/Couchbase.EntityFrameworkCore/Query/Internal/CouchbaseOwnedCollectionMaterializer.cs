@@ -235,6 +235,7 @@ internal sealed class CouchbaseOwnedCollectionMaterializer
     ///   <item><description>
     ///     <see cref="ConvertJsonValue"/> — the hand-rolled primitive switch, used when neither
     ///     a value converter nor a type-mapping reader is present.
+    ///   </description></item>
     /// </list>
     /// </summary>
     internal static object? ConvertFromJson(JsonElement element, IProperty property, JsonSerializerOptions options)
