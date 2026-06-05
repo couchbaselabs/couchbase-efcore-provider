@@ -224,20 +224,20 @@ internal sealed class CouchbaseOwnedCollectionMaterializer
     /// respecting the EF Core type-mapping pipeline in priority order:
     /// <list type="number">
     ///   <item><description>
-    ///     <see cref="JsonValueReaderWriter"/> from the property's type mapping — used when a
-    ///     custom <c>IRelationalTypeMappingSource</c> or built-in mapping (e.g. <c>JsonObject</c>)
-    ///     registers a reader.
-    ///   </description></item>
-    ///   <item><description>
     ///     <see cref="Microsoft.EntityFrameworkCore.Storage.ValueConversion.ValueConverter"/> from
     ///     <c>HasConversion</c> — the JSON element is first deserialized as the provider CLR type,
     ///     then <c>ConvertFromProvider</c> converts it to the model CLR type.
     ///   </description></item>
     ///   <item><description>
+    ///     <see cref="JsonValueReaderWriter"/> from the property's type mapping — used when a
+    ///     custom type mapping (e.g. <c>JsonObject</c>) registers a reader.
+    ///   </description></item>
+    ///   <item><description>
     ///     <see cref="ConvertJsonValue"/> — the hand-rolled primitive switch, used when neither
-    ///     a type-mapping reader nor a value converter is present.
+    ///     a value converter nor a type-mapping reader is present.
     ///   </description></item>
     /// </list>
+    /// </summary>
     /// </summary>
     internal static object? ConvertFromJson(JsonElement element, IProperty property, JsonSerializerOptions options)
     {
