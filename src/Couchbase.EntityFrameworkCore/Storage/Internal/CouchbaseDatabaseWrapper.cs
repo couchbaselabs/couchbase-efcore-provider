@@ -377,11 +377,12 @@ public class CouchbaseDatabaseWrapper : Database
             // check FindTypeMapping().Converter directly as a fallback for owned-entity
             // properties where the two may diverge.
             var converter   = p.GetValueConverter() ?? p.FindTypeMapping()?.Converter;
-            // Apply the converter when present — even if ConvertToProvider returns null
-            // (a valid scenario for converters that intentionally map some values to null).
+            // Apply the converter when present — even if rawValue is null, because a
+            // converter with ConvertsNulls=true may map null to a non-null provider value.
             // Only bypass the converter when none is configured.
-            var storedValue = rawValue is null ? null
-                : converter is not null ? converter.ConvertToProvider(rawValue) : rawValue;
+            var storedValue = converter is not null && (rawValue is not null || converter.ConvertsNulls)
+                ? converter.ConvertToProvider(rawValue)
+                : rawValue;
             doc[fieldNamingPolicy?.ConvertName(p.Name) ?? p.Name] = storedValue;
         }
 
