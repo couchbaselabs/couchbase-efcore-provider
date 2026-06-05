@@ -42,7 +42,8 @@ public class EagerLoadingTests(BloggingFixture fixture) : IAsyncLifetime
         ctx.Update(new BloggingFixture.PostTag { PostTagId = 6, PostId = 4, TagId = "informative" });
         await ctx.SaveChangesAsync();
 
-        // Seed skip-navigation join table data (mirrors the explicit PostTag data).
+        // Seed skip-navigation join table data for Posts 1 and 4 only.
+        // Posts 2 and 3 intentionally have no DirectTags (exercises the empty-collection path).
         // Load with Include so Clear() can remove existing join entries (idempotent reseed).
         var post1 = await ctx.Posts.Include(p => p.DirectTags).FirstAsync(p => p.PostId == 1);
         var post4 = await ctx.Posts.Include(p => p.DirectTags).FirstAsync(p => p.PostId == 4);
