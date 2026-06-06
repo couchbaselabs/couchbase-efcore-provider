@@ -14,6 +14,12 @@ public class OwnedTypeDbContext(DbContextOptions<OwnedTypeDbContext> options) : 
     /// </summary>
     public DbSet<OwnedTypeFixture.HashSetCustomer> HashSetCustomers { get; set; }
 
+    /// <summary>HasConversion on an OwnsMany item scalar — verifies CQE Phase 3.</summary>
+    public DbSet<OwnedTypeFixture.ConvertedCustomer> ConvertedCustomers { get; set; }
+
+    /// <summary>ConvertsNulls=true converter on an OwnsMany item scalar.</summary>
+    public DbSet<OwnedTypeFixture.NullSentinelCustomer> NullSentinelCustomers { get; set; }
+
     /// <summary>
     /// Get-only OwnsOne / OwnsMany + HashSet nested collection —
     /// exercises FieldInfo fallback and ICollection&lt;T&gt; nested clear.
@@ -41,6 +47,31 @@ public class OwnedTypeDbContext(DbContextOptions<OwnedTypeDbContext> options) : 
             b.ToCouchbaseCollection(this, "hashsetcustomer");
             b.HasKey(c => c.Id);
             b.OwnsMany(c => c.Tags, t => t.HasKey(t => t.Id));
+        });
+
+        modelBuilder.Entity<OwnedTypeFixture.ConvertedCustomer>(b =>
+        {
+            b.ToCouchbaseCollection(this, "convertedcustomer");
+            b.HasKey(c => c.Id);
+            b.OwnsMany(c => c.Contacts, cm =>
+            {
+                cm.HasKey(c => c.Id);
+                // Store ContactStatus as a string — exercises HasConversion round-trip.
+                cm.Property(c => c.Status).HasConversion<string>();
+            });
+        });
+
+        modelBuilder.Entity<OwnedTypeFixture.NullSentinelCustomer>(b =>
+        {
+            b.ToCouchbaseCollection(this, "nullsentinelcustomer");
+            b.HasKey(c => c.Id);
+            b.OwnsMany(c => c.Contacts, cm =>
+            {
+                cm.HasKey(c => c.Id);
+                // NullToSentinelConverter has ConvertsNulls=true — exercises the
+                // ConvertsNulls path in ConvertFromJson (read) and SerializeOwnedItem (write).
+                cm.Property(c => c.Note).HasConversion(new OwnedTypeFixture.NullToSentinelConverter());
+            });
         });
 
         modelBuilder.Entity<OwnedTypeFixture.FieldAccessCustomer>(b =>

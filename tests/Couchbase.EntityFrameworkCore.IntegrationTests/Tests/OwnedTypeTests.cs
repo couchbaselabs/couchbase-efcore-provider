@@ -929,4 +929,200 @@ public class OwnedTypeTests(
             if (c != null) { ctx.Remove(c); await ctx.SaveChangesAsync(); }
         }
     }
+
+    // -------------------------------------------------------------------------
+    // HasConversion on OwnsMany item scalars (CQE Phase 3)
+    // Verifies that ConvertFromJson (read) and SerializeOwnedItem (write) both
+    // apply the value converter so the stored representation is the provider type
+    // (string) and the materialised value is the model CLR type (ContactStatus).
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task HasConversion_OwnsMany_Scalar_RoundTrips()
+    {
+        // ContactStatus is stored as a string but materialised as the enum.
+        const int id = 500;
+        try
+        {
+            await using (var ctx = fixture.GetDbContext())
+            {
+                ctx.Update(new OwnedTypeFixture.ConvertedCustomer
+                {
+                    Id   = id,
+                    Name = "Converted Alice",
+                    Contacts =
+                    [
+                        new OwnedTypeFixture.ConvertedContact { Id = 1, Label = "work",  Status = OwnedTypeFixture.ContactStatus.Active   },
+                        new OwnedTypeFixture.ConvertedContact { Id = 2, Label = "home",  Status = OwnedTypeFixture.ContactStatus.Inactive  },
+                        new OwnedTypeFixture.ConvertedContact { Id = 3, Label = "other", Status = OwnedTypeFixture.ContactStatus.Pending   }
+                    ]
+                });
+                await ctx.SaveChangesAsync();
+            }
+
+            await using (var ctx = fixture.GetDbContext())
+            {
+                var customer = await ctx.ConvertedCustomers.FirstAsync(c => c.Id == id);
+                Assert.Equal(3, customer.Contacts.Count);
+                Assert.Equal(OwnedTypeFixture.ContactStatus.Active,   customer.Contacts.First(c => c.Label == "work").Status);
+                Assert.Equal(OwnedTypeFixture.ContactStatus.Inactive, customer.Contacts.First(c => c.Label == "home").Status);
+                Assert.Equal(OwnedTypeFixture.ContactStatus.Pending,  customer.Contacts.First(c => c.Label == "other").Status);
+            }
+        }
+        finally
+        {
+            await using var ctx = fixture.GetDbContext();
+            var c = await ctx.ConvertedCustomers.FirstOrDefaultAsync(c => c.Id == id);
+            if (c != null) { ctx.Remove(c); await ctx.SaveChangesAsync(); }
+        }
+    }
+
+    [Fact]
+    public async Task HasConversion_OwnsMany_Scalar_Update_RoundTrips()
+    {
+        // Mutate the converted scalar and confirm the new value round-trips.
+        const int id = 501;
+        try
+        {
+            await using (var ctx = fixture.GetDbContext())
+            {
+                ctx.Update(new OwnedTypeFixture.ConvertedCustomer
+                {
+                    Id      = id,
+                    Name    = "Converted Bob",
+                    Contacts = [new OwnedTypeFixture.ConvertedContact { Id = 1, Label = "main", Status = OwnedTypeFixture.ContactStatus.Active }]
+                });
+                await ctx.SaveChangesAsync();
+            }
+
+            await using (var ctx = fixture.GetDbContext())
+            {
+                var customer = await ctx.ConvertedCustomers.FirstAsync(c => c.Id == id);
+                customer.Contacts[0].Status = OwnedTypeFixture.ContactStatus.Inactive;
+                await ctx.SaveChangesAsync();
+            }
+
+            await using (var ctx = fixture.GetDbContext())
+            {
+                var customer = await ctx.ConvertedCustomers.FirstAsync(c => c.Id == id);
+                Assert.Equal(OwnedTypeFixture.ContactStatus.Inactive, customer.Contacts[0].Status);
+            }
+        }
+        finally
+        {
+            await using var ctx = fixture.GetDbContext();
+            var c = await ctx.ConvertedCustomers.FirstOrDefaultAsync(c => c.Id == id);
+            if (c != null) { ctx.Remove(c); await ctx.SaveChangesAsync(); }
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // ConvertsNulls=true on OwnsMany item scalar (CQE Phase 3)
+    // NullToSentinelConverter maps null ↔ "NULL_VALUE" and has ConvertsNulls=true.
+    // These tests verify that both the write path (SerializeOwnedItem) and the
+    // read path (ConvertFromJson) call the converter even when the value is null.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task ConvertsNulls_NullModelValue_StoredAsSentinel_ReadsBackAsNull()
+    {
+        // A null Note must be written as "NULL_VALUE" (converter applied on write)
+        // and read back as null (converter applied on read).
+        const int id = 600;
+        try
+        {
+            await using (var ctx = fixture.GetDbContext())
+            {
+                ctx.Update(new OwnedTypeFixture.NullSentinelCustomer
+                {
+                    Id = id, Name = "Sentinel Alice",
+                    Contacts = [new OwnedTypeFixture.NullSentinelContact { Id = 1, Note = null }]
+                });
+                await ctx.SaveChangesAsync();
+            }
+
+            await using (var ctx = fixture.GetDbContext())
+            {
+                var customer = await ctx.NullSentinelCustomers.FirstAsync(c => c.Id == id);
+                Assert.Single(customer.Contacts);
+                Assert.Null(customer.Contacts[0].Note);
+            }
+        }
+        finally
+        {
+            await using var ctx = fixture.GetDbContext();
+            var c = await ctx.NullSentinelCustomers.FirstOrDefaultAsync(c => c.Id == id);
+            if (c != null) { ctx.Remove(c); await ctx.SaveChangesAsync(); }
+        }
+    }
+
+    [Fact]
+    public async Task ConvertsNulls_NonNullModelValue_RoundTrips()
+    {
+        // A non-null Note must also round-trip correctly through the converter.
+        const int id = 601;
+        try
+        {
+            await using (var ctx = fixture.GetDbContext())
+            {
+                ctx.Update(new OwnedTypeFixture.NullSentinelCustomer
+                {
+                    Id = id, Name = "Sentinel Bob",
+                    Contacts = [new OwnedTypeFixture.NullSentinelContact { Id = 1, Note = "hello" }]
+                });
+                await ctx.SaveChangesAsync();
+            }
+
+            await using (var ctx = fixture.GetDbContext())
+            {
+                var customer = await ctx.NullSentinelCustomers.FirstAsync(c => c.Id == id);
+                Assert.Equal("hello", customer.Contacts[0].Note);
+            }
+        }
+        finally
+        {
+            await using var ctx = fixture.GetDbContext();
+            var c = await ctx.NullSentinelCustomers.FirstOrDefaultAsync(c => c.Id == id);
+            if (c != null) { ctx.Remove(c); await ctx.SaveChangesAsync(); }
+        }
+    }
+
+    [Fact]
+    public async Task ConvertsNulls_MixedNullAndNonNull_RoundTrips()
+    {
+        // Mix of null and non-null Notes in the same collection.
+        const int id = 602;
+        try
+        {
+            await using (var ctx = fixture.GetDbContext())
+            {
+                ctx.Update(new OwnedTypeFixture.NullSentinelCustomer
+                {
+                    Id = id, Name = "Sentinel Carol",
+                    Contacts =
+                    [
+                        new OwnedTypeFixture.NullSentinelContact { Id = 1, Note = null    },
+                        new OwnedTypeFixture.NullSentinelContact { Id = 2, Note = "world" },
+                        new OwnedTypeFixture.NullSentinelContact { Id = 3, Note = null    }
+                    ]
+                });
+                await ctx.SaveChangesAsync();
+            }
+
+            await using (var ctx = fixture.GetDbContext())
+            {
+                var customer = await ctx.NullSentinelCustomers.FirstAsync(c => c.Id == id);
+                Assert.Equal(3, customer.Contacts.Count);
+                Assert.Null (customer.Contacts.First(c => c.Id == 1).Note);
+                Assert.Equal("world", customer.Contacts.First(c => c.Id == 2).Note);
+                Assert.Null (customer.Contacts.First(c => c.Id == 3).Note);
+            }
+        }
+        finally
+        {
+            await using var ctx = fixture.GetDbContext();
+            var c = await ctx.NullSentinelCustomers.FirstOrDefaultAsync(c => c.Id == id);
+            if (c != null) { ctx.Remove(c); await ctx.SaveChangesAsync(); }
+        }
+    }
 }
