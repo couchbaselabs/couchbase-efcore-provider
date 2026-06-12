@@ -707,6 +707,77 @@ public class CouchbaseDatabaseWrapperHydrateTests
             .FindProperty(nameof(OwnedDetails.Status))!.GetColumnName();
         Assert.Null(doc[statusKey]);
     }
+
+    // FillOwnsOneIntoDoc — ConvertsNulls=true converter on an OwnsOne scalar
+    // -----------------------------------------------------------------------
+    // Regression: when navValue is null, ApplyConverter must NOT be called even
+    // when the property's converter has ConvertsNulls=true.  Calling it would write
+    // a non-null sentinel and EF would materialise a phantom owned object on read.
+
+    private class OwnedDetailsWithSentinel
+    {
+        public string? Note { get; set; }
+    }
+
+    private class OwnerWithSentinelOwnsOne
+    {
+        public int                    Id      { get; set; }
+        public OwnedDetailsWithSentinel? Details { get; set; }
+    }
+
+    private class OwnsOneWithSentinelConverterContext(DbContextOptions<OwnsOneWithSentinelConverterContext> options)
+        : DbContext(options)
+    {
+        public DbSet<OwnerWithSentinelOwnsOne> Owners { get; set; } = null!;
+
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            modelBuilder.Entity<OwnerWithSentinelOwnsOne>(b =>
+            {
+                b.ToCouchbaseCollection("bucket", "scope", "owners");
+                b.HasKey(o => o.Id);
+                b.OwnsOne(o => o.Details, d =>
+                {
+                    // NullSentinelConverter has ConvertsNulls=true and maps null → "NULL_SENTINEL".
+                    // When the navigation itself is null FillOwnsOneIntoDoc must still write null,
+                    // not the sentinel, for every owned column.
+                    d.Property(x => x.Note).HasConversion(new NullSentinelConverter());
+                });
+            });
+        }
+    }
+
+    private static OwnsOneWithSentinelConverterContext CreateOwnsOneWithSentinelConverterContext()
+    {
+        var opts = new global::Couchbase.ClusterOptions()
+            .WithConnectionString("couchbase://localhost")
+            .WithPasswordAuthentication("Administrator", "password");
+        var builder = new DbContextOptionsBuilder<OwnsOneWithSentinelConverterContext>();
+        builder.UseCouchbaseProvider(opts);
+        return new OwnsOneWithSentinelConverterContext(builder.Options);
+    }
+
+    [Fact]
+    public void FillOwnsOneIntoDoc_NullNavigation_ConvertsNullsConverter_WritesNullNotSentinel()
+    {
+        // Regression: a ConvertsNulls=true converter on an OwnsOne property must NOT be
+        // invoked when the navigation itself is null.  Before the fix, ApplyConverter was
+        // called with rawValue=null and ConvertsNulls=true, causing "NULL_SENTINEL" to be
+        // written — EF would then materialise a phantom owned object on the read path.
+        using var ctx = CreateOwnsOneWithSentinelConverterContext();
+        var ownerEntityType = ctx.Model.FindEntityType(typeof(OwnerWithSentinelOwnsOne))!;
+        var detailsNav      = ownerEntityType.GetNavigations()
+            .First(n => n.Name == nameof(OwnerWithSentinelOwnsOne.Details));
+
+        var doc = new Dictionary<string, object?>();
+        CouchbaseDatabaseWrapper.FillOwnsOneIntoDoc(doc, detailsNav, navValue: null);
+
+        var noteKey = detailsNav.TargetEntityType
+            .FindProperty(nameof(OwnedDetailsWithSentinel.Note))!.GetColumnName();
+
+        // Must be null — not "NULL_SENTINEL" — because the navigation is absent.
+        Assert.Null(doc[noteKey]);
+    }
 }
 
 /* ************************************************************

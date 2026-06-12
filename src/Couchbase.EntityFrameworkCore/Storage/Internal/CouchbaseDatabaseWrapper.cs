@@ -219,9 +219,19 @@ public class CouchbaseDatabaseWrapper : Database
     {
         foreach (var p in nav.TargetEntityType.GetProperties().Where(p => !p.IsShadowProperty()))
         {
+            // When the entire navigation is null every flattened column must be written as
+            // null unconditionally — do NOT call ApplyConverter here.  A converter with
+            // ConvertsNulls=true would map null to a non-null sentinel value; EF would then
+            // see that non-null value on the read path and incorrectly treat the navigation
+            // as present, causing materialisation to fail or return a phantom owned object.
+            if (navValue == null)
+            {
+                doc[p.GetColumnName()] = null;
+                continue;
+            }
+
             // Read via PropertyInfo when available; fall back to FieldInfo for field-access properties.
-            var rawValue = navValue == null ? null
-                : p.PropertyInfo != null ? p.PropertyInfo.GetValue(navValue)
+            var rawValue = p.PropertyInfo != null ? p.PropertyInfo.GetValue(navValue)
                 : p.FieldInfo?.GetValue(navValue);
             doc[p.GetColumnName()] = ApplyConverter(p, rawValue);
         }
