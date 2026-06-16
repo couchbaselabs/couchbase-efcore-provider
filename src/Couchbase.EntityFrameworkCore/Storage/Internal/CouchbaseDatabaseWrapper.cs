@@ -373,8 +373,9 @@ public class CouchbaseDatabaseWrapper : Database
     /// <summary>
     /// Recursively serializes a single owned-item CLR instance to a dictionary,
     /// including any nested OwnsOne / OwnsMany navigations at arbitrary depth.
+    /// Internal so the field-access fallback can be verified without a live DbContext.
     /// </summary>
-    private static Dictionary<string, object?> SerializeOwnedItem(
+    internal static Dictionary<string, object?> SerializeOwnedItem(
         object item,
         IEntityType entityType,
         JsonNamingPolicy? fieldNamingPolicy)
@@ -393,8 +394,13 @@ public class CouchbaseDatabaseWrapper : Database
 
         foreach (var nav in entityType.GetNavigations())
         {
-            if (!nav.TargetEntityType.IsOwned() || nav.PropertyInfo == null) continue;
-            var navValue = nav.PropertyInfo.GetValue(item);
+            // Skip only when the navigation is not owned or cannot be read at all.
+            // Read via PropertyInfo when available; fall back to FieldInfo for field-access
+            // navigations (backing-field or [BackingField]-annotated) where PropertyInfo is null.
+            if (!nav.TargetEntityType.IsOwned() || (nav.PropertyInfo == null && nav.FieldInfo == null)) continue;
+            var navValue = nav.PropertyInfo != null
+                ? nav.PropertyInfo.GetValue(item)
+                : nav.FieldInfo?.GetValue(item);
             var fieldName = fieldNamingPolicy?.ConvertName(nav.Name) ?? nav.Name;
 
             if (nav.IsCollection)

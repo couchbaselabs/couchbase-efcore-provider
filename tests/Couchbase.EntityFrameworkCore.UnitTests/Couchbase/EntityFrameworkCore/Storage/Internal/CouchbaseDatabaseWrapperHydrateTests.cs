@@ -49,6 +49,10 @@ public class CouchbaseDatabaseWrapperHydrateTests
         var annotation = new Mock<IAnnotation>();
         annotation.Setup(a => a.Value).Returns(name);
         prop.Setup(p => p.FindAnnotation("Relational:ColumnName")).Returns(annotation.Object);
+        // GetColumnName() reads the column name through the indexer (property["Relational:ColumnName"]),
+        // which Moq will not delegate to FindAnnotation unless set up explicitly — without this the
+        // call falls back to GetDefaultColumnName() and throws.  Mirror the other helpers below.
+        prop.Setup(p => p["Relational:ColumnName"]).Returns(name);
         entryMock.Setup(e => e.GetCurrentValue(prop.Object)).Returns(value);
         return prop;
     }
@@ -85,7 +89,7 @@ public class CouchbaseDatabaseWrapperHydrateTests
     // -----------------------------------------------------------------------
 
     [Fact]
-    public void Hydrate_StandardProperty_SetsValueViaPropertyInfo()
+    public void Hydrate_StandardProperty_StoresValueInDocument()
     {
         var entry = new Mock<IUpdateEntry>();
         var entityType = new Mock<IEntityType>();
@@ -109,7 +113,7 @@ public class CouchbaseDatabaseWrapperHydrateTests
     }
 
     [Fact]
-    public void Hydrate_StandardProperty_NullValue_SetsNull()
+    public void Hydrate_StandardProperty_NullValue_StoresNullInDocument()
     {
         var entry = new Mock<IUpdateEntry>();
         var entityType = new Mock<IEntityType>();
@@ -135,7 +139,7 @@ public class CouchbaseDatabaseWrapperHydrateTests
     // -----------------------------------------------------------------------
 
     [Fact]
-    public void Hydrate_FieldBackedProperty_SetsValueViaPropertyInfo()
+    public void Hydrate_FieldBackedProperty_StoresValueInDocument()
     {
         // Field-backed properties are still accessible by EF Core via GetCurrentValue(),
         // which reads from the change-tracker entry regardless of backing-field strategy.
@@ -193,8 +197,9 @@ public class CouchbaseDatabaseWrapperHydrateTests
     }
 
     // -----------------------------------------------------------------------
-    // Computed property (no setter, no FieldInfo) — must be skipped silently.
-    // Before the fix this would NullReferenceException on propertyInfo.SetValue.
+    // Computed property (no setter, no FieldInfo) — its EF-tracked value is still
+    // written to the document via GetCurrentValue(), regardless of CLR setters.
+    // (The old CLR-mutation path would NullReferenceException on PropertyInfo.SetValue.)
     // -----------------------------------------------------------------------
 
     [Fact]
@@ -293,7 +298,7 @@ public class CouchbaseDatabaseWrapperHydrateTests
     }
 
     [Fact]
-    public void Hydrate_MixedProperties_SetsSettableSkipsShadow()
+    public void Hydrate_MixedProperties_StoresNonShadowOmitsShadow()
     {
         var entry = new Mock<IUpdateEntry>();
         var entityType = new Mock<IEntityType>();
@@ -777,6 +782,79 @@ public class CouchbaseDatabaseWrapperHydrateTests
 
         // Must be null — not "NULL_SENTINEL" — because the navigation is absent.
         Assert.Null(doc[noteKey]);
+    }
+
+    // -----------------------------------------------------------------------
+    // SerializeOwnedItem — nested owned navigation via field access
+    //
+    // A nested OwnsOne/OwnsMany whose PropertyInfo is null (field-access, e.g.
+    // a backing field or [BackingField] navigation) must still be serialized by
+    // reading through FieldInfo, not silently dropped.
+    // -----------------------------------------------------------------------
+
+    private class OwnedLabel
+    {
+        public string? Text { get; set; }
+    }
+
+    private class OwnedContact
+    {
+        // Nested owned navigation accessed via this backing field (no CLR property
+        // exposed to EF), so the mocked INavigation.PropertyInfo is null.
+        private OwnedLabel? _label;
+
+        public OwnedLabel? GetLabel() => _label;
+        public void SetLabel(OwnedLabel? label) => _label = label;
+    }
+
+    private static INavigation BuildNestedOwnsOneNavViaField(string propName)
+    {
+        // SerializeOwnedItem keys owned scalars by p.Name, so wire Name (not just the
+        // column annotation) and a PropertyInfo to read the value through.
+        var textProp = new Mock<IProperty>();
+        textProp.Setup(p => p.PropertyInfo).Returns(typeof(OwnedLabel).GetProperty(nameof(OwnedLabel.Text)));
+        textProp.Setup(p => p.FieldInfo).Returns((FieldInfo?)null);
+        textProp.Setup(p => p.IsShadowProperty()).Returns(false);
+        textProp.Setup(p => p.Name).Returns(propName);
+
+        var targetType = new Mock<IEntityType>();
+        targetType.Setup(t => t.GetProperties()).Returns([textProp.Object]);
+        targetType.Setup(t => t.GetNavigations()).Returns([]);
+        targetType.Setup(t => t.IsOwned()).Returns(true);
+
+        var nav = new Mock<INavigation>();
+        nav.Setup(n => n.IsCollection).Returns(false);
+        nav.Setup(n => n.Name).Returns("label");
+        nav.Setup(n => n.TargetEntityType).Returns(targetType.Object);
+        // PropertyInfo is null (field-access); the FieldInfo points at the backing field.
+        nav.Setup(n => n.PropertyInfo).Returns((PropertyInfo?)null);
+        nav.Setup(n => n.FieldInfo).Returns(
+            typeof(OwnedContact).GetField("_label", BindingFlags.NonPublic | BindingFlags.Instance));
+
+        return nav.Object;
+    }
+
+    [Fact]
+    public void SerializeOwnedItem_NestedNavViaFieldAccess_IsSerialized()
+    {
+        // Regression: before the FieldInfo fallback, a nested owned navigation with
+        // PropertyInfo == null was skipped entirely, dropping its data from the document.
+        var contact = new OwnedContact();
+        contact.SetLabel(new OwnedLabel { Text = "primary" });
+
+        var nestedNav = BuildNestedOwnsOneNavViaField("text");
+
+        var contactType = new Mock<IEntityType>();
+        contactType.Setup(t => t.GetProperties()).Returns([]);
+        contactType.Setup(t => t.GetNavigations()).Returns([nestedNav]);
+
+        var result = CouchbaseDatabaseWrapper.SerializeOwnedItem(
+            contact, contactType.Object, fieldNamingPolicy: null);
+
+        // The nested navigation must be present and read via FieldInfo.
+        Assert.True(result.ContainsKey("label"), "nested nav 'label' must be serialized");
+        var nested = Assert.IsType<Dictionary<string, object?>>(result["label"]);
+        Assert.Equal("primary", nested["text"]);
     }
 }
 
