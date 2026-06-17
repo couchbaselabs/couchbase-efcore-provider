@@ -42,11 +42,25 @@ internal static class CouchbaseProjectionAliases
     /// </summary>
     public static string[] ComputeUnique(IReadOnlyList<ProjectionExpression> projections)
     {
-        var result = new string[projections.Count];
-        var seen = new Dictionary<string, int>();
+        var names = new string[projections.Count];
         for (var i = 0; i < projections.Count; i++)
+            names[i] = EffectiveAlias(projections[i]);
+        return MakeUnique(names);
+    }
+
+    /// <summary>
+    /// Makes a list of alias names collision-free, preserving order: the first occurrence of
+    /// each name is kept verbatim and later duplicates receive an incrementing numeric suffix.
+    /// The suffix search skips any candidate that already exists so a literal collision with an
+    /// already-used "&lt;name&gt;&lt;n&gt;" cannot produce a second duplicate.
+    /// </summary>
+    public static string[] MakeUnique(IReadOnlyList<string> names)
+    {
+        var result = new string[names.Count];
+        var seen = new Dictionary<string, int>();
+        for (var i = 0; i < names.Count; i++)
         {
-            var name = EffectiveAlias(projections[i]);
+            var name = names[i];
             if (seen.TryGetValue(name, out var count))
             {
                 // Find the next free suffixed name (guard against a literal collision with

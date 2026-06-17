@@ -177,6 +177,48 @@ public class EagerLoadingTests(BloggingFixture fixture) : IAsyncLifetime
         Assert.Equal(5, blog2.Posts[0].Rating);
     }
 
+    [Fact]
+    public async Task Include_Posts_WithFilter_MultipleMatches_ReturnsAllMatching()
+    {
+        // Regression guard for the projection-alias collision fix: the predicate must keep
+        // MORE THAN ONE dependent row per principal (the original failing case returned a
+        // single row per blog, which masked mis-aligned multi-row materialization).
+        await using var context = fixture.GetDbContext();
+
+        var blogs = await context.Blogs
+            .Include(b => b.Posts.Where(p => p.Rating >= 4))
+            .OrderBy(b => b.BlogId)
+            .ToListAsync();
+
+        // Blog 2 has posts rated 5, 4, 3 → ratings 5 and 4 match.
+        var blog2 = blogs.First(b => b.BlogId == 2);
+        Assert.Equal(2, blog2.Posts.Count);
+        Assert.Equal([4, 5], blog2.Posts.Select(p => p.Rating).OrderBy(r => r));
+        // The dependent's own FK column must be the post's, not the principal's leaking through.
+        Assert.All(blog2.Posts, p => Assert.Equal(2, p.BlogId));
+    }
+
+    [Fact]
+    public async Task Include_Posts_Unfiltered_DependentCollidingColumnsAreCorrect()
+    {
+        // Blog and Post both expose `rating` and `blogId`. This asserts the dependent's values
+        // for those colliding columns — before the alias-uniquification fix the post read the
+        // blog's `rating` (and `blogId`) instead of its own, even without a filter.
+        await using var context = fixture.GetDbContext();
+
+        var blogs = await context.Blogs
+            .Include(b => b.Posts)
+            .OrderBy(b => b.BlogId)
+            .ToListAsync();
+
+        var blog2 = blogs.First(b => b.BlogId == 2);   // blog2.Rating == 4
+        var post2 = blog2.Posts.First(p => p.PostId == 2);
+
+        // Post 2's own rating is 5 — distinct from blog2's rating (4), so a leak is detectable.
+        Assert.Equal(5, post2.Rating);
+        Assert.Equal(2, post2.BlogId);
+    }
+
     // -----------------------------------------------------------------------
     // 6 — Auto-include (Person.Photo configured with AutoInclude in model)
     // -----------------------------------------------------------------------
