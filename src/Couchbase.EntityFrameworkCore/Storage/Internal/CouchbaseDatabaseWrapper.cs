@@ -219,11 +219,21 @@ public class CouchbaseDatabaseWrapper : Database
     {
         foreach (var p in nav.TargetEntityType.GetProperties().Where(p => !p.IsShadowProperty()))
         {
+            // When the entire navigation is null every flattened column must be written as
+            // null unconditionally — do NOT call ApplyConverter here.  A converter with
+            // ConvertsNulls=true would map null to a non-null sentinel value; EF would then
+            // see that non-null value on the read path and incorrectly treat the navigation
+            // as present, causing materialisation to fail or return a phantom owned object.
+            if (navValue == null)
+            {
+                doc[p.GetColumnName()] = null;
+                continue;
+            }
+
             // Read via PropertyInfo when available; fall back to FieldInfo for field-access properties.
-            var value = navValue == null ? null
-                : p.PropertyInfo != null ? p.PropertyInfo.GetValue(navValue)
+            var rawValue = p.PropertyInfo != null ? p.PropertyInfo.GetValue(navValue)
                 : p.FieldInfo?.GetValue(navValue);
-            doc[p.GetColumnName()] = value;
+            doc[p.GetColumnName()] = ApplyConverter(p, rawValue);
         }
     }
 
@@ -244,16 +254,15 @@ public class CouchbaseDatabaseWrapper : Database
             .Where(n => n.TargetEntityType.IsOwned() && n.PropertyInfo != null)
             .ToList();
 
-        // No owned navigations: use CLR instance so the SDK's camelCase serializer produces
-        // the same field names that already work for all existing entity types.
+        // No owned navigations: build a dictionary keyed by GetColumnName() so that
+        // (a) value converters (HasConversion) can be applied before storage and
+        // (b) the stored keys match what the N1QL SELECT projection aliases expect.
         //
         // Exception: shared entity types (HasSharedClrType == true, e.g. the hidden join
         // entity for skip navigations / HasMany().WithMany()) use Dictionary<string,object>
         // as their CLR type.  All their FK properties are shadow properties — the standard
-        // IsShadowProperty filter would produce an empty document.  Additionally, Dictionary's
-        // indexer throws TargetParameterCountException when PropertyInfo.SetValue is called
-        // without index arguments.  For shared types we therefore build a plain dictionary
-        // keyed by column name from ALL (including shadow) properties.
+        // IsShadowProperty filter would produce an empty document.  For shared types we
+        // therefore write every property value (including shadow) by column name.
         if (ownedNavs.Count == 0)
         {
             if (entityType.HasSharedClrType)
@@ -268,22 +277,22 @@ public class CouchbaseDatabaseWrapper : Database
                     // name (e.g. "PostsPostId", "TagsTagId"), so the written document keys
                     // must match. Applying a naming policy would silently diverge from the
                     // SQL projection and make join documents unreadable on the query path.
-                    joinDoc[property.GetColumnName()] = updateEntry.GetCurrentValue(property);
+                    var rawJoinValue = updateEntry.GetCurrentValue(property);
+                    joinDoc[property.GetColumnName()] = ApplyConverter(property, rawJoinValue);
                 }
                 return joinDoc;
             }
 
-            var obj = Activator.CreateInstance(entityType.ClrType)!;
+            // Regular entity type: build a dictionary with converter-applied values so that
+            // types with HasConversion (e.g. enum → string) store the provider representation.
+            var regularDoc = new Dictionary<string, object?>();
             foreach (var property in entityType.GetProperties())
             {
                 if (property.IsShadowProperty()) continue;
-                var value = updateEntry.GetCurrentValue(property);
-                if (property.PropertyInfo?.GetSetMethod(nonPublic: true) != null)
-                    property.PropertyInfo.SetValue(obj, value);
-                else if (property.FieldInfo != null)
-                    property.FieldInfo.SetValue(obj, value);
+                var rawValue = updateEntry.GetCurrentValue(property);
+                regularDoc[property.GetColumnName()] = ApplyConverter(property, rawValue);
             }
-            return obj;
+            return regularDoc;
         }
 
         // With owned navigations, build a flat dictionary so that:
@@ -298,23 +307,16 @@ public class CouchbaseDatabaseWrapper : Database
         // Dictionary keys are serialized verbatim by System.Text.Json — no camelCase
         // transformation — so GetColumnName() keys match what N1QL SELECT returns.
         //
-        // Known limitations (apply equally to the CLR-instance path above):
-        //   1. EF Core value converters (HasConversion) are not applied. GetCurrentValue
-        //      returns the model-side CLR value; property.GetValueConverter()?.ConvertToProvider
-        //      is never called. This affects all entity writes and should be fixed in a
-        //      dedicated write-path correctness pass.
-        //   2. Properties with no PropertyInfo and no FieldInfo are silently dropped.
-        //
-        // Additional limitation specific to the OwnsMany item dictionary (built below):
-        //   3. A custom JsonConverter<TOwnedItem> registered in the SDK's serializer options
-        //      will not fire for owned-item dictionaries, because the item-type boundary is
-        //      erased. The SDK sees Dictionary<string,object?> rather than TOwnedItem and
-        //      dispatches on the runtime type of each property value instead.
+        // Note: a custom JsonConverter<TOwnedItem> registered in the SDK's serializer options
+        // will not fire for owned-item dictionaries, because the item-type boundary is erased.
+        // The SDK sees Dictionary<string,object?> rather than TOwnedItem and dispatches on
+        // the runtime type of each property value instead.
         var doc = new Dictionary<string, object?>();
         foreach (var property in entityType.GetProperties())
         {
             if (property.IsShadowProperty()) continue;
-            doc[property.GetColumnName()] = updateEntry.GetCurrentValue(property);
+            var rawDocValue = updateEntry.GetCurrentValue(property);
+            doc[property.GetColumnName()] = ApplyConverter(property, rawDocValue);
         }
 
         var entity = updateEntry.ToEntityEntry().Entity;
@@ -354,10 +356,26 @@ public class CouchbaseDatabaseWrapper : Database
     }
 
     /// <summary>
+    /// Applies the EF Core value converter (<c>HasConversion</c>) for a property to produce
+    /// the provider/storage representation before writing to Couchbase.  When no converter
+    /// is configured the raw model-side value is returned unchanged.
+    /// </summary>
+    private static object? ApplyConverter(IProperty property, object? rawValue)
+    {
+        var converter = property.GetValueConverter() ?? property.FindTypeMapping()?.Converter;
+        // Always call the converter if one is present, even for null rawValue, because a
+        // converter with ConvertsNulls=true may map null to a non-null provider value.
+        return converter is not null && (rawValue is not null || converter.ConvertsNulls)
+            ? converter.ConvertToProvider(rawValue)
+            : rawValue;
+    }
+
+    /// <summary>
     /// Recursively serializes a single owned-item CLR instance to a dictionary,
     /// including any nested OwnsOne / OwnsMany navigations at arbitrary depth.
+    /// Internal so the field-access fallback can be verified without a live DbContext.
     /// </summary>
-    private static Dictionary<string, object?> SerializeOwnedItem(
+    internal static Dictionary<string, object?> SerializeOwnedItem(
         object item,
         IEntityType entityType,
         JsonNamingPolicy? fieldNamingPolicy)
@@ -371,25 +389,18 @@ public class CouchbaseDatabaseWrapper : Database
             var rawValue = p.PropertyInfo != null
                 ? p.PropertyInfo.GetValue(item)
                 : p.FieldInfo?.GetValue(item);
-            // Apply value converter (HasConversion) so the stored value is the
-            // provider/storage representation, not the raw CLR model value.
-            // GetValueConverter() delegates to FindTypeMapping()?.Converter in EF Core 10;
-            // check FindTypeMapping().Converter directly as a fallback for owned-entity
-            // properties where the two may diverge.
-            var converter   = p.GetValueConverter() ?? p.FindTypeMapping()?.Converter;
-            // Apply the converter when present — even if rawValue is null, because a
-            // converter with ConvertsNulls=true may map null to a non-null provider value.
-            // Only bypass the converter when none is configured.
-            var storedValue = converter is not null && (rawValue is not null || converter.ConvertsNulls)
-                ? converter.ConvertToProvider(rawValue)
-                : rawValue;
-            doc[fieldNamingPolicy?.ConvertName(p.Name) ?? p.Name] = storedValue;
+            doc[fieldNamingPolicy?.ConvertName(p.Name) ?? p.Name] = ApplyConverter(p, rawValue);
         }
 
         foreach (var nav in entityType.GetNavigations())
         {
-            if (!nav.TargetEntityType.IsOwned() || nav.PropertyInfo == null) continue;
-            var navValue = nav.PropertyInfo.GetValue(item);
+            // Skip only when the navigation is not owned or cannot be read at all.
+            // Read via PropertyInfo when available; fall back to FieldInfo for field-access
+            // navigations (backing-field or [BackingField]-annotated) where PropertyInfo is null.
+            if (!nav.TargetEntityType.IsOwned() || (nav.PropertyInfo == null && nav.FieldInfo == null)) continue;
+            var navValue = nav.PropertyInfo != null
+                ? nav.PropertyInfo.GetValue(item)
+                : nav.FieldInfo?.GetValue(item);
             var fieldName = fieldNamingPolicy?.ConvertName(nav.Name) ?? nav.Name;
 
             if (nav.IsCollection)
