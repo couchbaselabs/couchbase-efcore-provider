@@ -96,9 +96,12 @@ public class CouchbaseProjectionAliasesTests
     public void MakeUnique_AllElementsDistinct()
     {
         // Whatever the input, the output must contain no duplicates (the core invariant the
-        // reader relies on for a 1:1 ordinal->key mapping).
+        // reader relies on for a 1:1 ordinal->key mapping). The input includes a case-only
+        // duplicate ("A") so the distinctness check must use the same OrdinalIgnoreCase
+        // semantics as CouchbaseDbDataReader's alias map — otherwise a case-only collision in
+        // the output would slip past a case-sensitive comparer.
         var result = CouchbaseProjectionAliases.MakeUnique(
-            ["a", "a", "b", "a", "b", "c", "a0"]);
-        Assert.Equal(result.Length, new HashSet<string>(result).Count);
+            ["a", "a", "b", "A", "b", "c", "a0"]);
+        Assert.Equal(result.Length, new HashSet<string>(result, StringComparer.OrdinalIgnoreCase).Count);
     }
 }
