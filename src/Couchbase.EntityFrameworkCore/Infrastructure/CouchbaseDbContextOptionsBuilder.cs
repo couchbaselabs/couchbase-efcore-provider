@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Couchbase.EntityFrameworkCore.Extensions;
+using Couchbase.Query;
 using Microsoft.EntityFrameworkCore;
 
 namespace Couchbase.EntityFrameworkCore.Infrastructure;
@@ -37,6 +38,8 @@ public class CouchbaseDbContextOptionsBuilder : ICouchbaseDbContextOptionsBuilde
     public JsonNamingPolicy? FieldNamingPolicy { get; set; } = JsonNamingPolicy.CamelCase;
 
     public JsonSerializerOptions? SerializerOptions { get; set; }
+
+    public QueryScanConsistency ScanConsistency { get; set; } = QueryScanConsistency.NotBounded;
 
     DbContextOptionsBuilder ICouchbaseDbContextOptionsBuilder.OptionsBuilder => OptionsBuilder;
 }
@@ -81,6 +84,15 @@ public interface ICouchbaseDbContextOptionsBuilder
     /// (e.g. custom converters, different enum handling, or a different naming policy).
     /// </summary>
     public JsonSerializerOptions? SerializerOptions { get; set; }
+
+    /// <summary>
+    /// The N1QL scan consistency applied to generated queries. Defaults to
+    /// <see cref="QueryScanConsistency.NotBounded"/> (the SDK default — fastest, but may read a
+    /// not-yet-indexed mutation). Set to <see cref="QueryScanConsistency.RequestPlus"/> to make a
+    /// query wait until the index reflects all prior mutations — i.e. read-after-write
+    /// consistency — at the cost of higher latency.
+    /// </summary>
+    public QueryScanConsistency ScanConsistency { get; set; }
 }
 
 /* ************************************************************

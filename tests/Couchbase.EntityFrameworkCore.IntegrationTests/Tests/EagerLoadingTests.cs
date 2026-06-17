@@ -45,7 +45,10 @@ public class EagerLoadingTests(BloggingFixture fixture) : IAsyncLifetime
         // Seed skip-navigation join table data for Posts 1 and 4 only.
         // Posts 2 and 3 intentionally have no DirectTags (exercises the empty-collection path).
         // Load with Include so Clear() can remove existing join entries (idempotent reseed).
+        // Post 3 is reset to empty too: SkipNav_AddRelationship_WritesJoinDocumentWithCorrectKey
+        // adds a tag to it, so without this reset its precondition would fail on the next run.
         var post1 = await ctx.Posts.Include(p => p.DirectTags).FirstAsync(p => p.PostId == 1);
+        var post3 = await ctx.Posts.Include(p => p.DirectTags).FirstAsync(p => p.PostId == 3);
         var post4 = await ctx.Posts.Include(p => p.DirectTags).FirstAsync(p => p.PostId == 4);
         var tagGeneral     = await ctx.Set<BloggingFixture.Tag>().FindAsync("general");
         var tagInformative = await ctx.Set<BloggingFixture.Tag>().FindAsync("informative");
@@ -53,10 +56,30 @@ public class EagerLoadingTests(BloggingFixture fixture) : IAsyncLifetime
         post1.DirectTags.Clear();
         post1.DirectTags.Add(tagGeneral!);
         post1.DirectTags.Add(tagInformative!);
+        post3.DirectTags.Clear();
         post4.DirectTags.Clear();
         post4.DirectTags.Add(tagOpinion!);
         post4.DirectTags.Add(tagInformative!);
         await ctx.SaveChangesAsync();
+
+        // Warm-up: with RequestPlus this is already consistent, but as a belt-and-suspenders
+        // guard against index lag, poll until the canonical seed for Post 1 is observable before
+        // the test body runs.
+        await WaitForSeedAsync();
+    }
+
+    // Poll the index a few times until Post 1's two DirectTags are visible. No-op in practice
+    // when scan consistency is RequestPlus; protects the read tests if it is ever relaxed.
+    private async Task WaitForSeedAsync()
+    {
+        for (var attempt = 0; attempt < 10; attempt++)
+        {
+            await using var ctx = fixture.GetDbContext();
+            var post1 = await ctx.Posts.Include(p => p.DirectTags).FirstOrDefaultAsync(p => p.PostId == 1);
+            if (post1 is { DirectTags.Count: 2 })
+                return;
+            await Task.Delay(100);
+        }
     }
 
     public Task DisposeAsync() => Task.CompletedTask;
