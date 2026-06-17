@@ -59,6 +59,25 @@ public class CouchbaseProjectionAliasesTests
     }
 
     [Fact]
+    public void MakeUnique_CaseOnlyDuplicate_IsSuffixed()
+    {
+        // CouchbaseDbDataReader keys its alias->ordinal map with OrdinalIgnoreCase, so aliases
+        // differing only by case collide at read time. MakeUnique must treat them as duplicates;
+        // the base name's original casing is preserved in the suffix.
+        var result = CouchbaseProjectionAliases.MakeUnique(["rating", "Rating"]);
+        Assert.Equal(["rating", "Rating0"], result);
+    }
+
+    [Fact]
+    public void MakeUnique_CaseInsensitiveReservation_SkipsCaseOnlyLiteral()
+    {
+        // The duplicate "rating" must not take "RATING0" (a distinct literal that appears later but
+        // differs only by case) — it skips to "rating1".
+        var result = CouchbaseProjectionAliases.MakeUnique(["rating", "rating", "RATING0"]);
+        Assert.Equal(["rating", "rating1", "RATING0"], result);
+    }
+
+    [Fact]
     public void MakeUnique_FirstOccurrenceAlwaysVerbatim()
     {
         // Order is preserved and only later occurrences are renamed — never the first.

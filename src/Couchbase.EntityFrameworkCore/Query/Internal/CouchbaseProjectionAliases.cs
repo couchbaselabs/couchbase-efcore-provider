@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using Microsoft.EntityFrameworkCore.Query.SqlExpressions;
 
@@ -55,12 +56,21 @@ internal static class CouchbaseProjectionAliases
     /// up front ensures a generated suffix never steals a distinct literal alias that appears
     /// later in the list (e.g. <c>["rating", "rating", "rating0"]</c> →
     /// <c>["rating", "rating1", "rating0"]</c>, not <c>["rating", "rating0", "rating00"]</c>).
+    /// <para>
+    /// Collisions are detected case-insensitively to match
+    /// <see cref="Storage.Internal.CouchbaseDbDataReader{T}"/>, which keys its alias→ordinal map
+    /// with <see cref="StringComparer.OrdinalIgnoreCase"/>.  Aliases differing only by case
+    /// (e.g. <c>rating</c> / <c>Rating</c>) would otherwise collide at read time even though this
+    /// method left them untouched.  The base name's original casing is preserved in the suffixed
+    /// result (<c>Rating</c> → <c>Rating0</c>).
+    /// </para>
     /// </summary>
     public static string[] MakeUnique(IReadOnlyList<string> names)
     {
         var result = new string[names.Count];
-        var reserved = new HashSet<string>(names);   // every original literal alias
-        var used = new HashSet<string>();            // names already emitted into result
+        // Case-insensitive to match CouchbaseDbDataReader's alias lookup.
+        var reserved = new HashSet<string>(names, StringComparer.OrdinalIgnoreCase);  // every original literal alias
+        var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);             // names already emitted into result
         for (var i = 0; i < names.Count; i++)
         {
             var name = names[i];
