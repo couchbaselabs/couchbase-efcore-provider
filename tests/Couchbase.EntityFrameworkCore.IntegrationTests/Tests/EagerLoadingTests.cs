@@ -155,7 +155,7 @@ public class EagerLoadingTests(BloggingFixture fixture) : IAsyncLifetime
     // 5 — Filtered include
     // -----------------------------------------------------------------------
 
-    [Fact(Skip = "Filtered include returns incorrect posts — the WHERE predicate is not applied correctly in the generated N1QL. Needs investigation in CouchbaseQuerySqlGenerator.")]
+    [Fact]
     public async Task Include_Posts_WithFilter_ReturnsOnlyMatchingPosts()
     {
         await using var context = fixture.GetDbContext();
