@@ -49,6 +49,16 @@ public class CouchbaseProjectionAliasesTests
     }
 
     [Fact]
+    public void MakeUnique_LaterDistinctLiteral_IsNotConsumedByEarlierDuplicate()
+    {
+        // The duplicate "rating" at index 1 must NOT take "rating0" — that literal appears later
+        // (index 2) as a distinct alias and must keep its own slot. The duplicate skips to
+        // "rating1" instead.
+        var result = CouchbaseProjectionAliases.MakeUnique(["rating", "rating", "rating0"]);
+        Assert.Equal(["rating", "rating1", "rating0"], result);
+    }
+
+    [Fact]
     public void MakeUnique_FirstOccurrenceAlwaysVerbatim()
     {
         // Order is preserved and only later occurrences are renamed — never the first.

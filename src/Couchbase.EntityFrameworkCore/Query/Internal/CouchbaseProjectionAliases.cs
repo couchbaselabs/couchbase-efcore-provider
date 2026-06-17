@@ -50,37 +50,38 @@ internal static class CouchbaseProjectionAliases
 
     /// <summary>
     /// Makes a list of alias names collision-free, preserving order: the first occurrence of
-    /// each name is kept verbatim and later duplicates receive an incrementing numeric suffix.
-    /// The suffix search skips any candidate that already exists so a literal collision with an
-    /// already-used "&lt;name&gt;&lt;n&gt;" cannot produce a second duplicate.
+    /// each name is kept verbatim and later duplicates receive the smallest numeric suffix that
+    /// is neither already emitted nor an original (reserved) literal.  Reserving every input name
+    /// up front ensures a generated suffix never steals a distinct literal alias that appears
+    /// later in the list (e.g. <c>["rating", "rating", "rating0"]</c> →
+    /// <c>["rating", "rating1", "rating0"]</c>, not <c>["rating", "rating0", "rating00"]</c>).
     /// </summary>
     public static string[] MakeUnique(IReadOnlyList<string> names)
     {
         var result = new string[names.Count];
-        var seen = new Dictionary<string, int>();
+        var reserved = new HashSet<string>(names);   // every original literal alias
+        var used = new HashSet<string>();            // names already emitted into result
         for (var i = 0; i < names.Count; i++)
         {
             var name = names[i];
-            if (seen.TryGetValue(name, out var count))
+            if (used.Add(name))
             {
-                // Find the next free suffixed name (guard against a literal collision with
-                // an already-used "<name><n>").
-                string candidate;
-                do
-                {
-                    candidate = name + count;
-                    count++;
-                } while (seen.ContainsKey(candidate));
-
-                seen[name] = count;
-                seen[candidate] = 0;
-                result[i] = candidate;
-            }
-            else
-            {
-                seen[name] = 0;
+                // First time this exact literal is emitted — always keep it verbatim.
                 result[i] = name;
+                continue;
             }
+
+            // Duplicate: pick the smallest "<name><n>" that is not already emitted and is not an
+            // original literal (so a later distinct literal keeps its own slot).
+            var n = 0;
+            string candidate;
+            do
+            {
+                candidate = name + n++;
+            } while (used.Contains(candidate) || reserved.Contains(candidate));
+
+            used.Add(candidate);
+            result[i] = candidate;
         }
 
         return result;
