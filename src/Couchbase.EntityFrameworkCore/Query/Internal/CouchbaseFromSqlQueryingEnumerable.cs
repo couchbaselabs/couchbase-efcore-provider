@@ -114,6 +114,7 @@ public class CouchbaseFromSqlQueryingEnumerable<T> : IEnumerable<T>, IAsyncEnume
         logger.LogStatement(dbCommand, TimeSpan.Zero);
 #endif
         var queryOptions = GetParameters(dbCommand);
+        queryOptions.CancellationToken(cancellationToken);
 
         var bucket = await _bucketProvider.
             GetBucketAsync(_couchbaseDbContextOptionsBuilder.Bucket).
@@ -126,7 +127,7 @@ public class CouchbaseFromSqlQueryingEnumerable<T> : IEnumerable<T>, IAsyncEnume
         var model = _dbContext.Model;
         var entityType = model.FindEntityType(typeof(T));
 
-        await foreach (var doc in result)
+        await foreach (var doc in result.WithCancellation(cancellationToken).ConfigureAwait(false))
         {
             try
             {
