@@ -230,26 +230,27 @@ public class CouchbaseShapedQueryCompilingExpressionVisitor : RelationalShapedQu
             // included in the alias array that CouchbaseDbDataReader uses for column lookup).
             AddOwnedCollectionColumnsToProjection(selectExpression, shaper.ReturnType);
 
-            // ProjectionExpression.Alias is "" when no explicit AS clause is emitted — in that case
-            // the N1QL response key is the underlying ColumnExpression.Name.
-            static string EffectiveAlias(ProjectionExpression pe) =>
-                pe.Alias != string.Empty ? pe.Alias
-                    : pe.Expression is ColumnExpression c ? c.Name
-                    : string.Empty;
-
-            // Keep the FULL unfiltered projection alias array so the EF Core shaper's baked-in
-            // ordinals remain correct. Columns from skipped owned-type JOINs (e.g. cm0.id) are
-            // absent from the N1QL result and return DBNull via CouchbaseDbDataReader, which is
-            // the expected signal for "no collection rows" — PopulateCollectionNavigations then
-            // fills the actual collection from the embedded JSON array.
+            // Build the per-ordinal N1QL response keys.  Aliases are made unique (see
+            // CouchbaseProjectionAliases) so that a collection Include where the principal and
+            // dependent share a property name (e.g. blogId / rating) maps each shaper ordinal to
+            // a distinct JSON key instead of both reading the same colliding key.  The SQL
+            // generator derives the same array from the same projection list, so the emitted
+            // AS clauses and this array stay aligned.
+            //
+            // The FULL unfiltered projection is kept so the EF Core shaper's baked-in ordinals
+            // remain correct. Columns from skipped owned-type JOINs (e.g. cm0.id) are absent from
+            // the N1QL result and return DBNull via CouchbaseDbDataReader, which is the expected
+            // signal for "no collection rows" — PopulateCollectionNavigations then fills the
+            // actual collection from the embedded JSON array.
+            var uniqueAliases = CouchbaseProjectionAliases.ComputeUnique(selectExpression.Projection);
             var projectionAliasesExpression = Dependencies.LiftableConstantFactory.CreateLiftableConstant(
-                selectExpression.Projection.Select(EffectiveAlias).ToArray(),
+                uniqueAliases,
 #pragma warning disable EF9100
                 Expression.Lambda<Func<MaterializerLiftableConstantContext, object>>(
 #pragma warning restore EF9100
                     Expression.NewArrayInit(
                         typeof(string),
-                        selectExpression.Projection.Select(pe => Expression.Constant(EffectiveAlias(pe), typeof(string)))),
+                        uniqueAliases.Select(a => (Expression)Expression.Constant(a, typeof(string)))),
 #pragma warning disable EF9100
                     Expression.Parameter(typeof(MaterializerLiftableConstantContext), "_")),
 #pragma warning restore EF9100

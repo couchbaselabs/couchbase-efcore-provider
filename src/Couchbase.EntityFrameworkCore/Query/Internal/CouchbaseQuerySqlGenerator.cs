@@ -498,8 +498,43 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
                     }
                     GenerateList(selectExpression.Projection, e => Visit(e));
                 }
+                else if (selectExpression.Alias == null)
+                {
+                    // Top-level SELECT: each row becomes a JSON object keyed by alias, so two
+                    // projections sharing an effective alias (e.g. a collection Include where the
+                    // principal and dependent both expose `rating` / `blogId`) would collide on a
+                    // single key. Emit a unique alias for every colliding projection, aligned with
+                    // the alias array built in CouchbaseShapedQueryCompilingExpressionVisitor.
+                    var uniqueAliases = CouchbaseProjectionAliases.ComputeUnique(selectExpression.Projection);
+                    var emitted = new List<(ProjectionExpression Projection, string Alias)>();
+                    for (var i = 0; i < selectExpression.Projection.Count; i++)
+                    {
+                        var projection = selectExpression.Projection[i];
+                        if (!IsFromSkippedJoin(projection))
+                            emitted.Add((projection, uniqueAliases[i]));
+                    }
+
+                    GenerateList(emitted, e =>
+                    {
+                        // Only append AS when the unique alias differs from what the projection
+                        // would emit on its own — keeps non-colliding queries byte-identical.
+                        if (e.Alias != CouchbaseProjectionAliases.EffectiveAlias(e.Projection))
+                        {
+                            Visit(e.Projection.Expression);
+                            Sql.Append(AliasSeparator)
+                                .Append(Dependencies.SqlGenerationHelper.DelimitIdentifier(e.Alias));
+                        }
+                        else
+                        {
+                            Visit(e.Projection);
+                        }
+                    });
+                }
                 else
                 {
+                    // Sub-query SELECT: its projected column names are referenced by the enclosing
+                    // query's join/column expressions, so they must not be renamed. Dedupe by
+                    // alias to avoid emitting an identical column twice.
                     var dedupedProjections = new Dictionary<string, ProjectionExpression>();
                     foreach (var expression in selectExpression.Projection)
                     {
