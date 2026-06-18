@@ -2,6 +2,7 @@ using System.Data;
 using System.Text.Json;
 using Couchbase.EntityFrameworkCode.IntegrationTests.Fixtures;
 using Couchbase.EntityFrameworkCore.Storage.Internal;
+using Couchbase.Query;
 using Microsoft.EntityFrameworkCore;
 using Xunit.Abstractions;
 
@@ -23,6 +24,21 @@ public class CouchbaseCommandTests(
 
         Assert.NotNull(command);
         Assert.IsType<CouchbaseCommand>(command);
+    }
+
+    [Fact]
+    public async Task CreateCommand_AppliesConfiguredScanConsistency()
+    {
+        // The integration fixture configures RequestPlus. Proves the option is threaded from
+        // CouchbaseDbContextOptionsBuilder through CouchbaseConnection.CreateDbCommand onto the
+        // ADO.NET command, so DbCommand-based queries (ExecuteReader/Scalar/NonQuery) honor it.
+        await using var context = bloggingFixture.GetDbContext();
+        var connection = context.Database.GetDbConnection();
+        await connection.OpenAsync();
+
+        using var command = (CouchbaseCommand)connection.CreateCommand();
+
+        Assert.Equal(QueryScanConsistency.RequestPlus, command.ScanConsistency);
     }
 
     [Fact]
