@@ -70,16 +70,30 @@ public class EagerLoadingTests(BloggingFixture fixture) : IAsyncLifetime
 
     // Poll the index a few times until Post 1's two DirectTags are visible. No-op in practice
     // when scan consistency is RequestPlus; protects the read tests if it is ever relaxed.
+    // Throws if the seed never becomes visible so the failure is reported here — with an
+    // actionable message — rather than as an opaque assertion failure inside a later test.
     private async Task WaitForSeedAsync()
     {
-        for (var attempt = 0; attempt < 10; attempt++)
+        const int maxAttempts = 10;
+        const int delayMs = 100;
+        for (var attempt = 0; attempt < maxAttempts; attempt++)
         {
-            await using var ctx = fixture.GetDbContext();
-            var post1 = await ctx.Posts.Include(p => p.DirectTags).FirstOrDefaultAsync(p => p.PostId == 1);
-            if (post1 is { DirectTags.Count: 2 })
+            // Dispose the context before delaying so we don't hold a connection open while waiting.
+            int directTagCount;
+            await using (var ctx = fixture.GetDbContext())
+            {
+                var post1 = await ctx.Posts.Include(p => p.DirectTags).FirstOrDefaultAsync(p => p.PostId == 1);
+                directTagCount = post1?.DirectTags.Count ?? -1;
+            }
+            if (directTagCount == 2)
                 return;
-            await Task.Delay(100);
+            await Task.Delay(delayMs);
         }
+
+        throw new TimeoutException(
+            $"EagerLoadingTests seed did not become visible after {maxAttempts} attempts " +
+            $"({maxAttempts * delayMs}ms): Post 1 was expected to have 2 DirectTags. " +
+            "The N1QL index may be lagging behind the seed writes, or the seed failed.");
     }
 
     public Task DisposeAsync() => Task.CompletedTask;
