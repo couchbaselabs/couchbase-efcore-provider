@@ -86,10 +86,12 @@ public interface ICouchbaseDbContextOptionsBuilder
     public JsonSerializerOptions? SerializerOptions { get; set; }
 
     /// <summary>
-    /// The N1QL scan consistency applied to generated queries. Defaults to
-    /// <see cref="QueryScanConsistency.NotBounded"/> (the SDK default — fastest, but may read a
-    /// not-yet-indexed mutation). Set to <see cref="QueryScanConsistency.RequestPlus"/> to make a
-    /// query wait until the index reflects all prior mutations — i.e. read-after-write
+    /// The N1QL scan consistency applied to the N1QL queries the provider executes — LINQ
+    /// queries, <c>FromSql</c> queries, and ADO.NET <see cref="System.Data.Common.DbCommand"/>
+    /// queries (does not affect schema/DDL operations such as scope/collection creation).
+    /// Defaults to <see cref="QueryScanConsistency.NotBounded"/> (the SDK default — fastest, but
+    /// may read a not-yet-indexed mutation). Set to <see cref="QueryScanConsistency.RequestPlus"/>
+    /// to make a query wait until the index reflects all prior mutations — i.e. read-after-write
     /// consistency — at the cost of higher latency.
     /// </summary>
     public QueryScanConsistency ScanConsistency { get; set; }

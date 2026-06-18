@@ -16,6 +16,11 @@ public class CouchbaseCommand : DbCommand
 
     internal ICluster? Cluster { get; set; }
 
+    // N1QL scan consistency for queries executed through this command (ExecuteReader/Scalar/
+    // NonQuery). Set from the configured option by CouchbaseConnection.CreateDbCommand;
+    // defaults to NotBounded to match the SDK default.
+    internal QueryScanConsistency ScanConsistency { get; set; } = QueryScanConsistency.NotBounded;
+
     public override string CommandText
     {
         get => _commandText;
@@ -247,6 +252,7 @@ public class CouchbaseCommand : DbCommand
     private QueryOptions BuildQueryOptions(CancellationToken cancellationToken)
     {
         var options = new QueryOptions().CancellationToken(cancellationToken);
+        options.ScanConsistency(ScanConsistency);
 
         if (CommandTimeout > 0)
         {
