@@ -49,6 +49,23 @@ public class CouchbaseCommandTests
     }
 
     [Fact]
+    public void ScanConsistency_DefaultsToNotBounded()
+    {
+        var command = new CouchbaseCommand();
+
+        // Preserves the SDK default so behavior is unchanged unless explicitly configured.
+        Assert.Equal(QueryScanConsistency.NotBounded, command.ScanConsistency);
+    }
+
+    [Fact]
+    public void ScanConsistency_CanBeSet()
+    {
+        var command = new CouchbaseCommand { ScanConsistency = QueryScanConsistency.RequestPlus };
+
+        Assert.Equal(QueryScanConsistency.RequestPlus, command.ScanConsistency);
+    }
+
+    [Fact]
     public void CommandText_SetNull_ReturnsEmptyString()
     {
         var command = new CouchbaseCommand();

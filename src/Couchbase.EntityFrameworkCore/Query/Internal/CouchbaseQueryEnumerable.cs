@@ -280,6 +280,7 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
     private QueryOptions GetParameters(DbCommand command)
     {
         var queryOptions = new QueryOptions();
+        queryOptions.ScanConsistency(_couchbaseDbContextOptionsBuilder.ScanConsistency);
         foreach (CouchbaseParameter parameter in command.Parameters)
         {
             queryOptions.Parameter(parameter.ParameterName, parameter.Value);

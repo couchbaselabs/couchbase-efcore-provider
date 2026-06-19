@@ -1,4 +1,5 @@
 using Couchbase.EntityFrameworkCore.Infrastructure;
+using Couchbase.Query;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 
@@ -48,6 +49,50 @@ public class CouchbaseDbContextOptionsBuilderTests
 
         // Assert
         Assert.True(builder.AutoCreateScopes);
+    }
+
+    [Fact]
+    public void ScanConsistency_DefaultsToNotBounded()
+    {
+        // Arrange
+        var dbContextOptionsBuilder = new DbContextOptionsBuilder();
+        var clusterOptions = new ClusterOptions().WithConnectionString("couchbase://localhost");
+
+        // Act
+        var builder = new CouchbaseDbContextOptionsBuilder(dbContextOptionsBuilder, clusterOptions);
+
+        // Assert — preserves the SDK default; opt-in to RequestPlus only when needed.
+        Assert.Equal(QueryScanConsistency.NotBounded, builder.ScanConsistency);
+    }
+
+    [Fact]
+    public void ScanConsistency_CanBeSetToRequestPlus()
+    {
+        // Arrange
+        var dbContextOptionsBuilder = new DbContextOptionsBuilder();
+        var clusterOptions = new ClusterOptions().WithConnectionString("couchbase://localhost");
+        var builder = new CouchbaseDbContextOptionsBuilder(dbContextOptionsBuilder, clusterOptions);
+
+        // Act
+        builder.ScanConsistency = QueryScanConsistency.RequestPlus;
+
+        // Assert
+        Assert.Equal(QueryScanConsistency.RequestPlus, builder.ScanConsistency);
+    }
+
+    [Fact]
+    public void ScanConsistency_CanBeSetViaInterface()
+    {
+        // Arrange
+        var dbContextOptionsBuilder = new DbContextOptionsBuilder();
+        var clusterOptions = new ClusterOptions().WithConnectionString("couchbase://localhost");
+        ICouchbaseDbContextOptionsBuilder builder = new CouchbaseDbContextOptionsBuilder(dbContextOptionsBuilder, clusterOptions);
+
+        // Act
+        builder.ScanConsistency = QueryScanConsistency.RequestPlus;
+
+        // Assert
+        Assert.Equal(QueryScanConsistency.RequestPlus, builder.ScanConsistency);
     }
 
     [Fact]

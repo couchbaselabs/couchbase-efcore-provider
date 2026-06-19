@@ -17,46 +17,87 @@ public class EagerLoadingTests(BloggingFixture fixture) : IAsyncLifetime
     // cause these read-only queries to return empty result sets.
     public async Task InitializeAsync()
     {
-        await using var ctx = fixture.GetDbContext();
-        ctx.Update(new BloggingFixture.Blog { BlogId = 1, Url = "https://devblogs.microsoft.com/dotnet", Rating = 5, OwnerId = 1 });
-        ctx.Update(new BloggingFixture.Blog { BlogId = 2, Url = "https://mytravelblog.com/", Rating = 4, OwnerId = 3 });
-        ctx.Update(new BloggingFixture.Post { PostId = 1, BlogId = 1, Title = "What's new", Content = "Lorem ipsum dolor sit amet", Rating = 5, AuthorId = 1 });
-        ctx.Update(new BloggingFixture.Post { PostId = 2, BlogId = 2, Title = "Around the World in Eighty Days", Content = "consectetur adipiscing elit", Rating = 5, AuthorId = 2 });
-        ctx.Update(new BloggingFixture.Post { PostId = 3, BlogId = 2, Title = "Glamping *is* the way", Content = "sed do eiusmod tempor incididunt", Rating = 4, AuthorId = 3 });
-        ctx.Update(new BloggingFixture.Post { PostId = 4, BlogId = 2, Title = "Travel in the time of pandemic", Content = "ut labore et dolore magna aliqua", Rating = 3, AuthorId = 3 });
-        ctx.Update(new BloggingFixture.Person { PersonId = 1, Name = "Dotnet Blog Admin", PhotoId = 1 });
-        ctx.Update(new BloggingFixture.Person { PersonId = 2, Name = "Phileas Fogg", PhotoId = 2 });
-        ctx.Update(new BloggingFixture.Person { PersonId = 3, Name = "Jane Doe", PhotoId = 3 });
-        ctx.Update(new BloggingFixture.PersonPhoto { PersonPhotoId = 1, Caption = "SN", Photo = [0x00, 0x01] });
-        ctx.Update(new BloggingFixture.PersonPhoto { PersonPhotoId = 2, Caption = "PF", Photo = [0x01, 0x02, 0x03] });
-        ctx.Update(new BloggingFixture.PersonPhoto { PersonPhotoId = 3, Caption = "JD", Photo = [0x01, 0x01, 0x01] });
-        ctx.Update(new BloggingFixture.Tag { TagId = "general" });
-        ctx.Update(new BloggingFixture.Tag { TagId = "classic" });
-        ctx.Update(new BloggingFixture.Tag { TagId = "opinion" });
-        ctx.Update(new BloggingFixture.Tag { TagId = "informative" });
-        ctx.Update(new BloggingFixture.PostTag { PostTagId = 1, PostId = 1, TagId = "general" });
-        ctx.Update(new BloggingFixture.PostTag { PostTagId = 2, PostId = 1, TagId = "informative" });
-        ctx.Update(new BloggingFixture.PostTag { PostTagId = 3, PostId = 2, TagId = "classic" });
-        ctx.Update(new BloggingFixture.PostTag { PostTagId = 4, PostId = 3, TagId = "opinion" });
-        ctx.Update(new BloggingFixture.PostTag { PostTagId = 5, PostId = 4, TagId = "opinion" });
-        ctx.Update(new BloggingFixture.PostTag { PostTagId = 6, PostId = 4, TagId = "informative" });
-        await ctx.SaveChangesAsync();
+        // Scope the seeding context so it is disposed before the warm-up poll below — otherwise
+        // it would stay open (holding a cluster connection) while WaitForSeedAsync opens its own.
+        await using (var ctx = fixture.GetDbContext())
+        {
+            ctx.Update(new BloggingFixture.Blog { BlogId = 1, Url = "https://devblogs.microsoft.com/dotnet", Rating = 5, OwnerId = 1 });
+            ctx.Update(new BloggingFixture.Blog { BlogId = 2, Url = "https://mytravelblog.com/", Rating = 4, OwnerId = 3 });
+            ctx.Update(new BloggingFixture.Post { PostId = 1, BlogId = 1, Title = "What's new", Content = "Lorem ipsum dolor sit amet", Rating = 5, AuthorId = 1 });
+            ctx.Update(new BloggingFixture.Post { PostId = 2, BlogId = 2, Title = "Around the World in Eighty Days", Content = "consectetur adipiscing elit", Rating = 5, AuthorId = 2 });
+            ctx.Update(new BloggingFixture.Post { PostId = 3, BlogId = 2, Title = "Glamping *is* the way", Content = "sed do eiusmod tempor incididunt", Rating = 4, AuthorId = 3 });
+            ctx.Update(new BloggingFixture.Post { PostId = 4, BlogId = 2, Title = "Travel in the time of pandemic", Content = "ut labore et dolore magna aliqua", Rating = 3, AuthorId = 3 });
+            ctx.Update(new BloggingFixture.Person { PersonId = 1, Name = "Dotnet Blog Admin", PhotoId = 1 });
+            ctx.Update(new BloggingFixture.Person { PersonId = 2, Name = "Phileas Fogg", PhotoId = 2 });
+            ctx.Update(new BloggingFixture.Person { PersonId = 3, Name = "Jane Doe", PhotoId = 3 });
+            ctx.Update(new BloggingFixture.PersonPhoto { PersonPhotoId = 1, Caption = "SN", Photo = [0x00, 0x01] });
+            ctx.Update(new BloggingFixture.PersonPhoto { PersonPhotoId = 2, Caption = "PF", Photo = [0x01, 0x02, 0x03] });
+            ctx.Update(new BloggingFixture.PersonPhoto { PersonPhotoId = 3, Caption = "JD", Photo = [0x01, 0x01, 0x01] });
+            ctx.Update(new BloggingFixture.Tag { TagId = "general" });
+            ctx.Update(new BloggingFixture.Tag { TagId = "classic" });
+            ctx.Update(new BloggingFixture.Tag { TagId = "opinion" });
+            ctx.Update(new BloggingFixture.Tag { TagId = "informative" });
+            ctx.Update(new BloggingFixture.PostTag { PostTagId = 1, PostId = 1, TagId = "general" });
+            ctx.Update(new BloggingFixture.PostTag { PostTagId = 2, PostId = 1, TagId = "informative" });
+            ctx.Update(new BloggingFixture.PostTag { PostTagId = 3, PostId = 2, TagId = "classic" });
+            ctx.Update(new BloggingFixture.PostTag { PostTagId = 4, PostId = 3, TagId = "opinion" });
+            ctx.Update(new BloggingFixture.PostTag { PostTagId = 5, PostId = 4, TagId = "opinion" });
+            ctx.Update(new BloggingFixture.PostTag { PostTagId = 6, PostId = 4, TagId = "informative" });
+            await ctx.SaveChangesAsync();
 
-        // Seed skip-navigation join table data for Posts 1 and 4 only.
-        // Posts 2 and 3 intentionally have no DirectTags (exercises the empty-collection path).
-        // Load with Include so Clear() can remove existing join entries (idempotent reseed).
-        var post1 = await ctx.Posts.Include(p => p.DirectTags).FirstAsync(p => p.PostId == 1);
-        var post4 = await ctx.Posts.Include(p => p.DirectTags).FirstAsync(p => p.PostId == 4);
-        var tagGeneral     = await ctx.Set<BloggingFixture.Tag>().FindAsync("general");
-        var tagInformative = await ctx.Set<BloggingFixture.Tag>().FindAsync("informative");
-        var tagOpinion     = await ctx.Set<BloggingFixture.Tag>().FindAsync("opinion");
-        post1.DirectTags.Clear();
-        post1.DirectTags.Add(tagGeneral!);
-        post1.DirectTags.Add(tagInformative!);
-        post4.DirectTags.Clear();
-        post4.DirectTags.Add(tagOpinion!);
-        post4.DirectTags.Add(tagInformative!);
-        await ctx.SaveChangesAsync();
+            // Seed skip-navigation join table data for Posts 1 and 4 only.
+            // Posts 2 and 3 intentionally have no DirectTags (exercises the empty-collection path).
+            // Load with Include so Clear() can remove existing join entries (idempotent reseed).
+            // Post 3 is reset to empty too: SkipNav_AddRelationship_WritesJoinDocumentWithCorrectKey
+            // adds a tag to it, so without this reset its precondition would fail on the next run.
+            var post1 = await ctx.Posts.Include(p => p.DirectTags).FirstAsync(p => p.PostId == 1);
+            var post3 = await ctx.Posts.Include(p => p.DirectTags).FirstAsync(p => p.PostId == 3);
+            var post4 = await ctx.Posts.Include(p => p.DirectTags).FirstAsync(p => p.PostId == 4);
+            var tagGeneral     = await ctx.Set<BloggingFixture.Tag>().FindAsync("general");
+            var tagInformative = await ctx.Set<BloggingFixture.Tag>().FindAsync("informative");
+            var tagOpinion     = await ctx.Set<BloggingFixture.Tag>().FindAsync("opinion");
+            post1.DirectTags.Clear();
+            post1.DirectTags.Add(tagGeneral!);
+            post1.DirectTags.Add(tagInformative!);
+            post3.DirectTags.Clear();
+            post4.DirectTags.Clear();
+            post4.DirectTags.Add(tagOpinion!);
+            post4.DirectTags.Add(tagInformative!);
+            await ctx.SaveChangesAsync();
+        }
+
+        // Warm-up: with RequestPlus this is already consistent, but as a belt-and-suspenders
+        // guard against index lag, poll until the canonical seed for Post 1 is observable before
+        // the test body runs. The seeding context above is disposed before we get here.
+        await WaitForSeedAsync();
+    }
+
+    // Poll the index a few times until Post 1's two DirectTags are visible. No-op in practice
+    // when scan consistency is RequestPlus; protects the read tests if it is ever relaxed.
+    // Throws if the seed never becomes visible so the failure is reported here — with an
+    // actionable message — rather than as an opaque assertion failure inside a later test.
+    private async Task WaitForSeedAsync()
+    {
+        const int maxAttempts = 10;
+        const int delayMs = 100;
+        for (var attempt = 0; attempt < maxAttempts; attempt++)
+        {
+            // Dispose the context before delaying so we don't hold a connection open while waiting.
+            int directTagCount;
+            await using (var ctx = fixture.GetDbContext())
+            {
+                var post1 = await ctx.Posts.Include(p => p.DirectTags).FirstOrDefaultAsync(p => p.PostId == 1);
+                directTagCount = post1?.DirectTags.Count ?? -1;
+            }
+            if (directTagCount == 2)
+                return;
+            await Task.Delay(delayMs);
+        }
+
+        throw new TimeoutException(
+            $"EagerLoadingTests seed did not become visible after {maxAttempts} attempts " +
+            $"({maxAttempts * delayMs}ms): Post 1 was expected to have 2 DirectTags. " +
+            "The N1QL index may be lagging behind the seed writes, or the seed failed.");
     }
 
     public Task DisposeAsync() => Task.CompletedTask;

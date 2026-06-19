@@ -45,6 +45,10 @@ public abstract class CouchbaseFixture<T> : IDisposable, IAsyncDisposable, IAsyn
             {
                 couchbaseDbContextOptions.Bucket = BucketName;
                 couchbaseDbContextOptions.Scope = ScopeName;
+                // Read-after-write consistency: tests seed via KV then immediately query through
+                // the N1QL index, so wait for the index to reflect prior mutations. Avoids
+                // intermittent stale reads under the default NotBounded scan consistency.
+                couchbaseDbContextOptions.ScanConsistency = global::Couchbase.Query.QueryScanConsistency.RequestPlus;
             });
         optionsBuilder.UseCamelCaseNamingConvention();
 

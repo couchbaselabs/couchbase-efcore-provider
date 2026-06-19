@@ -187,7 +187,8 @@ public class CouchbaseConnection : DbConnection
         return new CouchbaseCommand
         {
             Connection = this,
-            Cluster = _cluster!
+            Cluster = _cluster!,
+            ScanConsistency = _couchbaseDbContextOptionsBuilder.ScanConsistency
         };
     }
 
