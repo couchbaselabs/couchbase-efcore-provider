@@ -7,7 +7,9 @@ namespace Couchbase.EntityFrameworkCode.IntegrationTests.Tests;
 /// Phase 4 acceptance tests for eager loading via Include / ThenInclude.
 /// Tests 1–5 cover foreign-key navigations handled by the Phase 3 JOIN pipeline.
 /// Tests 6–7 cover auto-include and IgnoreAutoIncludes.
-/// Test 8 (include on derived type) is skipped — requires a derived-type model.
+/// Test 8 covers Include on a TPH derived type (Student/Teacher : Person):
+/// OfType + Include, cast-style Include without OfType, ThenInclude, collection
+/// navigations, multi-derived-type discriminator filtering, and filtered include.
 /// </summary>
 [Collection(CouchbaseTestingCollection.Name)]
 public class EagerLoadingTests(BloggingFixture fixture) : IAsyncLifetime
@@ -33,6 +35,25 @@ public class EagerLoadingTests(BloggingFixture fixture) : IAsyncLifetime
             ctx.Update(new BloggingFixture.PersonPhoto { PersonPhotoId = 1, Caption = "SN", Photo = [0x00, 0x01] });
             ctx.Update(new BloggingFixture.PersonPhoto { PersonPhotoId = 2, Caption = "PF", Photo = [0x01, 0x02, 0x03] });
             ctx.Update(new BloggingFixture.PersonPhoto { PersonPhotoId = 3, Caption = "JD", Photo = [0x01, 0x01, 0x01] });
+            ctx.Update(new BloggingFixture.PersonPhoto { PersonPhotoId = 4, Caption = "SS", Photo = [0x02, 0x02] });
+            ctx.Update(new BloggingFixture.PersonPhoto { PersonPhotoId = 5, Caption = "TT", Photo = [0x03, 0x03] });
+            ctx.Update(new BloggingFixture.District { DistrictId = 1, Name = "Metro District" });
+            ctx.Update(new BloggingFixture.School { SchoolId = 1, Name = "Couchbase University", DistrictId = 1 });
+            ctx.Update(new BloggingFixture.Student
+            {
+                PersonId = 4, Name = "Sam Student", PhotoId = 4, SchoolId = 1,
+                Address = new BloggingFixture.StudentAddress { Street = "1 Database Way", City = "Mountain View" },
+                Contacts =
+                [
+                    new BloggingFixture.StudentContact { Id = 1, Kind = "email", Value = "sam@university.edu" },
+                    new BloggingFixture.StudentContact { Id = 2, Kind = "phone", Value = "555-0100" }
+                ]
+            });
+            ctx.Update(new BloggingFixture.Teacher { PersonId = 5, Name = "Tina Teacher", PhotoId = 5, Subject = "Databases" });
+            ctx.Update(new BloggingFixture.Enrollment { EnrollmentId = 1, StudentId = 4, Title = "Distributed Systems" });
+            ctx.Update(new BloggingFixture.Enrollment { EnrollmentId = 2, StudentId = 4, Title = "Query Optimization" });
+            ctx.Update(new BloggingFixture.Dog { AnimalId = 1, Name = "Rex", Breed = "Beagle" });
+            ctx.Update(new BloggingFixture.Cat { AnimalId = 2, Name = "Whiskers", Indoor = true });
             ctx.Update(new BloggingFixture.Tag { TagId = "general" });
             ctx.Update(new BloggingFixture.Tag { TagId = "classic" });
             ctx.Update(new BloggingFixture.Tag { TagId = "opinion" });
@@ -296,12 +317,309 @@ public class EagerLoadingTests(BloggingFixture fixture) : IAsyncLifetime
     }
 
     // -----------------------------------------------------------------------
-    // 8 — Include on derived type (requires derived-type model — deferred)
+    // 8 — Include on a TPH derived type (Student : Person → School)
     // -----------------------------------------------------------------------
 
-    [Fact(Skip = "Requires a derived-type model (e.g. Student : Person with School navigation). Deferred to Phase 6.")]
-    public Task Include_OnDerivedType_PopulatesDerivedNavigation()
-        => Task.CompletedTask;
+    [Fact]
+    public async Task Include_OnDerivedType_PopulatesDerivedNavigation()
+    {
+        // Query the base set (People), narrow to the derived Student type, and
+        // Include the School navigation that only exists on Student. TPH stores
+        // both Person and Student in the "person" collection, discriminated by
+        // the "Discriminator" shadow property.
+        await using var context = fixture.GetDbContext();
+
+        var students = await context.People
+            .OfType<BloggingFixture.Student>()
+            .Include(s => s.School)
+            .OrderBy(s => s.PersonId)
+            .ToListAsync();
+
+        Assert.NotEmpty(students);
+        Assert.All(students, s => Assert.NotNull(s.School));
+        Assert.Contains(students, s => s.School.Name == "Couchbase University");
+    }
+
+    [Fact]
+    public async Task Include_OnDerivedType_CastStyle_WithoutOfType_PopulatesDerivedNavigation()
+    {
+        // Cast-style Include on the base set (no OfType filter). EF Core applies the
+        // derived navigation only to rows whose discriminator matches the cast type.
+        await using var context = fixture.GetDbContext();
+
+        var people = await context.People
+            .Include(p => ((BloggingFixture.Student)p).School)
+            .OrderBy(p => p.PersonId)
+            .ToListAsync();
+
+        var student = Assert.IsType<BloggingFixture.Student>(
+            Assert.Single(people, p => p is BloggingFixture.Student));
+        Assert.NotNull(student.School);
+        Assert.Equal("Couchbase University", student.School.Name);
+    }
+
+    [Fact]
+    public async Task Include_OnDerivedType_ThenInclude_PopulatesNestedNavigation()
+    {
+        // ThenInclude chained off a navigation declared on the derived type.
+        await using var context = fixture.GetDbContext();
+
+        var students = await context.People
+            .OfType<BloggingFixture.Student>()
+            .Include(s => s.School)
+                .ThenInclude(sc => sc.District)
+            .ToListAsync();
+
+        var student = Assert.Single(students);
+        Assert.NotNull(student.School);
+        Assert.NotNull(student.School.District);
+        Assert.Equal("Metro District", student.School.District.Name);
+    }
+
+    [Fact]
+    public async Task Include_OnDerivedType_CollectionNavigation_Populated()
+    {
+        // Collection navigation declared only on the derived type.
+        await using var context = fixture.GetDbContext();
+
+        var students = await context.People
+            .OfType<BloggingFixture.Student>()
+            .Include(s => s.Enrollments)
+            .ToListAsync();
+
+        var student = Assert.Single(students);
+        Assert.Equal(2, student.Enrollments.Count);
+        Assert.Contains(student.Enrollments, e => e.Title == "Distributed Systems");
+        Assert.Contains(student.Enrollments, e => e.Title == "Query Optimization");
+    }
+
+    [Fact]
+    public async Task OfType_WithMultipleDerivedTypes_FiltersByDiscriminator()
+    {
+        // Two derived types share the "person" collection; OfType must select exactly one.
+        await using var context = fixture.GetDbContext();
+
+        var students = await context.People.OfType<BloggingFixture.Student>().ToListAsync();
+        var teachers = await context.People.OfType<BloggingFixture.Teacher>().ToListAsync();
+
+        Assert.Single(students);
+        Assert.All(students, s => Assert.Equal("Sam Student", s.Name));
+
+        Assert.Single(teachers);
+        Assert.All(teachers, t => Assert.Equal("Databases", t.Subject));
+    }
+
+    [Fact]
+    public async Task Include_OnDerivedType_FilteredCollectionInclude_AppliesPredicate()
+    {
+        // Filtered include on a collection navigation declared on the derived type.
+        await using var context = fixture.GetDbContext();
+
+        var students = await context.People
+            .OfType<BloggingFixture.Student>()
+            .Include(s => s.Enrollments.Where(e => e.Title == "Query Optimization"))
+            .ToListAsync();
+
+        var student = Assert.Single(students);
+        var enrollment = Assert.Single(student.Enrollments);
+        Assert.Equal("Query Optimization", enrollment.Title);
+    }
+
+    // -----------------------------------------------------------------------
+    // 8b — Derived-type Find / write round-trip (non-query code paths that the
+    // discriminator persistence fix touches: Find type-resolution and the
+    // SaveChanges write path for derived entities).
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public async Task Find_OnBaseSet_ResolvesDerivedType()
+    {
+        // FindAsync against the base DbSet must resolve the discriminator and
+        // return the correct derived CLR type with its derived scalars populated.
+        await using var context = fixture.GetDbContext();
+
+        var person = await context.People.FindAsync(4);
+
+        var student = Assert.IsType<BloggingFixture.Student>(person);
+        Assert.Equal("Sam Student", student.Name);
+        Assert.Equal(1, student.SchoolId);
+    }
+
+    [Fact]
+    public async Task Find_OnDerivedSet_WrongDiscriminator_ReturnsNull()
+    {
+        // PersonId 1 is a base Person (not a Student); a derived-set Find must not
+        // return it — i.e. the discriminator filters the lookup.
+        await using var context = fixture.GetDbContext();
+
+        var student = await context.Set<BloggingFixture.Student>().FindAsync(1);
+
+        Assert.Null(student);
+    }
+
+    [Fact]
+    public async Task Update_DerivedEntity_PersistsChangeAndPreservesDiscriminator()
+    {
+        // Modify and save a derived entity, then reload in a fresh context. The
+        // change must persist AND the row must still resolve as the derived type
+        // (i.e. the discriminator survived the write path).
+        await using (var ctx = fixture.GetDbContext())
+        {
+            var student = await ctx.Set<BloggingFixture.Student>().FindAsync(4);
+            Assert.NotNull(student);
+            student!.Name = "Sam Updated";
+            await ctx.SaveChangesAsync();
+        }
+
+        await using (var ctx = fixture.GetDbContext())
+        {
+            var reloaded = await ctx.People.FindAsync(4);
+            var student = Assert.IsType<BloggingFixture.Student>(reloaded);
+            Assert.Equal("Sam Updated", student.Name);
+        }
+    }
+
+    [Fact]
+    public async Task Delete_DerivedEntity_RemovesDocument()
+    {
+        await using (var ctx = fixture.GetDbContext())
+        {
+            var student = await ctx.Set<BloggingFixture.Student>().FindAsync(4);
+            Assert.NotNull(student);
+            ctx.Remove(student!);
+            await ctx.SaveChangesAsync();
+        }
+
+        await using (var ctx = fixture.GetDbContext())
+        {
+            Assert.Null(await ctx.Set<BloggingFixture.Student>().FindAsync(4));
+            var ids = await ctx.People.Select(p => p.PersonId).ToListAsync();
+            Assert.DoesNotContain(4, ids);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // 8c — Owned types (OwnsOne / OwnsMany) on a derived type. Owned data is
+    // embedded in the shared "person" document; these exercise the owned-nav
+    // read/write paths together with the TPH discriminator.
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public async Task OwnedTypes_OnDerivedType_MaterializeAlongsideDiscriminator()
+    {
+        await using var context = fixture.GetDbContext();
+
+        var student = await context.People
+            .OfType<BloggingFixture.Student>()
+            .Include(s => s.School)
+            .SingleAsync();
+
+        // Owned reference (OwnsOne) embedded in the Student document.
+        Assert.NotNull(student.Address);
+        Assert.Equal("1 Database Way", student.Address.Street);
+        Assert.Equal("Mountain View", student.Address.City);
+
+        // Owned collection (OwnsMany) embedded in the Student document.
+        Assert.Equal(2, student.Contacts.Count);
+        Assert.Contains(student.Contacts, c => c.Kind == "email" && c.Value == "sam@university.edu");
+        Assert.Contains(student.Contacts, c => c.Kind == "phone" && c.Value == "555-0100");
+
+        // FK navigation still resolves alongside owned types + discriminator.
+        Assert.NotNull(student.School);
+    }
+
+    [Fact]
+    public async Task OwnedTypes_OnDerivedType_BaseSetQuery_PopulatesForDerivedRows()
+    {
+        // Querying the base set materializes owned types for the derived rows.
+        await using var context = fixture.GetDbContext();
+
+        var people = await context.People.OrderBy(p => p.PersonId).ToListAsync();
+        var student = Assert.IsType<BloggingFixture.Student>(people.Single(p => p.PersonId == 4));
+
+        Assert.Equal("Mountain View", student.Address.City);
+        Assert.Equal(2, student.Contacts.Count);
+    }
+
+    [Fact]
+    public async Task OwnedTypes_OnDerivedType_WriteRoundTrip_PersistsChangesAndPreservesDiscriminator()
+    {
+        await using (var ctx = fixture.GetDbContext())
+        {
+            var student = await ctx.People.OfType<BloggingFixture.Student>().SingleAsync();
+            student.Address.City = "San Jose";
+            student.Contacts.Add(new BloggingFixture.StudentContact { Id = 3, Kind = "fax", Value = "555-0199" });
+            await ctx.SaveChangesAsync();
+        }
+
+        await using (var ctx = fixture.GetDbContext())
+        {
+            var reloaded = await ctx.People.FindAsync(4);
+            var student = Assert.IsType<BloggingFixture.Student>(reloaded);
+            Assert.Equal("San Jose", student.Address.City);
+            Assert.Equal(3, student.Contacts.Count);
+            Assert.Contains(student.Contacts, c => c.Kind == "fax" && c.Value == "555-0199");
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // 8d — Inverse include: load a collection OF derived entities from the
+    // other side (School.Students). Element type resolution must pick the
+    // derived CLR type for each collection member.
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public async Task Include_CollectionOfDerivedType_FromInverseSide_PopulatesDerivedElements()
+    {
+        await using var context = fixture.GetDbContext();
+
+        var school = await context.Schools
+            .Include(sc => sc.Students)
+            .SingleAsync(sc => sc.SchoolId == 1);
+
+        var student = Assert.Single(school.Students);
+        Assert.IsType<BloggingFixture.Student>(student);
+        Assert.Equal("Sam Student", student.Name);
+        Assert.Equal(1, student.SchoolId);
+    }
+
+    // -----------------------------------------------------------------------
+    // 8e — Abstract TPH base: querying the base set must materialise only the
+    // concrete derived types (the abstract base is never instantiated).
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public async Task Query_AbstractBaseSet_MaterializesConcreteDerivedTypes()
+    {
+        await using var context = fixture.GetDbContext();
+
+        var animals = await context.Set<BloggingFixture.Animal>()
+            .OrderBy(a => a.AnimalId)
+            .ToListAsync();
+
+        Assert.Equal(2, animals.Count);
+
+        var dog = Assert.IsType<BloggingFixture.Dog>(animals[0]);
+        Assert.Equal("Rex", dog.Name);
+        Assert.Equal("Beagle", dog.Breed);
+
+        var cat = Assert.IsType<BloggingFixture.Cat>(animals[1]);
+        Assert.Equal("Whiskers", cat.Name);
+        Assert.True(cat.Indoor);
+    }
+
+    [Fact]
+    public async Task OfType_OnAbstractBase_FiltersToConcreteDerivedType()
+    {
+        await using var context = fixture.GetDbContext();
+
+        var dogs = await context.Set<BloggingFixture.Animal>()
+            .OfType<BloggingFixture.Dog>()
+            .ToListAsync();
+
+        var dog = Assert.Single(dogs);
+        Assert.Equal("Beagle", dog.Breed);
+    }
 
     // -----------------------------------------------------------------------
     // 9 — Explicit join-entity many-to-many (Post → PostTag → Tag)

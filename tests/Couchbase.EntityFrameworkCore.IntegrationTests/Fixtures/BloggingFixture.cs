@@ -100,7 +100,63 @@ public class BloggingFixture : CouchbaseFixture<BloggingDbContext>
                 {
                     PersonPhotoId = 3, Caption = "JD",
                     Photo = new byte[] { 0x01, 0x01, 0x01 }
+                },
+                new PersonPhoto
+                {
+                    PersonPhotoId = 4, Caption = "SS",
+                    Photo = new byte[] { 0x02, 0x02 }
+                },
+                new PersonPhoto
+                {
+                    PersonPhotoId = 5, Caption = "TT",
+                    Photo = new byte[] { 0x03, 0x03 }
                 }
+            };
+
+            var districts = new List<District>
+            {
+                new District { DistrictId = 1, Name = "Metro District" }
+            };
+
+            var schools = new List<School>
+            {
+                new School { SchoolId = 1, Name = "Couchbase University", DistrictId = 1 }
+            };
+
+            // Student and Teacher are derived types (TPH) stored in the "person" collection.
+            var students = new List<Student>
+            {
+                new Student
+                {
+                    PersonId = 4, Name = "Sam Student", PhotoId = 4, SchoolId = 1,
+                    Address = new StudentAddress { Street = "1 Database Way", City = "Mountain View" },
+                    Contacts =
+                    [
+                        new StudentContact { Id = 1, Kind = "email", Value = "sam@university.edu" },
+                        new StudentContact { Id = 2, Kind = "phone", Value = "555-0100" }
+                    ]
+                }
+            };
+
+            var teachers = new List<Teacher>
+            {
+                new Teacher
+                {
+                    PersonId = 5, Name = "Tina Teacher", PhotoId = 5, Subject = "Databases"
+                }
+            };
+
+            var enrollments = new List<Enrollment>
+            {
+                new Enrollment { EnrollmentId = 1, StudentId = 4, Title = "Distributed Systems" },
+                new Enrollment { EnrollmentId = 2, StudentId = 4, Title = "Query Optimization" }
+            };
+
+            // Abstract-base TPH hierarchy: seed concrete derived types only.
+            var animals = new List<Animal>
+            {
+                new Dog { AnimalId = 1, Name = "Rex", Breed = "Beagle" },
+                new Cat { AnimalId = 2, Name = "Whiskers", Indoor = true }
             };
 
             var tags = new List<Tag>
@@ -126,6 +182,12 @@ public class BloggingFixture : CouchbaseFixture<BloggingDbContext>
             dbContext.UpdateRange(posts);
             dbContext.UpdateRange(persons);
             dbContext.UpdateRange(personPhotos);
+            dbContext.UpdateRange(districts);
+            dbContext.UpdateRange(schools);
+            dbContext.UpdateRange(students);
+            dbContext.UpdateRange(teachers);
+            dbContext.UpdateRange(enrollments);
+            dbContext.UpdateRange(animals);
             dbContext.UpdateRange(tags);
             dbContext.UpdateRange(postTags);
 
@@ -182,6 +244,95 @@ public class BloggingFixture : CouchbaseFixture<BloggingDbContext>
         public byte[] Photo { get; set; }
 
         public Person Person { get; set; }
+    }
+
+    /// <summary>Derived type for TPH inheritance — shares the "person" collection
+    /// with <see cref="Person"/>. Adds navigations (<see cref="School"/> reference,
+    /// <see cref="Enrollments"/> collection) that only exist on the derived type.</summary>
+    public class Student : Person
+    {
+        public int SchoolId { get; set; }
+        public School School { get; set; }
+
+        /// <summary>Collection navigation declared only on the derived type.</summary>
+        public ICollection<Enrollment> Enrollments { get; set; } = [];
+
+        /// <summary>Owned reference type embedded in the (shared) Student document.</summary>
+        public StudentAddress Address { get; set; }
+
+        /// <summary>Owned collection embedded in the (shared) Student document.</summary>
+        public List<StudentContact> Contacts { get; set; } = [];
+    }
+
+    /// <summary>Owned (OwnsOne) type on the derived <see cref="Student"/>.</summary>
+    public class StudentAddress
+    {
+        public string Street { get; set; }
+        public string City { get; set; }
+    }
+
+    /// <summary>Owned (OwnsMany) item on the derived <see cref="Student"/>.
+    /// Has an explicit <see cref="Id"/> so the owned collection uses a real key
+    /// (an implicit shadow key cannot be set when seeding a disconnected graph).</summary>
+    public class StudentContact
+    {
+        public int Id { get; set; }
+        public string Kind { get; set; }
+        public string Value { get; set; }
+    }
+
+    /// <summary>A second derived type, to verify discriminator filtering distinguishes
+    /// between multiple derived types sharing the "person" collection.</summary>
+    public class Teacher : Person
+    {
+        public string Subject { get; set; }
+    }
+
+    public class School
+    {
+        public int SchoolId { get; set; }
+        public string Name { get; set; }
+
+        /// <summary>Reference navigation used to verify ThenInclude off a derived navigation.</summary>
+        public int? DistrictId { get; set; }
+        public District District { get; set; }
+
+        public ICollection<Student> Students { get; set; } = [];
+    }
+
+    public class District
+    {
+        public int DistrictId { get; set; }
+        public string Name { get; set; }
+
+        public ICollection<School> Schools { get; set; } = [];
+    }
+
+    public class Enrollment
+    {
+        public int EnrollmentId { get; set; }
+        public string Title { get; set; }
+
+        public int StudentId { get; set; }
+        public Student Student { get; set; }
+    }
+
+    /// <summary>Abstract TPH base — never instantiated. A base-set query must
+    /// materialise only the concrete derived types (<see cref="Dog"/>/<see cref="Cat"/>).</summary>
+    public abstract class Animal
+    {
+        public int AnimalId { get; set; }
+        public string Name { get; set; }
+    }
+
+    public class Dog : Animal
+    {
+        public string Breed { get; set; }
+    }
+
+    public class Cat : Animal
+    {
+        public bool Indoor { get; set; }
     }
 
     public class Tag
