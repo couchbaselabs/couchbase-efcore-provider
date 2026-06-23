@@ -10,6 +10,9 @@ public class BloggingDbContext(DbContextOptions<BloggingDbContext> options) : Db
     public DbSet<BloggingFixture.Post> Posts { get; set; }
     public DbSet<BloggingFixture.Person> People { get; set; }
     public DbSet<BloggingFixture.PersonPhoto> PersonPhotos { get; set; }
+    public DbSet<BloggingFixture.School> Schools { get; set; }
+    public DbSet<BloggingFixture.District> Districts { get; set; }
+    public DbSet<BloggingFixture.Enrollment> Enrollments { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -93,6 +96,61 @@ public class BloggingDbContext(DbContextOptions<BloggingDbContext> options) : Db
             .Navigation(p => p.Photo)
             .AutoInclude();
 
+        // TPH inheritance: Student and Teacher are derived types sharing the
+        // "person" collection. Mapping them to the same collection as Person
+        // signals TPH, so EF Core adds a "Discriminator" shadow property by default.
+        modelBuilder.Entity<BloggingFixture.Student>(b =>
+        {
+            b.ToCouchbaseCollection(this, "person");
+
+            b.HasOne(s => s.School)
+                .WithMany(sc => sc.Students)
+                .HasForeignKey(s => s.SchoolId);
+
+            // Collection navigation declared only on the derived Student type.
+            b.HasMany(s => s.Enrollments)
+                .WithOne(e => e.Student)
+                .HasForeignKey(e => e.StudentId);
+
+            // Owned types on a derived type: embedded in the Student's document
+            // within the shared "person" collection. Exercises the owned-nav write
+            // branch of HydrateObjectFromEntity alongside the TPH discriminator.
+            b.OwnsOne(s => s.Address);
+            b.OwnsMany(s => s.Contacts);
+        });
+        // Student rows are seeded via LoadDataAsync / the per-test warm-up rather than
+        // HasData: HasData on an owner with required owned navigations would also require
+        // seeding the owned data through the owned builders, which adds no coverage here.
+
+        modelBuilder.Entity<BloggingFixture.Teacher>()
+            .ToCouchbaseCollection(this, "person");
+
+        modelBuilder.Entity<BloggingFixture.Teacher>()
+            .HasData(new BloggingFixture.Teacher
+            {
+                PersonId = 5, Name = "Tina Teacher", PhotoId = 5, Subject = "Databases"
+            });
+
+        // School → District reference, used to verify ThenInclude off a derived nav.
+        modelBuilder.Entity<BloggingFixture.School>()
+            .HasOne(sc => sc.District)
+            .WithMany(d => d.Schools)
+            .HasForeignKey(sc => sc.DistrictId);
+
+        modelBuilder.Entity<BloggingFixture.School>()
+            .ToCouchbaseCollection(this, "school")
+            .HasData(new BloggingFixture.School { SchoolId = 1, Name = "Couchbase University", DistrictId = 1 });
+
+        modelBuilder.Entity<BloggingFixture.District>()
+            .ToCouchbaseCollection(this, "district")
+            .HasData(new BloggingFixture.District { DistrictId = 1, Name = "Metro District" });
+
+        modelBuilder.Entity<BloggingFixture.Enrollment>()
+            .ToCouchbaseCollection(this, "enrollment")
+            .HasData(
+                new BloggingFixture.Enrollment { EnrollmentId = 1, StudentId = 4, Title = "Distributed Systems" },
+                new BloggingFixture.Enrollment { EnrollmentId = 2, StudentId = 4, Title = "Query Optimization" });
+
         modelBuilder.Entity<BloggingFixture.PersonPhoto>()
             .ToCouchbaseCollection(this, "personphoto")
             .HasData(
@@ -110,6 +168,16 @@ public class BloggingDbContext(DbContextOptions<BloggingDbContext> options) : Db
                 {
                     PersonPhotoId = 3, Caption = "JD",
                     Photo = new byte[] { 0x01, 0x01, 0x01 }
+                },
+                new BloggingFixture.PersonPhoto
+                {
+                    PersonPhotoId = 4, Caption = "SS",
+                    Photo = new byte[] { 0x02, 0x02 }
+                },
+                new BloggingFixture.PersonPhoto
+                {
+                    PersonPhotoId = 5, Caption = "TT",
+                    Photo = new byte[] { 0x03, 0x03 }
                 });
 
         modelBuilder.Entity<BloggingFixture.Tag>()

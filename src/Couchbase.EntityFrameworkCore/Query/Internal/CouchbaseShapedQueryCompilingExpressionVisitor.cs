@@ -328,7 +328,12 @@ public class CouchbaseShapedQueryCompilingExpressionVisitor : RelationalShapedQu
 
         if (ownerTable == null) return;
 
+        // Include OwnsMany navigations declared on derived types (TPH): when the base type is
+        // queried, the derived rows' owned-collection field must still be projected so it lands
+        // in the result JSON for CouchbaseQueryEnumerable to materialise. Derived types share the
+        // owner's table, so the column reference against ownerTable is valid (null for base rows).
         var ownedCollNavs = entityType.GetNavigations()
+            .Concat(entityType.GetDerivedTypes().SelectMany(t => t.GetDeclaredNavigations()))
             .Where(n => n.IsCollection && n.TargetEntityType.IsOwned())
             .ToList();
         if (ownedCollNavs.Count == 0) return;

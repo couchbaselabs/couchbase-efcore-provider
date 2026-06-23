@@ -250,6 +250,11 @@ public class CouchbaseDatabaseWrapper : Database
     {
         var entityType = updateEntry.EntityType;
 
+        // For TPH inheritance the discriminator is a shadow property by default. It must
+        // still be persisted so the query path (e.g. OfType<TDerived>() / Include on a
+        // derived navigation) can filter documents to the correct CLR type.
+        var discriminator = entityType.FindDiscriminatorProperty();
+
         var ownedNavs = entityType.GetNavigations()
             .Where(n => n.TargetEntityType.IsOwned() && n.PropertyInfo != null)
             .ToList();
@@ -288,7 +293,7 @@ public class CouchbaseDatabaseWrapper : Database
             var regularDoc = new Dictionary<string, object?>();
             foreach (var property in entityType.GetProperties())
             {
-                if (property.IsShadowProperty()) continue;
+                if (property.IsShadowProperty() && property != discriminator) continue;
                 var rawValue = updateEntry.GetCurrentValue(property);
                 regularDoc[property.GetColumnName()] = ApplyConverter(property, rawValue);
             }
@@ -314,7 +319,7 @@ public class CouchbaseDatabaseWrapper : Database
         var doc = new Dictionary<string, object?>();
         foreach (var property in entityType.GetProperties())
         {
-            if (property.IsShadowProperty()) continue;
+            if (property.IsShadowProperty() && property != discriminator) continue;
             var rawDocValue = updateEntry.GetCurrentValue(property);
             doc[property.GetColumnName()] = ApplyConverter(property, rawDocValue);
         }

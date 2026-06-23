@@ -71,6 +71,7 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
     private readonly IBucketProvider _bucketProvider;
     private readonly DbContext _dbContext;
     private readonly IReadOnlyList<INavigation> _ownedCollectionNavigations;
+    private readonly bool _ownedCollectionsSpanInheritance;
     private readonly CouchbaseOwnedCollectionMaterializer _materializer = new();
     private readonly CouchbaseCollectionSnapshot _snapshot = new();
 
@@ -106,10 +107,42 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
         // Select(c => c.Name) where T = string, or anonymous projections such as Select(c => new { c.Name })).
         // In both cases _ownedCollectionNavigations is empty and OwnsMany population is skipped.
         var ownerEntityType = relationalQueryContext.Context.Model.FindEntityType(typeof(T));
+        // Include OwnsMany navigations declared on derived types (TPH): a base-type query
+        // (T = Person) must still populate owned collections on the Student rows it returns.
+        // GetNavigations() on the queried type covers inherited + own; GetDeclaredNavigations()
+        // on each strict descendant adds the navigations introduced lower in the hierarchy.
         _ownedCollectionNavigations = ownerEntityType == null ? [] :
             ownerEntityType.GetNavigations()
+                .Concat(ownerEntityType.GetDerivedTypes().SelectMany(t => t.GetDeclaredNavigations()))
                 .Where(n => n.IsCollection && n.TargetEntityType.IsOwned())
                 .ToArray();
+        // Per-row filtering is only needed when an owned collection is declared on a STRICT
+        // DESCENDANT of the queried type — those navigations apply to a subset of the rows.
+        // Navigations declared on the queried type or an ancestor (inherited via GetNavigations)
+        // apply to every row, so a derived-type query (T = Student) stays a zero-cost
+        // pass-through. Test with IsAssignableFrom against the queried type's CLR type.
+        _ownedCollectionsSpanInheritance = ownerEntityType != null &&
+            _ownedCollectionNavigations.Any(
+                n => !n.DeclaringEntityType.ClrType.IsAssignableFrom(ownerEntityType.ClrType));
+    }
+
+    /// <summary>
+    /// Returns the subset of <see cref="_ownedCollectionNavigations"/> whose declaring entity
+    /// type is assignable from <paramref name="entity"/>'s runtime type. For non-inheritance
+    /// queries this returns the full list unchanged.
+    /// </summary>
+    private IReadOnlyList<INavigation> ApplicableOwnedCollections(object? entity)
+    {
+        if (!_ownedCollectionsSpanInheritance || entity is null)
+            return _ownedCollectionNavigations;
+
+        var applicable = new List<INavigation>(_ownedCollectionNavigations.Count);
+        foreach (var nav in _ownedCollectionNavigations)
+        {
+            if (nav.DeclaringEntityType.ClrType.IsInstanceOfType(entity))
+                applicable.Add(nav);
+        }
+        return applicable;
     }
 
     /// <summary>Returns an enumerator that iterates through the collection.</summary>
@@ -192,8 +225,12 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
                     && navRow is JsonElement rowElement
                     && rowElement.ValueKind == JsonValueKind.Object)
                 {
-                    _materializer.Populate(result, rowElement, _ownedCollectionNavigations, _couchbaseDbContextOptionsBuilder.FieldNamingPolicy, _couchbaseDbContextOptionsBuilder.SerializerOptions);
-                    _snapshot.Record(result, _ownedCollectionNavigations, _isTracking);
+                    var applicable = ApplicableOwnedCollections(result);
+                    if (applicable.Count > 0)
+                    {
+                        _materializer.Populate(result, rowElement, applicable, _couchbaseDbContextOptionsBuilder.FieldNamingPolicy, _couchbaseDbContextOptionsBuilder.SerializerOptions);
+                        _snapshot.Record(result, applicable, _isTracking);
+                    }
                 }
                 pendingEntityRow = null;
                 yield return result;
@@ -224,8 +261,12 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
                         && pendingEntityRow is JsonElement lastRow
                         && lastRow.ValueKind == JsonValueKind.Object)
                     {
-                        _materializer.Populate(last, lastRow, _ownedCollectionNavigations, _couchbaseDbContextOptionsBuilder.FieldNamingPolicy, _couchbaseDbContextOptionsBuilder.SerializerOptions);
-                        _snapshot.Record(last, _ownedCollectionNavigations, _isTracking);
+                        var applicable = ApplicableOwnedCollections(last);
+                        if (applicable.Count > 0)
+                        {
+                            _materializer.Populate(last, lastRow, applicable, _couchbaseDbContextOptionsBuilder.FieldNamingPolicy, _couchbaseDbContextOptionsBuilder.SerializerOptions);
+                            _snapshot.Record(last, applicable, _isTracking);
+                        }
                     }
                     pendingEntityRow = null;
                     yield return last;
