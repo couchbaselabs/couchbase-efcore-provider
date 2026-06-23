@@ -15,7 +15,8 @@ have no Couchbase equivalent.
 * **EF Core Migrations are not supported.** The provider has no migration history
   store. Create your bucket/scope/collections from the model with
   `context.Database.EnsureCreatedAsync()` instead. Schema changes are managed outside
-  of EF Core (or by re-running `EnsureCreatedAsync`).
+  of EF Core (or by re-running `EnsureCreatedAsync`).
+
 * **Relational schema concepts do not apply:** table schema, view mapping, and stored
   procedures have no Couchbase counterpart. Attempting to map an entity DML operation
   to a stored procedure throws `NotSupportedException`.
@@ -24,7 +25,7 @@ See also [Modeling](modeling.md).
 
 ## Asynchronous I/O only
 
-* **Synchronous query and save APIs are not supported.** The underlying Couchbase SDK
+  is asynchronous, so the synchronous code paths throw `NotSupportedException` in Release builds. Use the
   is asynchronous, so the synchronous code paths throw `NotSupportedException`. Use the
   async variants throughout: `ToListAsync`, `FirstAsync`, `SingleAsync`,
   `FindAsync`, `SaveChangesAsync`, `EnsureCreatedAsync`, and so on.
