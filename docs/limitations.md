@@ -15,7 +15,7 @@ have no Couchbase equivalent.
 * **EF Core Migrations are not supported.** The provider has no migration history
   store. Create your bucket/scope/collections from the model with
   `context.Database.EnsureCreatedAsync()` instead. Schema changes are managed outside
-  of EF Core (or by re-running `EnsureCreated`).
+  of EF Core (or by re-running `EnsureCreatedAsync`).
 * **Relational schema concepts do not apply:** table schema, view mapping, and stored
   procedures have no Couchbase counterpart. Attempting to map an entity DML operation
   to a stored procedure throws `NotSupportedException`.
