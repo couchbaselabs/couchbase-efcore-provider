@@ -52,6 +52,8 @@ public class EagerLoadingTests(BloggingFixture fixture) : IAsyncLifetime
             ctx.Update(new BloggingFixture.Teacher { PersonId = 5, Name = "Tina Teacher", PhotoId = 5, Subject = "Databases" });
             ctx.Update(new BloggingFixture.Enrollment { EnrollmentId = 1, StudentId = 4, Title = "Distributed Systems" });
             ctx.Update(new BloggingFixture.Enrollment { EnrollmentId = 2, StudentId = 4, Title = "Query Optimization" });
+            ctx.Update(new BloggingFixture.Dog { AnimalId = 1, Name = "Rex", Breed = "Beagle" });
+            ctx.Update(new BloggingFixture.Cat { AnimalId = 2, Name = "Whiskers", Indoor = true });
             ctx.Update(new BloggingFixture.Tag { TagId = "general" });
             ctx.Update(new BloggingFixture.Tag { TagId = "classic" });
             ctx.Update(new BloggingFixture.Tag { TagId = "opinion" });
@@ -558,6 +560,65 @@ public class EagerLoadingTests(BloggingFixture fixture) : IAsyncLifetime
             Assert.Equal(3, student.Contacts.Count);
             Assert.Contains(student.Contacts, c => c.Kind == "fax" && c.Value == "555-0199");
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // 8d — Inverse include: load a collection OF derived entities from the
+    // other side (School.Students). Element type resolution must pick the
+    // derived CLR type for each collection member.
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public async Task Include_CollectionOfDerivedType_FromInverseSide_PopulatesDerivedElements()
+    {
+        await using var context = fixture.GetDbContext();
+
+        var school = await context.Schools
+            .Include(sc => sc.Students)
+            .SingleAsync(sc => sc.SchoolId == 1);
+
+        var student = Assert.Single(school.Students);
+        Assert.IsType<BloggingFixture.Student>(student);
+        Assert.Equal("Sam Student", student.Name);
+        Assert.Equal(1, student.SchoolId);
+    }
+
+    // -----------------------------------------------------------------------
+    // 8e — Abstract TPH base: querying the base set must materialise only the
+    // concrete derived types (the abstract base is never instantiated).
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public async Task Query_AbstractBaseSet_MaterializesConcreteDerivedTypes()
+    {
+        await using var context = fixture.GetDbContext();
+
+        var animals = await context.Set<BloggingFixture.Animal>()
+            .OrderBy(a => a.AnimalId)
+            .ToListAsync();
+
+        Assert.Equal(2, animals.Count);
+
+        var dog = Assert.IsType<BloggingFixture.Dog>(animals[0]);
+        Assert.Equal("Rex", dog.Name);
+        Assert.Equal("Beagle", dog.Breed);
+
+        var cat = Assert.IsType<BloggingFixture.Cat>(animals[1]);
+        Assert.Equal("Whiskers", cat.Name);
+        Assert.True(cat.Indoor);
+    }
+
+    [Fact]
+    public async Task OfType_OnAbstractBase_FiltersToConcreteDerivedType()
+    {
+        await using var context = fixture.GetDbContext();
+
+        var dogs = await context.Set<BloggingFixture.Animal>()
+            .OfType<BloggingFixture.Dog>()
+            .ToListAsync();
+
+        var dog = Assert.Single(dogs);
+        Assert.Equal("Beagle", dog.Breed);
     }
 
     // -----------------------------------------------------------------------

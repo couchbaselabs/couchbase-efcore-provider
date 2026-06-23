@@ -152,6 +152,13 @@ public class BloggingFixture : CouchbaseFixture<BloggingDbContext>
                 new Enrollment { EnrollmentId = 2, StudentId = 4, Title = "Query Optimization" }
             };
 
+            // Abstract-base TPH hierarchy: seed concrete derived types only.
+            var animals = new List<Animal>
+            {
+                new Dog { AnimalId = 1, Name = "Rex", Breed = "Beagle" },
+                new Cat { AnimalId = 2, Name = "Whiskers", Indoor = true }
+            };
+
             var tags = new List<Tag>
             {
                 new Tag { TagId = "general" },
@@ -180,6 +187,7 @@ public class BloggingFixture : CouchbaseFixture<BloggingDbContext>
             dbContext.UpdateRange(students);
             dbContext.UpdateRange(teachers);
             dbContext.UpdateRange(enrollments);
+            dbContext.UpdateRange(animals);
             dbContext.UpdateRange(tags);
             dbContext.UpdateRange(postTags);
 
@@ -307,6 +315,24 @@ public class BloggingFixture : CouchbaseFixture<BloggingDbContext>
 
         public int StudentId { get; set; }
         public Student Student { get; set; }
+    }
+
+    /// <summary>Abstract TPH base — never instantiated. A base-set query must
+    /// materialise only the concrete derived types (<see cref="Dog"/>/<see cref="Cat"/>).</summary>
+    public abstract class Animal
+    {
+        public int AnimalId { get; set; }
+        public string Name { get; set; }
+    }
+
+    public class Dog : Animal
+    {
+        public string Breed { get; set; }
+    }
+
+    public class Cat : Animal
+    {
+        public bool Indoor { get; set; }
     }
 
     public class Tag

@@ -13,6 +13,7 @@ public class BloggingDbContext(DbContextOptions<BloggingDbContext> options) : Db
     public DbSet<BloggingFixture.School> Schools { get; set; }
     public DbSet<BloggingFixture.District> Districts { get; set; }
     public DbSet<BloggingFixture.Enrollment> Enrollments { get; set; }
+    public DbSet<BloggingFixture.Animal> Animals { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -150,6 +151,14 @@ public class BloggingDbContext(DbContextOptions<BloggingDbContext> options) : Db
             .HasData(
                 new BloggingFixture.Enrollment { EnrollmentId = 1, StudentId = 4, Title = "Distributed Systems" },
                 new BloggingFixture.Enrollment { EnrollmentId = 2, StudentId = 4, Title = "Query Optimization" });
+
+        // Abstract TPH base: Dog and Cat share the "animal" collection. The abstract
+        // Animal base is never instantiated; a base-set query must return concrete types.
+        modelBuilder.Entity<BloggingFixture.Animal>().ToCouchbaseCollection(this, "animal");
+        modelBuilder.Entity<BloggingFixture.Dog>()
+            .HasData(new BloggingFixture.Dog { AnimalId = 1, Name = "Rex", Breed = "Beagle" });
+        modelBuilder.Entity<BloggingFixture.Cat>()
+            .HasData(new BloggingFixture.Cat { AnimalId = 2, Name = "Whiskers", Indoor = true });
 
         modelBuilder.Entity<BloggingFixture.PersonPhoto>()
             .ToCouchbaseCollection(this, "personphoto")
