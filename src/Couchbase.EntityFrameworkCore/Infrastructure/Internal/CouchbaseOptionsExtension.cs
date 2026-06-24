@@ -6,6 +6,7 @@ using Couchbase;
 using Couchbase.EntityFrameworkCore.Extensions;
 using Couchbase.Extensions.DependencyInjection;
 using Couchbase.EntityFrameworkCore.Utils;
+using Couchbase.EntityFrameworkCore.Storage.Internal;
 using Couchbase.Core.IO.Serializers;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -62,7 +63,61 @@ public class CouchbaseOptionsExtension: RelationalOptionsExtension
             }
         });
 
+        // If the application registered its own Couchbase cluster in DI, bind this context to that
+        // shared IClusterProvider (one Cluster per server, opens many buckets — per Couchbase
+        // guidance) instead of the per-context cluster registered above. The application owns the
+        // cluster's lifetime, so it is wrapped to prevent EF's internal provider from disposing it.
+        var sharedClusterProvider = TryResolveSharedClusterProvider();
+        if (sharedClusterProvider is not null)
+        {
+            for (var i = services.Count - 1; i >= 0; i--)
+            {
+                var serviceType = services[i].ServiceType;
+                if (serviceType == typeof(IClusterProvider) || serviceType == typeof(IBucketProvider))
+                {
+                    services.RemoveAt(i);
+                }
+            }
+
+            services.AddSingleton<IClusterProvider>(new NonOwningClusterProvider(sharedClusterProvider));
+            services.AddSingleton<IBucketProvider>(sp =>
+                new SharedClusterBucketProvider(sp.GetRequiredService<IClusterProvider>()));
+        }
+
         services.AddEntityFrameworkCouchbase(this);
+    }
+
+    /// <summary>
+    /// Resolves an application-registered <see cref="IClusterProvider"/> to share, or null when the
+    /// context owns its own cluster (no application provider captured, or none registered in DI).
+    /// </summary>
+    private IClusterProvider? TryResolveSharedClusterProvider()
+    {
+        var applicationServiceProvider = _couchbaseDbContextOptionsBuilder.ApplicationServiceProvider;
+        if (applicationServiceProvider is null)
+        {
+            return null;
+        }
+
+        var serviceKey = _couchbaseDbContextOptionsBuilder.ServiceKey;
+        if (serviceKey is null)
+        {
+            // Use the unkeyed application cluster if one was registered (services.AddCouchbase(...)).
+            return applicationServiceProvider.GetService<IClusterProvider>();
+        }
+
+        // A ServiceKey was specified: the keyed cluster must exist — fail loudly otherwise so a
+        // misconfiguration is not silently masked by spinning up a separate per-context cluster.
+        var keyedClusterProvider = applicationServiceProvider.GetKeyedService<IClusterProvider>(serviceKey);
+        if (keyedClusterProvider is null)
+        {
+            throw new InvalidOperationException(
+                $"No keyed Couchbase cluster is registered for ServiceKey '{serviceKey}'. " +
+                $"Call services.AddKeyedCouchbase(\"{serviceKey}\", ...) before " +
+                $"AddCouchbase<TContext>(..., o => o.ServiceKey = \"{serviceKey}\").");
+        }
+
+        return keyedClusterProvider;
     }
 
     public override void Validate(IDbContextOptions options)
@@ -84,17 +139,23 @@ public class CouchbaseOptionsExtension: RelationalOptionsExtension
 
         public override string LogFragment => $"Using Custom Couchbase Provider - ConnectionString: {ConnectionString}";
 
-        public override int GetServiceProviderHashCode() => HashCode.Combine(ConnectionString, Extension._couchbaseDbContextOptionsBuilder.Bucket, Extension._couchbaseDbContextOptionsBuilder.Scope);
+        public override int GetServiceProviderHashCode() => HashCode.Combine(
+            ConnectionString,
+            Extension._couchbaseDbContextOptionsBuilder.Bucket,
+            Extension._couchbaseDbContextOptionsBuilder.Scope,
+            Extension._couchbaseDbContextOptionsBuilder.ServiceKey);
 
         // Must be consistent with GetServiceProviderHashCode: two contexts can share an internal
-        // service provider only when their connection string, bucket, and scope all match. Each
-        // distinct (connection, bucket, scope) registers its own Couchbase cluster/bucket provider
-        // (see ApplyServices), so collapsing them onto one provider would resolve the wrong bucket.
+        // service provider only when their connection string, bucket, scope, and service key all
+        // match. Each distinct (connection, bucket, scope, key) registers its own Couchbase
+        // cluster/bucket provider (see ApplyServices), so collapsing them onto one provider would
+        // resolve the wrong bucket or cluster.
         public override bool ShouldUseSameServiceProvider(DbContextOptionsExtensionInfo other)
             => other is CouchbaseOptionsExtensionInfo otherInfo
                 && ConnectionString == otherInfo.ConnectionString
                 && Extension._couchbaseDbContextOptionsBuilder.Bucket == otherInfo.Extension._couchbaseDbContextOptionsBuilder.Bucket
-                && Extension._couchbaseDbContextOptionsBuilder.Scope == otherInfo.Extension._couchbaseDbContextOptionsBuilder.Scope;
+                && Extension._couchbaseDbContextOptionsBuilder.Scope == otherInfo.Extension._couchbaseDbContextOptionsBuilder.Scope
+                && Equals(Extension._couchbaseDbContextOptionsBuilder.ServiceKey, otherInfo.Extension._couchbaseDbContextOptionsBuilder.ServiceKey);
 
         public override void PopulateDebugInfo(IDictionary<string, string> debugInfo)
         {

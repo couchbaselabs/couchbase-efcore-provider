@@ -41,6 +41,17 @@ public class CouchbaseDbContextOptionsBuilder : ICouchbaseDbContextOptionsBuilde
 
     public QueryScanConsistency ScanConsistency { get; set; } = QueryScanConsistency.NotBounded;
 
+    public object? ServiceKey { get; set; }
+
+    /// <summary>
+    /// The application's service provider, captured by <c>AddCouchbase&lt;TContext&gt;</c> so the
+    /// provider can resolve an application-registered shared cluster (see <see cref="ServiceKey"/>).
+    /// Not part of the service-provider cache key — it is the stable application root. Null when the
+    /// context is configured outside DI (plain <c>UseCouchbase</c>), in which case the provider owns
+    /// its own cluster.
+    /// </summary>
+    public IServiceProvider? ApplicationServiceProvider { get; set; }
+
     DbContextOptionsBuilder ICouchbaseDbContextOptionsBuilder.OptionsBuilder => OptionsBuilder;
 }
 
@@ -95,6 +106,21 @@ public interface ICouchbaseDbContextOptionsBuilder
     /// consistency — at the cost of higher latency.
     /// </summary>
     public QueryScanConsistency ScanConsistency { get; set; }
+
+    /// <summary>
+    /// Optional key identifying which application-registered Couchbase cluster this context
+    /// should use. When set, the provider resolves a shared <c>IClusterProvider</c> via keyed
+    /// dependency injection (<c>services.AddKeyedCouchbase(serviceKey, ...)</c>) from the
+    /// application's service provider — so a single <c>Cluster</c> per server is reused across
+    /// contexts and buckets, per Couchbase guidance. Set a distinct key per physical Couchbase
+    /// Server cluster when an application must talk to more than one.
+    /// </summary>
+    /// <remarks>
+    /// When <c>null</c>, the provider uses the unkeyed application-registered cluster if one
+    /// exists (<c>services.AddCouchbase(...)</c>), otherwise it falls back to registering and
+    /// owning its own cluster from <see cref="ClusterOptions"/> (the original behavior).
+    /// </remarks>
+    public object? ServiceKey { get; set; }
 }
 
 /* ************************************************************

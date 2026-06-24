@@ -100,15 +100,88 @@ public class MultiBucketDependencyInjectionTests(BloggingFixture fixture)
         Assert.NotSame(primaryBucketProvider, secondaryBucketProvider);
     }
 
+    [Fact]
+    public async Task AppRegisteredCluster_IsSharedAcrossContextsAndBuckets()
+    {
+        // When the application registers its own cluster in DI, every context bound to it (across
+        // buckets) reuses the SAME ICluster — one Cluster per server, per Couchbase guidance —
+        // instead of each context spinning up its own.
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddCouchbase(o =>
+        {
+            o.ConnectionString = fixture.Host;
+            o.WithCredentials(fixture.Username, fixture.Password);
+        });
+        // Distinct scope so this test gets its own EF internal service-provider cache key
+        // (EF caches internal providers process-wide by connection string/bucket/scope/key).
+        services.AddCouchbase<PrimaryWidgetContext>(NewClusterOptions(),
+            o => ConfigureBucket(o, "default", "clustershared"), o => o.UseCamelCaseNamingConvention());
+        services.AddCouchbase<SecondaryWidgetContext>(NewClusterOptions(),
+            o => ConfigureBucket(o, "secondary", "clustershared"), o => o.UseCamelCaseNamingConvention());
+
+        await using var provider = services.BuildServiceProvider();
+
+        var appCluster = await provider.GetRequiredService<IClusterProvider>().GetClusterAsync();
+
+        using var scope = provider.CreateScope();
+        var primary = scope.ServiceProvider.GetRequiredService<PrimaryWidgetContext>();
+        var secondary = scope.ServiceProvider.GetRequiredService<SecondaryWidgetContext>();
+
+        var primaryCluster = await primary.GetService<IClusterProvider>().GetClusterAsync();
+        var secondaryCluster = await secondary.GetService<IClusterProvider>().GetClusterAsync();
+
+        Assert.Same(appCluster, primaryCluster);
+        Assert.Same(appCluster, secondaryCluster);
+    }
+
+    [Fact]
+    public async Task ServiceKey_BindsEachContextToItsKeyedCluster()
+    {
+        // Multiple physical clusters: each context selects its cluster by ServiceKey, and contexts
+        // with different keys resolve distinct ICluster instances.
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddKeyedCouchbase("clusterA", o =>
+        {
+            o.ConnectionString = fixture.Host;
+            o.WithCredentials(fixture.Username, fixture.Password);
+        });
+        services.AddKeyedCouchbase("clusterB", o =>
+        {
+            o.ConnectionString = fixture.Host;
+            o.WithCredentials(fixture.Username, fixture.Password);
+        });
+        services.AddCouchbase<PrimaryWidgetContext>(NewClusterOptions(),
+            o => { ConfigureBucket(o, "default"); o.ServiceKey = "clusterA"; },
+            o => o.UseCamelCaseNamingConvention());
+        services.AddCouchbase<SecondaryWidgetContext>(NewClusterOptions(),
+            o => { ConfigureBucket(o, "secondary"); o.ServiceKey = "clusterB"; },
+            o => o.UseCamelCaseNamingConvention());
+
+        await using var provider = services.BuildServiceProvider();
+
+        var clusterA = await provider.GetRequiredKeyedService<IClusterProvider>("clusterA").GetClusterAsync();
+        var clusterB = await provider.GetRequiredKeyedService<IClusterProvider>("clusterB").GetClusterAsync();
+
+        using var scope = provider.CreateScope();
+        var primary = scope.ServiceProvider.GetRequiredService<PrimaryWidgetContext>();
+        var secondary = scope.ServiceProvider.GetRequiredService<SecondaryWidgetContext>();
+
+        Assert.Same(clusterA, await primary.GetService<IClusterProvider>().GetClusterAsync());
+        Assert.Same(clusterB, await secondary.GetService<IClusterProvider>().GetClusterAsync());
+        Assert.NotSame(clusterA, clusterB);
+    }
+
     private global::Couchbase.ClusterOptions NewClusterOptions()
         => new global::Couchbase.ClusterOptions()
             .WithConnectionString(fixture.Host)
             .WithCredentials(fixture.Username, fixture.Password);
 
-    private static void ConfigureBucket(ICouchbaseDbContextOptionsBuilder options, string bucket)
+    private static void ConfigureBucket(ICouchbaseDbContextOptionsBuilder options, string bucket, string scope = "isolation")
     {
         options.Bucket = bucket;
-        options.Scope = "isolation";
+        options.Scope = scope;
         // Read-after-write consistency so the FindAsync below sees the just-written document.
         options.ScanConsistency = global::Couchbase.Query.QueryScanConsistency.RequestPlus;
     }

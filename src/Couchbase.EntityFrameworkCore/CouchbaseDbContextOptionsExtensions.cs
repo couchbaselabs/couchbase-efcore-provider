@@ -10,12 +10,16 @@ namespace Couchbase.EntityFrameworkCore;
 public static class CouchbaseDbContextOptionsExtensions
 {
   public static DbContextOptionsBuilder UseCouchbase(
-      this DbContextOptionsBuilder optionsBuilder, 
+      this DbContextOptionsBuilder optionsBuilder,
       ClusterOptions clusterOptions,
-      Action<CouchbaseDbContextOptionsBuilder>? couchbaseActionOptions = null)
+      Action<CouchbaseDbContextOptionsBuilder>? couchbaseActionOptions = null,
+      IServiceProvider? applicationServiceProvider = null)
   {
     var couchbaseDbContextOptionsBuilder = new CouchbaseDbContextOptionsBuilder(optionsBuilder, clusterOptions);
     couchbaseActionOptions?.Invoke(couchbaseDbContextOptionsBuilder);
+    // Captured when configured through AddCouchbase<TContext>; enables resolving an
+    // application-registered shared cluster (one Cluster per server across buckets).
+    couchbaseDbContextOptionsBuilder.ApplicationServiceProvider = applicationServiceProvider;
 
     var extension = CouchbaseDbContextOptionsBuilderExtensions.GetOrCreateExtension(optionsBuilder, clusterOptions, couchbaseDbContextOptionsBuilder);
     ((IDbContextOptionsBuilderInfrastructure) optionsBuilder).AddOrUpdateExtension(extension);
