@@ -86,7 +86,15 @@ public class CouchbaseOptionsExtension: RelationalOptionsExtension
 
         public override int GetServiceProviderHashCode() => HashCode.Combine(ConnectionString, Extension._couchbaseDbContextOptionsBuilder.Bucket, Extension._couchbaseDbContextOptionsBuilder.Scope);
 
-        public override bool ShouldUseSameServiceProvider(DbContextOptionsExtensionInfo other) => other is CouchbaseOptionsExtensionInfo;
+        // Must be consistent with GetServiceProviderHashCode: two contexts can share an internal
+        // service provider only when their connection string, bucket, and scope all match. Each
+        // distinct (connection, bucket, scope) registers its own Couchbase cluster/bucket provider
+        // (see ApplyServices), so collapsing them onto one provider would resolve the wrong bucket.
+        public override bool ShouldUseSameServiceProvider(DbContextOptionsExtensionInfo other)
+            => other is CouchbaseOptionsExtensionInfo otherInfo
+                && ConnectionString == otherInfo.ConnectionString
+                && Extension._couchbaseDbContextOptionsBuilder.Bucket == otherInfo.Extension._couchbaseDbContextOptionsBuilder.Bucket
+                && Extension._couchbaseDbContextOptionsBuilder.Scope == otherInfo.Extension._couchbaseDbContextOptionsBuilder.Scope;
 
         public override void PopulateDebugInfo(IDictionary<string, string> debugInfo)
         {
