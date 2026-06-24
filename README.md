@@ -105,12 +105,7 @@ There exists options for both the [Couchbase SDK](https://docs.couchbase.com/dot
  * Basic CRUD and change tracking
 
  # What doesn't work
- * Eager Loading
- * Most all SQL++ functions
- * Value generation
- * META, RYOW, etc
- * Sync IO Methods
- * Lots...it's a WIP
+ * Limitations on what this EF Core provider can do is [here](https://github.com/couchbaselabs/couchbase-efcore-provider/blob/main/docs/limitations.md).
 
 # Documentation
 * [Configuration](https://github.com/couchbaselabs/couchbase-efcore-provider/blob/main/docs/configuration.md)
