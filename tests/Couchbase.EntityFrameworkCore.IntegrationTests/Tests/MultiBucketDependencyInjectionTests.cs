@@ -1,7 +1,9 @@
 using Couchbase.EntityFrameworkCode.IntegrationTests.Fixtures;
 using Couchbase.EntityFrameworkCore.Extensions;
 using Couchbase.EntityFrameworkCore.Infrastructure;
+using Couchbase.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
@@ -63,6 +65,39 @@ public class MultiBucketDependencyInjectionTests(BloggingFixture fixture)
             Assert.Equal("from-default", fromPrimary!.Name);
             Assert.Equal("from-secondary", fromSecondary!.Name);
         }
+    }
+
+    [Fact]
+    public void ContextsWithDifferentConnectionStrings_ResolveDistinctClusterProviders()
+    {
+        // Multi-cluster isolation: two contexts registered with different connection strings
+        // must each get their own Couchbase cluster/bucket provider — no singleton bleed where
+        // the second context silently reuses the first cluster. We assert provider identity
+        // only (resolving IBucketProvider does not open a connection), so the second connection
+        // string need not be reachable — avoiding a heavyweight second Couchbase container.
+        var services = new ServiceCollection();
+        services.AddCouchbase<PrimaryWidgetContext>(
+            new global::Couchbase.ClusterOptions()
+                .WithConnectionString(fixture.Host)
+                .WithCredentials(fixture.Username, fixture.Password),
+            o => ConfigureBucket(o, "default"));
+        services.AddCouchbase<SecondaryWidgetContext>(
+            new global::Couchbase.ClusterOptions()
+                .WithConnectionString("couchbase://cluster-b.invalid")
+                .WithCredentials("user", "password"),
+            o => ConfigureBucket(o, "default"));
+
+        using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        var primary = scope.ServiceProvider.GetRequiredService<PrimaryWidgetContext>();
+        var secondary = scope.ServiceProvider.GetRequiredService<SecondaryWidgetContext>();
+
+        var primaryBucketProvider = primary.GetService<IBucketProvider>();
+        var secondaryBucketProvider = secondary.GetService<IBucketProvider>();
+
+        Assert.NotNull(primaryBucketProvider);
+        Assert.NotNull(secondaryBucketProvider);
+        Assert.NotSame(primaryBucketProvider, secondaryBucketProvider);
     }
 
     private global::Couchbase.ClusterOptions NewClusterOptions()
