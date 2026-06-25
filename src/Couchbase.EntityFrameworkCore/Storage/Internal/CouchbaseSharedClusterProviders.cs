@@ -1,3 +1,4 @@
+using Couchbase; // ICluster, IBucket
 using Couchbase.Extensions.DependencyInjection;
 
 namespace Couchbase.EntityFrameworkCore.Storage.Internal;
