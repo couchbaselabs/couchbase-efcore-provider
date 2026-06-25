@@ -4,7 +4,7 @@ The EF Core Couchbase DB provider maps EF Core onto Couchbase using SQL++ (N1QL)
 and the Key/Value API. The large majority of EF Core concepts work as described in
 [the EF Core documentation](https://learn.microsoft.com/en-us/ef/core/) and in the
 other pages of this guide. This page lists the areas that are **not** supported, or
-that behave differently from a relational provider, as of the `2.0.0-beta.1` release.
+that behave differently from a relational provider, as of the `2.0.0-beta.2` release.
 
 Several of these stem from Couchbase being a document database: features that are
 specific to relational schemas (migrations, views, stored procedures, table schema)
@@ -77,6 +77,6 @@ See also [Querying](Queries.md) and [Configuration](configuration.md).
 ---
 
 > [!NOTE]
-> This list reflects the `2.0.0-beta.1` prerelease. As the provider evolves, items here
+> This list reflects the `2.0.0-beta.2` prerelease. As the provider evolves, items here
 > may become supported; check the release notes and the other pages in this guide for
 > the latest behavior.

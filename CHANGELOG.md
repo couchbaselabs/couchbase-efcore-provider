@@ -5,7 +5,7 @@ All notable changes to the EF Core Couchbase DB provider are documented in this 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.0.0-beta.2] - 2026-06-24
 
 ### Added
 
@@ -68,4 +68,5 @@ See [`docs/limitations.md`](docs/limitations.md). Highlights: EF Core Migrations
 supported (use `EnsureCreatedAsync`); synchronous query/save APIs are not supported;
 TPT/TPC inheritance is not supported; nested data must be modeled as owned types.
 
+[2.0.0-beta.2]: https://github.com/couchbaselabs/couchbase-efcore-provider/releases/tag/2.0.0-beta.2
 [2.0.0-beta.1]: https://github.com/couchbaselabs/couchbase-efcore-provider/releases/tag/2.0.0-beta.1
