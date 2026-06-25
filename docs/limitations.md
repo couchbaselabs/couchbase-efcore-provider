@@ -68,7 +68,7 @@ See also [Querying](Queries.md) and [Configuration](configuration.md).
 * **Table-per-type (TPT) and table-per-concrete-type (TPC) are not supported.**
 
 ## Value generation and keys
-* **Sequence-based value generation supports integer types only:** `int`, `long`,
+* **Sequence-based value generation supports a fixed set of numeric types:** `int`, `long`,
   `short`, `byte`, `uint`, `ulong`, `ushort`, and `decimal`. Other CLR types throw at
   model build / value-generation time.
 * **Generated `Guid` primary keys are partially supported** — see
