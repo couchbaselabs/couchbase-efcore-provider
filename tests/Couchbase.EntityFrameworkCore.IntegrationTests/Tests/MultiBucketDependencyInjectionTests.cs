@@ -124,7 +124,7 @@ public class MultiBucketDependencyInjectionTests(BloggingFixture fixture)
 
         var appCluster = await provider.GetRequiredService<IClusterProvider>().GetClusterAsync();
 
-        using var scope = provider.CreateScope();
+        await using var scope = provider.CreateAsyncScope();
         var primary = scope.ServiceProvider.GetRequiredService<PrimaryWidgetContext>();
         var secondary = scope.ServiceProvider.GetRequiredService<SecondaryWidgetContext>();
 
@@ -164,7 +164,7 @@ public class MultiBucketDependencyInjectionTests(BloggingFixture fixture)
         var clusterA = await provider.GetRequiredKeyedService<IClusterProvider>("clusterA").GetClusterAsync();
         var clusterB = await provider.GetRequiredKeyedService<IClusterProvider>("clusterB").GetClusterAsync();
 
-        using var scope = provider.CreateScope();
+        await using var scope = provider.CreateAsyncScope();
         var primary = scope.ServiceProvider.GetRequiredService<PrimaryWidgetContext>();
         var secondary = scope.ServiceProvider.GetRequiredService<SecondaryWidgetContext>();
 
