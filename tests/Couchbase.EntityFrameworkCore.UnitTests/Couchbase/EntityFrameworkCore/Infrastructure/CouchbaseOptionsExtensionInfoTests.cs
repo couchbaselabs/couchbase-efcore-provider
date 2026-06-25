@@ -7,9 +7,9 @@ namespace Couchbase.EntityFrameworkCore.UnitTests.Couchbase.EntityFrameworkCore.
 
 /// <summary>
 /// Verifies that <c>CouchbaseOptionsExtensionInfo.ShouldUseSameServiceProvider</c> is consistent
-/// with <c>GetServiceProviderHashCode</c>. Both must key on (connection string, bucket, scope) so
-/// that contexts pointing at different buckets/clusters get their own internal service provider —
-/// each registers its own Couchbase cluster/bucket provider. (Multi-bucket DI, step 1.)
+/// with <c>GetServiceProviderHashCode</c>. Both must key on (connection string, bucket, scope,
+/// service key) so that contexts pointing at different buckets/clusters get their own internal
+/// service provider — each registers its own Couchbase cluster/bucket provider. (Multi-bucket DI, step 1.)
 /// </summary>
 public class CouchbaseOptionsExtensionInfoTests
 {
@@ -61,6 +61,29 @@ public class CouchbaseOptionsExtensionInfoTests
     {
         var a = Extension(connectionString: "couchbase://host-a").Info;
         var b = Extension(connectionString: "couchbase://host-b").Info;
+
+        Assert.False(a.ShouldUseSameServiceProvider(b));
+        Assert.NotEqual(a.GetServiceProviderHashCode(), b.GetServiceProviderHashCode());
+    }
+
+    [Fact]
+    public void DifferentServiceKey_DoesNotShare_AndDifferentHashCode()
+    {
+        var aBuilder = new CouchbaseDbContextOptionsBuilder(new DbContextOptionsBuilder(), "couchbase://localhost")
+        {
+            Bucket = "bucketA",
+            Scope = "scopeA",
+            ServiceKey = "clusterA"
+        };
+        var bBuilder = new CouchbaseDbContextOptionsBuilder(new DbContextOptionsBuilder(), "couchbase://localhost")
+        {
+            Bucket = "bucketA",
+            Scope = "scopeA",
+            ServiceKey = "clusterB"
+        };
+
+        var a = new CouchbaseOptionsExtension(aBuilder).Info;
+        var b = new CouchbaseOptionsExtension(bBuilder).Info;
 
         Assert.False(a.ShouldUseSameServiceProvider(b));
         Assert.NotEqual(a.GetServiceProviderHashCode(), b.GetServiceProviderHashCode());

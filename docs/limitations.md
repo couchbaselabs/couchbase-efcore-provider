@@ -25,12 +25,7 @@ See also [Modeling](modeling.md).
 
 ## Asynchronous I/O only
 
-  is asynchronous, so the synchronous code paths throw `NotSupportedException` in Release builds. Use the
-
-  is asynchronous, so the synchronous code paths throw `NotSupportedException`. Use the
-  async variants throughout: `ToListAsync`, `FirstAsync`, `SingleAsync`,
-  `FindAsync`, `SaveChangesAsync`, `EnsureCreatedAsync`, and so on.
-
+The Couchbase SDK is asynchronous, so the synchronous EF Core code paths throw `NotSupportedException` in Release builds. Use the async variants throughout: `ToListAsync`, `FirstAsync`, `SingleAsync`, `FindAsync`, `SaveChangesAsync`, `EnsureCreatedAsync`, and so on.
 ## Querying and consistency
 
 * **Query scan consistency defaults to `NotBounded`.** Because secondary (GSI) indexes
@@ -73,7 +68,6 @@ See also [Querying](Queries.md) and [Configuration](configuration.md).
 * **Table-per-type (TPT) and table-per-concrete-type (TPC) are not supported.**
 
 ## Value generation and keys
-* **Sequence-based value generation supports numeric types only:** `int`, `long`,
 * **Sequence-based value generation supports integer types only:** `int`, `long`,
   `short`, `byte`, `uint`, `ulong`, `ushort`, and `decimal`. Other CLR types throw at
   model build / value-generation time.
