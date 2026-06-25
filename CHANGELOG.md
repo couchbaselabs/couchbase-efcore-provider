@@ -5,6 +5,19 @@ All notable changes to the EF Core Couchbase DB provider are documented in this 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Multiple buckets and clusters.** Use one `DbContext` per bucket; register multiple contexts
+  via `AddCouchbase<TContext>`. When a Couchbase cluster is registered in application DI, contexts
+  reuse that single shared `Cluster` (one cluster, many buckets — per Couchbase guidance) instead
+  of each owning its own. For multiple physical clusters, register a keyed cluster per server
+  (`AddKeyedCouchbase`) and select it per context with the new
+  `CouchbaseDbContextOptionsBuilder.ServiceKey`. Falls back to the previous per-context
+  cluster-ownership behavior when no application cluster is registered. See
+  [Configuration](docs/configuration.md#multiple-buckets-and-clusters).
+
 ## [2.0.0-beta.1] - 2026-06-23
 
 The 2.0 line is the first fully functional release of the provider. 1.0 was a

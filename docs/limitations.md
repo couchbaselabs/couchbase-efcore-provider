@@ -55,6 +55,14 @@ See also [Modeling](modeling.md).
 
 See also [Querying](Queries.md) and [Configuration](configuration.md).
 
+## Buckets and contexts
+
+* **A single `DbContext` maps to one bucket.** Every entity in a context is stored in that
+  context's configured bucket; a context cannot span multiple buckets. To work with multiple
+  buckets, use one `DbContext` per bucket. Multiple contexts can share a single `Cluster`, and
+  multiple physical clusters are supported via keyed registration — see
+  [Configuration](configuration.md#multiple-buckets-and-clusters).
+
 ## Inheritance
 
 * **Table-per-hierarchy (TPH) is supported.** Derived types share a single collection
