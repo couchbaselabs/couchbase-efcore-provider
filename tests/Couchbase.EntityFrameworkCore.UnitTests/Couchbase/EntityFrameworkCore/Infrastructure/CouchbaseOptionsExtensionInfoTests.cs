@@ -39,38 +39,39 @@ public class CouchbaseOptionsExtensionInfoTests
         Assert.Equal(a.GetServiceProviderHashCode(), b.GetServiceProviderHashCode());
     }
 
+    // The "Different…" tests assert only ShouldUseSameServiceProvider == false: that is the
+    // contract EF Core relies on to keep internal providers separate. Hash codes are not required
+    // to differ (collisions are permitted and disambiguated by ShouldUseSameServiceProvider), so
+    // asserting hash inequality would test a property that is not guaranteed even when correct.
     [Fact]
-    public void DifferentBucket_DoesNotShare_AndDifferentHashCode()
+    public void DifferentBucket_DoesNotShareServiceProvider()
     {
         var a = Extension(bucket: "bucketA").Info;
         var b = Extension(bucket: "bucketB").Info;
 
         Assert.False(a.ShouldUseSameServiceProvider(b));
-        Assert.NotEqual(a.GetServiceProviderHashCode(), b.GetServiceProviderHashCode());
     }
 
     [Fact]
-    public void DifferentScope_DoesNotShare_AndDifferentHashCode()
+    public void DifferentScope_DoesNotShareServiceProvider()
     {
         var a = Extension(scope: "scopeA").Info;
         var b = Extension(scope: "scopeB").Info;
 
         Assert.False(a.ShouldUseSameServiceProvider(b));
-        Assert.NotEqual(a.GetServiceProviderHashCode(), b.GetServiceProviderHashCode());
     }
 
     [Fact]
-    public void DifferentConnectionString_DoesNotShare_AndDifferentHashCode()
+    public void DifferentConnectionString_DoesNotShareServiceProvider()
     {
         var a = Extension(connectionString: "couchbase://host-a").Info;
         var b = Extension(connectionString: "couchbase://host-b").Info;
 
         Assert.False(a.ShouldUseSameServiceProvider(b));
-        Assert.NotEqual(a.GetServiceProviderHashCode(), b.GetServiceProviderHashCode());
     }
 
     [Fact]
-    public void DifferentServiceKey_DoesNotShare_AndDifferentHashCode()
+    public void DifferentServiceKey_DoesNotShareServiceProvider()
     {
         var aBuilder = new CouchbaseDbContextOptionsBuilder(new DbContextOptionsBuilder(), "couchbase://localhost")
         {
@@ -89,11 +90,10 @@ public class CouchbaseOptionsExtensionInfoTests
         var b = new CouchbaseOptionsExtension(bBuilder).Info;
 
         Assert.False(a.ShouldUseSameServiceProvider(b));
-        Assert.NotEqual(a.GetServiceProviderHashCode(), b.GetServiceProviderHashCode());
     }
 
     [Fact]
-    public void DifferentApplicationContainer_DoesNotShare_AndDifferentHashCode()
+    public void DifferentApplicationContainer_DoesNotShareServiceProvider()
     {
         // ApplyServices can bind a specific application container's shared cluster into the
         // (process-wide cached) internal provider, so two identical configurations in DIFFERENT
@@ -105,7 +105,6 @@ public class CouchbaseOptionsExtensionInfoTests
         var b = ExtensionWithApplicationProvider(containerB).Info;
 
         Assert.False(a.ShouldUseSameServiceProvider(b));
-        Assert.NotEqual(a.GetServiceProviderHashCode(), b.GetServiceProviderHashCode());
     }
 
     [Fact]
