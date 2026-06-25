@@ -1,6 +1,8 @@
+using System;
 using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.EntityFrameworkCore.Infrastructure.Internal;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
 namespace Couchbase.EntityFrameworkCore.UnitTests.Couchbase.EntityFrameworkCore.Infrastructure;
@@ -8,8 +10,9 @@ namespace Couchbase.EntityFrameworkCore.UnitTests.Couchbase.EntityFrameworkCore.
 /// <summary>
 /// Verifies that <c>CouchbaseOptionsExtensionInfo.ShouldUseSameServiceProvider</c> is consistent
 /// with <c>GetServiceProviderHashCode</c>. Both must key on (connection string, bucket, scope,
-/// service key) so that contexts pointing at different buckets/clusters get their own internal
-/// service provider — each registers its own Couchbase cluster/bucket provider. (Multi-bucket DI, step 1.)
+/// service key, and application container) so that contexts pointing at different buckets/clusters
+/// — or registered in different DI containers — get their own internal service provider, each
+/// registering its own Couchbase cluster/bucket provider. (Multi-bucket DI.)
 /// </summary>
 public class CouchbaseOptionsExtensionInfoTests
 {
@@ -87,5 +90,44 @@ public class CouchbaseOptionsExtensionInfoTests
 
         Assert.False(a.ShouldUseSameServiceProvider(b));
         Assert.NotEqual(a.GetServiceProviderHashCode(), b.GetServiceProviderHashCode());
+    }
+
+    [Fact]
+    public void DifferentApplicationContainer_DoesNotShare_AndDifferentHashCode()
+    {
+        // ApplyServices can bind a specific application container's shared cluster into the
+        // (process-wide cached) internal provider, so two identical configurations in DIFFERENT
+        // containers must not share an internal provider.
+        using var containerA = new ServiceCollection().BuildServiceProvider();
+        using var containerB = new ServiceCollection().BuildServiceProvider();
+
+        var a = ExtensionWithApplicationProvider(containerA).Info;
+        var b = ExtensionWithApplicationProvider(containerB).Info;
+
+        Assert.False(a.ShouldUseSameServiceProvider(b));
+        Assert.NotEqual(a.GetServiceProviderHashCode(), b.GetServiceProviderHashCode());
+    }
+
+    [Fact]
+    public void SameApplicationContainer_Shares_AndSameHashCode()
+    {
+        using var container = new ServiceCollection().BuildServiceProvider();
+
+        var a = ExtensionWithApplicationProvider(container).Info;
+        var b = ExtensionWithApplicationProvider(container).Info;
+
+        Assert.True(a.ShouldUseSameServiceProvider(b));
+        Assert.Equal(a.GetServiceProviderHashCode(), b.GetServiceProviderHashCode());
+    }
+
+    private static CouchbaseOptionsExtension ExtensionWithApplicationProvider(IServiceProvider applicationServiceProvider)
+    {
+        var builder = new CouchbaseDbContextOptionsBuilder(new DbContextOptionsBuilder(), "couchbase://localhost")
+        {
+            Bucket = "bucketA",
+            Scope = "scopeA",
+            ApplicationServiceProvider = applicationServiceProvider
+        };
+        return new CouchbaseOptionsExtension(builder);
     }
 }

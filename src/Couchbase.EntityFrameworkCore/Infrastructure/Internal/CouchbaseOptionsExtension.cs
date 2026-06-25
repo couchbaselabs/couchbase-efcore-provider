@@ -139,15 +139,27 @@ public class CouchbaseOptionsExtension: RelationalOptionsExtension
 
         public override string LogFragment => $"Using Custom Couchbase Provider - ConnectionString: {ConnectionString}";
 
+        // A stable identity for the application's DI container, or null when configured outside DI
+        // (plain UseCouchbase). ApplyServices can bind an application-registered shared cluster into
+        // the (process-wide cached) internal service provider, so the cache key must distinguish
+        // application containers — otherwise a different root IServiceProvider with the same
+        // connection/bucket/scope/key could reuse an internal provider wired to the wrong
+        // container's cluster (or to a cluster from a disposed container). The identity (the root's
+        // IServiceScopeFactory) is captured eagerly when ApplicationServiceProvider is set, so this
+        // equality/hash path never resolves services from a possibly-disposed provider.
+        private object? ApplicationContainerIdentity
+            => Extension._couchbaseDbContextOptionsBuilder.ApplicationContainerIdentity;
+
         public override int GetServiceProviderHashCode() => HashCode.Combine(
             ConnectionString,
             Extension._couchbaseDbContextOptionsBuilder.Bucket,
             Extension._couchbaseDbContextOptionsBuilder.Scope,
-            Extension._couchbaseDbContextOptionsBuilder.ServiceKey);
+            Extension._couchbaseDbContextOptionsBuilder.ServiceKey,
+            RuntimeHelpers.GetHashCode(ApplicationContainerIdentity));
 
         // Must be consistent with GetServiceProviderHashCode: two contexts can share an internal
-        // service provider only when their connection string, bucket, scope, and service key all
-        // match. Each distinct (connection, bucket, scope, key) registers its own Couchbase
+        // service provider only when their connection string, bucket, scope, service key, and
+        // application container all match. Each distinct combination registers its own Couchbase
         // cluster/bucket provider (see ApplyServices), so collapsing them onto one provider would
         // resolve the wrong bucket or cluster.
         public override bool ShouldUseSameServiceProvider(DbContextOptionsExtensionInfo other)
@@ -155,7 +167,8 @@ public class CouchbaseOptionsExtension: RelationalOptionsExtension
                 && ConnectionString == otherInfo.ConnectionString
                 && Extension._couchbaseDbContextOptionsBuilder.Bucket == otherInfo.Extension._couchbaseDbContextOptionsBuilder.Bucket
                 && Extension._couchbaseDbContextOptionsBuilder.Scope == otherInfo.Extension._couchbaseDbContextOptionsBuilder.Scope
-                && Equals(Extension._couchbaseDbContextOptionsBuilder.ServiceKey, otherInfo.Extension._couchbaseDbContextOptionsBuilder.ServiceKey);
+                && Equals(Extension._couchbaseDbContextOptionsBuilder.ServiceKey, otherInfo.Extension._couchbaseDbContextOptionsBuilder.ServiceKey)
+                && ReferenceEquals(ApplicationContainerIdentity, otherInfo.ApplicationContainerIdentity);
 
         public override void PopulateDebugInfo(IDictionary<string, string> debugInfo)
         {

@@ -2,6 +2,7 @@ using System.Text.Json;
 using Couchbase.EntityFrameworkCore.Extensions;
 using Couchbase.Query;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Couchbase.EntityFrameworkCore.Infrastructure;
 
@@ -43,14 +44,37 @@ public class CouchbaseDbContextOptionsBuilder : ICouchbaseDbContextOptionsBuilde
 
     public object? ServiceKey { get; set; }
 
+    private IServiceProvider? _applicationServiceProvider;
+
     /// <summary>
     /// The application's service provider, captured by <c>AddCouchbase&lt;TContext&gt;</c> so the
     /// provider can resolve an application-registered shared cluster (see <see cref="ServiceKey"/>).
-    /// Not part of the service-provider cache key — it is the stable application root. Null when the
-    /// context is configured outside DI (plain <c>UseCouchbase</c>), in which case the provider owns
-    /// its own cluster.
+    /// Null when the context is configured outside DI (plain <c>UseCouchbase</c>), in which case the
+    /// provider owns its own cluster.
     /// </summary>
-    public IServiceProvider? ApplicationServiceProvider { get; set; }
+    /// <remarks>
+    /// Setting this eagerly captures the container's stable identity (<see cref="ApplicationContainerIdentity"/>)
+    /// while the provider is alive, because the captured provider may be a scope that is later
+    /// disposed — and the service-provider cache key must not resolve services from a disposed
+    /// provider during later equality checks.
+    /// </remarks>
+    public IServiceProvider? ApplicationServiceProvider
+    {
+        get => _applicationServiceProvider;
+        set
+        {
+            _applicationServiceProvider = value;
+            ApplicationContainerIdentity = value?.GetService<IServiceScopeFactory>();
+        }
+    }
+
+    /// <summary>
+    /// A stable per-container identity (the application root's <see cref="IServiceScopeFactory"/>),
+    /// captured when <see cref="ApplicationServiceProvider"/> is set. Used as part of the
+    /// service-provider cache key so internal providers bound to one application container are not
+    /// reused by another. Null when configured outside DI.
+    /// </summary>
+    public object? ApplicationContainerIdentity { get; private set; }
 
     DbContextOptionsBuilder ICouchbaseDbContextOptionsBuilder.OptionsBuilder => OptionsBuilder;
 }
