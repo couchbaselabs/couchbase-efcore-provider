@@ -35,10 +35,12 @@ public static class CouchbaseServiceCollectionExtensions
         Action<ICouchbaseDbContextOptionsBuilder>? couchbaseOptionsAction = null,
         Action<DbContextOptionsBuilder>? optionsAction = null)
         where TContext : DbContext
-        => serviceCollection.AddDbContext<TContext>((_, options) =>
+        => serviceCollection.AddDbContext<TContext>((serviceProvider, options) =>
         {
             optionsAction?.Invoke(options);
-            options.UseCouchbase(clusterOptions, couchbaseOptionsAction);
+            // Pass the application's service provider so the context can bind to an
+            // application-registered shared cluster (keyed by ServiceKey).
+            options.UseCouchbase(clusterOptions, couchbaseOptionsAction, serviceProvider);
         });
 
     public static IServiceCollection AddEntityFrameworkCouchbase(this IServiceCollection serviceCollection,

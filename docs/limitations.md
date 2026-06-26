@@ -4,7 +4,7 @@ The EF Core Couchbase DB provider maps EF Core onto Couchbase using SQL++ (N1QL)
 and the Key/Value API. The large majority of EF Core concepts work as described in
 [the EF Core documentation](https://learn.microsoft.com/en-us/ef/core/) and in the
 other pages of this guide. This page lists the areas that are **not** supported, or
-that behave differently from a relational provider, in the current 2.0 pre-release.
+that behave differently from a relational provider, as of the `2.0.0-beta.2` release.
 
 Several of these stem from Couchbase being a document database: features that are
 specific to relational schemas (migrations, views, stored procedures, table schema)
@@ -25,12 +25,7 @@ See also [Modeling](modeling.md).
 
 ## Asynchronous I/O only
 
-  is asynchronous, so the synchronous code paths throw `NotSupportedException` in Release builds. Use the
-
-  is asynchronous, so the synchronous code paths throw `NotSupportedException`. Use the
-  async variants throughout: `ToListAsync`, `FirstAsync`, `SingleAsync`,
-  `FindAsync`, `SaveChangesAsync`, `EnsureCreatedAsync`, and so on.
-
+The Couchbase SDK is asynchronous, so the synchronous EF Core code paths throw `NotSupportedException` in Release builds. Use the async variants throughout: `ToListAsync`, `FirstAsync`, `SingleAsync`, `FindAsync`, `SaveChangesAsync`, `EnsureCreatedAsync`, and so on.
 ## Querying and consistency
 
 * **Query scan consistency defaults to `NotBounded`.** Because secondary (GSI) indexes
@@ -55,6 +50,14 @@ See also [Modeling](modeling.md).
 
 See also [Querying](Queries.md) and [Configuration](configuration.md).
 
+## Buckets and contexts
+
+* **A single `DbContext` maps to one bucket.** Every entity in a context is stored in that
+  context's configured bucket; a context cannot span multiple buckets. To work with multiple
+  buckets, use one `DbContext` per bucket. Multiple contexts can share a single `Cluster`, and
+  multiple physical clusters are supported via keyed registration — see
+  [Configuration](configuration.md#multiple-buckets-and-clusters).
+
 ## Inheritance
 
 * **Table-per-hierarchy (TPH) is supported.** Derived types share a single collection
@@ -65,8 +68,7 @@ See also [Querying](Queries.md) and [Configuration](configuration.md).
 * **Table-per-type (TPT) and table-per-concrete-type (TPC) are not supported.**
 
 ## Value generation and keys
-* **Sequence-based value generation supports numeric types only:** `int`, `long`,
-* **Sequence-based value generation supports integer types only:** `int`, `long`,
+* **Sequence-based value generation supports a fixed set of numeric types:** `int`, `long`,
   `short`, `byte`, `uint`, `ulong`, `ushort`, and `decimal`. Other CLR types throw at
   model build / value-generation time.
 * **Generated `Guid` primary keys are partially supported** — see
@@ -75,6 +77,6 @@ See also [Querying](Queries.md) and [Configuration](configuration.md).
 ---
 
 > [!NOTE]
-> This list reflects the current pre-release. As the provider evolves, items here may
-> become supported; check the release notes and the other pages in this guide for the
-> latest behavior.
+> This list reflects the `2.0.0-beta.2` prerelease. As the provider evolves, items here
+> may become supported; check the release notes and the other pages in this guide for
+> the latest behavior.

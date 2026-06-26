@@ -10,12 +10,25 @@ namespace Couchbase.EntityFrameworkCore;
 public static class CouchbaseDbContextOptionsExtensions
 {
   public static DbContextOptionsBuilder UseCouchbase(
-      this DbContextOptionsBuilder optionsBuilder, 
+      this DbContextOptionsBuilder optionsBuilder,
       ClusterOptions clusterOptions,
       Action<CouchbaseDbContextOptionsBuilder>? couchbaseActionOptions = null)
+      => optionsBuilder.UseCouchbase(clusterOptions, couchbaseActionOptions, applicationServiceProvider: null);
+
+  // The applicationServiceProvider parameter is required (not optional) so this overload has a
+  // distinct arity from the one above — preserving binary compatibility for consumers compiled
+  // against the original 3-parameter signature, and avoiding overload ambiguity.
+  public static DbContextOptionsBuilder UseCouchbase(
+      this DbContextOptionsBuilder optionsBuilder,
+      ClusterOptions clusterOptions,
+      Action<CouchbaseDbContextOptionsBuilder>? couchbaseActionOptions,
+      IServiceProvider? applicationServiceProvider)
   {
     var couchbaseDbContextOptionsBuilder = new CouchbaseDbContextOptionsBuilder(optionsBuilder, clusterOptions);
     couchbaseActionOptions?.Invoke(couchbaseDbContextOptionsBuilder);
+    // Captured when configured through AddCouchbase<TContext>; enables resolving an
+    // application-registered shared cluster (one Cluster per server across buckets).
+    couchbaseDbContextOptionsBuilder.ApplicationServiceProvider = applicationServiceProvider;
 
     var extension = CouchbaseDbContextOptionsBuilderExtensions.GetOrCreateExtension(optionsBuilder, clusterOptions, couchbaseDbContextOptionsBuilder);
     ((IDbContextOptionsBuilderInfrastructure) optionsBuilder).AddOrUpdateExtension(extension);

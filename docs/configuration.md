@@ -46,6 +46,75 @@ Configuring the SDK is largely the same for EF Core Couchbase DB Provider. The S
 ## EF Core Couchbase DN Provider options
 The [CouchbaseDbContextOptionsBuilder](https://github.com/couchbaselabs/couchbase-efcore-provider/blob/main/src/Couchbase.EntityFrameworkCore/Infrastructure/CouchbaseDbContextOptionsBuilder.cs) handles configuration options specific to the provider.
 
+## Multiple buckets and clusters
+
+A `DbContext` maps to a single bucket (and scope). To work with **multiple buckets**, use
+**one `DbContext` per bucket**. Each context is registered independently and targets its own
+bucket:
+
+```csharp
+builder.Services.AddCouchbase<OrdersContext>(clusterOptions,
+    o => { o.Bucket = "orders"; o.Scope = "sales"; });
+
+builder.Services.AddCouchbase<UsersContext>(clusterOptions,
+    o => { o.Bucket = "users";  o.Scope = "identity"; });
+```
+
+### Sharing a single cluster (recommended)
+
+Couchbase recommends a **single `Cluster` object per application**, cached and reused — one
+cluster can open many buckets. To have your contexts share one cluster, register the Couchbase
+SDK in your application's DI container (via the
+[Couchbase DI library](https://docs.couchbase.com/dotnet-sdk/current/howtos/managing-connections.html#connection-di)),
+and the provider will reuse it for every context bound to it:
+
+```csharp
+// One shared cluster for the whole application.
+builder.Services.AddCouchbase(o =>
+{
+    o.ConnectionString = "couchbase://localhost";
+    o.WithCredentials("Administrator", "password");
+});
+
+// Both contexts reuse the shared cluster, each targeting its own bucket.
+builder.Services.AddCouchbase<OrdersContext>(clusterOptions, o => { o.Bucket = "orders"; o.Scope = "sales"; });
+builder.Services.AddCouchbase<UsersContext>(clusterOptions,  o => { o.Bucket = "users";  o.Scope = "identity"; });
+```
+
+If no cluster is registered in application DI, each context creates and owns its own cluster
+(the original behavior). Cluster sharing only applies when contexts are registered through
+`AddCouchbase<TContext>` — the application must register the cluster in DI for it to be shared.
+
+### Multiple clusters
+
+When an application must talk to **more than one physical Couchbase Server cluster**, register a
+**keyed** cluster per server and point each context at the right one with `ServiceKey`:
+
+```csharp
+builder.Services.AddKeyedCouchbase("east", o =>
+{
+    o.ConnectionString = "couchbase://east.example.com";
+    o.WithCredentials("Administrator", "password");
+});
+builder.Services.AddKeyedCouchbase("west", o =>
+{
+    o.ConnectionString = "couchbase://west.example.com";
+    o.WithCredentials("Administrator", "password");
+});
+
+builder.Services.AddCouchbase<EastContext>(eastClusterOptions,
+    o => { o.ServiceKey = "east"; o.Bucket = "orders"; o.Scope = "sales"; });
+builder.Services.AddCouchbase<WestContext>(westClusterOptions,
+    o => { o.ServiceKey = "west"; o.Bucket = "orders"; o.Scope = "sales"; });
+```
+
+`ServiceKey` selects which keyed cluster a context binds to. If a `ServiceKey` is set but no
+matching keyed cluster was registered, configuration fails with a clear error.
+
+> [!NOTE]
+> A single `DbContext` cannot span multiple buckets — every entity in a context is stored in that
+> context's configured bucket. Use a separate context per bucket. See [Limitations](limitations.md).
+
 ## Controlling Querying Casing
 SQL++ is based off JSON, thus is case sensitive both from the Query perspective and the query output. What this means is that your Keyspaces (Bucket, Scopes and Collections), the SQL++ query casing and your entities must have consistent casing.
 
