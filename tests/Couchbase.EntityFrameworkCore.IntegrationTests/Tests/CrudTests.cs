@@ -187,6 +187,42 @@ public class CrudTests(
         }
     }
 
+    // Hardening: SaveChanges dispatches non-transactional writes concurrently
+    // (Parallel.ForEachAsync). A failed write must still surface as a clean DbUpdateException,
+    // not an AggregateException, matching the original serial behaviour.
+    [Fact]
+    public async Task Test_SaveChanges_FailedWrite_ThrowsDbUpdateException()
+    {
+        const int id = 990001;
+        await using var context = travelSampleFixture.GetDbContext();
+        var existing = new TravelSampleFixture.Airline
+        {
+            Type = "airline", Id = id, Callsign = "DUP", Country = "United States",
+            Icao = "DUP", Iata = "D1", Name = "Duplicate Air"
+        };
+        try
+        {
+            // Ensure the key exists.
+            context.Update(existing);
+            await context.SaveChangesAsync();
+
+            // Insert (Added) the same key in a fresh context → InsertAsync fails (DocumentExists).
+            await using var context2 = travelSampleFixture.GetDbContext();
+            context2.Add(new TravelSampleFixture.Airline
+            {
+                Type = "airline", Id = id, Callsign = "DUP2", Country = "United States",
+                Icao = "DUP", Iata = "D2", Name = "Duplicate Air 2"
+            });
+
+            await Assert.ThrowsAsync<DbUpdateException>(() => context2.SaveChangesAsync());
+        }
+        finally
+        {
+            context.Remove(existing);
+            await context.SaveChangesAsync();
+        }
+    }
+
     [Fact]
     public async Task Test_RemoveAsync()
     {
