@@ -222,6 +222,14 @@ public class CouchbaseDatabaseWrapper : Database
             return transactionalCount;
         }
 
+        // Non-atomic by design: like the original serial path, a non-transactional SaveChanges is
+        // best-effort and may partially apply if a write fails. Because writes run concurrently, the
+        // failure leaves a bounded, nondeterministic subset written (up to MaxWriteConcurrency
+        // in-flight) rather than a deterministic prefix — Parallel.ForEachAsync stops scheduling new
+        // writes on the first exception, but in-flight writes have already been sent. Use a Couchbase
+        // transaction (the sequential branch above) when all-or-nothing semantics are required.
+        // The external CancellationToken is honored at the scheduling level via ParallelOptions; the
+        // individual KV calls are not yet cancellable (ICouchbaseClientWrapper takes no token).
         var successCount = 0;
         await Parallel.ForEachAsync(
             pendingWrites,
