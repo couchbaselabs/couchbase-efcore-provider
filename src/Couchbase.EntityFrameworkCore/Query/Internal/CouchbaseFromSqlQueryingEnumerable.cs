@@ -48,7 +48,6 @@ public static class CouchbaseFromSqlQueryingEnumerable
 public class CouchbaseFromSqlQueryingEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T> , IRelationalQueryingEnumerable
 {
     private readonly RelationalQueryContext _relationalQueryContext;
-    private readonly RelationalCommandCache _relationalCommandCache;
     private readonly DbContext _dbContext;
     private readonly bool _standAloneStateManager;
     private readonly IBucketProvider _bucketProvider;

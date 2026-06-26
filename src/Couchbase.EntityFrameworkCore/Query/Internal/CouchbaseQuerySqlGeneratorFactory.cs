@@ -8,7 +8,6 @@ namespace Couchbase.EntityFrameworkCore.Query.Internal;
 public class CouchbaseQuerySqlGeneratorFactory : IQuerySqlGeneratorFactory
 {
     private readonly QuerySqlGeneratorDependencies _dependencies;
-    private readonly ICouchbaseDbContextOptionsBuilder _couchbaseDbContextOptionsBuilder;
 
     public CouchbaseQuerySqlGeneratorFactory(QuerySqlGeneratorDependencies dependencies/*, ICouchbaseDbContextOptionsBuilder couchbaseDbContextOptionsBuilder*/)
     {

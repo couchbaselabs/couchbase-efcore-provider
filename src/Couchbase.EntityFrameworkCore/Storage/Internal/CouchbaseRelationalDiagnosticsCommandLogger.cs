@@ -17,13 +17,6 @@ namespace Couchbase.EntityFrameworkCore.Storage.Internal;
 
 public class CouchbaseRelationalDiagnosticsCommandLogger : RelationalCommandDiagnosticsLogger
 {
-    private DateTimeOffset _suppressCommandCreateExpiration;
-    private DateTimeOffset _suppressCommandExecuteExpiration;
-    private DateTimeOffset _suppressDataReaderClosingExpiration;
-    private DateTimeOffset _suppressDataReaderDisposingExpiration;
-
-    private readonly TimeSpan _loggingCacheTime;
-
     /// <summary>
     ///     This is an internal API that supports the Entity Framework Core infrastructure and not subject to
     ///     the same compatibility standards as public APIs. It may be changed or removed without notice in
@@ -60,8 +53,6 @@ public class CouchbaseRelationalDiagnosticsCommandLogger : RelationalCommandDiag
 
         if (ShouldLog(definition))
         {
-            _suppressCommandExecuteExpiration = default;
-
             definition.Log(
                 this,
                 string.Format(CultureInfo.InvariantCulture, "{0:N0}", duration.TotalMilliseconds),
@@ -81,8 +72,6 @@ public class CouchbaseRelationalDiagnosticsCommandLogger : RelationalCommandDiag
 
         if (ShouldLog(definition))
         {
-            _suppressCommandExecuteExpiration = default;
-
             definition.Log(
                 this,
                 string.Format(CultureInfo.InvariantCulture, "{0:N0}", duration.TotalMilliseconds),
