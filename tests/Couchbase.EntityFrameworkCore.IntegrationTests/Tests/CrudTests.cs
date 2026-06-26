@@ -193,7 +193,9 @@ public class CrudTests(
     [Fact]
     public async Task Test_SaveChanges_FailedWrite_ThrowsDbUpdateException()
     {
-        const int id = 990001;
+        // Per-run unique id well above travel-sample's real airline ids, so the test never
+        // overwrites or deletes pre-existing documents (even if a prior run's cleanup failed).
+        var id = Random.Shared.Next(1_000_000, int.MaxValue);
         await using var context = travelSampleFixture.GetDbContext();
         var existing = new TravelSampleFixture.Airline
         {
