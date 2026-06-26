@@ -18,6 +18,23 @@
         <AssemblyOriginatorKeyFile>Couchbase.snk</AssemblyOriginatorKeyFile>
         <PackageReadmeFile>README.md</PackageReadmeFile>
         <IsPackable>true</IsPackable>
+
+        <!-- Binary/source compatibility guard: compares this package's public API against the last
+             released package (PackageValidationBaselineVersion) and fails on breaking changes — it
+             already caught the UseCouchbase overload break. Run it before publishing a release
+             (and from CI once that exists):  dotnet pack -c Release -p:ValidateApiCompat=true
+             Opt-in (off by default) so it doesn't slow the normal dev/test inner loop or require the
+             baseline package on every build. Bump PackageValidationBaselineVersion to the latest
+             released version whenever a new version ships.
+
+             Accepted/expected differences are recorded in CompatibilitySuppressions.xml
+             (regenerate with -p:ApiCompatGenerateSuppressionFile=true): CP0006 is the intentional
+             ServiceKey addition to ICouchbaseDbContextOptionsBuilder; CP0003 is the strong-name
+             difference — the release assembly is signed with Couchbase.snk *after* compilation
+             (manual today, CI later), so the in-build assembly ApiCompat sees is unsigned. Remove
+             the CP0003 suppression if/when the build is strong-named in-process. -->
+        <EnablePackageValidation Condition="'$(ValidateApiCompat)' == 'true'">true</EnablePackageValidation>
+        <PackageValidationBaselineVersion>2.0.0-beta.1</PackageValidationBaselineVersion>
     </PropertyGroup>
 
     <ItemGroup>
