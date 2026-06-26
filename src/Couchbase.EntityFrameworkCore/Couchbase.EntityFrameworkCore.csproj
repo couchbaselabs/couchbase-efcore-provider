@@ -5,12 +5,15 @@
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
         <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+        <!-- EF1001 flags use of EF Core internal APIs. A database provider must use these by
+             design, so suppress it project-wide (keeping the warning would bury real warnings). -->
+        <NoWarn>$(NoWarn);EF1001</NoWarn>
         <Version>2.0.0-beta.2</Version>
         <Title>EF Core Couchbase DB Provider</Title>
         <Authors>Couchbase, Inc.</Authors>
         <Copyright>Couchbase, Inc. (c) 2026</Copyright>
         <PackageProjectUrl>https://github.com/couchbaselabs/couchbase-efcore-provider</PackageProjectUrl>
-        <PackageLicenseUrl>https://github.com/couchbaselabs/couchbase-efcore-provider/blob/main/README.md</PackageLicenseUrl>
+        <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
         <RepositoryUrl>https://github.com/couchbaselabs/couchbase-efcore-provider</RepositoryUrl>
         <PackageTags>couchbase, json, efcore, entity, framework, ef, database, nosql, net10</PackageTags>
         <Description>An EF Core DB Provider for Couchbase NoSQL database written in CSharp</Description>
@@ -18,6 +21,23 @@
         <AssemblyOriginatorKeyFile>Couchbase.snk</AssemblyOriginatorKeyFile>
         <PackageReadmeFile>README.md</PackageReadmeFile>
         <IsPackable>true</IsPackable>
+
+        <!-- Binary/source compatibility guard: compares this package's public API against the last
+             released package (PackageValidationBaselineVersion) and fails on breaking changes — it
+             already caught the UseCouchbase overload break. Run it before publishing a release
+             (and from CI once that exists):  dotnet pack -c Release -p:ValidateApiCompat=true
+             Opt-in (off by default) so it doesn't slow the normal dev/test inner loop or require the
+             baseline package on every build. Bump PackageValidationBaselineVersion to the latest
+             released version whenever a new version ships.
+
+             Accepted/expected differences are recorded in CompatibilitySuppressions.xml
+             (regenerate with -p:ApiCompatGenerateSuppressionFile=true): CP0006 is the intentional
+             ServiceKey addition to ICouchbaseDbContextOptionsBuilder; CP0003 is the strong-name
+             difference — the release assembly is signed with Couchbase.snk *after* compilation
+             (manual today, CI later), so the in-build assembly ApiCompat sees is unsigned. Remove
+             the CP0003 suppression if/when the build is strong-named in-process. -->
+        <EnablePackageValidation Condition="'$(ValidateApiCompat)' == 'true'">true</EnablePackageValidation>
+        <PackageValidationBaselineVersion>2.0.0-beta.1</PackageValidationBaselineVersion>
     </PropertyGroup>
 
     <ItemGroup>

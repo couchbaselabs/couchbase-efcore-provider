@@ -45,13 +45,16 @@ public class CouchbaseDatabaseWrapper : Database
     public override async Task<int> SaveChangesAsync(IList<IUpdateEntry> entries, CancellationToken cancellationToken = new())
     {
         var transaction = GetCurrentTransaction();
-        var updateCount = 0;
 
         // Track root-entity keys written in the main loop so the second pass can skip
         // owners that were already written (e.g. user manually set entry.State = Modified).
         var writtenRoots = new HashSet<string>();
         // Owned entries whose owner must be written in the second pass.
         var deferredOwnedEntries = new List<IUpdateEntry>();
+        // Writes are collected first (building the document is CPU-only) and dispatched together at
+        // the end, so the non-transactional path can run independent writes concurrently instead of
+        // one blocking round-trip per changed entity.
+        var pendingWrites = new List<PendingWrite>();
 
         foreach (var updateEntry in entries)
         {
@@ -92,52 +95,19 @@ public class CouchbaseDatabaseWrapper : Database
                 case EntityState.Deleted:
                     // Add to writtenRoots so the deferred pass doesn't upsert a just-deleted doc.
                     writtenRoots.Add($"{entityType.ClrType.Name}:{primaryKey}");
-                    if (transaction != null)
-                    {
-                        await _couchbaseClient.EnqueueTransactionalRemove(transaction, primaryKey, keyspace).ConfigureAwait(false);
-                        updateCount++;
-                    }
-                    else
-                    {
-                        if (await _couchbaseClient.DeleteDocument(primaryKey, keyspace).ConfigureAwait(false))
-                        {
-                            updateCount++;
-                        }
-                    }
+                    pendingWrites.Add(new PendingWrite(CouchbaseWriteKind.Delete, primaryKey, keyspace, null));
                     break;
 
                 case EntityState.Modified:
                     writtenRoots.Add($"{entityType.ClrType.Name}:{primaryKey}");
-                    var modifiedDocument = HydrateObjectFromEntity(updateEntry, _fieldNamingPolicy);
-                    if (transaction != null)
-                    {
-                        await _couchbaseClient.EnqueueTransactionalUpsert(transaction, primaryKey, keyspace, modifiedDocument).ConfigureAwait(false);
-                        updateCount++;
-                    }
-                    else
-                    {
-                        if (await _couchbaseClient.UpdateDocument(primaryKey, keyspace, modifiedDocument).ConfigureAwait(false))
-                        {
-                            updateCount++;
-                        }
-                    }
+                    pendingWrites.Add(new PendingWrite(CouchbaseWriteKind.Upsert, primaryKey, keyspace,
+                        HydrateObjectFromEntity(updateEntry, _fieldNamingPolicy)));
                     break;
 
                 case EntityState.Added:
                     writtenRoots.Add($"{entityType.ClrType.Name}:{primaryKey}");
-                    var newDocument = HydrateObjectFromEntity(updateEntry, _fieldNamingPolicy);
-                    if (transaction != null)
-                    {
-                        await _couchbaseClient.EnqueueTransactionalInsert(transaction, primaryKey, keyspace, newDocument).ConfigureAwait(false);
-                        updateCount++;
-                    }
-                    else
-                    {
-                        if (await _couchbaseClient.CreateDocument(primaryKey, keyspace, newDocument).ConfigureAwait(false))
-                        {
-                            updateCount++;
-                        }
-                    }
+                    pendingWrites.Add(new PendingWrite(CouchbaseWriteKind.Insert, primaryKey, keyspace,
+                        HydrateObjectFromEntity(updateEntry, _fieldNamingPolicy)));
                     break;
 
                 default:
@@ -198,20 +168,87 @@ public class CouchbaseDatabaseWrapper : Database
                     "Ensure the entity is mapped to a Couchbase collection via ToCouchbaseCollection().");
 
             var ownerDocument = HydrateObjectFromEntity(rootInternalEntry, _fieldNamingPolicy);
-
-            if (transaction != null)
-            {
-                await _couchbaseClient.EnqueueTransactionalUpsert(transaction, ownerPrimaryKey, ownerKeyspace, ownerDocument).ConfigureAwait(false);
-                updateCount++;
-            }
-            else
-            {
-                if (await _couchbaseClient.UpdateDocument(ownerPrimaryKey, ownerKeyspace, ownerDocument).ConfigureAwait(false))
-                    updateCount++;
-            }
+            pendingWrites.Add(new PendingWrite(CouchbaseWriteKind.Upsert, ownerPrimaryKey, ownerKeyspace, ownerDocument));
         }
 
-        return updateCount;
+        return await ExecutePendingWritesAsync(pendingWrites, transaction, cancellationToken).ConfigureAwait(false);
+    }
+
+    private enum CouchbaseWriteKind { Insert, Upsert, Delete }
+
+    private readonly record struct PendingWrite(
+        CouchbaseWriteKind Kind, string Key, string Keyspace, object? Document);
+
+    // Upper bound on concurrent KV writes for a single SaveChanges so a very large change set
+    // doesn't flood the SDK's connection pool. KV ops are I/O-bound, so this is well above core count.
+    private const int MaxWriteConcurrency = 32;
+
+    /// <summary>
+    /// Dispatches the collected writes. Transactional writes are enqueued sequentially (single,
+    /// ordered transaction); non-transactional writes target independent documents and are run
+    /// concurrently (bounded) — Couchbase KV throughput is round-trip-bound, so serial awaits would
+    /// make SaveChanges latency scale with the number of changed entities.
+    /// </summary>
+    private async Task<int> ExecutePendingWritesAsync(
+        IReadOnlyList<PendingWrite> pendingWrites,
+        CouchbaseDbTransaction? transaction,
+        CancellationToken cancellationToken)
+    {
+        if (pendingWrites.Count == 0)
+        {
+            return 0;
+        }
+
+        if (transaction != null)
+        {
+            var transactionalCount = 0;
+            foreach (var write in pendingWrites)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                switch (write.Kind)
+                {
+                    case CouchbaseWriteKind.Delete:
+                        await _couchbaseClient.EnqueueTransactionalRemove(transaction, write.Key, write.Keyspace).ConfigureAwait(false);
+                        break;
+                    case CouchbaseWriteKind.Upsert:
+                        await _couchbaseClient.EnqueueTransactionalUpsert(transaction, write.Key, write.Keyspace, write.Document!).ConfigureAwait(false);
+                        break;
+                    case CouchbaseWriteKind.Insert:
+                        await _couchbaseClient.EnqueueTransactionalInsert(transaction, write.Key, write.Keyspace, write.Document!).ConfigureAwait(false);
+                        break;
+                }
+                transactionalCount++;
+            }
+            return transactionalCount;
+        }
+
+        // Non-atomic by design: like the original serial path, a non-transactional SaveChanges is
+        // best-effort and may partially apply if a write fails. Because writes run concurrently, the
+        // failure leaves a bounded, nondeterministic subset written (up to MaxWriteConcurrency
+        // in-flight) rather than a deterministic prefix — Parallel.ForEachAsync stops scheduling new
+        // writes on the first exception, but in-flight writes have already been sent. Use a Couchbase
+        // transaction (the sequential branch above) when all-or-nothing semantics are required.
+        // The external CancellationToken is honored at the scheduling level via ParallelOptions; the
+        // individual KV calls are not yet cancellable (ICouchbaseClientWrapper takes no token).
+        var successCount = 0;
+        await Parallel.ForEachAsync(
+            pendingWrites,
+            new ParallelOptions { MaxDegreeOfParallelism = MaxWriteConcurrency, CancellationToken = cancellationToken },
+            async (write, _) =>
+            {
+                var written = write.Kind switch
+                {
+                    CouchbaseWriteKind.Delete => await _couchbaseClient.DeleteDocument(write.Key, write.Keyspace).ConfigureAwait(false),
+                    CouchbaseWriteKind.Upsert => await _couchbaseClient.UpdateDocument(write.Key, write.Keyspace, write.Document!).ConfigureAwait(false),
+                    CouchbaseWriteKind.Insert => await _couchbaseClient.CreateDocument(write.Key, write.Keyspace, write.Document!).ConfigureAwait(false),
+                    _ => false
+                };
+                if (written)
+                {
+                    Interlocked.Increment(ref successCount);
+                }
+            }).ConfigureAwait(false);
+        return successCount;
     }
 
     // Internal seam so the null-nav behaviour can be verified without a live DbContext.

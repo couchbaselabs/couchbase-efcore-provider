@@ -67,7 +67,7 @@ public class CrudTests(
         }
     }
 
-    [Fact(Skip = "This test requires customizing travel-sample with airline and user collections.")]
+    [Fact]
     public async Task Test_ExecuteDelete()
     {
         await using var context = travelSampleFixture.GetDbContext();
@@ -124,7 +124,7 @@ public class CrudTests(
         }
     }
 
-    [Fact(Skip = "This test requires customizing travel-sample with user collections.")]
+    [Fact(Skip = "Needs a writable 'user' collection in travel-sample AND User.Addresses mapped as OwnsMany (currently .Ignore()'d in TravelSampleDbContext). Owned types are supported; enabling this is model/fixture work.")]
     public async Task Test_ComplexObject()
     {
         await using var context = travelSampleFixture.GetDbContext();
@@ -183,6 +183,44 @@ public class CrudTests(
         finally
         {
             var entity = context.Remove(airline);
+            await context.SaveChangesAsync();
+        }
+    }
+
+    // Hardening: SaveChanges dispatches non-transactional writes concurrently
+    // (Parallel.ForEachAsync). A failed write must still surface as a clean DbUpdateException,
+    // not an AggregateException, matching the original serial behaviour.
+    [Fact]
+    public async Task Test_SaveChanges_FailedWrite_ThrowsDbUpdateException()
+    {
+        // Per-run unique id well above travel-sample's real airline ids, so the test never
+        // overwrites or deletes pre-existing documents (even if a prior run's cleanup failed).
+        var id = Random.Shared.Next(1_000_000, int.MaxValue);
+        await using var context = travelSampleFixture.GetDbContext();
+        var existing = new TravelSampleFixture.Airline
+        {
+            Type = "airline", Id = id, Callsign = "DUP", Country = "United States",
+            Icao = "DUP", Iata = "D1", Name = "Duplicate Air"
+        };
+        try
+        {
+            // Ensure the key exists.
+            context.Update(existing);
+            await context.SaveChangesAsync();
+
+            // Insert (Added) the same key in a fresh context → InsertAsync fails (DocumentExists).
+            await using var context2 = travelSampleFixture.GetDbContext();
+            context2.Add(new TravelSampleFixture.Airline
+            {
+                Type = "airline", Id = id, Callsign = "DUP2", Country = "United States",
+                Icao = "DUP", Iata = "D2", Name = "Duplicate Air 2"
+            });
+
+            await Assert.ThrowsAsync<DbUpdateException>(() => context2.SaveChangesAsync());
+        }
+        finally
+        {
+            context.Remove(existing);
             await context.SaveChangesAsync();
         }
     }
@@ -402,7 +440,7 @@ public class CrudTests(
         Assert.Equal("hotel", hotel.Type);
     }
 
-    [Fact(Skip = "Nested objects (Geo) are ignored by EF Core - requires document-oriented query support")]
+    [Fact(Skip = "Hotel.Geo is mapped with .Ignore() in TravelSampleDbContext. Map it as OwnsOne to read the embedded 'geo' object (owned types are supported; lat/lon/accuracy match the camelCase convention).")]
     public async Task Test_Hotel_With_Geo()
     {
         await using var context = travelSampleFixture.GetDbContext();
@@ -419,7 +457,7 @@ public class CrudTests(
         Assert.NotNull(hotel.Geo.Lon);
     }
 
-    [Fact(Skip = "Nested collections (Reviews) are ignored by EF Core - requires document-oriented query support")]
+    [Fact(Skip = "Hotel.Reviews is mapped with .Ignore() in TravelSampleDbContext. Map as OwnsMany to enable (owned types are supported). Note: the nested 'ratings' field names (e.g. 'Service', 'Check in / front desk') don't match the naming convention and would need explicit column mapping.")]
     public async Task Test_Hotel_With_Reviews()
     {
         await using var context = travelSampleFixture.GetDbContext();
