@@ -67,7 +67,7 @@ public class CrudTests(
         }
     }
 
-    [Fact(Skip = "This test requires customizing travel-sample with airline and user collections.")]
+    [Fact]
     public async Task Test_ExecuteDelete()
     {
         await using var context = travelSampleFixture.GetDbContext();
@@ -124,7 +124,7 @@ public class CrudTests(
         }
     }
 
-    [Fact(Skip = "This test requires customizing travel-sample with user collections.")]
+    [Fact(Skip = "Needs a writable 'user' collection in travel-sample AND User.Addresses mapped as OwnsMany (currently .Ignore()'d in TravelSampleDbContext). Owned types are supported; enabling this is model/fixture work.")]
     public async Task Test_ComplexObject()
     {
         await using var context = travelSampleFixture.GetDbContext();
@@ -402,7 +402,7 @@ public class CrudTests(
         Assert.Equal("hotel", hotel.Type);
     }
 
-    [Fact(Skip = "Nested objects (Geo) are ignored by EF Core - requires document-oriented query support")]
+    [Fact(Skip = "Hotel.Geo is mapped with .Ignore() in TravelSampleDbContext. Map it as OwnsOne to read the embedded 'geo' object (owned types are supported; lat/lon/accuracy match the camelCase convention).")]
     public async Task Test_Hotel_With_Geo()
     {
         await using var context = travelSampleFixture.GetDbContext();
@@ -419,7 +419,7 @@ public class CrudTests(
         Assert.NotNull(hotel.Geo.Lon);
     }
 
-    [Fact(Skip = "Nested collections (Reviews) are ignored by EF Core - requires document-oriented query support")]
+    [Fact(Skip = "Hotel.Reviews is mapped with .Ignore() in TravelSampleDbContext. Map as OwnsMany to enable (owned types are supported). Note: the nested 'ratings' field names (e.g. 'Service', 'Check in / front desk') don't match the naming convention and would need explicit column mapping.")]
     public async Task Test_Hotel_With_Reviews()
     {
         await using var context = travelSampleFixture.GetDbContext();
