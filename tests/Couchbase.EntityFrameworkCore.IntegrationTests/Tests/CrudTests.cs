@@ -225,6 +225,24 @@ public class CrudTests(
         }
     }
 
+    // The provider threads the CancellationToken through the KV write path; a cancelled save must
+    // surface as an OperationCanceledException, not a wrapped DbUpdateException.
+    [Fact]
+    public async Task Test_SaveChanges_HonorsCancellation()
+    {
+        await using var context = travelSampleFixture.GetDbContext();
+        context.Add(new TravelSampleFixture.Airline
+        {
+            Type = "airline", Id = Random.Shared.Next(1_000_000, int.MaxValue),
+            Callsign = "CANCEL", Country = "United States", Icao = "CXL", Iata = "CX", Name = "Cancel Air"
+        });
+
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => context.SaveChangesAsync(cts.Token));
+    }
+
     [Fact]
     public async Task Test_RemoveAsync()
     {

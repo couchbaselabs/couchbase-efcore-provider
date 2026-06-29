@@ -4,33 +4,33 @@ namespace Couchbase.EntityFrameworkCore.Storage.Internal;
 
 public interface ICouchbaseClientWrapper
 {
-    Task<bool> DeleteDocument(string id, string keyspace);
+    Task<bool> DeleteDocument(string id, string keyspace, CancellationToken cancellationToken = default);
 
-    Task<bool> CreateDocument<TEntity>(string id, string keyspace, TEntity entity);
+    Task<bool> CreateDocument<TEntity>(string id, string keyspace, TEntity entity, CancellationToken cancellationToken = default);
 
-    Task<bool> UpdateDocument<TEntity>(string id, string keyspace, TEntity entity);
+    Task<bool> UpdateDocument<TEntity>(string id, string keyspace, TEntity entity, CancellationToken cancellationToken = default);
 
     string BucketName { get; }
 
     /// <summary>
     /// Gets the collection for the specified keyspace.
     /// </summary>
-    Task<ICouchbaseCollection> GetCollectionAsync(string keyspace);
+    Task<ICouchbaseCollection> GetCollectionAsync(string keyspace, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Enqueues a document insert operation on the given transaction.
     /// </summary>
-    Task EnqueueTransactionalInsert<TEntity>(CouchbaseDbTransaction transaction, string id, string keyspace, TEntity entity);
+    Task EnqueueTransactionalInsert<TEntity>(CouchbaseDbTransaction transaction, string id, string keyspace, TEntity entity, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Enqueues a document upsert operation on the given transaction.
     /// </summary>
-    Task EnqueueTransactionalUpsert<TEntity>(CouchbaseDbTransaction transaction, string id, string keyspace, TEntity entity);
+    Task EnqueueTransactionalUpsert<TEntity>(CouchbaseDbTransaction transaction, string id, string keyspace, TEntity entity, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Enqueues a document remove operation on the given transaction.
     /// </summary>
-    Task EnqueueTransactionalRemove(CouchbaseDbTransaction transaction, string id, string keyspace);
+    Task EnqueueTransactionalRemove(CouchbaseDbTransaction transaction, string id, string keyspace, CancellationToken cancellationToken = default);
 }
 
 /* ************************************************************

@@ -208,13 +208,13 @@ public class CouchbaseDatabaseWrapper : Database
                 switch (write.Kind)
                 {
                     case CouchbaseWriteKind.Delete:
-                        await _couchbaseClient.EnqueueTransactionalRemove(transaction, write.Key, write.Keyspace).ConfigureAwait(false);
+                        await _couchbaseClient.EnqueueTransactionalRemove(transaction, write.Key, write.Keyspace, cancellationToken).ConfigureAwait(false);
                         break;
                     case CouchbaseWriteKind.Upsert:
-                        await _couchbaseClient.EnqueueTransactionalUpsert(transaction, write.Key, write.Keyspace, write.Document!).ConfigureAwait(false);
+                        await _couchbaseClient.EnqueueTransactionalUpsert(transaction, write.Key, write.Keyspace, write.Document!, cancellationToken).ConfigureAwait(false);
                         break;
                     case CouchbaseWriteKind.Insert:
-                        await _couchbaseClient.EnqueueTransactionalInsert(transaction, write.Key, write.Keyspace, write.Document!).ConfigureAwait(false);
+                        await _couchbaseClient.EnqueueTransactionalInsert(transaction, write.Key, write.Keyspace, write.Document!, cancellationToken).ConfigureAwait(false);
                         break;
                 }
                 transactionalCount++;
@@ -228,8 +228,10 @@ public class CouchbaseDatabaseWrapper : Database
         // in-flight) rather than a deterministic prefix — Parallel.ForEachAsync stops scheduling new
         // writes on the first exception, but in-flight writes have already been sent. Use a Couchbase
         // transaction (the sequential branch above) when all-or-nothing semantics are required.
-        // The external CancellationToken is honored at the scheduling level via ParallelOptions; the
-        // individual KV calls are not yet cancellable (ICouchbaseClientWrapper takes no token).
+        // The external CancellationToken is honored both at the scheduling level (via ParallelOptions)
+        // and per write (passed to each KV call). We pass the external token deliberately, not the
+        // loop's combined token, so a sibling write's failure does not cancel in-flight writes — that
+        // keeps the surfaced exception the original DbUpdateException rather than a cancellation.
         var successCount = 0;
         await Parallel.ForEachAsync(
             pendingWrites,
@@ -238,9 +240,9 @@ public class CouchbaseDatabaseWrapper : Database
             {
                 var written = write.Kind switch
                 {
-                    CouchbaseWriteKind.Delete => await _couchbaseClient.DeleteDocument(write.Key, write.Keyspace).ConfigureAwait(false),
-                    CouchbaseWriteKind.Upsert => await _couchbaseClient.UpdateDocument(write.Key, write.Keyspace, write.Document!).ConfigureAwait(false),
-                    CouchbaseWriteKind.Insert => await _couchbaseClient.CreateDocument(write.Key, write.Keyspace, write.Document!).ConfigureAwait(false),
+                    CouchbaseWriteKind.Delete => await _couchbaseClient.DeleteDocument(write.Key, write.Keyspace, cancellationToken).ConfigureAwait(false),
+                    CouchbaseWriteKind.Upsert => await _couchbaseClient.UpdateDocument(write.Key, write.Keyspace, write.Document!, cancellationToken).ConfigureAwait(false),
+                    CouchbaseWriteKind.Insert => await _couchbaseClient.CreateDocument(write.Key, write.Keyspace, write.Document!, cancellationToken).ConfigureAwait(false),
                     _ => false
                 };
                 if (written)
