@@ -59,47 +59,45 @@ public class CouchbaseValueGeneratorSelector : RelationalValueGeneratorSelector
     }
 
     /// <summary>
-    /// Selects a value generator for the given property.
+    /// Selects a value generator for the given property, preferring a Couchbase sequence or GUID
+    /// string generator when the corresponding annotation is present.
     /// </summary>
-    public override ValueGenerator? Select(IProperty property, ITypeBase typeBase)
-    {
-        // Check for sequence-based generation
-        var sequenceName = property.FindAnnotation(SequenceNameAnnotation)?.Value as string;
-        if (!string.IsNullOrEmpty(sequenceName))
-        {
-            return CreateSequenceValueGenerator(property, sequenceName);
-        }
-
-        // Check for GUID string generation
-        var guidStringFormat = property.FindAnnotation(GuidStringFormatAnnotation)?.Value as string;
-        if (guidStringFormat != null && property.ClrType == typeof(string))
-        {
-            return new CouchbaseGuidStringValueGenerator(guidStringFormat);
-        }
-
-        return base.Select(property, typeBase);
-    }
+    public override bool TrySelect(IProperty property, ITypeBase typeBase, out ValueGenerator? valueGenerator)
+        => TryCreateCouchbaseValueGenerator(property, out valueGenerator)
+            || base.TrySelect(property, typeBase, out valueGenerator);
 
     /// <summary>
-    /// Creates a value generator for the given property.
+    /// Creates a value generator for the given property, preferring a Couchbase sequence or GUID
+    /// string generator when the corresponding annotation is present.
     /// </summary>
-    public override ValueGenerator Create(IProperty property, ITypeBase typeBase)
+    public override bool TryCreate(IProperty property, ITypeBase typeBase, out ValueGenerator? valueGenerator)
+        => TryCreateCouchbaseValueGenerator(property, out valueGenerator)
+            || base.TryCreate(property, typeBase, out valueGenerator);
+
+    /// <summary>
+    /// Returns a Couchbase-specific value generator (sequence or GUID string) when the property is
+    /// annotated for one, otherwise <c>false</c> so the relational base can select a generator.
+    /// </summary>
+    private bool TryCreateCouchbaseValueGenerator(IProperty property, out ValueGenerator? valueGenerator)
     {
         // Check for sequence-based generation
         var sequenceName = property.FindAnnotation(SequenceNameAnnotation)?.Value as string;
         if (!string.IsNullOrEmpty(sequenceName))
         {
-            return CreateSequenceValueGenerator(property, sequenceName);
+            valueGenerator = CreateSequenceValueGenerator(property, sequenceName);
+            return true;
         }
 
         // Check for GUID string generation
         var guidStringFormat = property.FindAnnotation(GuidStringFormatAnnotation)?.Value as string;
         if (guidStringFormat != null && property.ClrType == typeof(string))
         {
-            return new CouchbaseGuidStringValueGenerator(guidStringFormat);
+            valueGenerator = new CouchbaseGuidStringValueGenerator(guidStringFormat);
+            return true;
         }
 
-        return base.Create(property, typeBase);
+        valueGenerator = null;
+        return false;
     }
 
     private ValueGenerator CreateSequenceValueGenerator(

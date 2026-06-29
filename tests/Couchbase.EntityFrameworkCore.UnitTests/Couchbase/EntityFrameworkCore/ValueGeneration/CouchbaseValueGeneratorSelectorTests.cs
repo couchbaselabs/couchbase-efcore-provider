@@ -42,7 +42,7 @@ public class CouchbaseValueGeneratorSelectorTests
             "D");
 
         // Act
-        var generator = _selector.Select(property, typeBase);
+        Assert.True(_selector.TrySelect(property, typeBase, out var generator));
 
         // Assert
         Assert.NotNull(generator);
@@ -59,7 +59,7 @@ public class CouchbaseValueGeneratorSelectorTests
             "N");
 
         // Act
-        var generator = _selector.Select(property, typeBase);
+        Assert.True(_selector.TrySelect(property, typeBase, out var generator));
 
         // Assert
         var guidGenerator = Assert.IsType<CouchbaseGuidStringValueGenerator>(generator);
@@ -80,7 +80,7 @@ public class CouchbaseValueGeneratorSelectorTests
             format);
 
         // Act
-        var generator = _selector.Select(property, typeBase);
+        Assert.True(_selector.TrySelect(property, typeBase, out var generator));
 
         // Assert
         var guidGenerator = Assert.IsType<CouchbaseGuidStringValueGenerator>(generator);
@@ -97,7 +97,7 @@ public class CouchbaseValueGeneratorSelectorTests
             "D");
 
         // Act
-        var generator = _selector.Create(property, typeBase);
+        Assert.True(_selector.TryCreate(property, typeBase, out var generator));
 
         // Assert
         Assert.NotNull(generator);
@@ -115,7 +115,7 @@ public class CouchbaseValueGeneratorSelectorTests
             "test_seq");
 
         // Act & Assert - Sequence on string type should fail
-        var exception = Assert.Throws<InvalidOperationException>(() => _selector.Select(property, typeBase));
+        var exception = Assert.Throws<InvalidOperationException>(() => _selector.TrySelect(property, typeBase, out _));
         Assert.Contains("not supported", exception.Message);
     }
 
@@ -130,7 +130,7 @@ public class CouchbaseValueGeneratorSelectorTests
             "D");
 
         // Act
-        var stringGenerator = _selector.Select(stringProperty, stringTypeBase);
+        Assert.True(_selector.TrySelect(stringProperty, stringTypeBase, out var stringGenerator));
 
         // Assert - String property with annotation should return GUID string generator
         Assert.IsType<CouchbaseGuidStringValueGenerator>(stringGenerator);
@@ -150,7 +150,7 @@ public class CouchbaseValueGeneratorSelectorTests
             "test_seq");
 
         // Act
-        var generator = _selector.Select(property, typeBase);
+        Assert.True(_selector.TrySelect(property, typeBase, out var generator));
 
         // Assert
         Assert.NotNull(generator);
@@ -167,7 +167,7 @@ public class CouchbaseValueGeneratorSelectorTests
             "order_seq");
 
         // Act
-        var generator = _selector.Select(property, typeBase);
+        Assert.True(_selector.TrySelect(property, typeBase, out var generator));
 
         // Assert - Should return int generator for int property
         Assert.IsType<CouchbaseSequenceValueGenerator<int>>(generator);
@@ -188,7 +188,7 @@ public class CouchbaseValueGeneratorSelectorTests
         var property = entityType.FindProperty(nameof(StringEntity.Id))!;
 
         // Act & Assert - Should throw because sequence doesn't support string type
-        Assert.Throws<InvalidOperationException>(() => _selector.Select(property, entityType));
+        Assert.Throws<InvalidOperationException>(() => _selector.TrySelect(property, entityType, out _));
     }
 
     [Fact]
@@ -201,7 +201,7 @@ public class CouchbaseValueGeneratorSelectorTests
             "test_seq");
 
         // Act & Assert
-        var exception = Assert.Throws<InvalidOperationException>(() => _selector.Select(property, typeBase));
+        var exception = Assert.Throws<InvalidOperationException>(() => _selector.TrySelect(property, typeBase, out _));
         Assert.Contains("not supported", exception.Message);
     }
 
