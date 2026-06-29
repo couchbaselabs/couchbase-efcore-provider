@@ -53,13 +53,23 @@ public class CouchbaseOptionsExtension: RelationalOptionsExtension
                 options.WithSerializer(existingSerializer);
             }
 
-            if (_couchbaseDbContextOptionsBuilder.ClusterOptions.Authenticator == null)
+            if (_couchbaseDbContextOptionsBuilder.ClusterOptions.Authenticator != null)
             {
-                options.WithCredentials(_couchbaseDbContextOptionsBuilder.ClusterOptions.UserName, _couchbaseDbContextOptionsBuilder.ClusterOptions.Password);
+                options.WithAuthenticator(_couchbaseDbContextOptionsBuilder.ClusterOptions.Authenticator);
             }
             else
             {
-                options.WithAuthenticator(_couchbaseDbContextOptionsBuilder.ClusterOptions.Authenticator);
+                // No Authenticator was set, so the source ClusterOptions carries legacy
+                // username/password. Forward them via the supported WithPasswordAuthentication
+                // (equivalent to the obsolete WithCredentials). Reading UserName/Password is itself
+                // obsolete in the SDK and has no non-obsolete equivalent for legacy configs, so
+                // suppress locally — once the SDK removes those members this stops compiling and
+                // forces Authenticator-based configuration.
+#pragma warning disable CS0618 // Type or member is obsolete
+                options.WithPasswordAuthentication(
+                    _couchbaseDbContextOptionsBuilder.ClusterOptions.UserName,
+                    _couchbaseDbContextOptionsBuilder.ClusterOptions.Password);
+#pragma warning restore CS0618
             }
         });
 
