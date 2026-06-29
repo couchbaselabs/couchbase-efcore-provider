@@ -155,10 +155,9 @@ public class CouchbaseSaveChangesInterceptor : SaveChangesInterceptor
                     }
                 }
 
-                // Get the value generator from the selector
-                var generator = selector.Select(property, entityType);
-
-                if (generator == null)
+                // Get the value generator from the selector (throw if none — the documented
+                // replacement for the obsolete Select).
+                if (!selector.TrySelect(property, entityType, out var generator) || generator == null)
                 {
                     throw new InvalidOperationException(
                         $"Could not create value generator for property '{property.Name}' on entity '{entityType.ClrType.Name}'. " +
