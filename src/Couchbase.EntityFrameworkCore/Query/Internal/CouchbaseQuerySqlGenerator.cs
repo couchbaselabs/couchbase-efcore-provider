@@ -770,8 +770,8 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
         // standard SQL, because a custom translator could theoretically produce such a tree.
         if (sqlFunctionExpression.IsBuiltIn
             && sqlFunctionExpression.Name == "AVG"
-            && sqlFunctionExpression.Arguments.Count == 1
-            && sqlFunctionExpression.Arguments[0] is SqlUnaryExpression
+            && sqlFunctionExpression.Arguments is { Count: 1 } avgArguments
+            && avgArguments[0] is SqlUnaryExpression
                 { OperatorType: ExpressionType.Convert } numericCast
             && IsNumericType(numericCast.Type))
         {

@@ -23,7 +23,7 @@ public class CouchbaseModelValidator : RelationalModelValidator
 
     protected override void ValidatePropertyMapping(IModel model, IDiagnosticsLogger<DbLoggerCategory.Model.Validation> logger)
     {
-        IConventionModel conventionModel = model as IConventionModel;
+        IConventionModel? conventionModel = model as IConventionModel;
         if (conventionModel == null)
             return;
         

@@ -89,12 +89,13 @@ public static class CouchbaseDatabaseFacadeExtensions
     public static async Task<ICluster> GetCouchbaseClientAsync(
         this DatabaseFacade databaseFacade)
     {
-        var connectionString = databaseFacade.GetConnectionString();
+        var connectionString = databaseFacade.GetConnectionString()
+            ?? throw new InvalidOperationException("No Couchbase connection string is configured.");
         var options = new ClusterOptions().WithConnectionString(connectionString);
-        if (options.TryGetRawParameter("bucket", out var bucketName))
+        if (options.TryGetRawParameter("bucket", out var bucketName) && bucketName != null)
         {
             var bucketProvider = databaseFacade.GetService<IBucketProvider>();
-            var bucket = await bucketProvider.GetBucketAsync(bucketName.ToString()).ConfigureAwait(false);
+            var bucket = await bucketProvider.GetBucketAsync(bucketName.ToString()!).ConfigureAwait(false);
             return bucket.Cluster;
         }
         throw new CouchbaseException("No couchbase connection string found.");
@@ -102,7 +103,8 @@ public static class CouchbaseDatabaseFacadeExtensions
 
     public static ICluster GetCouchbaseClient(this DatabaseFacade databaseFacade)
     {
-        var connectionString = databaseFacade.GetConnectionString();
+        var connectionString = databaseFacade.GetConnectionString()
+            ?? throw new InvalidOperationException("No Couchbase connection string is configured.");
         return GetService<IClusterProvider>(databaseFacade, connectionString).GetClusterAsync().GetAwaiter().GetResult();
     }
 
@@ -120,25 +122,27 @@ public static class CouchbaseDatabaseFacadeExtensions
 
     public static void EnsureClean(this DatabaseFacade databaseFacade)
     {
-        var connectionString = databaseFacade.GetConnectionString();
+        var connectionString = databaseFacade.GetConnectionString()
+            ?? throw new InvalidOperationException("No Couchbase connection string is configured.");
         var clusterOptions = new ClusterOptions().WithConnectionString(connectionString);
 
         if (clusterOptions.TryGetRawParameter("bucket", out object? bucketName) && bucketName != null)
         {
             var couchbaseClient = GetCouchbaseClient(databaseFacade);
-            couchbaseClient.Buckets.FlushBucketAsync(bucketName.ToString()).GetAwaiter().GetResult();
+            couchbaseClient.Buckets.FlushBucketAsync(bucketName.ToString()!).GetAwaiter().GetResult();
         }
     }
 
     public static async Task EnsureCleanAsync(this DatabaseFacade databaseFacade)
     {
-        var connectionString = databaseFacade.GetConnectionString();
+        var connectionString = databaseFacade.GetConnectionString()
+            ?? throw new InvalidOperationException("No Couchbase connection string is configured.");
         var clusterOptions = new ClusterOptions().WithConnectionString(connectionString);
 
         if (clusterOptions.TryGetRawParameter("bucket", out var bucketName) && bucketName != null)
         {
             var couchbaseClient = await GetCouchbaseClientAsync(databaseFacade).ConfigureAwait(false);
-            await couchbaseClient.Buckets.FlushBucketAsync(bucketName.ToString()).ConfigureAwait(false);
+            await couchbaseClient.Buckets.FlushBucketAsync(bucketName.ToString()!).ConfigureAwait(false);
         }
     }
 

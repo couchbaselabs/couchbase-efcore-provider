@@ -132,9 +132,9 @@ public class CouchbaseFromSqlQueryingEnumerable<T> : IEnumerable<T>, IAsyncEnume
             {
                 //If the returned type is an entity add start change tracking
                 //Scalar values for functions like COUNT are not tracked.
-                if (entityType != null && _dbContext.Entry(doc).State != EntityState.Detached)
+                if (entityType != null && _dbContext.Entry(doc!).State != EntityState.Detached)
                 {
-                    _relationalQueryContext.StartTracking(entityType, doc, Snapshot.Empty);
+                    _relationalQueryContext.StartTracking(entityType, doc!, Snapshot.Empty);
                 }
             }
             catch (Exception e)
@@ -152,7 +152,7 @@ public class CouchbaseFromSqlQueryingEnumerable<T> : IEnumerable<T>, IAsyncEnume
         queryOptions.ScanConsistency(_couchbaseDbContextOptionsBuilder.ScanConsistency);
         foreach (CouchbaseParameter parameter in command.Parameters)
         {
-            queryOptions.Parameter(parameter.ParameterName, parameter.Value);
+            queryOptions.Parameter(parameter.ParameterName, parameter.Value!);
         }
 
         return queryOptions;

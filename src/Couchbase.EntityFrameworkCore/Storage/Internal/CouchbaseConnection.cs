@@ -1,5 +1,6 @@
 using System.Data;
 using System.Data.Common;
+using System.Diagnostics.CodeAnalysis;
 using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.EntityFrameworkCore.Internal;
 using Couchbase.Extensions.DependencyInjection;
@@ -51,6 +52,7 @@ public class CouchbaseConnection : DbConnection
         _logger = logger;
     }
 
+    [AllowNull]
     public override string ConnectionString
     {
         get => _couchbaseDbContextOptionsBuilder.ConnectionString;

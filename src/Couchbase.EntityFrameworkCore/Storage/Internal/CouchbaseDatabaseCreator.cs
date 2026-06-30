@@ -22,7 +22,9 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
     private readonly IServiceProvider _serviceProvider;
     private readonly ICouchbaseDbContextOptionsBuilder _couchbaseDbContextOptionsBuilder;
     private readonly ISqlGenerationHelper _sqlGenerationHelper;
-    private ICluster _cluster;
+    // Lazily initialized by InitializeAsync before any use; null-forgiving avoids cascading
+    // nullable warnings at the (guaranteed-initialized) deref sites.
+    private ICluster _cluster = null!;
 
     public CouchbaseDatabaseCreator(RelationalDatabaseCreatorDependencies dependencies,
         IDatabase database,

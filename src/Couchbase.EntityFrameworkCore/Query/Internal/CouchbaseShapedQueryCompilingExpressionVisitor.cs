@@ -350,7 +350,7 @@ public class CouchbaseShapedQueryCompilingExpressionVisitor : RelationalShapedQu
                 innerSelect.AddToProjection(
                     new ColumnExpression(fieldName, ownerTable.Alias, typeof(object), null, true));
                 selectExpression.AddToProjection(
-                    new ColumnExpression(fieldName, innerSelect.Alias, typeof(object), null, true));
+                    new ColumnExpression(fieldName, innerSelect.Alias!, typeof(object), null, true));
             }
             else
             {
