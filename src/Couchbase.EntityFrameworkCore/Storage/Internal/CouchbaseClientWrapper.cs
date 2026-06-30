@@ -35,14 +35,18 @@ public class CouchbaseClientWrapper : ICouchbaseClientWrapper
 
     public string BucketName => _couchbaseDbContextOptionsBuilder.Bucket;
 
-    public async Task<bool> DeleteDocument(string id, string keyspace)
+    public async Task<bool> DeleteDocument(string id, string keyspace, CancellationToken cancellationToken = default)
     {
         bool success;
         try
         {
-            var collection = await GetCollection(keyspace).ConfigureAwait(false);
-            await collection.RemoveAsync(id).ConfigureAwait(false);
+            var collection = await GetCollection(keyspace, cancellationToken).ConfigureAwait(false);
+            await collection.RemoveAsync(id, new RemoveOptions().CancellationToken(cancellationToken)).ConfigureAwait(false);
             success = true;
+        }
+        catch (OperationCanceledException)
+        {
+            throw; // Surface cancellation as-is rather than masking it as a DbUpdateException.
         }
         catch (Exception e)
         {
@@ -56,14 +60,18 @@ public class CouchbaseClientWrapper : ICouchbaseClientWrapper
         return success;
     }
 
-    public async Task<bool> CreateDocument<TEntity>(string id, string keyspace, TEntity entity)
+    public async Task<bool> CreateDocument<TEntity>(string id, string keyspace, TEntity entity, CancellationToken cancellationToken = default)
     {
         bool success;
         try
         {
-            var collection = await GetCollection(keyspace).ConfigureAwait(false);
-            await collection.InsertAsync(id, entity).ConfigureAwait(false);
+            var collection = await GetCollection(keyspace, cancellationToken).ConfigureAwait(false);
+            await collection.InsertAsync(id, entity, new InsertOptions().CancellationToken(cancellationToken)).ConfigureAwait(false);
             success = true;
+        }
+        catch (OperationCanceledException)
+        {
+            throw; // Surface cancellation as-is rather than masking it as a DbUpdateException.
         }
         catch (Exception e)
         {
@@ -77,14 +85,18 @@ public class CouchbaseClientWrapper : ICouchbaseClientWrapper
         return success;
     }
 
-    public async Task<bool> UpdateDocument<TEntity>(string id, string keyspace, TEntity entity)
+    public async Task<bool> UpdateDocument<TEntity>(string id, string keyspace, TEntity entity, CancellationToken cancellationToken = default)
     {
         bool success;
         try
         {
-            var collection = await GetCollection(keyspace).ConfigureAwait(false);
-            await collection.UpsertAsync(id, entity).ConfigureAwait(false);
+            var collection = await GetCollection(keyspace, cancellationToken).ConfigureAwait(false);
+            await collection.UpsertAsync(id, entity, new UpsertOptions().CancellationToken(cancellationToken)).ConfigureAwait(false);
             success = true;
+        }
+        catch (OperationCanceledException)
+        {
+            throw; // Surface cancellation as-is rather than masking it as a DbUpdateException.
         }
         catch (Exception e)
         {
@@ -98,37 +110,37 @@ public class CouchbaseClientWrapper : ICouchbaseClientWrapper
         return success;
     }
 
-    public async Task<ICouchbaseCollection> GetCollectionAsync(string keyspace)
+    public async Task<ICouchbaseCollection> GetCollectionAsync(string keyspace, CancellationToken cancellationToken = default)
     {
-        return await GetCollection(keyspace).ConfigureAwait(false);
+        return await GetCollection(keyspace, cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task EnqueueTransactionalInsert<TEntity>(CouchbaseDbTransaction transaction, string id, string keyspace, TEntity entity)
+    public async Task EnqueueTransactionalInsert<TEntity>(CouchbaseDbTransaction transaction, string id, string keyspace, TEntity entity, CancellationToken cancellationToken = default)
     {
-        var collection = await GetCollection(keyspace).ConfigureAwait(false);
+        var collection = await GetCollection(keyspace, cancellationToken).ConfigureAwait(false);
         transaction.EnqueueInsert(collection, id, entity!);
     }
 
-    public async Task EnqueueTransactionalUpsert<TEntity>(CouchbaseDbTransaction transaction, string id, string keyspace, TEntity entity)
+    public async Task EnqueueTransactionalUpsert<TEntity>(CouchbaseDbTransaction transaction, string id, string keyspace, TEntity entity, CancellationToken cancellationToken = default)
     {
-        var collection = await GetCollection(keyspace).ConfigureAwait(false);
+        var collection = await GetCollection(keyspace, cancellationToken).ConfigureAwait(false);
         transaction.EnqueueUpsert(collection, id, entity!);
     }
 
-    public async Task EnqueueTransactionalRemove(CouchbaseDbTransaction transaction, string id, string keyspace)
+    public async Task EnqueueTransactionalRemove(CouchbaseDbTransaction transaction, string id, string keyspace, CancellationToken cancellationToken = default)
     {
-        var collection = await GetCollection(keyspace).ConfigureAwait(false);
+        var collection = await GetCollection(keyspace, cancellationToken).ConfigureAwait(false);
         transaction.EnqueueRemove(collection, id);
     }
 
-    private async Task<ICouchbaseCollection> GetCollection(string keyspace)
+    private async Task<ICouchbaseCollection> GetCollection(string keyspace, CancellationToken cancellationToken = default)
     {
         if (_keyspaceCache.TryGetValue(keyspace, out var cached))
         {
             return cached.Collection;
         }
 
-        await _semaphore.WaitAsync().ConfigureAwait(false);
+        await _semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             // Double-check after acquiring lock

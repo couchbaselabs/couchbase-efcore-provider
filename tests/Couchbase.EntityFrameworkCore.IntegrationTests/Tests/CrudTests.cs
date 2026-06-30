@@ -1,6 +1,8 @@
 using Couchbase.EntityFrameworkCode.IntegrationTests.Fixtures;
 using Couchbase.EntityFrameworkCore.Extensions;
+using Couchbase.EntityFrameworkCore.Storage.Internal;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Xunit.Abstractions;
 
 namespace Couchbase.EntityFrameworkCode.IntegrationTests.Tests;
@@ -222,6 +224,52 @@ public class CrudTests(
         {
             context.Remove(existing);
             await context.SaveChangesAsync();
+        }
+    }
+
+    // The provider threads the CancellationToken through the KV write path; a cancelled save must
+    // surface as an OperationCanceledException, not a wrapped DbUpdateException.
+    [Fact]
+    public async Task Test_SaveChanges_HonorsCancellation()
+    {
+        await using var context = travelSampleFixture.GetDbContext();
+        context.Add(new TravelSampleFixture.Airline
+        {
+            Type = "airline", Id = Random.Shared.Next(1_000_000, int.MaxValue),
+            Callsign = "CANCEL", Country = "United States", Icao = "CXL", Iata = "CX", Name = "Cancel Air"
+        });
+
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => context.SaveChangesAsync(cts.Token));
+    }
+
+    // Directly exercises that the CancellationToken is threaded into the KV call (not just observed
+    // by EF/Parallel scheduling): warm the collection cache first so the cancelled call skips the
+    // semaphore and goes straight to the SDK operation, which must surface OperationCanceledException.
+    [Fact]
+    public async Task Test_ClientWrapper_ThreadsCancellationIntoKvCall()
+    {
+        await using var context = bloggingFixture.GetDbContext();
+        var wrapper = context.GetService<ICouchbaseClientWrapper>();
+        var keyspace = $"{wrapper.BucketName}.blogs.blog";
+        var id = $"ct-test-{Guid.NewGuid():N}";
+
+        // Warm the keyspace cache (and create a document to remove).
+        await wrapper.CreateDocument(id, keyspace, new { type = "ct-test" });
+        try
+        {
+            using var cts = new CancellationTokenSource();
+            cts.Cancel();
+
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                () => wrapper.DeleteDocument(id, keyspace, cts.Token));
+        }
+        finally
+        {
+            // Best-effort cleanup (the cancelled delete above should not have removed the document).
+            try { await wrapper.DeleteDocument(id, keyspace); } catch { /* ignore */ }
         }
     }
 
