@@ -16,11 +16,18 @@ public static class EntityEntryExtensions
     }
 
     static IReadOnlyList<IProperty> FindPrimaryKeyProperties<T>(this DbContext dbContext, T entity) {
-        return dbContext.Model.FindEntityType(typeof(T)).FindPrimaryKey().Properties;
+        var entityType = dbContext.Model.FindEntityType(typeof(T))
+            ?? throw new InvalidOperationException($"Entity type '{typeof(T).Name}' is not part of the model.");
+        var primaryKey = entityType.FindPrimaryKey()
+            ?? throw new InvalidOperationException($"Entity type '{typeof(T).Name}' has no primary key.");
+        return primaryKey.Properties;
     }
 
     static object GetPropertyValue<T>(this T entity, string name) {
-        return entity.GetType().GetProperty(name).GetValue(entity, null);
+        var property = entity!.GetType().GetProperty(name)
+            ?? throw new InvalidOperationException($"Property '{name}' was not found on type '{typeof(T).Name}'.");
+        // Primary-key values are non-null.
+        return property.GetValue(entity)!;
     }
 
 }

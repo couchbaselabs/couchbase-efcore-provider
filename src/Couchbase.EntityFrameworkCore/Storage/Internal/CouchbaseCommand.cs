@@ -1,5 +1,6 @@
 using System.Data;
 using System.Data.Common;
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using Couchbase.Query;
 using Couchbase.EntityFrameworkCore.Internal;
@@ -21,6 +22,7 @@ public class CouchbaseCommand : DbCommand
     // defaults to NotBounded to match the SDK default.
     internal QueryScanConsistency ScanConsistency { get; set; } = QueryScanConsistency.NotBounded;
 
+    [AllowNull]
     public override string CommandText
     {
         get => _commandText;
@@ -271,7 +273,8 @@ public class CouchbaseCommand : DbCommand
 
                 // Convert DBNull.Value to null for Couchbase SDK compatibility
                 var value = parameter.Value == DBNull.Value ? null : parameter.Value;
-                options.Parameter(parameter.ParameterName, value);
+                // A query parameter may legitimately bind to a null value.
+                options.Parameter(parameter.ParameterName, value!);
             }
         }
 

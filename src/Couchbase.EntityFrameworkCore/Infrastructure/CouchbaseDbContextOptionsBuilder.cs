@@ -8,11 +8,8 @@ namespace Couchbase.EntityFrameworkCore.Infrastructure;
 
 public class CouchbaseDbContextOptionsBuilder : ICouchbaseDbContextOptionsBuilder
 {
-    private readonly string _connectionString;
-
     public CouchbaseDbContextOptionsBuilder(DbContextOptionsBuilder dbContextOptionsBuilder, string connectionString)
     {
-        _connectionString = connectionString;
         OptionsBuilder = dbContextOptionsBuilder;
         ClusterOptions = new ClusterOptions().WithConnectionString(connectionString);
     }
@@ -30,9 +27,11 @@ public class CouchbaseDbContextOptionsBuilder : ICouchbaseDbContextOptionsBuilde
 
     public ClusterOptions ClusterOptions { get; }
 
-    public string Bucket { get; set; }
+    // Assigned during configuration (the couchbaseDbContextOptions action), not at construction;
+    // the provider validates they are set before use.
+    public string Bucket { get; set; } = null!;
 
-    public string Scope { get; set; }
+    public string Scope { get; set; } = null!;
 
     public bool AutoCreateScopes { get; set; }
 

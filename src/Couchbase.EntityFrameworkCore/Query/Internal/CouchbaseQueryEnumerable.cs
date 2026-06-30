@@ -324,7 +324,7 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
         queryOptions.ScanConsistency(_couchbaseDbContextOptionsBuilder.ScanConsistency);
         foreach (CouchbaseParameter parameter in command.Parameters)
         {
-            queryOptions.Parameter(parameter.ParameterName, parameter.Value);
+            queryOptions.Parameter(parameter.ParameterName, parameter.Value!);
         }
 
         return queryOptions;

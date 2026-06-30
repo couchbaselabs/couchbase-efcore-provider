@@ -1,5 +1,9 @@
 using System;
 
+// Vendored JetBrains.Annotations attribute definitions — not part of the provider's own code,
+// so opt out of nullable analysis rather than hand-annotating third-party boilerplate.
+#nullable disable
+
 #pragma warning disable 1591
 // ReSharper disable UnusedMember.Global
 // ReSharper disable UnusedParameter.Local

@@ -8,7 +8,7 @@ public class CouchbaseHistoryRepository : HistoryRepository
     {
     }
 
-    protected override string ExistsSql { get; }
+    protected override string ExistsSql => throw new NotImplementedException();
     protected override bool InterpretExistsResult(object? value)
     {
         throw new NotImplementedException();

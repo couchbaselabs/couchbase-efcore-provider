@@ -1,18 +1,19 @@
 using System.Data;
 using System.Data.Common;
+using System.Diagnostics.CodeAnalysis;
 
 namespace Couchbase.EntityFrameworkCore.Storage.Internal;
 
 public class CouchbaseParameter : DbParameter
 {
-    private string _parameterName;
+    private string _parameterName = string.Empty;
     private object? _value;
 
     public CouchbaseParameter()
     {
     }
 
-    public CouchbaseParameter(string name, object value)
+    public CouchbaseParameter(string name, object? value)
     {
         _value = value;
         _parameterName = name;
@@ -27,13 +28,15 @@ public class CouchbaseParameter : DbParameter
     public override ParameterDirection Direction { get; set; }
     public override bool IsNullable { get; set; }
 
+    [AllowNull]
     public override string ParameterName
     {
         get => _parameterName;
-        set => _parameterName = value;
+        set => _parameterName = value ?? string.Empty;
     }
 
-    public override string SourceColumn { get; set; }
+    [AllowNull]
+    public override string SourceColumn { get; set; } = string.Empty;
 
     public override object? Value
     {

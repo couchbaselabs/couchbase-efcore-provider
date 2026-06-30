@@ -24,7 +24,7 @@ public class CouchbaseOptionsExtension: RelationalOptionsExtension
     protected internal CouchbaseOptionsExtension(CouchbaseOptionsExtension copyFrom)
         : base(copyFrom)
     {
-        _couchbaseDbContextOptionsBuilder = copyFrom.CouchbaseDbContextOptionsBuilder;
+        _couchbaseDbContextOptionsBuilder = copyFrom._couchbaseDbContextOptionsBuilder;
     }
 
     public CouchbaseDbContextOptionsBuilder? CouchbaseDbContextOptionsBuilder => _couchbaseDbContextOptionsBuilder;
@@ -40,7 +40,7 @@ public class CouchbaseOptionsExtension: RelationalOptionsExtension
         services.AddCouchbase(options =>
         {
             options.WithLogging(_couchbaseDbContextOptionsBuilder.ClusterOptions.Logging);
-            options.WithConnectionString(_couchbaseDbContextOptionsBuilder.ClusterOptions.ConnectionString);
+            options.WithConnectionString(_couchbaseDbContextOptionsBuilder.ClusterOptions.ConnectionString!);
 
             // Use existing serializer if configured, otherwise default to System.Text.Json
             var existingSerializer = _couchbaseDbContextOptionsBuilder.ClusterOptions.Serializer;
@@ -67,8 +67,8 @@ public class CouchbaseOptionsExtension: RelationalOptionsExtension
                 // forces Authenticator-based configuration.
 #pragma warning disable CS0618 // Type or member is obsolete
                 options.WithPasswordAuthentication(
-                    _couchbaseDbContextOptionsBuilder.ClusterOptions.UserName,
-                    _couchbaseDbContextOptionsBuilder.ClusterOptions.Password);
+                    _couchbaseDbContextOptionsBuilder.ClusterOptions.UserName!,
+                    _couchbaseDbContextOptionsBuilder.ClusterOptions.Password!);
 #pragma warning restore CS0618
             }
         });
@@ -182,7 +182,7 @@ public class CouchbaseOptionsExtension: RelationalOptionsExtension
 
         public override void PopulateDebugInfo(IDictionary<string, string> debugInfo)
         {
-            debugInfo["Couchbase:ConnectionString"] = ConnectionString;
+            debugInfo["Couchbase:ConnectionString"] = ConnectionString ?? string.Empty;
         }
 
         public override CouchbaseOptionsExtension Extension => (CouchbaseOptionsExtension)base.Extension;

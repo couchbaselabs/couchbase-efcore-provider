@@ -8,13 +8,17 @@ public static class EntityTypeExtensions
 {
     public static string GetCollectionName(this IEntityType entityType)
     {
-        return entityType.GetTableName();
+        return entityType.GetTableName()
+            ?? throw new InvalidOperationException(
+                $"Entity type '{entityType.DisplayName()}' is not mapped to a collection.");
     }
 
     public static string GetPrimaryKey(this IEntityType entityType, object entity)
     {
-        var keys = entityType.FindPrimaryKey().Properties
-            .ToArray(); //TODO If no primary key found we should fail hard
+        var keys = (entityType.FindPrimaryKey()
+                ?? throw new InvalidOperationException(
+                    $"Entity type '{entityType.DisplayName()}' has no primary key defined."))
+            .Properties.ToArray();
 
         var compositeKey = new StringBuilder();
         foreach (var property in entity.GetType().GetProperties().Reverse())
