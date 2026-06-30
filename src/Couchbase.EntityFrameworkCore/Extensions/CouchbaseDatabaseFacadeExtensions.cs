@@ -98,14 +98,16 @@ public static class CouchbaseDatabaseFacadeExtensions
             var bucket = await bucketProvider.GetBucketAsync(bucketName.ToString()!).ConfigureAwait(false);
             return bucket.Cluster;
         }
-        throw new CouchbaseException("No couchbase connection string found.");
+        throw new CouchbaseException("No Couchbase bucket was specified in the connection string.");
     }
 
     public static ICluster GetCouchbaseClient(this DatabaseFacade databaseFacade)
     {
         var connectionString = databaseFacade.GetConnectionString()
             ?? throw new InvalidOperationException("No Couchbase connection string is configured.");
-        return GetService<IClusterProvider>(databaseFacade, connectionString).GetClusterAsync().GetAwaiter().GetResult();
+        return Couchbase.EntityFrameworkCore.Internal.AsyncHelper.RunSync(
+            static state => state.GetClusterAsync(),
+            GetService<IClusterProvider>(databaseFacade, connectionString));
     }
 
     private static TService GetService<TService>(IInfrastructure<IServiceProvider> databaseFacade, string connectionString)
@@ -129,7 +131,9 @@ public static class CouchbaseDatabaseFacadeExtensions
         if (clusterOptions.TryGetRawParameter("bucket", out object? bucketName) && bucketName != null)
         {
             var couchbaseClient = GetCouchbaseClient(databaseFacade);
-            couchbaseClient.Buckets.FlushBucketAsync(bucketName.ToString()!).GetAwaiter().GetResult();
+            Couchbase.EntityFrameworkCore.Internal.AsyncHelper.RunSync(
+                static state => state.client.Buckets.FlushBucketAsync(state.bucket),
+                (client: couchbaseClient, bucket: bucketName.ToString()!));
         }
     }
 
