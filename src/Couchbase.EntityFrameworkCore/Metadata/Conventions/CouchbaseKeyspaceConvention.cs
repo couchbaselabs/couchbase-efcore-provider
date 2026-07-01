@@ -23,8 +23,9 @@ public class CouchbaseKeyspaceConvention : TypeAttributeConventionBase<Couchbase
     {
         // When the attribute specifies an explicit bucket, store the full keyspace
         // (Bucket.Scope.Collection) directly as the table name. ConfigureToCouchbase then
-        // leaves it untouched (it only fills in the bucket/scope for bare collection names),
-        // so the entity is mapped to a bucket other than the DbContext's configured one.
+        // preserves the bucket and scope (it only fills in bucket/scope for bare collection
+        // names, and at most lowercases the collection segment), so the entity is mapped to a
+        // bucket other than the DbContext's configured one.
         if (keyspaceAttribute.Bucket is not null)
         {
             var keyspace = new Metadata.CouchbaseKeyspace(

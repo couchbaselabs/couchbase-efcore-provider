@@ -99,6 +99,22 @@ public class KeyspaceMappingIntegrationTests
         Assert.Equal("other-bucket.other-scope.other-collection", tableName);
     }
 
+    [Fact]
+    public void ConfigureToCouchbase_WithLowerCaseNaming_PreservesFullKeyspaceBucketAndScopeCase()
+    {
+        // Bucket and scope are case-sensitive in Couchbase. When an entity is mapped to an
+        // explicit full keyspace, toLowerCaseNaming must not rewrite the bucket/scope (which
+        // would break bucket resolution at runtime) — only the collection segment is lowercased.
+        using var context = CreateContext<ConfigureToCouchbaseMixedCaseKeyspaceContext>();
+        var entityType = context.Model.FindEntityType(typeof(TestEntity))!;
+
+        var tableName = entityType.GetTableName();
+        Assert.True(CouchbaseKeyspace.TryParse(tableName!, out var keyspace));
+        Assert.Equal("Mixed-Bucket", keyspace!.Value.Bucket);       // preserved
+        Assert.Equal("Mixed-Scope", keyspace.Value.Scope);          // preserved
+        Assert.Equal("mixed-collection", keyspace.Value.Collection); // lowercased
+    }
+
     #endregion
 
     #region CouchbaseKeyspaceAttribute Tests
@@ -301,6 +317,18 @@ public class KeyspaceMappingIntegrationTests
         {
             modelBuilder.Entity<TestEntity>().ToTable("other-bucket.other-scope.other-collection");
             modelBuilder.ConfigureToCouchbase(this);
+        }
+    }
+
+    private class ConfigureToCouchbaseMixedCaseKeyspaceContext : DbContext
+    {
+        public ConfigureToCouchbaseMixedCaseKeyspaceContext(DbContextOptions options) : base(options) { }
+        public DbSet<TestEntity> TestEntities { get; set; } = null!;
+
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            modelBuilder.Entity<TestEntity>().ToCouchbaseCollection("Mixed-Bucket", "Mixed-Scope", "Mixed-Collection");
+            modelBuilder.ConfigureToCouchbase(this, toLowerCaseNaming: true);
         }
     }
 
