@@ -190,7 +190,8 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
                 }
                 catch (CollectionExistsException)
                 {
-                    _logger.LogWarning("Couchbase collection already exists.");
+                    _logger.LogWarning("Couchbase collection {Keyspace} already exists.",
+                        new CouchbaseKeyspace(bucketName, scopeName, collectionName).ToSqlString());
                 }
             }
         }
