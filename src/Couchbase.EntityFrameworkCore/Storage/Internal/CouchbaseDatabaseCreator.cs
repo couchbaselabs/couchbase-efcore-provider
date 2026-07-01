@@ -146,12 +146,20 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
             var manager = (await GetBucketAsync(bucketName)).Collections;
             var existingScopes = (await manager.GetAllScopesAsync()).Select(s => s.Name).ToHashSet();
 
-            // The configured scope is always ensured; other scopes only when AutoCreateScopes
-            // is enabled (otherwise their collections are skipped with a warning below).
-            var scopesToEnsure = new HashSet<string> { configuredScope };
-            if (_couchbaseDbContextOptionsBuilder.AutoCreateScopes)
+            // Only ensure scopes we will actually create a collection in: the configured scope
+            // (always created) and, when AutoCreateScopes is enabled, any other scope. Scopes
+            // that would only ever hold skipped collections are left alone so we don't create
+            // empty scopes — or trip permission failures — in buckets that don't need them.
+            var scopesToEnsure = entries
+                .Where(e => e.Scope == configuredScope || _couchbaseDbContextOptionsBuilder.AutoCreateScopes)
+                .Select(e => e.Scope)
+                .ToHashSet();
+
+            // The configured bucket always ensures the configured scope, even with an empty
+            // model (preserves the pre-multi-bucket behavior).
+            if (bucketName == _couchbaseDbContextOptionsBuilder.Bucket)
             {
-                scopesToEnsure.UnionWith(entries.Select(e => e.Scope));
+                scopesToEnsure.Add(configuredScope);
             }
 
             foreach (var scope in scopesToEnsure)

@@ -370,6 +370,58 @@ public class CouchbaseDatabaseCreatorTests
     }
 
     [Fact]
+    public async Task EnsureCreatedAsync_SecondaryBucketDifferentScope_DoesNotCreateConfiguredScopeThere()
+    {
+        // A single context maps an entity to a non-configured scope in a secondary bucket, with
+        // AutoCreateScopes disabled. The configured scope must NOT be created in that secondary
+        // bucket — nothing will be stored there, so creating it is unnecessary and can trip
+        // permission failures.
+        _mockOptions.Setup(o => o.Bucket).Returns("my-bucket");
+        _mockOptions.Setup(o => o.Scope).Returns("my-scope");
+        _mockOptions.Setup(o => o.AutoCreateScopes).Returns(false);
+
+        _mockBucketManager.Setup(m => m.GetBucketAsync("my-bucket", It.IsAny<GetBucketOptions>()))
+            .ReturnsAsync(new BucketSettings { Name = "my-bucket" });
+
+        // Configured bucket: the configured scope already exists.
+        _mockCluster.Setup(c => c.BucketAsync("my-bucket")).ReturnsAsync(_mockBucket.Object);
+        _mockCollectionManager.Setup(m => m.GetAllScopesAsync(It.IsAny<GetAllScopesOptions>()))
+            .ReturnsAsync(new List<ScopeSpec> { new ScopeSpec("my-scope") });
+
+        // Secondary bucket with its own collection manager, exposing only the default scope.
+        var mockSecondaryBucket = new Mock<IBucket>();
+        var mockSecondaryCollectionManager = new Mock<ICouchbaseCollectionManager>();
+        mockSecondaryBucket.Setup(b => b.Collections).Returns(mockSecondaryCollectionManager.Object);
+        mockSecondaryCollectionManager.Setup(m => m.GetAllScopesAsync(It.IsAny<GetAllScopesOptions>()))
+            .ReturnsAsync(new List<ScopeSpec> { new ScopeSpec("_default") });
+        _mockCluster.Setup(c => c.BucketAsync("secondary")).ReturnsAsync(mockSecondaryBucket.Object);
+
+        // Entity lives in secondary.other-scope.OtherCollection.
+        var mockEntityType = new Mock<IEntityType>();
+        var mockTableNameAnnotation = new Mock<IAnnotation>();
+        mockTableNameAnnotation.Setup(a => a.Value).Returns("secondary.other-scope.OtherCollection");
+        mockEntityType.Setup(e => e.FindAnnotation("Relational:TableName")).Returns(mockTableNameAnnotation.Object);
+        mockEntityType.Setup(e => e.ClrType).Returns(typeof(TestEntity));
+        mockEntityType.Setup(e => e.GetProperties()).Returns(Array.Empty<IProperty>());
+        _mockModel.Setup(m => m.GetEntityTypes()).Returns(new[] { mockEntityType.Object });
+
+        var creator = CreateCreator();
+
+        // Act
+        await creator.EnsureCreatedAsync();
+
+        // Assert - nothing is created in the secondary bucket: not the configured scope, not the
+        // non-default scope (AutoCreateScopes off), and not the collection.
+        mockSecondaryCollectionManager.Verify(
+            m => m.CreateScopeAsync("my-scope", It.IsAny<CreateScopeOptions>()), Times.Never);
+        mockSecondaryCollectionManager.Verify(
+            m => m.CreateScopeAsync("other-scope", It.IsAny<CreateScopeOptions>()), Times.Never);
+        mockSecondaryCollectionManager.Verify(
+            m => m.CreateCollectionAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CreateCollectionSettings>()),
+            Times.Never);
+    }
+
+    [Fact]
     public async Task EnsureCreatedAsync_WithAutoCreateScopes_CreatesNonDefaultScopes()
     {
         // Arrange
