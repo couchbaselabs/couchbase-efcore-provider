@@ -102,34 +102,19 @@ public class CouchbaseClientWrapperTests
     }
 
     [Fact]
-    public async Task GetCollectionAsync_WithMismatchedBucket_ThrowsInvalidOperationException()
+    public async Task GetCollectionAsync_WithDifferentBucket_OpensThatBucket()
     {
-        // Arrange: Keyspace bucket doesn't match configured bucket
-        var keyspace = "different-bucket.MyScope.MyCollection";
-
-        var wrapper = new CouchbaseClientWrapper(
-            _mockBucketProvider.Object,
-            _mockOptions.Object,
-            _mockLogger.Object);
-
-        // Act & Assert
-        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => wrapper.GetCollectionAsync(keyspace));
-
-        Assert.Contains("bucket mismatch", exception.Message, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("different-bucket", exception.Message);
-        Assert.Contains("test-bucket", exception.Message);
-    }
-
-    [Fact]
-    public async Task GetCollectionAsync_WithMatchingBucketDifferentCase_Succeeds()
-    {
-        // Arrange: Keyspace bucket matches configured bucket (case-insensitive)
-        var keyspace = "TEST-BUCKET.MyScope.MyCollection";
+        // A single context may span multiple buckets on the same cluster: a keyspace naming a
+        // bucket other than the configured one opens that bucket rather than being rejected.
+        var keyspace = "other-bucket.MyScope.MyCollection";
+        var mockOtherBucket = new Mock<IBucket>();
+        var mockOtherScope = new Mock<IScope>();
         var mockCollection = new Mock<ICouchbaseCollection>();
 
-        _mockBucket.Setup(b => b.Scope("MyScope")).Returns(_mockScope.Object);
-        _mockScope.Setup(s => s.Collection("MyCollection")).Returns(mockCollection.Object);
+        _mockBucketProvider.Setup(p => p.GetBucketAsync("other-bucket"))
+            .ReturnsAsync(mockOtherBucket.Object);
+        mockOtherBucket.Setup(b => b.Scope("MyScope")).Returns(mockOtherScope.Object);
+        mockOtherScope.Setup(s => s.Collection("MyCollection")).Returns(mockCollection.Object);
 
         var wrapper = new CouchbaseClientWrapper(
             _mockBucketProvider.Object,
@@ -139,8 +124,38 @@ public class CouchbaseClientWrapperTests
         // Act
         var collection = await wrapper.GetCollectionAsync(keyspace);
 
-        // Assert - Should succeed with case-insensitive bucket match
+        // Assert - resolves the collection from the keyspace's own bucket.
         Assert.Same(mockCollection.Object, collection);
+        _mockBucketProvider.Verify(p => p.GetBucketAsync("other-bucket"), Times.Once);
+    }
+
+    [Fact]
+    public async Task GetCollectionAsync_UsesKeyspaceBucketNameVerbatim()
+    {
+        // Bucket names are case-sensitive in Couchbase; the keyspace's bucket segment is used
+        // exactly as written, not coerced to the context's configured bucket.
+        var keyspace = "Exact-Bucket.MyScope.MyCollection";
+        var mockExactBucket = new Mock<IBucket>();
+        var mockExactScope = new Mock<IScope>();
+        var mockCollection = new Mock<ICouchbaseCollection>();
+
+        _mockBucketProvider.Setup(p => p.GetBucketAsync("Exact-Bucket"))
+            .ReturnsAsync(mockExactBucket.Object);
+        mockExactBucket.Setup(b => b.Scope("MyScope")).Returns(mockExactScope.Object);
+        mockExactScope.Setup(s => s.Collection("MyCollection")).Returns(mockCollection.Object);
+
+        var wrapper = new CouchbaseClientWrapper(
+            _mockBucketProvider.Object,
+            _mockOptions.Object,
+            _mockLogger.Object);
+
+        // Act
+        var collection = await wrapper.GetCollectionAsync(keyspace);
+
+        // Assert - opened the exact bucket named in the keyspace, not "test-bucket".
+        Assert.Same(mockCollection.Object, collection);
+        _mockBucketProvider.Verify(p => p.GetBucketAsync("Exact-Bucket"), Times.Once);
+        _mockBucketProvider.Verify(p => p.GetBucketAsync("test-bucket"), Times.Never);
     }
 
     [Fact]

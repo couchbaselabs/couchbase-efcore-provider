@@ -52,11 +52,13 @@ See also [Querying](Queries.md) and [Configuration](configuration.md).
 
 ## Buckets and contexts
 
-* **A single `DbContext` maps to one bucket.** Every entity in a context is stored in that
-  context's configured bucket; a context cannot span multiple buckets. To work with multiple
-  buckets, use one `DbContext` per bucket. Multiple contexts can share a single `Cluster`, and
-  multiple physical clusters are supported via keyed registration — see
-  [Configuration](configuration.md#multiple-buckets-and-clusters).
+* **A `DbContext` can span multiple buckets only within one cluster.** Entities default to the
+  context's configured bucket, but individual entities can be mapped to other buckets on the
+  **same** cluster (via `ToCouchbaseCollection(bucket, scope, collection)` or the three-argument
+  `[CouchbaseKeyspace]`). Buckets on **different** physical clusters cannot be mixed in one
+  context — a single N1QL query or transaction cannot span clusters. Use one `DbContext` per
+  cluster (with keyed `ServiceKey` registration) for that. Multiple contexts can also share a
+  single `Cluster`. See [Configuration](configuration.md#multiple-buckets-and-clusters).
 
 ## Inheritance
 

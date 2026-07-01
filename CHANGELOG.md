@@ -5,6 +5,19 @@ All notable changes to the EF Core Couchbase DB provider are documented in this 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **One `DbContext` spanning multiple buckets (same cluster).** A single context can now map
+  different entities to different buckets on the same cluster. Give an entity an explicit keyspace
+  with `ToCouchbaseCollection(bucket, scope, collection)` or the new three-argument
+  `[CouchbaseKeyspace(bucket, scope, collection)]`; entities without an explicit bucket continue to
+  use the context's configured bucket. Reads, `Find`, N1QL queries, `SaveChanges`, and
+  `EnsureCreated` all resolve each entity's own bucket. Buckets must share one physical cluster
+  (cross-cluster queries/transactions are not possible — use `ServiceKey` with a context per
+  cluster). See [Configuration](docs/configuration.md#one-context-spanning-multiple-buckets).
+
 ## [2.0.0-beta.2] - 2026-06-24
 
 ### Added

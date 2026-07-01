@@ -48,8 +48,12 @@ The [CouchbaseDbContextOptionsBuilder](https://github.com/couchbaselabs/couchbas
 
 ## Multiple buckets and clusters
 
-A `DbContext` maps to a single bucket (and scope). To work with **multiple buckets**, use
-**one `DbContext` per bucket**. Each context is registered independently and targets its own
+By default a `DbContext` targets a single configured bucket (and scope), and every entity is
+stored there. You can either use **one `DbContext` per bucket**, or map **individual entities to
+different buckets on the same cluster** within a single context (see
+[One context spanning multiple buckets](#one-context-spanning-multiple-buckets) below).
+
+For the context-per-bucket approach, each context is registered independently and targets its own
 bucket:
 
 ```csharp
@@ -111,9 +115,39 @@ builder.Services.AddCouchbase<WestContext>(westClusterOptions,
 `ServiceKey` selects which keyed cluster a context binds to. If a `ServiceKey` is set but no
 matching keyed cluster was registered, configuration fails with a clear error.
 
+### One context spanning multiple buckets
+
+A single `DbContext` can map different entities to different buckets, as long as those buckets
+live on the **same cluster** (same connection string). Give an entity an explicit keyspace with
+the three-argument `ToCouchbaseCollection(bucket, scope, collection)`:
+
+```csharp
+protected override void OnModelCreating(ModelBuilder modelBuilder)
+{
+    // Order is stored in the "orders" bucket, Customer in the "users" bucket.
+    modelBuilder.Entity<Order>().ToCouchbaseCollection("orders", "sales", "order");
+    modelBuilder.Entity<Customer>().ToCouchbaseCollection("users", "identity", "customer");
+
+    // Entities without an explicit bucket fall back to the context's configured Bucket/Scope.
+    modelBuilder.ConfigureToCouchbase(this);
+}
+```
+
+Or with the attribute form:
+
+```csharp
+[CouchbaseKeyspace("users", "identity", "customer")] // bucket, scope, collection
+public class Customer { /* ... */ }
+```
+
+Reads, `Find`, queries, and `SaveChanges` all resolve each entity's own bucket automatically, and
+`EnsureCreated` creates the scopes/collections in each bucket. N1QL queries and multi-document
+transactions work across these buckets because they share one cluster.
+
 > [!NOTE]
-> A single `DbContext` cannot span multiple buckets — every entity in a context is stored in that
-> context's configured bucket. Use a separate context per bucket. See [Limitations](limitations.md).
+> Buckets mapped within one context must be on the **same** physical cluster. To reach buckets on
+> **different** clusters, use a separate context per cluster with `ServiceKey` (above) — a single
+> query or transaction cannot span clusters. See [Limitations](limitations.md).
 
 ## Controlling Querying Casing
 SQL++ is based off JSON, thus is case sensitive both from the Query perspective and the query output. What this means is that your Keyspaces (Bucket, Scopes and Collections), the SQL++ query casing and your entities must have consistent casing.
