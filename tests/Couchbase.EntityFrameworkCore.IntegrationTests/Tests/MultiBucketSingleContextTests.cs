@@ -1,9 +1,6 @@
 using Couchbase.EntityFrameworkCode.IntegrationTests.Fixtures;
 using Couchbase.EntityFrameworkCore.Extensions;
-using Couchbase.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
-using Xunit;
 
 namespace Couchbase.EntityFrameworkCode.IntegrationTests.Tests;
 
