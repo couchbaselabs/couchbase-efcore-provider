@@ -106,7 +106,7 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
         // Always process the configured bucket so its configured scope is ensured even when no
         // entity maps to it (preserves the pre-multi-bucket behavior).
         byBucket[_couchbaseDbContextOptionsBuilder.Bucket] =
-            new List<(string, string, string)>();
+            new List<(string Scope, string Collection, string EntityName)>();
 
         foreach (var entityType in _designTimeModel.Model.GetEntityTypes())
         {
@@ -136,7 +136,7 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
 
             if (!byBucket.TryGetValue(bucketName, out var entries))
             {
-                byBucket[bucketName] = entries = new List<(string, string, string)>();
+                byBucket[bucketName] = entries = new List<(string Scope, string Collection, string EntityName)>();
             }
             entries.Add((scopeName, collectionName, entityType.ClrType.Name));
         }
