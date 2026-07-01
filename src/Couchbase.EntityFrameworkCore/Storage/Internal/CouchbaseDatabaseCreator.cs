@@ -186,9 +186,9 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
                 {
                     _logger.LogWarning(
                         "Collection '{CollectionName}' for entity '{EntityName}' targets non-default scope '{ScopeName}' " +
-                        "and will not be auto-created. The scope may not exist. " +
+                        "in bucket '{BucketName}' and will not be auto-created. The scope may not exist. " +
                         "Create the scope and collection manually, or enable AutoCreateScopes in DbContext options.",
-                        collectionName, entityName, scopeName);
+                        collectionName, entityName, scopeName, bucketName);
                     continue;
                 }
 
