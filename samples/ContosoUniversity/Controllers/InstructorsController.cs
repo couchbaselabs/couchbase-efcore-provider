@@ -39,9 +39,13 @@ namespace ContosoUniversity.Controllers
                 {
                     courseAssignment.Course = await _context.Courses.Where(x => x.CourseID == courseAssignment.CourseID)
                         .SingleOrDefaultAsync();
-                    courseAssignment.Course.Department =
-                        await _context.Departments.Where(x => x.InstructorID == courseAssignment.InstructorID)
-                            .SingleOrDefaultAsync();
+                    // Defensive: a course referenced by an assignment may be absent; don't NRE the page.
+                    if (courseAssignment.Course != null)
+                    {
+                        courseAssignment.Course.Department =
+                            await _context.Departments.Where(x => x.InstructorID == courseAssignment.InstructorID)
+                                .SingleOrDefaultAsync();
+                    }
                 }
             }
 

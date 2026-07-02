@@ -2,6 +2,7 @@ using ContosoUniversity.Data;
 using Couchbase;
 using Couchbase.EntityFrameworkCore;
 using Couchbase.EntityFrameworkCore.Extensions;
+using Couchbase.Query;
 using Microsoft.EntityFrameworkCore;
 using Serilog.Extensions.Logging.File;
 
@@ -39,6 +40,10 @@ builder.Services.AddDbContext<SchoolContext>(options =>
             {
                 couchbaseDbContextOptions.Bucket = couchbase.BucketName;
                 couchbaseDbContextOptions.Scope = scopeName;
+                // Read-after-write consistency: the app seeds at startup then immediately queries,
+                // and controllers query right after writes. RequestPlus makes N1QL queries wait for
+                // the index to reflect prior mutations (the SDK default, NotBounded, can read stale).
+                couchbaseDbContextOptions.ScanConsistency = QueryScanConsistency.RequestPlus;
             });
     options.UseCamelCaseNamingConvention();
 });
