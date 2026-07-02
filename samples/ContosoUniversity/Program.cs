@@ -150,11 +150,30 @@ internal readonly record struct CouchbaseConnectionInfo(
     public static CouchbaseConnectionInfo Parse(string connectionString)
     {
         var uri = new Uri(connectionString);
-        var userInfo = uri.UserInfo.Split(':', 2);
-        return new CouchbaseConnectionInfo(
-            ConnectionString: $"{uri.Scheme}://{uri.Host}:{uri.Port}",
-            Username: userInfo.Length > 0 ? Uri.UnescapeDataString(userInfo[0]) : "Administrator",
-            Password: userInfo.Length > 1 ? Uri.UnescapeDataString(userInfo[1]) : string.Empty,
-            BucketName: uri.AbsolutePath.TrimStart('/'));
+
+        // Omit the port when the URI doesn't specify one (Uri.Port is -1); appending ":-1"
+        // would produce an invalid Couchbase connection string.
+        var host = uri.IsDefaultPort || uri.Port < 0
+            ? $"{uri.Scheme}://{uri.Host}"
+            : $"{uri.Scheme}://{uri.Host}:{uri.Port}";
+
+        // Fall back to the default admin user when the URI carries no user info, rather than
+        // passing an empty username.
+        string username = "Administrator";
+        var password = string.Empty;
+        if (!string.IsNullOrEmpty(uri.UserInfo))
+        {
+            var userInfo = uri.UserInfo.Split(':', 2);
+            if (!string.IsNullOrEmpty(userInfo[0]))
+            {
+                username = Uri.UnescapeDataString(userInfo[0]);
+            }
+            if (userInfo.Length > 1)
+            {
+                password = Uri.UnescapeDataString(userInfo[1]);
+            }
+        }
+
+        return new CouchbaseConnectionInfo(host, username, password, uri.AbsolutePath.TrimStart('/'));
     }
 }
