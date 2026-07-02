@@ -51,7 +51,7 @@ namespace ContosoUniversity.Controllers
                                + "WHERE discriminator = 'Student' "
                                + "GROUP BY enrollmentDate";
                 command.CommandText = query;
-                DbDataReader reader = await command.ExecuteReaderAsync();
+                await using var reader = await command.ExecuteReaderAsync();
 
                 if (reader.HasRows)
                 {
@@ -61,11 +61,10 @@ namespace ContosoUniversity.Controllers
                         groups.Add(row);
                     }
                 }
-                reader.Dispose();
             }
             finally
             {
-                conn.Close();
+                await conn.CloseAsync();
             }
             return View(groups);
         }
