@@ -138,6 +138,11 @@ namespace ContosoUniversity.Controllers
                 .AsNoTracking()
                 .FirstOrDefaultAsync(m => m.ID == id);
 
+            if (instructor == null)
+            {
+                return NotFound();
+            }
+
             await PopulateAssignedCourseData(instructor).ConfigureAwait(false);
             return View(instructor);
         }
