@@ -23,18 +23,9 @@ namespace ContosoUniversity.Controllers
         public async Task<IActionResult> Index()
         {
             var courses = await _context.Courses
-               // .Include(c => c.Department)
+                .Include(c => c.Department)
                 .AsNoTracking().ToListAsync();
 
-            var departmentIds = courses.Select(x => x.DepartmentID).ToList();
-            var departments = await (from d in _context.Departments
-                where departmentIds.Contains(d.DepartmentID)
-                select d).ToListAsync();
-
-            foreach (var course in courses)
-            {
-                course.Department = departments.SingleOrDefault(x => x.DepartmentID == course.DepartmentID);
-            }
             return View(courses);
         }
 
@@ -47,16 +38,13 @@ namespace ContosoUniversity.Controllers
             }
 
             var course = await _context.Courses
-                //.Include(c => c.Department)
+                .Include(c => c.Department)
                 .AsNoTracking()
                 .FirstOrDefaultAsync(m => m.CourseID == id);
             if (course == null)
             {
                 return NotFound();
             }
-
-            course.Department = await _context.Departments.AsNoTracking()
-                    .FirstOrDefaultAsync(x => x.DepartmentID == course.DepartmentID);
 
             return View(course);
         }
@@ -159,7 +147,7 @@ namespace ContosoUniversity.Controllers
             }
 
             var course = await _context.Courses
-                //.Include(c => c.Department)
+                .Include(c => c.Department)
                 .AsNoTracking()
                 .FirstOrDefaultAsync(m => m.CourseID == id);
 
@@ -167,9 +155,6 @@ namespace ContosoUniversity.Controllers
             {
                 return NotFound();
             }
-
-            course.Department = await _context.Departments.AsNoTracking()
-                .FirstOrDefaultAsync(x => x.DepartmentID == course.DepartmentID);
 
             return View(course);
         }

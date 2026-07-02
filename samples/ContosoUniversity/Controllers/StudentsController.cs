@@ -76,26 +76,11 @@ namespace ContosoUniversity.Controllers
                 return NotFound();
             }
 
-            /*var student = await _context.Students
+            var student = await _context.Students
                  .Include(s => s.Enrollments)
                      .ThenInclude(e => e.Course)
                  .AsNoTracking()
-                 .FirstOrDefaultAsync(m => m.ID == id);*/
-
-            var student = await _context.Students.AsNoTracking().FirstOrDefaultAsync(x => x.ID == id);
-            if (student == null)
-            {
-                return NotFound();
-            }
-
-            student.Enrollments = await _context.Enrollments.AsNoTracking()
-                .Where(x => x.StudentID == student.ID).ToListAsync();
-
-            foreach (var enrollment in student.Enrollments)
-            {
-                enrollment.Course = await _context.Courses.AsNoTracking()
-                    .FirstOrDefaultAsync(x => x.CourseID == enrollment.CourseID);
-            }
+                 .FirstOrDefaultAsync(m => m.ID == id);
 
             return View(student);
         }
