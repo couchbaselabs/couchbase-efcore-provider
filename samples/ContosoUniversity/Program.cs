@@ -123,7 +123,10 @@ static async Task CreatePrimaryIndexesAsync(SchoolContext context, string bucket
         {
             try
             {
-                await cluster.QueryAsync<dynamic>(statement);
+                // Dispose the result (and drain its rows) so the query's resources/sockets are
+                // released — awaiting QueryAsync alone does not dispose the IQueryResult.
+                using var result = await cluster.QueryAsync<dynamic>(statement);
+                await foreach (var _ in result.Rows) { }
                 logger.LogInformation("Ensured primary index on {Bucket}.{Scope}.{Collection}",
                     bucketName, scopeName, collection);
                 break;
