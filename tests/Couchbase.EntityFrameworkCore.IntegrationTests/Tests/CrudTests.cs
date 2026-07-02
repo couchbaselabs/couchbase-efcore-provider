@@ -227,6 +227,133 @@ public class CrudTests(
         }
     }
 
+    // Isolates the ContosoUniversity seed loss: fire concurrent KV inserts into a collection that
+    // was created moments earlier (as the AppHost does), then read each back by key (no index).
+    // If any are missing, the SDK acknowledged an insert into a not-yet-ready collection that never
+    // persisted. Varies the settle delay between collection creation and the inserts.
+    [Theory]
+    [InlineData(0)]
+    [InlineData(2000)]
+    public async Task Test_FreshCollection_ConcurrentInsert_PersistsAll(int settleDelayMs)
+    {
+        const int docCount = 100;
+        var scopeName = bloggingFixture.ScopeName;
+        var collectionName = "freshcoll" + Random.Shared.Next(100_000, 999_999);
+
+        using var cluster = await global::Couchbase.Cluster.ConnectAsync(
+            bloggingFixture.Host, bloggingFixture.Username, bloggingFixture.Password);
+        var bucket = await cluster.BucketAsync(bloggingFixture.BucketName);
+        var manager = bucket.Collections;
+
+        await manager.CreateCollectionAsync(scopeName, collectionName,
+            new global::Couchbase.Management.Collections.CreateCollectionSettings());
+
+        try
+        {
+            if (settleDelayMs > 0)
+            {
+                await Task.Delay(settleDelayMs);
+            }
+
+            var collection = (await bucket.ScopeAsync(scopeName)).Collection(collectionName);
+
+            // Fire all inserts concurrently, like the provider's Parallel.ForEachAsync seed path.
+            var insertResults = await Task.WhenAll(
+                Enumerable.Range(0, docCount).Select(async i =>
+                {
+                    try { await collection.InsertAsync($"k{i}", new { index = i }); return true; }
+                    catch { return false; }
+                }));
+            var insertsReportedOk = insertResults.Count(ok => ok);
+
+            var found = 0;
+            for (var i = 0; i < docCount; i++)
+            {
+                try { await collection.GetAsync($"k{i}"); found++; }
+                catch (global::Couchbase.Core.Exceptions.KeyValue.DocumentNotFoundException) { }
+            }
+
+            outputHelper.WriteLine(
+                $"settleDelayMs={settleDelayMs} inserted={docCount} insertsOk={insertsReportedOk} kvFound={found}");
+            Assert.Equal(docCount, found);
+        }
+        finally
+        {
+            await manager.DropCollectionAsync(scopeName, collectionName);
+        }
+    }
+
+    // Read-your-writes regression: on a freshly-created collection with a properly-built index
+    // (both a PRIMARY index and a secondary GSI), a RequestPlus query issued immediately after a
+    // burst of concurrent inserts must see every document. Guards the guarantee ContosoUniversity
+    // relies on (the app configures RequestPlus). AtPlus (ConsistentWith mutation tokens) is
+    // exercised too. Uses dedicated collections so unrelated churn can't perturb the index.
+    [Fact]
+    public async Task Test_ReadYourWrites_WithProperIndex_RequestPlusSeesAllWrites()
+    {
+        const int docCount = 100;
+        const int rounds = 5;
+        var scope = bloggingFixture.ScopeName;
+        var bucketName = bloggingFixture.BucketName;
+        var baseId = Random.Shared.Next(5_000_000, int.MaxValue - (rounds * docCount) - 1);
+
+        var clusterOptions = new global::Couchbase.ClusterOptions()
+            .WithConnectionString(bloggingFixture.Host)
+            .WithCredentials(bloggingFixture.Username, bloggingFixture.Password);
+        clusterOptions.EnableMutationTokens = true;
+        using var cluster = await global::Couchbase.Cluster.ConnectAsync(clusterOptions);
+        var bucket = await cluster.BucketAsync(bucketName);
+        var manager = bucket.Collections;
+
+        var primaryColl = "idxprim" + Random.Shared.Next(100_000, 999_999);
+        var gsiColl = "idxgsi" + Random.Shared.Next(100_000, 999_999);
+        await manager.CreateCollectionAsync(scope, primaryColl, new global::Couchbase.Management.Collections.CreateCollectionSettings());
+        await manager.CreateCollectionAsync(scope, gsiColl, new global::Couchbase.Management.Collections.CreateCollectionSettings());
+
+        async Task RunDdl(string s) { using var r = await cluster.QueryAsync<dynamic>(s); await foreach (var _ in r.Rows) { } }
+
+        var failures = new List<string>();
+        try
+        {
+            await RunDdl($"CREATE PRIMARY INDEX ON `{bucketName}`.`{scope}`.`{primaryColl}`");
+            await RunDdl($"CREATE INDEX `ix_blogId` ON `{bucketName}`.`{scope}`.`{gsiColl}`(blogId)");
+            // Let the new indexes settle to online.
+            await Task.Delay(3000);
+
+            var scopeObj = await bucket.ScopeAsync(scope);
+            var primary = scopeObj.Collection(primaryColl);
+            var gsi = scopeObj.Collection(gsiColl);
+
+            async Task Verify(global::Couchbase.KeyValue.ICouchbaseCollection coll, string collName, int start)
+            {
+                var ids = Enumerable.Range(start, docCount).ToList();
+                var results = await Task.WhenAll(ids.Select(id =>
+                    coll.InsertAsync(id.ToString(), new { blogId = id })));
+                var ms = global::Couchbase.Query.MutationState.From(results);
+                var stmt = $"SELECT RAW b.blogId FROM `{bucketName}`.`{scope}`.`{collName}` b WHERE b.blogId >= {start} AND b.blogId < {start + docCount}";
+                var rp = await (await cluster.QueryAsync<int>(stmt, new global::Couchbase.Query.QueryOptions()
+                    .ScanConsistency(global::Couchbase.Query.QueryScanConsistency.RequestPlus))).Rows.CountAsync();
+                var at = await (await cluster.QueryAsync<int>(stmt, new global::Couchbase.Query.QueryOptions()
+                    .ConsistentWith(ms))).Rows.CountAsync();
+                if (rp != docCount) failures.Add($"{collName} requestPlus={rp}/{docCount}");
+                if (at != docCount) failures.Add($"{collName} atPlus={at}/{docCount}");
+            }
+
+            for (var round = 0; round < rounds; round++)
+            {
+                await Verify(primary, primaryColl, baseId + round * docCount);
+                await Verify(gsi, gsiColl, baseId + round * docCount);
+            }
+        }
+        finally
+        {
+            await manager.DropCollectionAsync(scope, primaryColl);
+            await manager.DropCollectionAsync(scope, gsiColl);
+        }
+
+        Assert.True(failures.Count == 0, "read-your-writes shortfalls: " + string.Join("; ", failures));
+    }
+
     // The provider threads the CancellationToken through the KV write path; a cancelled save must
     // surface as an OperationCanceledException, not a wrapped DbUpdateException.
     [Fact]

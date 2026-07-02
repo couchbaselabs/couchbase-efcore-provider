@@ -7,6 +7,7 @@
     </PropertyGroup>
 
     <ItemGroup>
+      <ProjectReference Include="..\..\couchbase-dotnet-ef.ServiceDefaults\couchbase-dotnet-ef.ServiceDefaults.csproj" />
       <ProjectReference Include="..\..\src\Couchbase.EntityFrameworkCore\Couchbase.EntityFrameworkCore.csproj" />
     </ItemGroup>
 
@@ -19,8 +20,8 @@
     </ItemGroup>
 
     <ItemGroup>
-      <PackageReference Include="EFCore.NamingConventions" />
-      <PackageReference Include="Serilog.Extensions.Logging.File" />
+        <PackageReference Include="EFCore.NamingConventions" />
+        <PackageReference Include="Serilog.Extensions.Logging.File" />
     </ItemGroup>
 
     <ItemGroup>
