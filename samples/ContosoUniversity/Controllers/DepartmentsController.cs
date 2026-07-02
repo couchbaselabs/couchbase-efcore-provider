@@ -40,9 +40,13 @@ namespace ContosoUniversity.Controllers
             // convention) instead of drifting out of sync — Couchbase keyspaces are case-sensitive.
             var entityType = _context.Model.FindEntityType(typeof(Department))!;
             var keyspace = CouchbaseKeyspace.Parse(entityType.GetTableName()!).ToSqlString();
-            var departmentIdColumn = entityType.FindPrimaryKey()!.Properties[0].GetColumnName();
+            var departmentIdColumn = entityType.FindPrimaryKey()!.Properties[0].GetColumnName()
+                ?? throw new InvalidOperationException("Department primary key has no mapped column name.");
+            // Backtick-escape (doubling any embedded backticks) so a column name with special
+            // characters can't produce an invalid N1QL statement.
+            var departmentIdField = $"`{departmentIdColumn.Replace("`", "``")}`";
 
-            string query = $"SELECT d.* FROM {keyspace} AS d WHERE d.{departmentIdColumn} = {{0}}";
+            string query = $"SELECT d.* FROM {keyspace} AS d WHERE d.{departmentIdField} = {{0}}";
             var department = await _context.Departments
                 .FromSqlRaw(query, id)
                 .Include(d => d.Administrator)
