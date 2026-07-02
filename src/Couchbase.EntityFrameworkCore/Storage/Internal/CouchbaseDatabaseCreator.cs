@@ -53,7 +53,10 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
         _cluster = await clusterProvider.GetClusterAsync();
     }
 
-    private async Task<IBucket> GetBucketAsync(CancellationToken cancellationToken = default)
+    private Task<IBucket> GetBucketAsync(CancellationToken cancellationToken = default)
+        => GetBucketAsync(_couchbaseDbContextOptionsBuilder.Bucket, cancellationToken);
+
+    private async Task<IBucket> GetBucketAsync(string bucketName, CancellationToken cancellationToken = default)
     {
         const int maxRetries = 10;
         const int delayMs = 500;
@@ -64,19 +67,19 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
 
             try
             {
-                return await _cluster.BucketAsync(_couchbaseDbContextOptionsBuilder.Bucket);
+                return await _cluster.BucketAsync(bucketName);
             }
             catch (Exception e)
             {
                 if (attempt == maxRetries)
                 {
                     _logger.LogError(e, "Failed to retrieve Couchbase bucket '{BucketName}' after {MaxRetries} attempts",
-                        _couchbaseDbContextOptionsBuilder.Bucket, maxRetries);
+                        bucketName, maxRetries);
                     throw;
                 }
 
                 _logger.LogWarning(e, "Couchbase bucket '{BucketName}' could not be retrieved (attempt {Attempt}/{MaxRetries}). Retrying...",
-                    _couchbaseDbContextOptionsBuilder.Bucket, attempt, maxRetries);
+                    bucketName, attempt, maxRetries);
 
                 await Task.Delay(delayMs, cancellationToken);
             }
@@ -91,30 +94,19 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
         return true;
     }
 
-    private async Task CreateScopeAsync()
-    {
-        var manager = (await GetBucketAsync()).Collections;
-        var scopes = await manager.GetAllScopesAsync();
-        if(!scopes.Contains(new ScopeSpec(_couchbaseDbContextOptionsBuilder.Scope)))
-        {
-            try
-            {
-                await manager.CreateScopeAsync(_couchbaseDbContextOptionsBuilder.Scope);
-            }
-            catch (ScopeExistsException)
-            {
-                _logger.LogWarning("Couchbase scope already exists.");
-            }
-        }
-    }
-
     private async Task CreateCollectionsAsync()
     {
-        var manager = (await GetBucketAsync()).Collections;
+        var configuredScope = _couchbaseDbContextOptionsBuilder.Scope;
 
-        // Collect all collections and their scopes from the model
-        var collections = new List<(string Scope, string Collection, string EntityName)>();
-        var nonDefaultScopes = new HashSet<string>();
+        // Group each entity's keyspace by bucket. A single DbContext may map entities to
+        // multiple buckets on the same cluster, so scopes and collections are created in the
+        // bucket named by each entity's keyspace rather than only the configured bucket.
+        var byBucket = new Dictionary<string, List<(string Scope, string Collection, string EntityName)>>();
+
+        // Always process the configured bucket so its configured scope is ensured even when no
+        // entity maps to it (preserves the pre-multi-bucket behavior).
+        byBucket[_couchbaseDbContextOptionsBuilder.Bucket] =
+            new List<(string Scope, string Collection, string EntityName)>();
 
         foreach (var entityType in _designTimeModel.Model.GetEntityTypes())
         {
@@ -124,67 +116,91 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
                 continue;
             }
 
+            string bucketName;
             string collectionName;
             string scopeName;
 
             if (CouchbaseKeyspace.TryParse(tableName, out var keyspace))
             {
-                collectionName = keyspace!.Value.Collection;
+                bucketName = keyspace!.Value.Bucket;
+                collectionName = keyspace.Value.Collection;
                 scopeName = keyspace.Value.Scope;
             }
             else
             {
-                // Fallback: use table name as collection name in default scope
+                // Fallback: use table name as collection name in the configured bucket/scope.
+                bucketName = _couchbaseDbContextOptionsBuilder.Bucket;
                 collectionName = tableName;
-                scopeName = _couchbaseDbContextOptionsBuilder.Scope;
+                scopeName = configuredScope;
             }
 
-            collections.Add((scopeName, collectionName, entityType.ClrType.Name));
-
-            if (scopeName != _couchbaseDbContextOptionsBuilder.Scope)
+            if (!byBucket.TryGetValue(bucketName, out var entries))
             {
-                nonDefaultScopes.Add(scopeName);
+                byBucket[bucketName] = entries = new List<(string Scope, string Collection, string EntityName)>();
             }
+            entries.Add((scopeName, collectionName, entityType.ClrType.Name));
         }
 
-        // Create non-default scopes if AutoCreateScopes is enabled
-        if (_couchbaseDbContextOptionsBuilder.AutoCreateScopes && nonDefaultScopes.Count > 0)
+        foreach (var (bucketName, entries) in byBucket)
         {
-            foreach (var scope in nonDefaultScopes)
+            var manager = (await GetBucketAsync(bucketName)).Collections;
+            var existingScopes = (await manager.GetAllScopesAsync()).Select(s => s.Name).ToHashSet();
+
+            // Only ensure scopes we will actually create a collection in: the configured scope
+            // (always created) and, when AutoCreateScopes is enabled, any other scope. Scopes
+            // that would only ever hold skipped collections are left alone so we don't create
+            // empty scopes — or trip permission failures — in buckets that don't need them.
+            var scopesToEnsure = entries
+                .Where(e => e.Scope == configuredScope || _couchbaseDbContextOptionsBuilder.AutoCreateScopes)
+                .Select(e => e.Scope)
+                .ToHashSet();
+
+            // The configured bucket always ensures the configured scope, even with an empty
+            // model (preserves the pre-multi-bucket behavior).
+            if (bucketName == _couchbaseDbContextOptionsBuilder.Bucket)
             {
+                scopesToEnsure.Add(configuredScope);
+            }
+
+            foreach (var scope in scopesToEnsure)
+            {
+                if (existingScopes.Contains(scope))
+                {
+                    continue;
+                }
                 try
                 {
                     await manager.CreateScopeAsync(scope);
-                    _logger.LogDebug("Created scope {ScopeName}", scope);
+                    _logger.LogDebug("Created scope {ScopeName} in bucket {BucketName}", scope, bucketName);
                 }
                 catch (ScopeExistsException)
                 {
                     // Scope already exists, continue
                 }
             }
-        }
 
-        // Create collections
-        foreach (var (scopeName, collectionName, entityName) in collections)
-        {
-            // Skip non-default scope collections if AutoCreateScopes is disabled
-            if (scopeName != _couchbaseDbContextOptionsBuilder.Scope && !_couchbaseDbContextOptionsBuilder.AutoCreateScopes)
+            foreach (var (scopeName, collectionName, entityName) in entries)
             {
-                _logger.LogWarning(
-                    "Collection '{CollectionName}' for entity '{EntityName}' targets non-default scope '{ScopeName}' " +
-                    "and will not be auto-created. The scope may not exist. " +
-                    "Create the scope and collection manually, or enable AutoCreateScopes in DbContext options.",
-                    collectionName, entityName, scopeName);
-                continue;
-            }
+                // Skip non-default scope collections if AutoCreateScopes is disabled
+                if (scopeName != configuredScope && !_couchbaseDbContextOptionsBuilder.AutoCreateScopes)
+                {
+                    _logger.LogWarning(
+                        "Collection '{CollectionName}' for entity '{EntityName}' targets non-default scope '{ScopeName}' " +
+                        "in bucket '{BucketName}' and will not be auto-created. The scope may not exist. " +
+                        "Create the scope and collection manually, or enable AutoCreateScopes in DbContext options.",
+                        collectionName, entityName, scopeName, bucketName);
+                    continue;
+                }
 
-            try
-            {
-                await manager.CreateCollectionAsync(scopeName, collectionName, new CreateCollectionSettings());
-            }
-            catch (CollectionExistsException)
-            {
-                _logger.LogWarning("Couchbase collection already exists.");
+                try
+                {
+                    await manager.CreateCollectionAsync(scopeName, collectionName, new CreateCollectionSettings());
+                }
+                catch (CollectionExistsException)
+                {
+                    _logger.LogWarning("Couchbase collection {Keyspace} already exists.",
+                        new CouchbaseKeyspace(bucketName, scopeName, collectionName).ToSqlString());
+                }
             }
         }
     }
@@ -433,9 +449,9 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
             created = true;
         }
 
-        // Always ensure scope, collections, and sequences exist
-        // even if bucket already existed (they use IF NOT EXISTS / catch-exists patterns)
-        await CreateScopeAsync();
+        // Always ensure scopes, collections, and sequences exist even if the bucket already
+        // existed (they use IF NOT EXISTS / catch-exists patterns). CreateCollectionsAsync
+        // ensures the required scopes per bucket before creating collections.
         await CreateCollectionsAsync();
         await CreateSequencesAsync();
 

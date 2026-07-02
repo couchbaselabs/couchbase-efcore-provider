@@ -58,6 +58,30 @@ public class CouchbaseKeyspaceAttribute : Attribute
     }
 
     /// <summary>
+    /// Initializes a new instance with an explicit bucket, scope, and collection.
+    /// Use this to map an entity to a bucket other than the DbContext's configured bucket
+    /// (a single DbContext may span multiple buckets on the same cluster).
+    /// </summary>
+    /// <param name="bucket">The bucket name (overrides the DbContext-level bucket).</param>
+    /// <param name="scope">The scope name.</param>
+    /// <param name="collection">The collection name.</param>
+    public CouchbaseKeyspaceAttribute(string bucket, string scope, string collection)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(bucket);
+        ArgumentException.ThrowIfNullOrEmpty(scope);
+        ArgumentException.ThrowIfNullOrEmpty(collection);
+        Bucket = bucket;
+        Scope = scope;
+        Collection = collection;
+        HasScopeOverride = true;
+    }
+
+    /// <summary>
+    /// Gets the bucket name, or <c>null</c> if the bucket should be inherited from DbContext configuration.
+    /// </summary>
+    public string? Bucket { get; }
+
+    /// <summary>
     /// Gets the scope name, or <c>null</c> if the scope should be inherited from DbContext configuration.
     /// </summary>
     public string? Scope { get; }

@@ -49,19 +49,38 @@ public static class CouchbaseModelBuilderExtensions
 
             var tableName = entityType.GetTableName();
             if (tableName is null) continue;
-            if (toLowerCaseNaming.HasValue && toLowerCaseNaming.Value)
+
+            var toLowerCase = toLowerCaseNaming is true;
+
+            // Already a full keyspace (Bucket.Scope.Collection): the entity was mapped to an
+            // explicit bucket/scope (e.g. ToCouchbaseCollection(bucket, scope, collection)).
+            // Bucket and scope are case-sensitive in Couchbase, so never touch them here — only
+            // optionally normalize the collection segment to match the bare-collection path.
+            if (CouchbaseKeyspace.TryParse(tableName, out var existingKeyspace))
+            {
+                if (toLowerCase)
+                {
+                    var collection = existingKeyspace!.Value.Collection.ToLowerInvariant();
+                    if (collection != existingKeyspace.Value.Collection)
+                    {
+                        entityType.SetTableName(new CouchbaseKeyspace(
+                            existingKeyspace.Value.Bucket, existingKeyspace.Value.Scope, collection).ToString());
+                    }
+                }
+                continue;
+            }
+
+            // tableName is just the collection name; lowercase it (if requested), then compose
+            // the full keyspace from the DbContext-configured bucket and scope.
+            if (toLowerCase)
             {
                 tableName = tableName.ToLowerInvariant();
             }
-
-            // Skip if already a full keyspace (Bucket.Scope.Collection)
-            if (CouchbaseKeyspace.TryParse(tableName, out _)) continue;
 
             // Check for scope override annotation (set by CouchbaseKeyspaceAttribute with scope)
             var scopeOverride = entityType.FindAnnotation(CouchbaseKeyspaceConvention.ScopeOverrideAnnotation)?.Value as string;
             var scope = scopeOverride ?? dbContextOptions.Scope;
 
-            // tableName is just the collection name, add bucket and scope
             var keyspace = new CouchbaseKeyspace(dbContextOptions.Bucket, scope, tableName);
             entityType.SetTableName(keyspace.ToString());
         }

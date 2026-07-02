@@ -21,6 +21,19 @@ public class CouchbaseKeyspaceConvention : TypeAttributeConventionBase<Couchbase
         CouchbaseKeyspaceAttribute keyspaceAttribute,
         IConventionContext<IConventionEntityTypeBuilder> context)
     {
+        // When the attribute specifies an explicit bucket, store the full keyspace
+        // (Bucket.Scope.Collection) directly as the table name. ConfigureToCouchbase then
+        // preserves the bucket and scope (it only fills in bucket/scope for bare collection
+        // names, and at most lowercases the collection segment), so the entity is mapped to a
+        // bucket other than the DbContext's configured one.
+        if (keyspaceAttribute.Bucket is not null)
+        {
+            var keyspace = new Metadata.CouchbaseKeyspace(
+                keyspaceAttribute.Bucket, keyspaceAttribute.Scope!, keyspaceAttribute.Collection);
+            entityTypeBuilder.ToTable(keyspace.ToString());
+            return;
+        }
+
         // Set the collection name as the table name
         entityTypeBuilder.ToTable(keyspaceAttribute.Collection);
 

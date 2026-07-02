@@ -18,7 +18,6 @@ namespace Couchbase.EntityFrameworkCore.Storage.Internal;
 
 public class CouchbaseClientWrapper : ICouchbaseClientWrapper
 {
-    private IBucket? _bucket;
     private readonly IBucketProvider _bucketProvider;
     private readonly ICouchbaseDbContextOptionsBuilder _couchbaseDbContextOptionsBuilder;
     private readonly ILogger<CouchbaseClientWrapper> _logger;
@@ -151,27 +150,20 @@ public class CouchbaseClientWrapper : ICouchbaseClientWrapper
 
             var parsed = ParseKeyspace(keyspace);
 
-            // Validate that the keyspace bucket matches the configured bucket
-            // This prevents inconsistent behavior where queries target one bucket
-            // but KV operations target another
-            var configuredBucket = _couchbaseDbContextOptionsBuilder.Bucket;
-            if (!string.Equals(parsed.Bucket, configuredBucket, StringComparison.OrdinalIgnoreCase))
-            {
-                throw new InvalidOperationException(
-                    $"Keyspace bucket mismatch: The keyspace {parsed.ToSqlString()} specifies bucket '{parsed.Bucket}', " +
-                    $"but the DbContext is configured to use bucket '{configuredBucket}'. " +
-                    $"Ensure the entity mapping matches the DbContext bucket configuration.");
-            }
-
-            _bucket = await _bucketProvider.GetBucketAsync(configuredBucket).ConfigureAwait(false);
-            var collection = _bucket.Scope(parsed.Scope).Collection(parsed.Collection);
+            // Open the bucket named by the entity's keyspace. A single DbContext may span
+            // multiple buckets on the same cluster; each entity's keyspace carries its own
+            // bucket, so we resolve per-keyspace rather than forcing the configured bucket.
+            // The bucket provider caches open buckets, and the resolved collection is cached
+            // per keyspace below, so this does not re-open a bucket on the hot path.
+            var bucket = await _bucketProvider.GetBucketAsync(parsed.Bucket).ConfigureAwait(false);
+            var collection = bucket.Scope(parsed.Scope).Collection(parsed.Collection);
 
             _keyspaceCache[keyspace] = new CachedKeyspace(parsed.ToSqlString(), collection);
             return collection;
         }
         catch (InvalidOperationException)
         {
-            throw; // Re-throw bucket mismatch errors without wrapping
+            throw; // Surface configuration/state errors without wrapping them as keyspace errors.
         }
         catch (ArgumentException)
         {

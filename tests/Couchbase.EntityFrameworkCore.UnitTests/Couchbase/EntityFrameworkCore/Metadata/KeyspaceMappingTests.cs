@@ -149,6 +149,34 @@ public class KeyspaceMappingTests
     }
 
     [Fact]
+    public void CouchbaseKeyspaceAttribute_WithCollectionOnly_HasNullBucket()
+    {
+        var attribute = new CouchbaseKeyspaceAttribute("users");
+
+        Assert.Null(attribute.Bucket);
+    }
+
+    [Fact]
+    public void CouchbaseKeyspaceAttribute_WithBucketScopeAndCollection_SetsAllValues()
+    {
+        var attribute = new CouchbaseKeyspaceAttribute("secondary", "custom-scope", "products");
+
+        Assert.Equal("secondary", attribute.Bucket);
+        Assert.Equal("custom-scope", attribute.Scope);
+        Assert.Equal("products", attribute.Collection);
+        Assert.True(attribute.HasScopeOverride);
+    }
+
+    [Fact]
+    public void CouchbaseKeyspaceAttribute_ThrowsOnNullBucketScopeOrCollection()
+    {
+        Assert.ThrowsAny<ArgumentException>(() => new CouchbaseKeyspaceAttribute(null!, "scope", "collection"));
+        Assert.ThrowsAny<ArgumentException>(() => new CouchbaseKeyspaceAttribute("bucket", null!, "collection"));
+        Assert.ThrowsAny<ArgumentException>(() => new CouchbaseKeyspaceAttribute("bucket", "scope", null!));
+        Assert.ThrowsAny<ArgumentException>(() => new CouchbaseKeyspaceAttribute("", "scope", "collection"));
+    }
+
+    [Fact]
     public void CouchbaseKeyspaceAttribute_ThrowsOnNullCollection()
     {
         Assert.ThrowsAny<ArgumentException>(() => new CouchbaseKeyspaceAttribute(null!));
