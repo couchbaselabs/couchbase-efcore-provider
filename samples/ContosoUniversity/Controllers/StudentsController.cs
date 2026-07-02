@@ -82,6 +82,11 @@ namespace ContosoUniversity.Controllers
                  .AsNoTracking()
                  .FirstOrDefaultAsync(m => m.ID == id);
 
+            if (student == null)
+            {
+                return NotFound();
+            }
+
             return View(student);
         }
 
