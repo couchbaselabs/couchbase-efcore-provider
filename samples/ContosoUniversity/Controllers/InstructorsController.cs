@@ -127,27 +127,12 @@ namespace ContosoUniversity.Controllers
                 return NotFound();
             }
 
-            /*var instructor = await _context.Instructors
+            var instructor = await _context.Instructors
                 .Include(i => i.OfficeAssignment)
                 .Include(i => i.CourseAssignments)
                 .ThenInclude(i => i.Course)
                 .AsNoTracking()
-                .FirstOrDefaultAsync(m => m.ID == id);*/
-
-            var instructor = await _context.Instructors.AsNoTracking().FirstOrDefaultAsync(x=>x.ID == id);
-            if (instructor == null)
-            {
-                return NotFound();
-            }
-            instructor.OfficeAssignment =
-                await _context.OfficeAssignments.AsNoTracking().SingleOrDefaultAsync(x => x.InstructorID == instructor.ID);
-            instructor.CourseAssignments =
-                await _context.CourseAssignments.Where(x => x.InstructorID == instructor.ID).ToListAsync();
-            foreach (var courseAssignment in instructor.CourseAssignments)
-            {
-                courseAssignment.Course =
-                    await _context.Courses.SingleOrDefaultAsync(x => x.CourseID == courseAssignment.CourseID);
-            }
+                .FirstOrDefaultAsync(m => m.ID == id);
 
             await PopulateAssignedCourseData(instructor).ConfigureAwait(false);
             return View(instructor);
@@ -180,26 +165,11 @@ namespace ContosoUniversity.Controllers
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> Edit(int? id, string[] selectedCourses)
         {
-            /*var instructorToUpdate = await _context.Instructors
+            var instructorToUpdate = await _context.Instructors
                 .Include(i => i.OfficeAssignment)
                 .Include(i => i.CourseAssignments)
                     .ThenInclude(i => i.Course)
-                .FirstOrDefaultAsync(m => m.ID == id);*/
-
-            var instructorToUpdate = await _context.Instructors.AsNoTracking().FirstOrDefaultAsync(x=>x.ID == id);
-            if (instructorToUpdate == null)
-            {
-                return NotFound();
-            }
-            instructorToUpdate.OfficeAssignment =
-                await _context.OfficeAssignments.AsNoTracking().SingleOrDefaultAsync(x => x.InstructorID == instructorToUpdate.ID);
-            instructorToUpdate.CourseAssignments =
-                await _context.CourseAssignments.Where(x => x.InstructorID == instructorToUpdate.ID).ToListAsync();
-            foreach (var courseAssignment in instructorToUpdate.CourseAssignments)
-            {
-                courseAssignment.Course =
-                    await _context.Courses.SingleOrDefaultAsync(x => x.CourseID == courseAssignment.CourseID);
-            }
+                .FirstOrDefaultAsync(m => m.ID == id);
 
             if (await TryUpdateModelAsync<Instructor>(
                 instructorToUpdate,
@@ -281,18 +251,9 @@ namespace ContosoUniversity.Controllers
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> DeleteConfirmed(int id)
         {
-          /*  Instructor instructor = await _context.Instructors
+            Instructor instructor = await _context.Instructors
                 .Include(i => i.CourseAssignments)
-                .SingleAsync(i => i.ID == id);*/
-
-          var instructor = await _context.Instructors.SingleOrDefaultAsync(i => i.ID == id);
-          instructor.CourseAssignments =
-              await _context.CourseAssignments.Where(x => x.InstructorID == instructor.ID).ToListAsync();
-
-            var departments = await _context.Departments
-                .Where(d => d.InstructorID == id)
-                .ToListAsync();
-            departments.ForEach(d => d.InstructorID = null);
+                .SingleAsync(i => i.ID == id);
 
             _context.Instructors.Remove(instructor);
 
