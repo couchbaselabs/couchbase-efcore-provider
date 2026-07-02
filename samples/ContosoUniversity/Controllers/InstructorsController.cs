@@ -53,7 +53,11 @@ namespace ContosoUniversity.Controllers
             {
                 ViewData["InstructorID"] = id.Value;
                 Instructor instructor = viewModel.Instructors.Single(i => i.ID == id.Value);
-                viewModel.Courses = instructor.CourseAssignments.Select(s => s.Course);
+                // A course referenced by an assignment may be missing (see the null-guard above);
+                // exclude nulls so the downstream Single/Load calls can't NRE.
+                viewModel.Courses = instructor.CourseAssignments
+                    .Select(s => s.Course)
+                    .Where(c => c != null);
             }
 
             if (courseID != null)
