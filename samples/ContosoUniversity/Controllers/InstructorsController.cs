@@ -180,6 +180,11 @@ namespace ContosoUniversity.Controllers
                     .ThenInclude(i => i.Course)
                 .FirstOrDefaultAsync(m => m.ID == id);
 
+            if (instructorToUpdate == null)
+            {
+                return NotFound();
+            }
+
             if (await TryUpdateModelAsync<Instructor>(
                 instructorToUpdate,
                 "",
