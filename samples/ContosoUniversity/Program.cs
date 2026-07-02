@@ -93,7 +93,11 @@ static async Task InitializeDatabaseAsync(IHost host, string bucketName, string 
     }
     catch (Exception ex)
     {
-        logger.LogError(ex, "An error occurred creating or seeding the database.");
+        // Fail fast: a half-provisioned database (missing indexes or unseeded data) would only
+        // surface as confusing runtime errors on later requests. Abort startup so a broken
+        // Couchbase/Aspire run is immediately visible.
+        logger.LogError(ex, "Database initialization failed; aborting startup.");
+        throw;
     }
 }
 
