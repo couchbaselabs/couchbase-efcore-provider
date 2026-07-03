@@ -161,8 +161,9 @@ internal readonly record struct CouchbaseConnectionInfo(
 
         if (!Uri.TryCreate(connectionString, UriKind.Absolute, out var uri))
         {
+            // Don't include the raw value — it may contain embedded credentials (user:pass).
             throw new InvalidOperationException(
-                $"The Couchbase connection string '{connectionString}' is not a valid URI. " + expectedFormat);
+                "The Couchbase connection string is not a valid URI. " + expectedFormat);
         }
 
         // Omit the port when the URI doesn't specify one (Uri.Port is -1); appending ":-1"
