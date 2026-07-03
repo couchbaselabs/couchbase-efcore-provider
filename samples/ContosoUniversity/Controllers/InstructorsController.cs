@@ -56,23 +56,28 @@ namespace ContosoUniversity.Controllers
                 ViewData["InstructorID"] = id.Value;
                 Instructor instructor = viewModel.Instructors.Single(i => i.ID == id.Value);
                 // A course referenced by an assignment may be missing (see the null-guard above);
-                // exclude nulls so the downstream Single/Load calls can't NRE.
+                // exclude nulls and materialize so the downstream lookup works on a stable list.
                 viewModel.Courses = instructor.CourseAssignments
                     .Select(s => s.Course)
-                    .Where(c => c != null);
+                    .Where(c => c != null)
+                    .ToList();
             }
 
             if (courseID != null)
             {
                 ViewData["CourseID"] = courseID.Value;
-                var selectedCourse = viewModel.Courses.Single(x => x.CourseID == courseID);
-                await _context.Entry(selectedCourse).Collection(x => x.Enrollments).LoadAsync();
-                await foreach (Enrollment enrollment in selectedCourse.Enrollments.ToAsyncEnumerable())
+                // SingleOrDefault + null guard: the querystring courseID may not match any course
+                // in the (possibly filtered) set, so don't throw a 500 on an invalid value.
+                var selectedCourse = viewModel.Courses?.SingleOrDefault(x => x.CourseID == courseID);
+                if (selectedCourse != null)
                 {
-                    await _context.Entry(enrollment).Reference(x => x.Student).LoadAsync();
-                    await _context.Entry(enrollment).Reference(x => x.Student).LoadAsync();
+                    await _context.Entry(selectedCourse).Collection(x => x.Enrollments).LoadAsync();
+                    await foreach (Enrollment enrollment in selectedCourse.Enrollments.ToAsyncEnumerable())
+                    {
+                        await _context.Entry(enrollment).Reference(x => x.Student).LoadAsync();
+                    }
+                    viewModel.Enrollments = await selectedCourse.Enrollments.ToAsyncEnumerable().ToListAsync();
                 }
-                viewModel.Enrollments = await selectedCourse.Enrollments.ToAsyncEnumerable().ToListAsync();
             }
 
             return View(viewModel);
