@@ -327,6 +327,7 @@ public class CrudTests(
             var stmt = $"SELECT RAW COUNT(*) FROM system:indexes WHERE bucket_id = '{bucketName}' "
                 + $"AND scope_id = '{scope}' AND keyspace_id IN ['{primaryColl}', '{gsiColl}'] AND state = 'online'";
             var online = 0;
+            Exception? lastError = null;
             while (true)
             {
                 try
@@ -335,15 +336,18 @@ public class CrudTests(
                     online = 0;
                     await foreach (var c in r.Rows) { online = c; break; }
                     if (online >= 2) return;
+                    lastError = null;
                 }
-                catch when (DateTime.UtcNow <= deadline)
+                catch (Exception ex) when (DateTime.UtcNow <= deadline)
                 {
                     // Transient query failures are common right after DDL / on busy CI — keep
-                    // retrying until the deadline instead of failing the whole test.
+                    // retrying until the deadline instead of failing the whole test. Keep the last
+                    // failure so a persistent one (malformed query, query service down) is surfaced.
+                    lastError = ex;
                 }
 
                 if (DateTime.UtcNow > deadline)
-                    throw new TimeoutException($"Indexes not online within {timeout} ({online}/2).");
+                    throw new TimeoutException($"Indexes not online within {timeout} ({online}/2).", lastError);
                 await Task.Delay(500);
             }
         }
