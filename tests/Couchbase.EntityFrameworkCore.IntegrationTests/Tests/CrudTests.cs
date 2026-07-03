@@ -326,12 +326,22 @@ public class CrudTests(
             var deadline = DateTime.UtcNow + timeout;
             var stmt = $"SELECT RAW COUNT(*) FROM system:indexes WHERE bucket_id = '{bucketName}' "
                 + $"AND scope_id = '{scope}' AND keyspace_id IN ['{primaryColl}', '{gsiColl}'] AND state = 'online'";
+            var online = 0;
             while (true)
             {
-                using var r = await cluster.QueryAsync<int>(stmt);
-                var online = 0;
-                await foreach (var c in r.Rows) { online = c; break; }
-                if (online >= 2) return;
+                try
+                {
+                    using var r = await cluster.QueryAsync<int>(stmt);
+                    online = 0;
+                    await foreach (var c in r.Rows) { online = c; break; }
+                    if (online >= 2) return;
+                }
+                catch when (DateTime.UtcNow <= deadline)
+                {
+                    // Transient query failures are common right after DDL / on busy CI — keep
+                    // retrying until the deadline instead of failing the whole test.
+                }
+
                 if (DateTime.UtcNow > deadline)
                     throw new TimeoutException($"Indexes not online within {timeout} ({online}/2).");
                 await Task.Delay(500);
