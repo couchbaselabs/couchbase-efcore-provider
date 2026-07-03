@@ -275,6 +275,9 @@ public class CrudTests(
 
             outputHelper.WriteLine(
                 $"settleDelayMs={settleDelayMs} inserted={docCount} insertsOk={insertsReportedOk} kvFound={found}");
+            // Every insert must actually report success — otherwise a timeout/throw that still
+            // persisted the doc could leave kvFound correct while masking a real reliability issue.
+            Assert.Equal(docCount, insertsReportedOk);
             Assert.Equal(docCount, found);
         }
         finally
