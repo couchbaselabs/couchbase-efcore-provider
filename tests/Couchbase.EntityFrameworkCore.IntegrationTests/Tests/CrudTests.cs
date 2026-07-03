@@ -238,7 +238,7 @@ public class CrudTests(
     {
         const int docCount = 100;
         var scopeName = bloggingFixture.ScopeName;
-        var collectionName = "freshcoll" + Random.Shared.Next(100_000, 999_999);
+        var collectionName = "freshcoll" + Guid.NewGuid().ToString("N");
 
         using var cluster = await global::Couchbase.Cluster.ConnectAsync(
             bloggingFixture.Host, bloggingFixture.Username, bloggingFixture.Password);
@@ -305,8 +305,8 @@ public class CrudTests(
         var bucket = await cluster.BucketAsync(bucketName);
         var manager = bucket.Collections;
 
-        var primaryColl = "idxprim" + Random.Shared.Next(100_000, 999_999);
-        var gsiColl = "idxgsi" + Random.Shared.Next(100_000, 999_999);
+        var primaryColl = "idxprim" + Guid.NewGuid().ToString("N");
+        var gsiColl = "idxgsi" + Guid.NewGuid().ToString("N");
         await manager.CreateCollectionAsync(scope, primaryColl, new global::Couchbase.Management.Collections.CreateCollectionSettings());
         await manager.CreateCollectionAsync(scope, gsiColl, new global::Couchbase.Management.Collections.CreateCollectionSettings());
 
