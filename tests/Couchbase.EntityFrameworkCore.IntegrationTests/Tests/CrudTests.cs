@@ -312,13 +312,31 @@ public class CrudTests(
 
         async Task RunDdl(string s) { using var r = await cluster.QueryAsync<dynamic>(s); await foreach (var _ in r.Rows) { } }
 
+        // Poll system:indexes until the two new indexes report state='online', instead of a fixed
+        // sleep (which is flaky under load/slow CI).
+        async Task WaitForIndexesOnlineAsync(TimeSpan timeout)
+        {
+            var deadline = DateTime.UtcNow + timeout;
+            var stmt = $"SELECT RAW COUNT(*) FROM system:indexes WHERE bucket_id = '{bucketName}' "
+                + $"AND scope_id = '{scope}' AND keyspace_id IN ['{primaryColl}', '{gsiColl}'] AND state = 'online'";
+            while (true)
+            {
+                using var r = await cluster.QueryAsync<int>(stmt);
+                var online = 0;
+                await foreach (var c in r.Rows) { online = c; break; }
+                if (online >= 2) return;
+                if (DateTime.UtcNow > deadline)
+                    throw new TimeoutException($"Indexes not online within {timeout} ({online}/2).");
+                await Task.Delay(500);
+            }
+        }
+
         var failures = new List<string>();
         try
         {
             await RunDdl($"CREATE PRIMARY INDEX ON `{bucketName}`.`{scope}`.`{primaryColl}`");
             await RunDdl($"CREATE INDEX `ix_blogId` ON `{bucketName}`.`{scope}`.`{gsiColl}`(blogId)");
-            // Let the new indexes settle to online.
-            await Task.Delay(3000);
+            await WaitForIndexesOnlineAsync(TimeSpan.FromSeconds(30));
 
             var scopeObj = await bucket.ScopeAsync(scope);
             var primary = scopeObj.Collection(primaryColl);
