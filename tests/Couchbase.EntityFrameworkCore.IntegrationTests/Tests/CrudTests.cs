@@ -307,8 +307,12 @@ public class CrudTests(
 
         var primaryColl = "idxprim" + Guid.NewGuid().ToString("N");
         var gsiColl = "idxgsi" + Guid.NewGuid().ToString("N");
-        await manager.CreateCollectionAsync(scope, primaryColl, new global::Couchbase.Management.Collections.CreateCollectionSettings());
-        await manager.CreateCollectionAsync(scope, gsiColl, new global::Couchbase.Management.Collections.CreateCollectionSettings());
+
+        async Task DropCollectionIfExists(string name)
+        {
+            try { await manager.DropCollectionAsync(scope, name); }
+            catch (global::Couchbase.Management.Collections.CollectionNotFoundException) { }
+        }
 
         async Task RunDdl(string s) { using var r = await cluster.QueryAsync<dynamic>(s); await foreach (var _ in r.Rows) { } }
 
@@ -334,6 +338,11 @@ public class CrudTests(
         var failures = new List<string>();
         try
         {
+            // Create both collections inside the try so a failure on the second still cleans up the
+            // first (see finally); a leaked collection would otherwise accumulate across runs.
+            await manager.CreateCollectionAsync(scope, primaryColl, new global::Couchbase.Management.Collections.CreateCollectionSettings());
+            await manager.CreateCollectionAsync(scope, gsiColl, new global::Couchbase.Management.Collections.CreateCollectionSettings());
+
             await RunDdl($"CREATE PRIMARY INDEX ON `{bucketName}`.`{scope}`.`{primaryColl}`");
             await RunDdl($"CREATE INDEX `ix_blogId` ON `{bucketName}`.`{scope}`.`{gsiColl}`(blogId)");
             await WaitForIndexesOnlineAsync(TimeSpan.FromSeconds(30));
@@ -374,8 +383,8 @@ public class CrudTests(
         }
         finally
         {
-            await manager.DropCollectionAsync(scope, primaryColl);
-            await manager.DropCollectionAsync(scope, gsiColl);
+            await DropCollectionIfExists(primaryColl);
+            await DropCollectionIfExists(gsiColl);
         }
 
         Assert.True(failures.Count == 0, "read-your-writes shortfalls: " + string.Join("; ", failures));
