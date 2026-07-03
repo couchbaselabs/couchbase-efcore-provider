@@ -2,6 +2,7 @@ using ContosoUniversity.Data;
 using Couchbase;
 using Couchbase.EntityFrameworkCore;
 using Couchbase.EntityFrameworkCore.Extensions;
+using Couchbase.EntityFrameworkCore.Metadata;
 using Couchbase.Query;
 using Microsoft.EntityFrameworkCore;
 using Serilog.Extensions.Logging.File;
@@ -116,8 +117,10 @@ static async Task CreatePrimaryIndexesAsync(SchoolContext context, string bucket
     const int maxAttempts = 10;
     foreach (var collection in collections)
     {
-        var statement =
-            $"CREATE PRIMARY INDEX IF NOT EXISTS ON `{bucketName}`.`{scopeName}`.`{collection}`";
+        // Build the keyspace via CouchbaseKeyspace so each identifier is backtick-escaped
+        // (embedded backticks doubled) — bucket/scope come from the Aspire connection string.
+        var keyspace = new CouchbaseKeyspace(bucketName, scopeName, collection).ToSqlString();
+        var statement = $"CREATE PRIMARY INDEX IF NOT EXISTS ON {keyspace}";
 
         for (var attempt = 1; ; attempt++)
         {
