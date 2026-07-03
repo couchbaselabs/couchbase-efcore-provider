@@ -10,7 +10,6 @@ using ContosoUniversity.Data;
 using ContosoUniversity.Models.SchoolViewModels;
 using Couchbase.EntityFrameworkCore.Metadata;
 using System.Data.Common;
-using Microsoft.EntityFrameworkCore.Metadata.Internal;
 
 namespace ContosoUniversity.Controllers
 {
