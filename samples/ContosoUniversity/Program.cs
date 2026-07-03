@@ -74,14 +74,14 @@ app.MapControllerRoute(
     name: "default",
     pattern: "{controller=Home}/{action=Index}/{id?}");
 
-await InitializeDatabaseAsync(app, couchbase.BucketName, scopeName);
+await InitializeDatabaseAsync(app);
 
 app.Run();
 
 // Creates the query indexes the LINQ queries depend on, then seeds the example data.
 // The AppHost has already created the bucket, scope, and collections and waited for them to be
 // healthy; indexes are created here because the Aspire hosting DSL has no index primitive.
-static async Task InitializeDatabaseAsync(IHost host, string bucketName, string scopeName)
+static async Task InitializeDatabaseAsync(IHost host)
 {
     using var scope = host.Services.CreateScope();
     var services = scope.ServiceProvider;
@@ -89,7 +89,7 @@ static async Task InitializeDatabaseAsync(IHost host, string bucketName, string 
     try
     {
         var context = services.GetRequiredService<SchoolContext>();
-        await CreatePrimaryIndexesAsync(context, bucketName, scopeName, logger);
+        await CreatePrimaryIndexesAsync(context, logger);
         await DbInitializer.Initialize(context);
     }
     catch (Exception ex)
@@ -104,23 +104,29 @@ static async Task InitializeDatabaseAsync(IHost host, string bucketName, string 
 
 // Every entity collection needs a primary index so the app's N1QL (LINQ) queries can run.
 // CREATE PRIMARY INDEX IF NOT EXISTS is idempotent, so this is safe on every startup.
-static async Task CreatePrimaryIndexesAsync(SchoolContext context, string bucketName, string scopeName, ILogger logger)
+static async Task CreatePrimaryIndexesAsync(SchoolContext context, ILogger logger)
 {
-    string[] collections =
-    [
-        "course", "enrollment", "person", "department", "officeAssignment", "courseAssignment"
-    ];
+    // Derive the distinct keyspaces from the EF model rather than hardcoding a list, so a new
+    // entity/collection is picked up automatically instead of being silently skipped. The table
+    // name is the full Bucket.Scope.Collection keyspace; owned types are embedded in their owner's
+    // document and have no keyspace of their own.
+    var keyspaces = context.Model.GetEntityTypes()
+        .Where(e => !e.IsOwned())
+        .Select(e => e.GetTableName())
+        .Where(t => !string.IsNullOrEmpty(t))
+        .Distinct()
+        .Select(t => CouchbaseKeyspace.Parse(t!))
+        .ToList();
 
     var cluster = await context.Database.GetCouchbaseClientAsync();
 
     // The query service can lag slightly behind bucket health on a cold container start; retry.
     const int maxAttempts = 10;
-    foreach (var collection in collections)
+    foreach (var keyspace in keyspaces)
     {
-        // Build the keyspace via CouchbaseKeyspace so each identifier is backtick-escaped
-        // (embedded backticks doubled) — bucket/scope come from the Aspire connection string.
-        var keyspace = new CouchbaseKeyspace(bucketName, scopeName, collection).ToSqlString();
-        var statement = $"CREATE PRIMARY INDEX IF NOT EXISTS ON {keyspace}";
+        // ToSqlString backtick-escapes each identifier (embedded backticks doubled).
+        var sqlKeyspace = keyspace.ToSqlString();
+        var statement = $"CREATE PRIMARY INDEX IF NOT EXISTS ON {sqlKeyspace}";
 
         for (var attempt = 1; ; attempt++)
         {
@@ -130,15 +136,14 @@ static async Task CreatePrimaryIndexesAsync(SchoolContext context, string bucket
                 // released — awaiting QueryAsync alone does not dispose the IQueryResult.
                 using var result = await cluster.QueryAsync<dynamic>(statement);
                 await foreach (var _ in result.Rows) { }
-                logger.LogInformation("Ensured primary index on {Bucket}.{Scope}.{Collection}",
-                    bucketName, scopeName, collection);
+                logger.LogInformation("Ensured primary index on {Keyspace}", sqlKeyspace);
                 break;
             }
             catch (Exception ex) when (attempt < maxAttempts)
             {
                 logger.LogWarning(ex,
-                    "Primary index creation for {Collection} failed (attempt {Attempt}/{Max}); retrying...",
-                    collection, attempt, maxAttempts);
+                    "Primary index creation for {Keyspace} failed (attempt {Attempt}/{Max}); retrying...",
+                    sqlKeyspace, attempt, maxAttempts);
                 await Task.Delay(TimeSpan.FromSeconds(2));
             }
         }
