@@ -349,10 +349,19 @@ public class CrudTests(
                     coll.InsertAsync(id.ToString(), new { blogId = id })));
                 var ms = global::Couchbase.Query.MutationState.From(results);
                 var stmt = $"SELECT RAW b.blogId FROM `{bucketName}`.`{scope}`.`{collName}` b WHERE b.blogId >= {start} AND b.blogId < {start + docCount}";
-                var rp = await (await cluster.QueryAsync<int>(stmt, new global::Couchbase.Query.QueryOptions()
-                    .ScanConsistency(global::Couchbase.Query.QueryScanConsistency.RequestPlus))).Rows.CountAsync();
-                var at = await (await cluster.QueryAsync<int>(stmt, new global::Couchbase.Query.QueryOptions()
-                    .ConsistentWith(ms))).Rows.CountAsync();
+
+                int rp, at;
+                using (var rpResult = await cluster.QueryAsync<int>(stmt, new global::Couchbase.Query.QueryOptions()
+                    .ScanConsistency(global::Couchbase.Query.QueryScanConsistency.RequestPlus)))
+                {
+                    rp = await rpResult.Rows.CountAsync();
+                }
+                using (var atResult = await cluster.QueryAsync<int>(stmt, new global::Couchbase.Query.QueryOptions()
+                    .ConsistentWith(ms)))
+                {
+                    at = await atResult.Rows.CountAsync();
+                }
+
                 if (rp != docCount) failures.Add($"{collName} requestPlus={rp}/{docCount}");
                 if (at != docCount) failures.Add($"{collName} atPlus={at}/{docCount}");
             }
