@@ -160,21 +160,16 @@ internal readonly record struct CouchbaseConnectionInfo(
             ? $"{uri.Scheme}://{uri.Host}"
             : $"{uri.Scheme}://{uri.Host}:{uri.Port}";
 
-        // Fall back to the default admin user when the URI carries no user info, rather than
-        // passing an empty username.
-        string username = "Administrator";
-        var password = string.Empty;
-        if (!string.IsNullOrEmpty(uri.UserInfo))
+        // Credentials are required and must be complete. Fail fast with a clear message rather
+        // than defaulting, which would surface later as a less actionable auth error.
+        const string expectedFormat = "Expected format: couchbase://user:pass@host:port/bucket";
+        var userInfo = uri.UserInfo.Split(':', 2);
+        var username = userInfo.Length > 0 ? Uri.UnescapeDataString(userInfo[0]) : string.Empty;
+        var password = userInfo.Length > 1 ? Uri.UnescapeDataString(userInfo[1]) : string.Empty;
+        if (string.IsNullOrEmpty(username) || string.IsNullOrEmpty(password))
         {
-            var userInfo = uri.UserInfo.Split(':', 2);
-            if (!string.IsNullOrEmpty(userInfo[0]))
-            {
-                username = Uri.UnescapeDataString(userInfo[0]);
-            }
-            if (userInfo.Length > 1)
-            {
-                password = Uri.UnescapeDataString(userInfo[1]);
-            }
+            throw new InvalidOperationException(
+                "The Couchbase connection string is missing a username and/or password. " + expectedFormat);
         }
 
         return new CouchbaseConnectionInfo(host, username, password, uri.AbsolutePath.TrimStart('/'));
