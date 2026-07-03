@@ -271,9 +271,15 @@ namespace ContosoUniversity.Controllers
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> DeleteConfirmed(int id)
         {
-            Instructor instructor = await _context.Instructors
+            var instructor = await _context.Instructors
                 .Include(i => i.CourseAssignments)
-                .SingleAsync(i => i.ID == id);
+                .SingleOrDefaultAsync(i => i.ID == id);
+
+            // Already deleted (or invalid id): nothing to do, just return to the list.
+            if (instructor == null)
+            {
+                return RedirectToAction(nameof(Index));
+            }
 
             // Department.InstructorID is an optional FK, so EF won't fix up dependents that aren't
             // loaded. Clear the administrator reference on any department this instructor administers
