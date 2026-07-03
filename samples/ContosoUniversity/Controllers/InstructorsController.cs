@@ -42,8 +42,10 @@ namespace ContosoUniversity.Controllers
                     // Defensive: a course referenced by an assignment may be absent; don't NRE the page.
                     if (courseAssignment.Course != null)
                     {
+                        // Load the course's own department (by the course's DepartmentID), not the
+                        // department this instructor happens to administer.
                         courseAssignment.Course.Department =
-                            await _context.Departments.Where(x => x.InstructorID == courseAssignment.InstructorID)
+                            await _context.Departments.Where(x => x.DepartmentID == courseAssignment.Course.DepartmentID)
                                 .SingleOrDefaultAsync();
                     }
                 }
