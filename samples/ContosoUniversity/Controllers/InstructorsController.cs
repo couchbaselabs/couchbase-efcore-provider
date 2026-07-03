@@ -275,6 +275,17 @@ namespace ContosoUniversity.Controllers
                 .Include(i => i.CourseAssignments)
                 .SingleAsync(i => i.ID == id);
 
+            // Department.InstructorID is an optional FK, so EF won't fix up dependents that aren't
+            // loaded. Clear the administrator reference on any department this instructor administers
+            // before deleting, otherwise those departments keep a dangling InstructorID.
+            var administeredDepartments = await _context.Departments
+                .Where(d => d.InstructorID == id)
+                .ToListAsync();
+            foreach (var department in administeredDepartments)
+            {
+                department.InstructorID = null;
+            }
+
             _context.Instructors.Remove(instructor);
 
             await _context.SaveChangesAsync();
