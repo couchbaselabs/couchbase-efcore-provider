@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Couchbase.Query;
 using Xunit;
 
@@ -19,7 +20,11 @@ public class QueryOptionsBehaviorTests
         Assert.Same(options, returned);
 
         // The value must be observable on the request the SDK builds, not just "not dropped".
-        var body = options.GetFormValuesAsJson();
-        Assert.Contains("request_plus", body);
+        // Parse the request body and assert the scan_consistency field specifically, so a value
+        // serialized under a different field/context wouldn't accidentally satisfy the test.
+        using var doc = JsonDocument.Parse(options.GetFormValuesAsJson());
+        Assert.True(doc.RootElement.TryGetProperty("scan_consistency", out var scanConsistency),
+            "request body has no scan_consistency field");
+        Assert.Equal("request_plus", scanConsistency.GetString());
     }
 }
