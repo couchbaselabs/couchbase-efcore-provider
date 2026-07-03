@@ -359,16 +359,18 @@ public class CrudTests(
                 var ms = global::Couchbase.Query.MutationState.From(results);
                 var stmt = $"SELECT RAW b.blogId FROM `{bucketName}`.`{scope}`.`{collName}` b WHERE b.blogId >= {start} AND b.blogId < {start + docCount}";
 
-                int rp, at;
+                // Count via await foreach (drains the result) rather than an async-LINQ CountAsync,
+                // which collides between System.Linq.AsyncEnumerable and the provider's extension.
+                int rp = 0, at = 0;
                 using (var rpResult = await cluster.QueryAsync<int>(stmt, new global::Couchbase.Query.QueryOptions()
                     .ScanConsistency(global::Couchbase.Query.QueryScanConsistency.RequestPlus)))
                 {
-                    rp = await rpResult.Rows.CountAsync();
+                    await foreach (var _ in rpResult.Rows) { rp++; }
                 }
                 using (var atResult = await cluster.QueryAsync<int>(stmt, new global::Couchbase.Query.QueryOptions()
                     .ConsistentWith(ms)))
                 {
-                    at = await atResult.Rows.CountAsync();
+                    await foreach (var _ in atResult.Rows) { at++; }
                 }
 
                 if (rp != docCount) failures.Add($"{collName} requestPlus={rp}/{docCount}");
