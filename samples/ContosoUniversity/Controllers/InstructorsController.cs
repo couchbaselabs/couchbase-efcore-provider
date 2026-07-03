@@ -39,16 +39,20 @@ namespace ContosoUniversity.Controllers
                 {
                     courseAssignment.Course = await _context.Courses.Where(x => x.CourseID == courseAssignment.CourseID)
                         .SingleOrDefaultAsync();
-                    // Defensive: a course referenced by an assignment may be absent; don't NRE the page.
+                    // Load the course's own department (by the course's DepartmentID), not the
+                    // department this instructor happens to administer.
                     if (courseAssignment.Course != null)
                     {
-                        // Load the course's own department (by the course's DepartmentID), not the
-                        // department this instructor happens to administer.
                         courseAssignment.Course.Department =
                             await _context.Departments.Where(x => x.DepartmentID == courseAssignment.Course.DepartmentID)
                                 .SingleOrDefaultAsync();
                     }
                 }
+
+                // Drop assignments whose course document is missing: the view dereferences
+                // Course.CourseID/Title for every assignment, so leaving a null Course would NRE.
+                instructor.CourseAssignments =
+                    instructor.CourseAssignments.Where(ca => ca.Course != null).ToList();
             }
 
             if (id != null)
