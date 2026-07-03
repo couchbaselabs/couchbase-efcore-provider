@@ -152,7 +152,18 @@ internal readonly record struct CouchbaseConnectionInfo(
 {
     public static CouchbaseConnectionInfo Parse(string connectionString)
     {
-        var uri = new Uri(connectionString);
+        const string expectedFormat = "Expected format: couchbase://user:pass@host:port/bucket";
+
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            throw new InvalidOperationException("The Couchbase connection string is empty. " + expectedFormat);
+        }
+
+        if (!Uri.TryCreate(connectionString, UriKind.Absolute, out var uri))
+        {
+            throw new InvalidOperationException(
+                $"The Couchbase connection string '{connectionString}' is not a valid URI. " + expectedFormat);
+        }
 
         // Omit the port when the URI doesn't specify one (Uri.Port is -1); appending ":-1"
         // would produce an invalid Couchbase connection string.
@@ -162,7 +173,6 @@ internal readonly record struct CouchbaseConnectionInfo(
 
         // Credentials are required and must be complete. Fail fast with a clear message rather
         // than defaulting, which would surface later as a less actionable auth error.
-        const string expectedFormat = "Expected format: couchbase://user:pass@host:port/bucket";
         var userInfo = uri.UserInfo.Split(':', 2);
         var username = userInfo.Length > 0 ? Uri.UnescapeDataString(userInfo[0]) : string.Empty;
         var password = userInfo.Length > 1 ? Uri.UnescapeDataString(userInfo[1]) : string.Empty;
@@ -172,6 +182,14 @@ internal readonly record struct CouchbaseConnectionInfo(
                 "The Couchbase connection string is missing a username and/or password. " + expectedFormat);
         }
 
-        return new CouchbaseConnectionInfo(host, username, password, uri.AbsolutePath.TrimStart('/'));
+        // A bucket segment (the URI path) is required.
+        var bucketName = uri.AbsolutePath.Trim('/');
+        if (string.IsNullOrEmpty(bucketName))
+        {
+            throw new InvalidOperationException(
+                "The Couchbase connection string is missing a bucket segment. " + expectedFormat);
+        }
+
+        return new CouchbaseConnectionInfo(host, username, password, bucketName);
     }
 }
