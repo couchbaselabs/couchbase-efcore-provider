@@ -53,7 +53,7 @@ namespace ContosoUniversity.Controllers
                 .AsNoTracking()
                 .FirstOrDefaultAsync();
 
-                if (department == null)
+            if (department == null)
             {
                 return NotFound();
             }
