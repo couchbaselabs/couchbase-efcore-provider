@@ -48,7 +48,7 @@ namespace ContosoUniversity.Controllers
 
             string query = $"SELECT d.* FROM {keyspace} AS d WHERE d.{departmentIdField} = {{0}}";
             var department = await _context.Departments
-                .FromSqlRaw(query, id)
+                .FromSqlRaw(query, id.Value)
                 .Include(d => d.Administrator)
                 .AsNoTracking()
                 .FirstOrDefaultAsync();
