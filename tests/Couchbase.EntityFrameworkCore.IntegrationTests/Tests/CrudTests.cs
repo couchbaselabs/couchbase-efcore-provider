@@ -282,7 +282,10 @@ public class CrudTests(
         }
         finally
         {
-            await manager.DropCollectionAsync(scopeName, collectionName);
+            // Best-effort: if collection creation failed or it was never created, dropping it
+            // would throw and mask the real test failure.
+            try { await manager.DropCollectionAsync(scopeName, collectionName); }
+            catch (global::Couchbase.Management.Collections.CollectionNotFoundException) { }
         }
     }
 
