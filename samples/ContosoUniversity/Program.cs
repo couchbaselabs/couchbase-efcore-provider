@@ -148,6 +148,47 @@ static async Task CreatePrimaryIndexesAsync(SchoolContext context, ILogger logge
             }
         }
     }
+
+    // CREATE PRIMARY INDEX can return before the index is online/queryable, so on a cold start the
+    // seeding queries (e.g. Students.AnyAsync) could run against a not-yet-usable index and fail.
+    // Wait until every primary index reports state='online' before continuing.
+    var onlineDeadline = DateTime.UtcNow + TimeSpan.FromSeconds(60);
+    foreach (var keyspace in keyspaces)
+    {
+        Exception? lastError = null;
+        while (true)
+        {
+            var online = false;
+            try
+            {
+                using var result = await cluster.QueryAsync<int>(
+                    "SELECT RAW COUNT(*) FROM system:indexes WHERE is_primary = true AND state = 'online' "
+                    + "AND bucket_id = $bucket AND scope_id = $scope AND keyspace_id = $collection",
+                    new global::Couchbase.Query.QueryOptions()
+                        .Parameter("bucket", keyspace.Bucket)
+                        .Parameter("scope", keyspace.Scope)
+                        .Parameter("collection", keyspace.Collection));
+                await foreach (var count in result.Rows) { online = count > 0; break; }
+                lastError = null;
+            }
+            catch (Exception ex) when (DateTime.UtcNow <= onlineDeadline)
+            {
+                lastError = ex; // transient (query service busy right after DDL); keep polling
+            }
+
+            if (online)
+            {
+                logger.LogInformation("Primary index online for {Keyspace}", keyspace.ToSqlString());
+                break;
+            }
+            if (DateTime.UtcNow > onlineDeadline)
+            {
+                throw new TimeoutException(
+                    $"Primary index for {keyspace.ToSqlString()} did not come online within 60s.", lastError);
+            }
+            await Task.Delay(TimeSpan.FromSeconds(1));
+        }
+    }
 }
 
 // Parses an Aspire Couchbase connection string (couchbase://user:pass@host:port/bucket) into the
