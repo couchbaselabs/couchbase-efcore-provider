@@ -250,7 +250,7 @@ internal readonly record struct CouchbaseConnectionInfo(
                 "The Couchbase connection string is missing a bucket segment, or has more than one. "
                 + expectedFormat);
         }
-        var bucketName = pathSegments[0];
+        var bucketName = Uri.UnescapeDataString(pathSegments[0]);
 
         return new CouchbaseConnectionInfo(host, username, password, bucketName);
     }
