@@ -75,12 +75,14 @@ namespace ContosoUniversity.Controllers
                 var selectedCourse = viewModel.Courses?.SingleOrDefault(x => x.CourseID == courseID);
                 if (selectedCourse != null)
                 {
-                    await _context.Entry(selectedCourse).Collection(x => x.Enrollments).LoadAsync();
-                    await foreach (Enrollment enrollment in selectedCourse.Enrollments.ToAsyncEnumerable())
-                    {
-                        await _context.Entry(enrollment).Reference(x => x.Student).LoadAsync();
-                    }
-                    viewModel.Enrollments = await selectedCourse.Enrollments.ToAsyncEnumerable().ToListAsync();
+                    // Load enrollments and their students in a single query instead of one
+                    // Reference(...).LoadAsync() per enrollment (N+1), then read from the
+                    // now-populated navigation rather than re-querying.
+                    await _context.Entry(selectedCourse).Collection(x => x.Enrollments)
+                        .Query()
+                        .Include(e => e.Student)
+                        .LoadAsync();
+                    viewModel.Enrollments = selectedCourse.Enrollments.ToList();
                 }
             }
 
