@@ -212,6 +212,15 @@ internal readonly record struct CouchbaseConnectionInfo(
                 "The Couchbase connection string is not a valid URI. " + expectedFormat);
         }
 
+        // A non-Couchbase scheme (e.g. http://, a copy-pasted connection string for another
+        // service) would otherwise pass validation here and fail later in a less actionable way.
+        if (uri.Scheme != "couchbase" && uri.Scheme != "couchbases")
+        {
+            throw new InvalidOperationException(
+                "The Couchbase connection string has an unsupported scheme "
+                + $"'{uri.Scheme}'. " + expectedFormat);
+        }
+
         // Rebuild from the URI's components rather than interpolating uri.Host/uri.Port directly:
         // GetComponents handles IPv6 bracket formatting correctly and preserves any query string
         // (e.g. ?network=external), which the SDK's connection string parser also supports.
