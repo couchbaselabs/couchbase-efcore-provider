@@ -152,9 +152,11 @@ static async Task CreatePrimaryIndexesAsync(SchoolContext context, ILogger logge
     // CREATE PRIMARY INDEX can return before the index is online/queryable, so on a cold start the
     // seeding queries (e.g. Students.AnyAsync) could run against a not-yet-usable index and fail.
     // Wait until every primary index reports state='online' before continuing.
-    var onlineDeadline = DateTime.UtcNow + TimeSpan.FromSeconds(60);
     foreach (var keyspace in keyspaces)
     {
+        // Per-keyspace deadline: a shared deadline would let time spent waiting on earlier
+        // keyspaces eat into the budget for later ones, causing spurious timeouts.
+        var onlineDeadline = DateTime.UtcNow + TimeSpan.FromSeconds(60);
         Exception? lastError = null;
         while (true)
         {
