@@ -212,11 +212,12 @@ internal readonly record struct CouchbaseConnectionInfo(
                 "The Couchbase connection string is not a valid URI. " + expectedFormat);
         }
 
-        // Omit the port when the URI doesn't specify one (Uri.Port is -1); appending ":-1"
-        // would produce an invalid Couchbase connection string.
-        var host = uri.IsDefaultPort || uri.Port < 0
-            ? $"{uri.Scheme}://{uri.Host}"
-            : $"{uri.Scheme}://{uri.Host}:{uri.Port}";
+        // Rebuild from the URI's components rather than interpolating uri.Host/uri.Port directly:
+        // GetComponents handles IPv6 bracket formatting correctly and preserves any query string
+        // (e.g. ?network=external), which the SDK's connection string parser also supports.
+        // SchemeAndServer excludes UserInfo and omits a port that wasn't specified.
+        var host = uri.GetComponents(
+            UriComponents.SchemeAndServer | UriComponents.Query, UriFormat.UriEscaped);
 
         // Credentials are required and must be complete. Fail fast with a clear message rather
         // than defaulting, which would surface later as a less actionable auth error.
