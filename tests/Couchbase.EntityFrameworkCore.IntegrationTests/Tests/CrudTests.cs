@@ -258,13 +258,10 @@ public class CrudTests(
             var collection = (await bucket.ScopeAsync(scopeName)).Collection(collectionName);
 
             // Fire all inserts concurrently, like the provider's Parallel.ForEachAsync seed path.
-            var insertResults = await Task.WhenAll(
-                Enumerable.Range(0, docCount).Select(async i =>
-                {
-                    try { await collection.InsertAsync($"k{i}", new { index = i }); return true; }
-                    catch { return false; }
-                }));
-            var insertsReportedOk = insertResults.Count(ok => ok);
+            // Let a failed insert (timeout, auth, collection-not-ready, etc.) propagate instead of
+            // swallowing it into a bool — that exception is the actionable diagnostic here.
+            await Task.WhenAll(
+                Enumerable.Range(0, docCount).Select(i => collection.InsertAsync($"k{i}", new { index = i })));
 
             var found = 0;
             for (var i = 0; i < docCount; i++)
@@ -273,11 +270,7 @@ public class CrudTests(
                 catch (global::Couchbase.Core.Exceptions.KeyValue.DocumentNotFoundException) { }
             }
 
-            outputHelper.WriteLine(
-                $"settleDelayMs={settleDelayMs} inserted={docCount} insertsOk={insertsReportedOk} kvFound={found}");
-            // Every insert must actually report success — otherwise a timeout/throw that still
-            // persisted the doc could leave kvFound correct while masking a real reliability issue.
-            Assert.Equal(docCount, insertsReportedOk);
+            outputHelper.WriteLine($"settleDelayMs={settleDelayMs} inserted={docCount} kvFound={found}");
             Assert.Equal(docCount, found);
         }
         finally
