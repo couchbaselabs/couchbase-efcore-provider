@@ -248,8 +248,33 @@ public class CrudTests(
         await manager.CreateCollectionAsync(scopeName, collectionName,
             new global::Couchbase.Management.Collections.CreateCollectionSettings());
 
+        // Collection manifest propagation is eventually consistent, so a fixed delay here would be
+        // flaky in CI (the collection might not be visible yet, failing with CollectionNotFound or
+        // a KV timeout rather than a true persistence issue). Poll until it appears instead.
+        async Task WaitForCollectionVisibleAsync(TimeSpan timeout)
+        {
+            var deadline = DateTime.UtcNow + timeout;
+            while (true)
+            {
+                var scope = await manager.GetScopeAsync(scopeName);
+                if (scope.Collections.Any(c => c.Name == collectionName))
+                {
+                    return;
+                }
+                if (DateTime.UtcNow > deadline)
+                {
+                    throw new TimeoutException(
+                        $"Collection '{collectionName}' did not become visible within {timeout}.");
+                }
+                await Task.Delay(TimeSpan.FromMilliseconds(200));
+            }
+        }
+        await WaitForCollectionVisibleAsync(TimeSpan.FromSeconds(30));
+
         try
         {
+            // Once the collection is confirmed visible, optionally wait a bit longer to exercise
+            // the settle-time dimension this test is parameterized over.
             if (settleDelayMs > 0)
             {
                 await Task.Delay(settleDelayMs);
