@@ -227,6 +227,218 @@ public class CrudTests(
         }
     }
 
+    // Isolates the ContosoUniversity seed loss: fire concurrent KV inserts into a collection that
+    // was created moments earlier (as the AppHost does), then read each back by key (no index).
+    // If any are missing, the SDK acknowledged an insert into a not-yet-ready collection that never
+    // persisted. Varies the settle delay between collection creation and the inserts.
+    // Note: inserts use default InsertOptions (no explicit DurabilityLevel), so this does not
+    // exercise KV durability semantics — only whether a default-durability insert into a
+    // freshly-created collection is later readable. The test cluster is single-node, so a
+    // majority/replica durability level isn't satisfiable here anyway.
+    [Theory]
+    [InlineData(0)]
+    [InlineData(2000)]
+    public async Task Test_FreshCollection_ConcurrentInsert_PersistsAll(int settleDelayMs)
+    {
+        const int docCount = 100;
+        var scopeName = bloggingFixture.ScopeName;
+        var collectionName = "freshcoll" + Guid.NewGuid().ToString("N");
+
+        using var cluster = await global::Couchbase.Cluster.ConnectAsync(
+            bloggingFixture.Host, bloggingFixture.Username, bloggingFixture.Password);
+        var bucket = await cluster.BucketAsync(bloggingFixture.BucketName);
+        var manager = bucket.Collections;
+
+        await manager.CreateCollectionAsync(scopeName, collectionName,
+            new global::Couchbase.Management.Collections.CreateCollectionSettings());
+
+        // Collection manifest propagation is eventually consistent, so a fixed delay here would be
+        // flaky in CI (the collection might not be visible yet, failing with CollectionNotFound or
+        // a KV timeout rather than a true persistence issue). Poll until it appears instead.
+        async Task WaitForCollectionVisibleAsync(TimeSpan timeout)
+        {
+            var deadline = DateTime.UtcNow + timeout;
+            while (true)
+            {
+                var scope = await manager.GetScopeAsync(scopeName);
+                if (scope.Collections.Any(c => c.Name == collectionName))
+                {
+                    return;
+                }
+                if (DateTime.UtcNow > deadline)
+                {
+                    throw new TimeoutException(
+                        $"Collection '{collectionName}' did not become visible within {timeout}.");
+                }
+                await Task.Delay(TimeSpan.FromMilliseconds(200));
+            }
+        }
+        await WaitForCollectionVisibleAsync(TimeSpan.FromSeconds(30));
+
+        try
+        {
+            // Once the collection is confirmed visible, optionally wait a bit longer to exercise
+            // the settle-time dimension this test is parameterized over.
+            if (settleDelayMs > 0)
+            {
+                await Task.Delay(settleDelayMs);
+            }
+
+            var collection = (await bucket.ScopeAsync(scopeName)).Collection(collectionName);
+
+            // Fire all inserts concurrently, like the provider's Parallel.ForEachAsync seed path.
+            // Let a failed insert (timeout, auth, collection-not-ready, etc.) propagate instead of
+            // swallowing it into a bool — that exception is the actionable diagnostic here.
+            await Task.WhenAll(
+                Enumerable.Range(0, docCount).Select(i => collection.InsertAsync($"k{i}", new { index = i })));
+
+            var found = 0;
+            for (var i = 0; i < docCount; i++)
+            {
+                try { await collection.GetAsync($"k{i}"); found++; }
+                catch (global::Couchbase.Core.Exceptions.KeyValue.DocumentNotFoundException) { }
+            }
+
+            outputHelper.WriteLine($"settleDelayMs={settleDelayMs} inserted={docCount} kvFound={found}");
+            Assert.Equal(docCount, found);
+        }
+        finally
+        {
+            // Best-effort: if collection creation failed or it was never created, dropping it
+            // would throw and mask the real test failure.
+            try { await manager.DropCollectionAsync(scopeName, collectionName); }
+            catch (global::Couchbase.Management.Collections.CollectionNotFoundException) { }
+        }
+    }
+
+    // Read-your-writes regression: on a freshly-created collection with a properly-built index
+    // (both a PRIMARY index and a secondary GSI), a RequestPlus query issued immediately after a
+    // burst of concurrent inserts must see every document. Guards the guarantee ContosoUniversity
+    // relies on (the app configures RequestPlus). AtPlus (ConsistentWith mutation tokens) is
+    // exercised too. Uses dedicated collections so unrelated churn can't perturb the index.
+    [Fact]
+    public async Task Test_ReadYourWrites_WithProperIndex_RequestPlusSeesAllWrites()
+    {
+        const int docCount = 100;
+        const int rounds = 5;
+        var scope = bloggingFixture.ScopeName;
+        var bucketName = bloggingFixture.BucketName;
+        var baseId = Random.Shared.Next(5_000_000, int.MaxValue - (rounds * docCount) - 1);
+
+        var clusterOptions = new global::Couchbase.ClusterOptions()
+            .WithConnectionString(bloggingFixture.Host)
+            .WithCredentials(bloggingFixture.Username, bloggingFixture.Password);
+        clusterOptions.EnableMutationTokens = true;
+        using var cluster = await global::Couchbase.Cluster.ConnectAsync(clusterOptions);
+        var bucket = await cluster.BucketAsync(bucketName);
+        var manager = bucket.Collections;
+
+        var primaryColl = "idxprim" + Guid.NewGuid().ToString("N");
+        var gsiColl = "idxgsi" + Guid.NewGuid().ToString("N");
+
+        async Task DropCollectionIfExists(string name)
+        {
+            try { await manager.DropCollectionAsync(scope, name); }
+            catch (global::Couchbase.Management.Collections.CollectionNotFoundException) { }
+        }
+
+        async Task RunDdl(string s) { using var r = await cluster.QueryAsync<dynamic>(s); await foreach (var _ in r.Rows) { } }
+
+        // Poll system:indexes until the two new indexes report state='online', instead of a fixed
+        // sleep (which is flaky under load/slow CI).
+        async Task WaitForIndexesOnlineAsync(TimeSpan timeout)
+        {
+            var deadline = DateTime.UtcNow + timeout;
+            const string stmt = "SELECT RAW COUNT(*) FROM system:indexes WHERE bucket_id = $bucket "
+                + "AND scope_id = $scope AND keyspace_id IN [$primaryColl, $gsiColl] AND state = 'online'";
+            var queryOptions = new global::Couchbase.Query.QueryOptions()
+                .Parameter("bucket", bucketName)
+                .Parameter("scope", scope)
+                .Parameter("primaryColl", primaryColl)
+                .Parameter("gsiColl", gsiColl);
+            var online = 0;
+            Exception? lastError = null;
+            while (true)
+            {
+                try
+                {
+                    using var r = await cluster.QueryAsync<int>(stmt, queryOptions);
+                    online = 0;
+                    await foreach (var c in r.Rows) { online = c; break; }
+                    if (online >= 2) return;
+                    lastError = null;
+                }
+                catch (Exception ex) when (DateTime.UtcNow <= deadline)
+                {
+                    // Transient query failures are common right after DDL / on busy CI — keep
+                    // retrying until the deadline instead of failing the whole test. Keep the last
+                    // failure so a persistent one (malformed query, query service down) is surfaced.
+                    lastError = ex;
+                }
+
+                if (DateTime.UtcNow > deadline)
+                    throw new TimeoutException($"Indexes not online within {timeout} ({online}/2).", lastError);
+                await Task.Delay(500);
+            }
+        }
+
+        var failures = new List<string>();
+        try
+        {
+            // Create both collections inside the try so a failure on the second still cleans up the
+            // first (see finally); a leaked collection would otherwise accumulate across runs.
+            await manager.CreateCollectionAsync(scope, primaryColl, new global::Couchbase.Management.Collections.CreateCollectionSettings());
+            await manager.CreateCollectionAsync(scope, gsiColl, new global::Couchbase.Management.Collections.CreateCollectionSettings());
+
+            await RunDdl($"CREATE PRIMARY INDEX ON `{bucketName}`.`{scope}`.`{primaryColl}`");
+            await RunDdl($"CREATE INDEX `ix_blogId` ON `{bucketName}`.`{scope}`.`{gsiColl}`(blogId)");
+            await WaitForIndexesOnlineAsync(TimeSpan.FromSeconds(30));
+
+            var scopeObj = await bucket.ScopeAsync(scope);
+            var primary = scopeObj.Collection(primaryColl);
+            var gsi = scopeObj.Collection(gsiColl);
+
+            async Task Verify(global::Couchbase.KeyValue.ICouchbaseCollection coll, string collName, int start)
+            {
+                var ids = Enumerable.Range(start, docCount).ToList();
+                var results = await Task.WhenAll(ids.Select(id =>
+                    coll.InsertAsync(id.ToString(), new { blogId = id })));
+                var ms = global::Couchbase.Query.MutationState.From(results);
+                var stmt = $"SELECT RAW b.blogId FROM `{bucketName}`.`{scope}`.`{collName}` b WHERE b.blogId >= {start} AND b.blogId < {start + docCount}";
+
+                // Count via await foreach (drains the result) rather than an async-LINQ CountAsync,
+                // which collides between System.Linq.AsyncEnumerable and the provider's extension.
+                int rp = 0, at = 0;
+                using (var rpResult = await cluster.QueryAsync<int>(stmt, new global::Couchbase.Query.QueryOptions()
+                    .ScanConsistency(global::Couchbase.Query.QueryScanConsistency.RequestPlus)))
+                {
+                    await foreach (var _ in rpResult.Rows) { rp++; }
+                }
+                using (var atResult = await cluster.QueryAsync<int>(stmt, new global::Couchbase.Query.QueryOptions()
+                    .ConsistentWith(ms)))
+                {
+                    await foreach (var _ in atResult.Rows) { at++; }
+                }
+
+                if (rp != docCount) failures.Add($"{collName} requestPlus={rp}/{docCount}");
+                if (at != docCount) failures.Add($"{collName} atPlus={at}/{docCount}");
+            }
+
+            for (var round = 0; round < rounds; round++)
+            {
+                await Verify(primary, primaryColl, baseId + round * docCount);
+                await Verify(gsi, gsiColl, baseId + round * docCount);
+            }
+        }
+        finally
+        {
+            await DropCollectionIfExists(primaryColl);
+            await DropCollectionIfExists(gsiColl);
+        }
+
+        Assert.True(failures.Count == 0, "read-your-writes shortfalls: " + string.Join("; ", failures));
+    }
+
     // The provider threads the CancellationToken through the KV write path; a cancelled save must
     // surface as an OperationCanceledException, not a wrapped DbUpdateException.
     [Fact]

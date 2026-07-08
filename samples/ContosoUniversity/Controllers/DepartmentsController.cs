@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Mvc.Rendering;
 using Microsoft.EntityFrameworkCore;
 using ContosoUniversity.Data;
 using ContosoUniversity.Models;
+using Couchbase.EntityFrameworkCore.Metadata;
 
 namespace ContosoUniversity.Controllers
 {
@@ -22,17 +23,8 @@ namespace ContosoUniversity.Controllers
         // GET: Departments
         public async Task<IActionResult> Index()
         {
-            //var schoolContext = _context.Departments.Include(d => d.Administrator);
-
-            var schoolContext = await _context.Departments.ToListAsync();
-            foreach (var department in schoolContext)
-            {
-                department.Administrator =
-                    await _context.Instructors.FirstOrDefaultAsync(x => x.ID == department.InstructorID);
-            }
-
-            return View(schoolContext);
-            //return View(await schoolContext.ToListAsync());
+            var schoolContext = _context.Departments.Include(d => d.Administrator);
+            return View(await schoolContext.ToListAsync());
         }
 
         // GET: Departments/Details/5
@@ -43,20 +35,28 @@ namespace ContosoUniversity.Controllers
                 return NotFound();
             }
 
-            string query = "SELECT d.* FROM `universities`.`contoso`.`department` as d WHERE DepartmentID = {0}";
+            // Resolve the keyspace and primary-key column from the model rather than hardcoding
+            // them, so the raw SQL++ tracks the entity mapping (and the camelCase naming
+            // convention) instead of drifting out of sync — Couchbase keyspaces are case-sensitive.
+            var entityType = _context.Model.FindEntityType(typeof(Department))!;
+            var keyspace = CouchbaseKeyspace.Parse(entityType.GetTableName()!).ToSqlString();
+            var departmentIdColumn = entityType.FindPrimaryKey()!.Properties[0].GetColumnName()
+                ?? throw new InvalidOperationException("Department primary key has no mapped column name.");
+            // Backtick-escape (doubling any embedded backticks) so a column name with special
+            // characters can't produce an invalid N1QL statement.
+            var departmentIdField = $"`{departmentIdColumn.Replace("`", "``")}`";
+
+            string query = $"SELECT d.* FROM {keyspace} AS d WHERE d.{departmentIdField} = {{0}}";
             var department = await _context.Departments
-                .FromSqlRaw(query, id)
-               // .Include(d => d.Administrator)
+                .FromSqlRaw(query, id.Value)
+                .Include(d => d.Administrator)
                 .AsNoTracking()
                 .FirstOrDefaultAsync();
 
-                if (department == null)
+            if (department == null)
             {
                 return NotFound();
             }
-
-            department.Administrator =
-                await _context.Instructors.FirstOrDefaultAsync(x => x.ID == department.DepartmentID);
 
             return View(department);
         }
@@ -94,7 +94,7 @@ namespace ContosoUniversity.Controllers
             }
 
             var department = await _context.Departments
-                //.Include(i => i.Administrator)
+                .Include(i => i.Administrator)
                 .AsNoTracking()
                 .FirstOrDefaultAsync(m => m.DepartmentID == id);
 
@@ -102,9 +102,6 @@ namespace ContosoUniversity.Controllers
             {
                 return NotFound();
             }
-
-            department.Administrator =
-                await _context.Instructors.FirstOrDefaultAsync(x => x.ID == department.DepartmentID);
 
             ViewData["InstructorID"] = new SelectList(await _context.Instructors.AsAsyncEnumerable().ToListAsync(), "ID", "FullName", department.InstructorID);
             return View(department);
@@ -202,7 +199,7 @@ namespace ContosoUniversity.Controllers
             }
 
             var department = await _context.Departments
-                //.Include(d => d.Administrator)
+                .Include(d => d.Administrator)
                 .AsNoTracking()
                 .FirstOrDefaultAsync(m => m.DepartmentID == id);
 
@@ -214,9 +211,6 @@ namespace ContosoUniversity.Controllers
                 }
                 return NotFound();
             }
-
-            department.Administrator =
-                await _context.Instructors.FirstOrDefaultAsync(x => x.ID == department.DepartmentID);
 
             if (concurrencyError.GetValueOrDefault())
             {

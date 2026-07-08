@@ -39,30 +39,51 @@ namespace ContosoUniversity.Controllers
                 {
                     courseAssignment.Course = await _context.Courses.Where(x => x.CourseID == courseAssignment.CourseID)
                         .SingleOrDefaultAsync();
-                    courseAssignment.Course.Department =
-                        await _context.Departments.Where(x => x.InstructorID == courseAssignment.InstructorID)
-                            .SingleOrDefaultAsync();
+                    // Load the course's own department (by the course's DepartmentID), not the
+                    // department this instructor happens to administer.
+                    if (courseAssignment.Course != null)
+                    {
+                        courseAssignment.Course.Department =
+                            await _context.Departments.Where(x => x.DepartmentID == courseAssignment.Course.DepartmentID)
+                                .SingleOrDefaultAsync();
+                    }
                 }
+
+                // Drop assignments whose course document is missing: the view dereferences
+                // Course.CourseID/Title for every assignment, so leaving a null Course would NRE.
+                instructor.CourseAssignments =
+                    instructor.CourseAssignments.Where(ca => ca.Course != null).ToList();
             }
 
             if (id != null)
             {
                 ViewData["InstructorID"] = id.Value;
                 Instructor instructor = viewModel.Instructors.Single(i => i.ID == id.Value);
-                viewModel.Courses = instructor.CourseAssignments.Select(s => s.Course);
+                // A course referenced by an assignment may be missing (see the null-guard above);
+                // exclude nulls and materialize so the downstream lookup works on a stable list.
+                viewModel.Courses = instructor.CourseAssignments
+                    .Select(s => s.Course)
+                    .Where(c => c != null)
+                    .ToList();
             }
 
             if (courseID != null)
             {
                 ViewData["CourseID"] = courseID.Value;
-                var selectedCourse = viewModel.Courses.Single(x => x.CourseID == courseID);
-                await _context.Entry(selectedCourse).Collection(x => x.Enrollments).LoadAsync();
-                await foreach (Enrollment enrollment in selectedCourse.Enrollments.ToAsyncEnumerable())
+                // SingleOrDefault + null guard: the querystring courseID may not match any course
+                // in the (possibly filtered) set, so don't throw a 500 on an invalid value.
+                var selectedCourse = viewModel.Courses?.SingleOrDefault(x => x.CourseID == courseID);
+                if (selectedCourse != null)
                 {
-                    await _context.Entry(enrollment).Reference(x => x.Student).LoadAsync();
-                    await _context.Entry(enrollment).Reference(x => x.Student).LoadAsync();
+                    // Load enrollments and their students in a single query instead of one
+                    // Reference(...).LoadAsync() per enrollment (N+1), then read from the
+                    // now-populated navigation rather than re-querying.
+                    await _context.Entry(selectedCourse).Collection(x => x.Enrollments)
+                        .Query()
+                        .Include(e => e.Student)
+                        .LoadAsync();
+                    viewModel.Enrollments = selectedCourse.Enrollments.ToList();
                 }
-                viewModel.Enrollments = await selectedCourse.Enrollments.ToAsyncEnumerable().ToListAsync();
             }
 
             return View(viewModel);
@@ -127,26 +148,16 @@ namespace ContosoUniversity.Controllers
                 return NotFound();
             }
 
-            /*var instructor = await _context.Instructors
+            var instructor = await _context.Instructors
                 .Include(i => i.OfficeAssignment)
                 .Include(i => i.CourseAssignments)
                 .ThenInclude(i => i.Course)
                 .AsNoTracking()
-                .FirstOrDefaultAsync(m => m.ID == id);*/
+                .FirstOrDefaultAsync(m => m.ID == id);
 
-            var instructor = await _context.Instructors.AsNoTracking().FirstOrDefaultAsync(x=>x.ID == id);
             if (instructor == null)
             {
                 return NotFound();
-            }
-            instructor.OfficeAssignment =
-                await _context.OfficeAssignments.AsNoTracking().SingleOrDefaultAsync(x => x.InstructorID == instructor.ID);
-            instructor.CourseAssignments =
-                await _context.CourseAssignments.Where(x => x.InstructorID == instructor.ID).ToListAsync();
-            foreach (var courseAssignment in instructor.CourseAssignments)
-            {
-                courseAssignment.Course =
-                    await _context.Courses.SingleOrDefaultAsync(x => x.CourseID == courseAssignment.CourseID);
             }
 
             await PopulateAssignedCourseData(instructor).ConfigureAwait(false);
@@ -180,25 +191,15 @@ namespace ContosoUniversity.Controllers
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> Edit(int? id, string[] selectedCourses)
         {
-            /*var instructorToUpdate = await _context.Instructors
+            var instructorToUpdate = await _context.Instructors
                 .Include(i => i.OfficeAssignment)
                 .Include(i => i.CourseAssignments)
                     .ThenInclude(i => i.Course)
-                .FirstOrDefaultAsync(m => m.ID == id);*/
+                .FirstOrDefaultAsync(m => m.ID == id);
 
-            var instructorToUpdate = await _context.Instructors.AsNoTracking().FirstOrDefaultAsync(x=>x.ID == id);
             if (instructorToUpdate == null)
             {
                 return NotFound();
-            }
-            instructorToUpdate.OfficeAssignment =
-                await _context.OfficeAssignments.AsNoTracking().SingleOrDefaultAsync(x => x.InstructorID == instructorToUpdate.ID);
-            instructorToUpdate.CourseAssignments =
-                await _context.CourseAssignments.Where(x => x.InstructorID == instructorToUpdate.ID).ToListAsync();
-            foreach (var courseAssignment in instructorToUpdate.CourseAssignments)
-            {
-                courseAssignment.Course =
-                    await _context.Courses.SingleOrDefaultAsync(x => x.CourseID == courseAssignment.CourseID);
             }
 
             if (await TryUpdateModelAsync<Instructor>(
@@ -281,18 +282,26 @@ namespace ContosoUniversity.Controllers
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> DeleteConfirmed(int id)
         {
-          /*  Instructor instructor = await _context.Instructors
+            var instructor = await _context.Instructors
                 .Include(i => i.CourseAssignments)
-                .SingleAsync(i => i.ID == id);*/
+                .SingleOrDefaultAsync(i => i.ID == id);
 
-          var instructor = await _context.Instructors.SingleOrDefaultAsync(i => i.ID == id);
-          instructor.CourseAssignments =
-              await _context.CourseAssignments.Where(x => x.InstructorID == instructor.ID).ToListAsync();
+            // Already deleted (or invalid id): nothing to do, just return to the list.
+            if (instructor == null)
+            {
+                return RedirectToAction(nameof(Index));
+            }
 
-            var departments = await _context.Departments
+            // Department.InstructorID is an optional FK, so EF won't fix up dependents that aren't
+            // loaded. Clear the administrator reference on any department this instructor administers
+            // before deleting, otherwise those departments keep a dangling InstructorID.
+            var administeredDepartments = await _context.Departments
                 .Where(d => d.InstructorID == id)
                 .ToListAsync();
-            departments.ForEach(d => d.InstructorID = null);
+            foreach (var department in administeredDepartments)
+            {
+                department.InstructorID = null;
+            }
 
             _context.Instructors.Remove(instructor);
 

@@ -23,6 +23,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Couchbase.EntityFrameworkCo
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AppHost", "tests\AppHost\AppHost.csproj", "{665A2EEE-CBE2-4822-8E6F-E240F7294B8F}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Contoso.AppHost", "samples\Contoso.AppHost\Contoso.AppHost.csproj", "{DCFA08C1-FA11-4302-91A7-BDCA88B001C2}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "couchbase-dotnet-ef.ServiceDefaults", "couchbase-dotnet-ef.ServiceDefaults\couchbase-dotnet-ef.ServiceDefaults.csproj", "{890FBBF4-E361-4AD3-991C-06BE75DBAEF7}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -53,6 +57,14 @@ Global
 		{665A2EEE-CBE2-4822-8E6F-E240F7294B8F}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{665A2EEE-CBE2-4822-8E6F-E240F7294B8F}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{665A2EEE-CBE2-4822-8E6F-E240F7294B8F}.Release|Any CPU.Build.0 = Release|Any CPU
+		{DCFA08C1-FA11-4302-91A7-BDCA88B001C2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{DCFA08C1-FA11-4302-91A7-BDCA88B001C2}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{DCFA08C1-FA11-4302-91A7-BDCA88B001C2}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{DCFA08C1-FA11-4302-91A7-BDCA88B001C2}.Release|Any CPU.Build.0 = Release|Any CPU
+		{890FBBF4-E361-4AD3-991C-06BE75DBAEF7}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{890FBBF4-E361-4AD3-991C-06BE75DBAEF7}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{890FBBF4-E361-4AD3-991C-06BE75DBAEF7}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{890FBBF4-E361-4AD3-991C-06BE75DBAEF7}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{4D9E095B-0676-48F4-9FF1-4DC0AD982F92} = {5055D41A-5941-4C82-86F1-D82157BF62AB}
@@ -61,5 +73,6 @@ Global
 		{0AB1C8EF-8FF8-4C22-8135-7FACBF5E48A3} = {CC456F8A-1187-4063-A017-669CD1EAA72F}
 		{95C42FE6-57CE-4C55-AE87-B81FBE109887} = {953AC9BC-C496-4FDF-8483-D67571507BD6}
 		{665A2EEE-CBE2-4822-8E6F-E240F7294B8F} = {953AC9BC-C496-4FDF-8483-D67571507BD6}
+		{DCFA08C1-FA11-4302-91A7-BDCA88B001C2} = {CC456F8A-1187-4063-A017-669CD1EAA72F}
 	EndGlobalSection
 EndGlobal

@@ -8,8 +8,8 @@ using ContosoUniversity.Models;
 using Microsoft.EntityFrameworkCore;
 using ContosoUniversity.Data;
 using ContosoUniversity.Models.SchoolViewModels;
+using Couchbase.EntityFrameworkCore.Metadata;
 using System.Data.Common;
-using Microsoft.EntityFrameworkCore.Metadata.Internal;
 
 namespace ContosoUniversity.Controllers
 {
@@ -29,45 +29,42 @@ namespace ContosoUniversity.Controllers
 
         public async Task<ActionResult> About()
         {
-            var query = from s in _context.Students
-                group s by s.EnrollmentDate
-                into grp
-                select new EnrollmentDateGroup  { EnrollmentDate = grp.Key, StudentCount = grp.Count()};
-
-            var groups = await query.ToListAsync().ConfigureAwait(false);
-            
-            /*ADO.NET is not currently supported by EFCore.Couchbase*/
-            /*
             List<EnrollmentDateGroup> groups = new List<EnrollmentDateGroup>();
             var conn = _context.Database.GetDbConnection();
 
             try
             {
                 await conn.OpenAsync();
-                using (var command = conn.CreateCommand())
-                {
-                    string query = "SELECT EnrollmentDate, COUNT(*) AS StudentCount "
-                        + "FROM Person "
-                        + "WHERE Discriminator = 'Student' "
-                        + "GROUP BY EnrollmentDate";
-                    command.CommandText = query;
-                    DbDataReader reader = await command.ExecuteReaderAsync();
+                await using var command = conn.CreateCommand();
+                // Resolve the fully-qualified keyspace (Bucket.Scope.Collection) from the model
+                // rather than hardcoding it, so the query follows the entity's mapping if the
+                // bucket/scope change. Student is part of the Person TPH hierarchy, so its table
+                // name is the shared "person" keyspace.
+                var keyspace = CouchbaseKeyspace
+                    .Parse(_context.Model.FindEntityType(typeof(Student))!.GetTableName()!)
+                    .ToSqlString();
+                // Field names are camelCase because the context uses UseCamelCaseNamingConvention();
+                // the hierarchy is distinguished by the "discriminator" field.
+                string query = "SELECT enrollmentDate AS EnrollmentDate, COUNT(*) AS StudentCount "
+                               + $"FROM {keyspace} "
+                               + "WHERE discriminator = 'Student' "
+                               + "GROUP BY enrollmentDate";
+                command.CommandText = query;
+                await using var reader = await command.ExecuteReaderAsync();
 
-                    if (reader.HasRows)
+                if (reader.HasRows)
+                {
+                    while (await reader.ReadAsync())
                     {
-                        while (await reader.ReadAsync())
-                        {
-                            var row = new EnrollmentDateGroup { EnrollmentDate = reader.GetDateTime(0), StudentCount = reader.GetInt32(1) };
-                            groups.Add(row);
-                        }
+                        var row = new EnrollmentDateGroup { EnrollmentDate = reader.GetDateTime(0), StudentCount = reader.GetInt32(1) };
+                        groups.Add(row);
                     }
-                    reader.Dispose();
                 }
             }
             finally
             {
-                conn.Close();
-            }*/
+                await conn.CloseAsync();
+            }
             return View(groups);
         }
 
