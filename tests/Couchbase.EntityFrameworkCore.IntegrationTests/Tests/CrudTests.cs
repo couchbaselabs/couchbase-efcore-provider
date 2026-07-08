@@ -231,6 +231,10 @@ public class CrudTests(
     // was created moments earlier (as the AppHost does), then read each back by key (no index).
     // If any are missing, the SDK acknowledged an insert into a not-yet-ready collection that never
     // persisted. Varies the settle delay between collection creation and the inserts.
+    // Note: inserts use default InsertOptions (no explicit DurabilityLevel), so this does not
+    // exercise KV durability semantics — only whether a default-durability insert into a
+    // freshly-created collection is later readable. The test cluster is single-node, so a
+    // majority/replica durability level isn't satisfiable here anyway.
     [Theory]
     [InlineData(0)]
     [InlineData(2000)]
@@ -345,15 +349,20 @@ public class CrudTests(
         async Task WaitForIndexesOnlineAsync(TimeSpan timeout)
         {
             var deadline = DateTime.UtcNow + timeout;
-            var stmt = $"SELECT RAW COUNT(*) FROM system:indexes WHERE bucket_id = '{bucketName}' "
-                + $"AND scope_id = '{scope}' AND keyspace_id IN ['{primaryColl}', '{gsiColl}'] AND state = 'online'";
+            const string stmt = "SELECT RAW COUNT(*) FROM system:indexes WHERE bucket_id = $bucket "
+                + "AND scope_id = $scope AND keyspace_id IN [$primaryColl, $gsiColl] AND state = 'online'";
+            var queryOptions = new global::Couchbase.Query.QueryOptions()
+                .Parameter("bucket", bucketName)
+                .Parameter("scope", scope)
+                .Parameter("primaryColl", primaryColl)
+                .Parameter("gsiColl", gsiColl);
             var online = 0;
             Exception? lastError = null;
             while (true)
             {
                 try
                 {
-                    using var r = await cluster.QueryAsync<int>(stmt);
+                    using var r = await cluster.QueryAsync<int>(stmt, queryOptions);
                     online = 0;
                     await foreach (var c in r.Rows) { online = c; break; }
                     if (online >= 2) return;
