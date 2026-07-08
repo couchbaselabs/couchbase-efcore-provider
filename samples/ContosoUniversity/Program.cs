@@ -239,13 +239,16 @@ internal readonly record struct CouchbaseConnectionInfo(
                 "The Couchbase connection string is missing a username and/or password. " + expectedFormat);
         }
 
-        // A bucket segment (the URI path) is required.
-        var bucketName = uri.AbsolutePath.Trim('/');
-        if (string.IsNullOrEmpty(bucketName))
+        // The path must be exactly one segment (the bucket name); a multi-segment path like
+        // /bucket/extra would otherwise be accepted here and fail confusingly later.
+        var pathSegments = uri.AbsolutePath.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (pathSegments.Length != 1)
         {
             throw new InvalidOperationException(
-                "The Couchbase connection string is missing a bucket segment. " + expectedFormat);
+                "The Couchbase connection string is missing a bucket segment, or has more than one. "
+                + expectedFormat);
         }
+        var bucketName = pathSegments[0];
 
         return new CouchbaseConnectionInfo(host, username, password, bucketName);
     }
