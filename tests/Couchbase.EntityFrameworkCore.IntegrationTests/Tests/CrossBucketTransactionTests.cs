@@ -60,17 +60,26 @@ public class CrossBucketTransactionTests(BloggingFixture fixture)
         await using (var scope = provider.CreateAsyncScope())
         {
             var context = scope.ServiceProvider.GetRequiredService<SpanningContext>();
-            var widgetA = await context.WidgetsA.FindAsync(id);
-            var widgetB = await context.WidgetsB.FindAsync(id);
+            TxWidgetA? widgetA = null;
+            TxWidgetB? widgetB = null;
+            try
+            {
+                widgetA = await context.WidgetsA.FindAsync(id);
+                widgetB = await context.WidgetsB.FindAsync(id);
 
-            Assert.NotNull(widgetA);
-            Assert.NotNull(widgetB);
-            Assert.Equal("widget-a-committed", widgetA!.Name);
-            Assert.Equal("widget-b-committed", widgetB!.Name);
-
-            context.Remove(widgetA);
-            context.Remove(widgetB);
-            await context.SaveChangesAsync();
+                Assert.NotNull(widgetA);
+                Assert.NotNull(widgetB);
+                Assert.Equal("widget-a-committed", widgetA!.Name);
+                Assert.Equal("widget-b-committed", widgetB!.Name);
+            }
+            finally
+            {
+                // Clean up even if an assertion (or FindAsync) fails above — otherwise these
+                // documents would leak into subsequent test runs.
+                if (widgetA != null) context.Remove(widgetA);
+                if (widgetB != null) context.Remove(widgetB);
+                await context.SaveChangesAsync();
+            }
         }
     }
 
