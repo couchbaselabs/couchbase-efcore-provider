@@ -120,11 +120,13 @@ public class CrossBucketTransactionTests(BloggingFixture fixture)
         const int conflictingId = 6004;
 
         // Seed a document directly (outside the transaction) so the in-transaction insert to the
-        // same key in bucket "secondary" below is guaranteed to conflict.
+        // same key in bucket "secondary" below is guaranteed to conflict. Use Update (upsert)
+        // rather than Add (insert) so seeding is idempotent — a leftover document from a prior
+        // failed run must not make this step itself throw before the finally block can clean up.
         await using (var seedScope = provider.CreateAsyncScope())
         {
             var seedContext = seedScope.ServiceProvider.GetRequiredService<SpanningContext>();
-            seedContext.Add(new TxWidgetB { Id = conflictingId, Name = "pre-existing" });
+            seedContext.Update(new TxWidgetB { Id = conflictingId, Name = "pre-existing" });
             await seedContext.SaveChangesAsync();
         }
 
