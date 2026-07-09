@@ -126,7 +126,7 @@ public class CrudTests(
         }
     }
 
-    [Fact(Skip = "Needs a writable 'user' collection in travel-sample AND User.Addresses mapped as OwnsMany (currently .Ignore()'d in TravelSampleDbContext). Owned types are supported; enabling this is model/fixture work.")]
+    [Fact]
     public async Task Test_ComplexObject()
     {
         await using var context = travelSampleFixture.GetDbContext();
@@ -700,7 +700,13 @@ public class CrudTests(
         Assert.Equal("hotel", hotel.Type);
     }
 
-    [Fact(Skip = "Hotel.Geo is mapped with .Ignore() in TravelSampleDbContext. Map it as OwnsOne to read the embedded 'geo' object (owned types are supported; lat/lon/accuracy match the camelCase convention).")]
+    [Fact(Skip = "Hotel.Geo is mapped with .Ignore() in TravelSampleDbContext. OwnsOne is NOT "
+        + "sufficient here: it table-splits into flat 'geo_Lat'/'geo_Lon' columns, but "
+        + "travel-sample stores geo as a genuinely nested JSON object ({\"geo\":{\"lat\":...}}), "
+        + "so those columns never match and Lat/Lon always read back null (confirmed against a "
+        + "live cluster). Needs query-translation support for reading a nested-object path on an "
+        + "OwnsOne navigation, analogous to what CouchbaseOwnedCollectionMaterializer already does "
+        + "for OwnsMany arrays.")]
     public async Task Test_Hotel_With_Geo()
     {
         await using var context = travelSampleFixture.GetDbContext();
@@ -717,12 +723,12 @@ public class CrudTests(
         Assert.NotNull(hotel.Geo.Lon);
     }
 
-    [Fact(Skip = "Hotel.Reviews is mapped with .Ignore() in TravelSampleDbContext. Map as OwnsMany to enable (owned types are supported). Note: the nested 'ratings' field names (e.g. 'Service', 'Check in / front desk') don't match the naming convention and would need explicit column mapping.")]
+    [Fact]
     public async Task Test_Hotel_With_Reviews()
     {
         await using var context = travelSampleFixture.GetDbContext();
 
-        // Query any hotel - Reviews is ignored by EF so not included in query projection
+        // Reviews is mapped as OwnsMany, so it materializes from the embedded reviews array.
         var hotels = await context.Hotels.Take(10).ToListAsync();
 
         // Find one with reviews

@@ -266,10 +266,68 @@ internal sealed class CouchbaseOwnedCollectionMaterializer
         //    that do not use a ValueConverter but register their own JSON reader).
         var readerWriter = typeMapping?.JsonValueReaderWriter;
         if (readerWriter != null)
-            return readerWriter.FromJsonString(element.GetRawText(), existingObject: null);
+        {
+            try
+            {
+                return readerWriter.FromJsonString(element.GetRawText(), existingObject: null);
+            }
+            catch (FormatException) when (IsIntegerClrType(property.ClrType)
+                && element.ValueKind == JsonValueKind.Number)
+            {
+                // Real-world Couchbase documents sometimes store a whole-number value with a
+                // decimal point (e.g. a review rating written as "4.0"), which EF Core's strict
+                // built-in int/long JSON readers reject outright. Fall back to a tolerant parse.
+                // Restricted to Number tokens so a FormatException from some other invalid shape
+                // (e.g. a string or boolean where an int was expected) still surfaces as-is
+                // instead of being reinterpreted by ConvertJsonValue.
+                return ConvertJsonValue(element, property.ClrType, options);
+            }
+        }
 
         // 3. Primitive switch fallback.
         return ConvertJsonValue(element, property.ClrType, options);
+    }
+
+    private static bool IsIntegerClrType(Type type)
+    {
+        var t = Nullable.GetUnderlyingType(type) ?? type;
+        return t == typeof(int) || t == typeof(long);
+    }
+
+    /// <summary>
+    /// Returns <paramref name="value"/> unchanged if it has no fractional component, otherwise
+    /// throws — a genuine fraction (e.g. 4.4) must not be silently truncated when parsing an
+    /// int/long property.
+    /// </summary>
+    private static decimal RequireIntegral(decimal value)
+    {
+        if (decimal.Truncate(value) != value)
+            throw new FormatException($"Expected an integral JSON number but got '{value}'.");
+        return value;
+    }
+
+    /// <summary>
+    /// Converts a decimal-formatted whole number (e.g. "4.0") to <see cref="int"/>, throwing
+    /// <see cref="FormatException"/> — not <see cref="OverflowException"/> — when out of range,
+    /// so an out-of-range value behaves the same whether or not it carries a decimal point (the
+    /// integer-formatted case already throws <see cref="FormatException"/> via
+    /// <see cref="JsonElement.GetInt32"/>).
+    /// </summary>
+    private static int ToInt32Checked(decimal value)
+    {
+        value = RequireIntegral(value);
+        if (value < int.MinValue || value > int.MaxValue)
+            throw new FormatException($"Value '{value}' is outside the range of Int32.");
+        return (int)value;
+    }
+
+    /// <summary>Same as <see cref="ToInt32Checked"/>, for <see cref="long"/>.</summary>
+    private static long ToInt64Checked(decimal value)
+    {
+        value = RequireIntegral(value);
+        if (value < long.MinValue || value > long.MaxValue)
+            throw new FormatException($"Value '{value}' is outside the range of Int64.");
+        return (long)value;
     }
 
     /// <summary>
@@ -288,8 +346,13 @@ internal sealed class CouchbaseOwnedCollectionMaterializer
         return t switch
         {
             _ when t == typeof(string)   => element.GetString(),
-            _ when t == typeof(int)      => element.GetInt32(),
-            _ when t == typeof(long)     => element.GetInt64(),
+            // TryGetInt32/64 reject a JSON number with a decimal point (e.g. "4.0") even when it
+            // represents a whole value (observed in the Couchbase travel-sample hotel review
+            // ratings). Fall back to GetDecimal() — exact for the full int/long range, unlike
+            // double — and require the value to actually be integral rather than silently
+            // truncating a genuine fraction like 4.4.
+            _ when t == typeof(int)      => element.TryGetInt32(out var i32) ? i32 : ToInt32Checked(element.GetDecimal()),
+            _ when t == typeof(long)     => element.TryGetInt64(out var i64) ? i64 : ToInt64Checked(element.GetDecimal()),
             _ when t == typeof(double)   => element.GetDouble(),
             _ when t == typeof(decimal)  => element.GetDecimal(),
             _ when t == typeof(float)    => (float)element.GetDouble(),

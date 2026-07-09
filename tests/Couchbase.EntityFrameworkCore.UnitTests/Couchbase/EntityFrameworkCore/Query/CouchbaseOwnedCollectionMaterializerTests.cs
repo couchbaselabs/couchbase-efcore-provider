@@ -42,6 +42,53 @@ public class CouchbaseOwnedCollectionMaterializerTests
     }
 
     [Fact]
+    public void ConvertJsonValue_DecimalFormattedWholeNumber_ReturnsInt()
+    {
+        // Real-world Couchbase documents sometimes store a whole-number value with a decimal
+        // point (e.g. Couchbase travel-sample hotel review ratings written as "4.0"). Utf8JsonReader's
+        // GetInt32() rejects that token outright even though it represents a whole value.
+        var el = JsonDocument.Parse("4.0").RootElement;
+        Assert.Equal(4, CouchbaseOwnedCollectionMaterializer.ConvertJsonValue(el, typeof(int), _webOptions));
+    }
+
+    [Fact]
+    public void ConvertJsonValue_DecimalFormattedWholeNumber_ReturnsLong()
+    {
+        var el = JsonDocument.Parse("9999999999.0").RootElement;
+        Assert.Equal(9999999999L, CouchbaseOwnedCollectionMaterializer.ConvertJsonValue(el, typeof(long), _webOptions));
+    }
+
+    [Fact]
+    public void ConvertJsonValue_NonIntegralDecimal_ThrowsRatherThanTruncating()
+    {
+        // A genuine fraction (not a decimal-formatted whole number) must not be silently
+        // coerced into an int — that would hide real data-quality problems.
+        var el = JsonDocument.Parse("4.4").RootElement;
+        Assert.Throws<FormatException>(
+            () => CouchbaseOwnedCollectionMaterializer.ConvertJsonValue(el, typeof(int), _webOptions));
+    }
+
+    [Fact]
+    public void ConvertJsonValue_DecimalFormattedOutOfRangeInt_ThrowsFormatException()
+    {
+        // GetInt32() throws FormatException (not OverflowException) for an out-of-range
+        // integer-formatted number. The decimal-formatted fallback must behave the same way for
+        // an out-of-range value like "2147483648.0" instead of throwing OverflowException.
+        var el = JsonDocument.Parse("2147483648.0").RootElement;
+        Assert.Throws<FormatException>(
+            () => CouchbaseOwnedCollectionMaterializer.ConvertJsonValue(el, typeof(int), _webOptions));
+    }
+
+    [Fact]
+    public void ConvertJsonValue_DecimalFormattedOutOfRangeLong_ThrowsFormatException()
+    {
+        // 10^20 is within decimal's range (~7.9e28) but exceeds long.MaxValue (~9.2e18).
+        var el = JsonDocument.Parse("100000000000000000000.0").RootElement;
+        Assert.Throws<FormatException>(
+            () => CouchbaseOwnedCollectionMaterializer.ConvertJsonValue(el, typeof(long), _webOptions));
+    }
+
+    [Fact]
     public void ConvertJsonValue_Double_ReturnsDouble()
     {
         var el = JsonDocument.Parse("3.14").RootElement;
@@ -332,6 +379,23 @@ public class CouchbaseOwnedCollectionMaterializerTests
         var result  = CouchbaseOwnedCollectionMaterializer.ConvertFromJson(element, prop, _webOptions);
 
         Assert.Equal(42, result);
+    }
+
+    [Fact]
+    public void ConvertFromJson_NoConverter_DecimalFormattedWholeNumber_ReturnsInt()
+    {
+        // Regression: EF Core's built-in JsonValueReaderWriter for int/int? (used ahead of the
+        // primitive-switch fallback when the property has a type mapping but no HasConversion)
+        // rejects a JSON number with a decimal point outright. Real Couchbase documents (e.g.
+        // travel-sample hotel review ratings) sometimes store a whole number that way ("4.0").
+        using var ctx = CreateConverterContext();
+        var prop = ctx.Model.FindEntityType(typeof(ConverterOwner))!
+                             .FindProperty(nameof(ConverterOwner.NullableInt))!;
+
+        var element = JsonDocument.Parse("4.0").RootElement;
+        var result  = CouchbaseOwnedCollectionMaterializer.ConvertFromJson(element, prop, _webOptions);
+
+        Assert.Equal(4, result);
     }
 
     [Fact]

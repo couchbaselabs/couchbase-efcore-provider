@@ -121,7 +121,7 @@ public class TravelSampleFixture : CouchbaseFixture<TravelSampleDbContext>
         public string Expiration { get; set; }
     }
 
-    [CouchbaseKeyspace("tenant_agent_00", "user")]
+    [CouchbaseKeyspace("tenant_agent_00", "users")]
     public class User
     {
         public Guid ID { get; set; }
