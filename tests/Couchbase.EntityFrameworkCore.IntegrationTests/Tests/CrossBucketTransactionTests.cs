@@ -143,7 +143,8 @@ public class CrossBucketTransactionTests(BloggingFixture fixture)
             context.Add(new TxWidgetB { Id = conflictingId, Name = "conflicting-insert" });
             await context.SaveChangesAsync();
 
-            await Assert.ThrowsAnyAsync<Exception>(() => transaction.CommitAsync());
+            await Assert.ThrowsAsync<global::Couchbase.Client.Transactions.Error.TransactionFailedException>(
+                () => transaction.CommitAsync());
 
             await using var verifyScope = provider.CreateAsyncScope();
             var verifyContext = verifyScope.ServiceProvider.GetRequiredService<SpanningContext>();
