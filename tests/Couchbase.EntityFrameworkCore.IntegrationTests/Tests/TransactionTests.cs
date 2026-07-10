@@ -73,17 +73,16 @@ public class TransactionTests(
 
             await transaction.RollbackAsync();
 
-            // Poll to verify document was not persisted (should remain null)
-            await PollingHelper.PollUntilAsync(async () =>
-            {
-                await using var verifyContext = bloggingFixture.GetDbContext();
-                var notSavedBlog = await verifyContext.Blogs.FindAsync(blog.BlogId);
-                return notSavedBlog == null;
-            }, TimeSpan.FromSeconds(5));
-
-            await using var finalVerifyContext = bloggingFixture.GetDbContext();
-            var notSavedBlog = await finalVerifyContext.Blogs.FindAsync(blog.BlogId);
-            Assert.Null(notSavedBlog);
+            // A single immediate read (or polling until it returns null) could still be fooled by
+            // a momentarily-stale KV read that returns null even though the document actually
+            // persisted — poll briefly for it to ever appear, then assert it never did, mirroring
+            // the cross-bucket rollback/leak checks in CrossBucketTransactionTests.
+            await using var verifyContext = bloggingFixture.GetDbContext();
+            var leakedBlog = await PollingHelper.PollForResultAsync(
+                () => verifyContext.Blogs.FindAsync(blog.BlogId).AsTask(),
+                result => result != null,
+                TimeSpan.FromSeconds(2));
+            Assert.Null(leakedBlog);
         }
         finally
         {
@@ -206,33 +205,49 @@ public class TransactionTests(
         context.Blogs.Add(blog);
         await context.SaveChangesAsync();
 
-        // Poll until blog is persisted
-        await PollingHelper.PollUntilAsync(async () =>
+        try
         {
-            await using var checkContext = bloggingFixture.GetDbContext();
-            return await checkContext.Blogs.FindAsync(blog.BlogId) != null;
-        }, TimeSpan.FromSeconds(5));
+            // Poll until blog is persisted
+            await PollingHelper.PollUntilAsync(async () =>
+            {
+                await using var checkContext = bloggingFixture.GetDbContext();
+                return await checkContext.Blogs.FindAsync(blog.BlogId) != null;
+            }, TimeSpan.FromSeconds(5));
 
-        // Delete in transaction
-        await using var transaction = await context.Database.BeginCouchbaseTransactionAsync(DurabilityLevel.None);
+            // Delete in transaction
+            await using var transaction = await context.Database.BeginCouchbaseTransactionAsync(DurabilityLevel.None);
 
-        var existingBlog = await context.Blogs.FindAsync(blog.BlogId);
-        context.Blogs.Remove(existingBlog!);
-        await context.SaveChangesAsync();
+            var existingBlog = await context.Blogs.FindAsync(blog.BlogId);
+            context.Blogs.Remove(existingBlog!);
+            await context.SaveChangesAsync();
 
-        await transaction.CommitAsync();
+            await transaction.CommitAsync();
 
-        // Poll until deletion is confirmed
-        await PollingHelper.PollUntilAsync(async () =>
+            // Poll until deletion is confirmed
+            await PollingHelper.PollUntilAsync(async () =>
+            {
+                await using var verifyContext = bloggingFixture.GetDbContext();
+                return await verifyContext.Blogs.FindAsync(blog.BlogId) == null;
+            }, TimeSpan.FromSeconds(5));
+
+            // Final verification
+            await using var finalContext = bloggingFixture.GetDbContext();
+            var deletedBlog = await finalContext.Blogs.FindAsync(blog.BlogId);
+            Assert.Null(deletedBlog);
+        }
+        finally
         {
-            await using var verifyContext = bloggingFixture.GetDbContext();
-            return await verifyContext.Blogs.FindAsync(blog.BlogId) == null;
-        }, TimeSpan.FromSeconds(5));
-
-        // Final verification
-        await using var finalContext = bloggingFixture.GetDbContext();
-        var deletedBlog = await finalContext.Blogs.FindAsync(blog.BlogId);
-        Assert.Null(deletedBlog);
+            // If any step above failed before deletion was confirmed (or deletion itself
+            // regressed), the fixed BlogId (9006) could remain in the collection and make later
+            // integration test runs flaky — remove it if it's still there.
+            await using var cleanupContext = bloggingFixture.GetDbContext();
+            var persistedBlog = await cleanupContext.Blogs.FindAsync(blog.BlogId);
+            if (persistedBlog != null)
+            {
+                cleanupContext.Blogs.Remove(persistedBlog);
+                await cleanupContext.SaveChangesAsync();
+            }
+        }
     }
 
     [Fact]
@@ -256,16 +271,15 @@ public class TransactionTests(
                 // Transaction disposed without commit
             }
 
-            // Poll to verify not persisted (should remain null)
-            await PollingHelper.PollUntilAsync(async () =>
-            {
-                await using var verifyContext = bloggingFixture.GetDbContext();
-                return await verifyContext.Blogs.FindAsync(blog.BlogId) == null;
-            }, TimeSpan.FromSeconds(5));
-
-            await using var finalContext = bloggingFixture.GetDbContext();
-            var notSaved = await finalContext.Blogs.FindAsync(blog.BlogId);
-            Assert.Null(notSaved);
+            // Polling until FindAsync returns null could false-pass on a momentarily-stale KV
+            // read even if the document actually persisted — poll briefly for it to ever appear,
+            // then assert it never did, mirroring the rollback/leak checks elsewhere in this file.
+            await using var verifyContext = bloggingFixture.GetDbContext();
+            var leakedBlog = await PollingHelper.PollForResultAsync(
+                () => verifyContext.Blogs.FindAsync(blog.BlogId).AsTask(),
+                result => result != null,
+                TimeSpan.FromSeconds(2));
+            Assert.Null(leakedBlog);
         }
         finally
         {
