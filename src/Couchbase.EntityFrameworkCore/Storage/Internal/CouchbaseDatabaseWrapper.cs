@@ -344,7 +344,7 @@ public class CouchbaseDatabaseWrapper : Database
         //              EF Core's projected column name (e.g. "address_street"), allowing the
         //              EF Core shaper to read it directly from the N1QL result row.
         //   OwnsMany → the collection is stored under its camelCase navigation name
-        //              (e.g. "contactMethods") so AddOwnedCollectionColumnsToProjection
+        //              (e.g. "contactMethods") so AddOwnedNavigationColumnsToProjection
         //              (CouchbaseShapedQueryCompilingExpressionVisitor) can inject a
         //              ColumnExpression into the IR projection, and PopulateCollectionNavigations
         //              can look up the same key in the N1QL result row.

@@ -10,8 +10,8 @@ using Microsoft.EntityFrameworkCore.Storage.Json;
 namespace Couchbase.EntityFrameworkCore.Query.Internal;
 
 /// <summary>
-/// Populates owned-collection navigations on a freshly materialised entity from the
-/// embedded JSON arrays that arrive inline in a Couchbase N1QL result row.
+/// Populates owned navigations on a freshly materialised entity from the embedded JSON that
+/// arrives inline in a Couchbase N1QL result row.
 /// <para>
 /// This class owns three concerns that previously lived in
 /// <see cref="CouchbaseQueryEnumerable{T}"/>:
@@ -19,6 +19,14 @@ namespace Couchbase.EntityFrameworkCore.Query.Internal;
 ///   <item><description>
 ///     <see cref="Populate{T}"/> — iterates every OwnsMany navigation on the root entity
 ///     and delegates to <see cref="MaterializeOwnedItem"/> for each array element.
+///   </description></item>
+///   <item><description>
+///     <see cref="PopulateReference{T}"/> — for a root-level OwnsOne navigation whose data is
+///     stored as a genuinely nested JSON object (rather than this provider's default flat
+///     table-split columns), overrides the navigation's properties <em>in place</em> on the
+///     shaper's already-materialised instance. Absent/null data is left alone, so this is a
+///     pure fallback — it never disturbs the flat-column round-trip most OwnsOne data already
+///     uses.
 ///   </description></item>
 ///   <item><description>
 ///     <see cref="MaterializeOwnedItem"/> — recursively materialises a single owned entity
@@ -36,6 +44,30 @@ internal sealed class CouchbaseOwnedCollectionMaterializer
     private static readonly JsonSerializerOptions _defaultSerializerOptions =
         new(JsonSerializerDefaults.Web);
 
+    /// <summary>
+    /// A scalar property that <see cref="PopulateReference{T}"/> overrode on an existing owned
+    /// instance, reported so the caller can realign the property's tracked "original value" (EF
+    /// Core's own change detection would otherwise see the override as a user-driven mutation and
+    /// mark the owner spuriously <c>Modified</c> on the next <c>SaveChanges</c> — the owned
+    /// instance's properties are ordinary table-split, snapshot-tracked properties, unlike
+    /// OwnsMany items, which fall outside EF's own change detection entirely).
+    /// </summary>
+    public readonly record struct TouchedProperty(object Instance, IProperty Property);
+
+    /// <summary>
+    /// Resolves a root-level owned navigation's actual N1QL result-row key: the compile-time
+    /// resolved alias when available (see <see cref="CouchbaseProjectionAliases.NavigationKey"/>),
+    /// otherwise the policy-computed field name. Only root-level lookups need this — a nested
+    /// navigation's field is read from within an already-extracted JSON sub-object, which was
+    /// never subject to top-level SELECT alias uniquification in the first place.
+    /// </summary>
+    private static string ResolveRootFieldName(
+        INavigation nav, IReadOnlyDictionary<string, string>? navigationAliases, JsonNamingPolicy? fieldNamingPolicy)
+        => navigationAliases != null
+            && navigationAliases.TryGetValue(CouchbaseProjectionAliases.NavigationKey(nav), out var alias)
+            ? alias
+            : fieldNamingPolicy?.ConvertName(nav.Name) ?? nav.Name;
+
     // ---------------------------------------------------------------------------
     // Public entry point
     // ---------------------------------------------------------------------------
@@ -45,17 +77,26 @@ internal sealed class CouchbaseOwnedCollectionMaterializer
     /// <paramref name="entity"/> from the corresponding JSON array in
     /// <paramref name="docElement"/>.
     /// </summary>
+    /// <param name="navigationAliases">
+    /// Maps <see cref="CouchbaseProjectionAliases.NavigationKey"/> to the navigation's actual
+    /// N1QL result-row key, resolved at compile time once alias uniquification has run — a plain
+    /// policy-computed field name can be stale if it collided with another projected column and
+    /// was suffixed (e.g. "reviews" → "reviews0"). Falls back to the policy-computed name for any
+    /// navigation not present in the map (e.g. when called without a compiled query, such as in
+    /// unit tests).
+    /// </param>
     public void Populate<T>(
         T entity,
         JsonElement docElement,
         IReadOnlyList<INavigation> ownedCollections,
         JsonNamingPolicy? fieldNamingPolicy,
-        JsonSerializerOptions? serializerOptions)
+        JsonSerializerOptions? serializerOptions,
+        IReadOnlyDictionary<string, string>? navigationAliases = null)
     {
         var options = serializerOptions ?? _defaultSerializerOptions;
         foreach (var nav in ownedCollections)
         {
-            var fieldName = fieldNamingPolicy?.ConvertName(nav.Name) ?? nav.Name;
+            var fieldName = ResolveRootFieldName(nav, navigationAliases, fieldNamingPolicy);
             if (!docElement.TryGetPropertyCI(fieldName, out var arrayElement)
                 || arrayElement.ValueKind != JsonValueKind.Array)
                 continue;
@@ -107,6 +148,98 @@ internal sealed class CouchbaseOwnedCollectionMaterializer
         }
     }
 
+    /// <summary>
+    /// For each root-level OwnsOne navigation in <paramref name="ownedReferences"/>, overrides
+    /// the navigation's scalar properties <em>in place</em> from the corresponding nested JSON
+    /// object in <paramref name="docElement"/> — but only when that field is actually present as
+    /// a JSON object. When it's absent or null (the common case: a document this provider wrote
+    /// itself, using flat table-split columns), the shaper's already-materialised flat-column
+    /// result is left completely untouched.
+    /// </summary>
+    /// <returns>
+    /// Every scalar property actually overridden, across all navigations and any nested OwnsOne
+    /// depth, so the caller can realign EF Core's own change-tracking snapshot for each — see
+    /// <see cref="TouchedProperty"/>.
+    /// </returns>
+    /// <param name="navigationAliases">
+    /// See <see cref="Populate{T}"/>'s parameter of the same name — the same alias-resolution
+    /// concern applies here, since this navigation's field is also read directly off the
+    /// top-level SELECT-driven <paramref name="docElement"/>.
+    /// </param>
+    public IReadOnlyList<TouchedProperty> PopulateReference<T>(
+        T entity,
+        JsonElement docElement,
+        IReadOnlyList<INavigation> ownedReferences,
+        JsonNamingPolicy? fieldNamingPolicy,
+        JsonSerializerOptions? serializerOptions,
+        IReadOnlyDictionary<string, string>? navigationAliases = null)
+    {
+        var options = serializerOptions ?? _defaultSerializerOptions;
+        var touched = new List<TouchedProperty>();
+
+        foreach (var nav in ownedReferences)
+        {
+            var fieldName = ResolveRootFieldName(nav, navigationAliases, fieldNamingPolicy);
+            if (!docElement.TryGetPropertyCI(fieldName, out var objElement)
+                || objElement.ValueKind != JsonValueKind.Object)
+                continue;
+
+            // The default relational shaper always instantiates a table-split OwnsOne's CLR
+            // object (even when every flat column is null), so this should never be null in
+            // practice — but if it somehow is, there's nothing to override in place.
+            var existing = nav.PropertyInfo != null
+                ? nav.PropertyInfo.GetValue(entity)
+                : nav.FieldInfo?.GetValue(entity);
+            if (existing == null) continue;
+
+            PopulateReferenceInPlace(existing, objElement, nav.TargetEntityType, fieldNamingPolicy, options, touched);
+        }
+
+        return touched;
+    }
+
+    /// <summary>
+    /// Overrides <paramref name="target"/>'s scalar properties in place from
+    /// <paramref name="itemElement"/>, then recurses into any nested owned navigation: further
+    /// OwnsOne navigations get the same in-place treatment (they are just as snapshot-tracked as
+    /// the top level), while nested OwnsMany navigations reuse the ordinary
+    /// create-and-replace materialisation via <see cref="PopulateNestedCollection"/> — collections
+    /// aren't part of EF Core's snapshot-based change detection, so there's no tracking-safety
+    /// concern to preserve for them the way there is for scalars.
+    /// </summary>
+    private static void PopulateReferenceInPlace(
+        object target,
+        JsonElement itemElement,
+        IEntityType entityType,
+        JsonNamingPolicy? fieldNamingPolicy,
+        JsonSerializerOptions options,
+        List<TouchedProperty> touched)
+    {
+        PopulateScalarProperties(target, itemElement, entityType, fieldNamingPolicy, options, touched);
+
+        foreach (var ownedNav in entityType.GetNavigations())
+        {
+            if (!ownedNav.TargetEntityType.IsOwned()) continue;
+            var fieldName = fieldNamingPolicy?.ConvertName(ownedNav.Name) ?? ownedNav.Name;
+            if (!itemElement.TryGetPropertyCI(fieldName, out var nestedElement)) continue;
+
+            if (ownedNav.IsCollection)
+            {
+                PopulateNestedCollection(target, nestedElement, ownedNav, fieldNamingPolicy, options);
+            }
+            else
+            {
+                if (nestedElement.ValueKind != JsonValueKind.Object) continue;
+                var nestedExisting = ownedNav.PropertyInfo != null
+                    ? ownedNav.PropertyInfo.GetValue(target)
+                    : ownedNav.FieldInfo?.GetValue(target);
+                if (nestedExisting == null) continue;
+
+                PopulateReferenceInPlace(nestedExisting, nestedElement, ownedNav.TargetEntityType, fieldNamingPolicy, options, touched);
+            }
+        }
+    }
+
     // ---------------------------------------------------------------------------
     // Recursive owned-item materialiser
     // ---------------------------------------------------------------------------
@@ -128,23 +261,7 @@ internal sealed class CouchbaseOwnedCollectionMaterializer
     {
         var ownedEntity = Activator.CreateInstance(entityType.ClrType)!;
 
-        // Scalar properties
-        foreach (var prop in entityType.GetProperties())
-        {
-            if (prop.IsShadowProperty()) continue;
-            var jsonKey = fieldNamingPolicy?.ConvertName(prop.Name) ?? prop.Name;
-            if (itemElement.TryGetPropertyCI(jsonKey, out var propElement))
-            {
-                var converted = ConvertFromJson(propElement, prop, options);
-                // Use the property setter when one exists (public or non-public).
-                // Fall back to FieldInfo for backing-field / field-access properties where
-                // PropertyInfo is null or has no setter (e.g. init-only / get-only).
-                if (prop.PropertyInfo?.GetSetMethod(nonPublic: true) != null)
-                    prop.PropertyInfo.SetValue(ownedEntity, converted);
-                else if (prop.FieldInfo != null)
-                    prop.FieldInfo.SetValue(ownedEntity, converted);
-            }
-        }
+        PopulateScalarProperties(ownedEntity, itemElement, entityType, fieldNamingPolicy, options, touched: null);
 
         // Nested owned navigations
         foreach (var ownedNav in entityType.GetNavigations())
@@ -155,48 +272,7 @@ internal sealed class CouchbaseOwnedCollectionMaterializer
 
             if (ownedNav.IsCollection)
             {
-                if (nestedElement.ValueKind != JsonValueKind.Array) continue;
-                var accessor = ownedNav.GetCollectionAccessor();
-                // Skip navigations with no accessor and no way to assign — nothing to set.
-                if (accessor == null && ownedNav.PropertyInfo == null && ownedNav.FieldInfo == null) continue;
-                var nestedClrType = ownedNav.TargetEntityType.ClrType;
-                if (accessor != null)
-                {
-                    var coll = accessor.GetOrCreate(ownedEntity, forMaterialization: true);
-                    // Clear via IList for the common List<T> case; otherwise cast through
-                    // ICollection<T> which every mutable .NET collection implements and
-                    // guarantees Clear() — correctly handles HashSet<T>, SortedSet<T>, etc.
-                    if (coll is IList list)
-                        list.Clear();
-                    else if (coll != null)
-                        typeof(ICollection<>).MakeGenericType(nestedClrType)
-                            .GetMethod("Clear")!
-                            .Invoke(coll, null);
-                }
-                else
-                {
-                    var list = (IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(nestedClrType))!;
-                    // Use the property setter when one exists; fall back to FieldInfo for
-                    // backing-field navigations where PropertyInfo is null or has no setter.
-                    if (ownedNav.PropertyInfo?.GetSetMethod(nonPublic: true) != null)
-                        ownedNav.PropertyInfo.SetValue(ownedEntity, list);
-                    else if (ownedNav.FieldInfo != null)
-                        ownedNav.FieldInfo.SetValue(ownedEntity, list);
-                }
-                foreach (var nestedItemElement in nestedElement.EnumerateArray())
-                {
-                    var nestedEntity = MaterializeOwnedItem(nestedItemElement, ownedNav.TargetEntityType, fieldNamingPolicy, options);
-                    if (accessor != null)
-                        accessor.Add(ownedEntity, nestedEntity, forMaterialization: true);
-                    else
-                    {
-                        // Read back via the same PropertyInfo → FieldInfo fallback.
-                        var existingList = (IList?)(ownedNav.PropertyInfo != null
-                            ? ownedNav.PropertyInfo.GetValue(ownedEntity)
-                            : ownedNav.FieldInfo?.GetValue(ownedEntity));
-                        existingList?.Add(nestedEntity);
-                    }
-                }
+                PopulateNestedCollection(ownedEntity, nestedElement, ownedNav, fieldNamingPolicy, options);
             }
             else
             {
@@ -213,6 +289,101 @@ internal sealed class CouchbaseOwnedCollectionMaterializer
         }
 
         return ownedEntity;
+    }
+
+    /// <summary>
+    /// Sets every scalar property found in <paramref name="itemElement"/> onto the existing
+    /// <paramref name="target"/> instance (as opposed to <see cref="MaterializeOwnedItem"/>,
+    /// which always creates a new instance). Shared by <see cref="MaterializeOwnedItem"/> (via a
+    /// brand-new instance) and <see cref="PopulateReferenceInPlace"/> (via an existing, possibly
+    /// tracked, instance). When <paramref name="touched"/> is non-null, every property actually
+    /// set is recorded into it.
+    /// </summary>
+    private static void PopulateScalarProperties(
+        object target,
+        JsonElement itemElement,
+        IEntityType entityType,
+        JsonNamingPolicy? fieldNamingPolicy,
+        JsonSerializerOptions options,
+        List<TouchedProperty>? touched)
+    {
+        foreach (var prop in entityType.GetProperties())
+        {
+            if (prop.IsShadowProperty()) continue;
+            var jsonKey = fieldNamingPolicy?.ConvertName(prop.Name) ?? prop.Name;
+            if (!itemElement.TryGetPropertyCI(jsonKey, out var propElement)) continue;
+
+            var converted = ConvertFromJson(propElement, prop, options);
+            // Use the property setter when one exists (public or non-public).
+            // Fall back to FieldInfo for backing-field / field-access properties where
+            // PropertyInfo is null or has no setter (e.g. init-only / get-only).
+            if (prop.PropertyInfo?.GetSetMethod(nonPublic: true) != null)
+                prop.PropertyInfo.SetValue(target, converted);
+            else if (prop.FieldInfo != null)
+                prop.FieldInfo.SetValue(target, converted);
+            else
+                continue;
+
+            touched?.Add(new TouchedProperty(target, prop));
+        }
+    }
+
+    /// <summary>
+    /// Materialises a nested OwnsMany navigation's array onto <paramref name="owner"/> — the
+    /// create-and-replace logic shared by <see cref="MaterializeOwnedItem"/> and
+    /// <see cref="PopulateReferenceInPlace"/>. Collections aren't part of EF Core's snapshot-based
+    /// change detection (unlike table-split OwnsOne scalars), so replacing the collection wholesale
+    /// carries no tracking-safety concern the way overriding a scalar in place does.
+    /// </summary>
+    private static void PopulateNestedCollection(
+        object owner,
+        JsonElement nestedElement,
+        INavigation ownedNav,
+        JsonNamingPolicy? fieldNamingPolicy,
+        JsonSerializerOptions options)
+    {
+        if (nestedElement.ValueKind != JsonValueKind.Array) return;
+        var accessor = ownedNav.GetCollectionAccessor();
+        // Skip navigations with no accessor and no way to assign — nothing to set.
+        if (accessor == null && ownedNav.PropertyInfo == null && ownedNav.FieldInfo == null) return;
+        var nestedClrType = ownedNav.TargetEntityType.ClrType;
+        if (accessor != null)
+        {
+            var coll = accessor.GetOrCreate(owner, forMaterialization: true);
+            // Clear via IList for the common List<T> case; otherwise cast through
+            // ICollection<T> which every mutable .NET collection implements and
+            // guarantees Clear() — correctly handles HashSet<T>, SortedSet<T>, etc.
+            if (coll is IList list)
+                list.Clear();
+            else if (coll != null)
+                typeof(ICollection<>).MakeGenericType(nestedClrType)
+                    .GetMethod("Clear")!
+                    .Invoke(coll, null);
+        }
+        else
+        {
+            var list = (IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(nestedClrType))!;
+            // Use the property setter when one exists; fall back to FieldInfo for
+            // backing-field navigations where PropertyInfo is null or has no setter.
+            if (ownedNav.PropertyInfo?.GetSetMethod(nonPublic: true) != null)
+                ownedNav.PropertyInfo.SetValue(owner, list);
+            else if (ownedNav.FieldInfo != null)
+                ownedNav.FieldInfo.SetValue(owner, list);
+        }
+        foreach (var nestedItemElement in nestedElement.EnumerateArray())
+        {
+            var nestedEntity = MaterializeOwnedItem(nestedItemElement, ownedNav.TargetEntityType, fieldNamingPolicy, options);
+            if (accessor != null)
+                accessor.Add(owner, nestedEntity, forMaterialization: true);
+            else
+            {
+                // Read back via the same PropertyInfo → FieldInfo fallback.
+                var existingList = (IList?)(ownedNav.PropertyInfo != null
+                    ? ownedNav.PropertyInfo.GetValue(owner)
+                    : ownedNav.FieldInfo?.GetValue(owner));
+                existingList?.Add(nestedEntity);
+            }
+        }
     }
 
     // ---------------------------------------------------------------------------

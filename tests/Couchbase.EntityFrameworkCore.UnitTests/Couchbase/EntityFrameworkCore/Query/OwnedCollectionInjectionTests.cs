@@ -154,6 +154,21 @@ public class NestedOwnedSqlGenerationTests
         Assert.Equal(sql.Count(c => c == '('), sql.Count(c => c == ')'));
     }
 
+    // A root-level OwnsOne (Customer.Address) must get an additive raw-object projection column
+    // for its field name, alongside its usual flat table-split columns — the fallback that lets
+    // PopulateReference override flat-column reads for a genuinely nested JSON document.
+    [Fact]
+    public void RootOwnsOne_ToList_ProjectsRawObjectColumnForNavigation()
+    {
+        using var ctx = CreateContext();
+        var sql = ctx.Customers.AsQueryable().ToQueryString();
+        // Distinct from the flat table-split columns (`Address_City`, `Address_Street`) already
+        // present in the SELECT list — this is the new additive raw-object column keyed by the
+        // navigation's own field name.
+        Assert.Contains("`address`", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(sql.Count(c => c == '('), sql.Count(c => c == ')'));
+    }
+
     private static CustomerContext CreateContext()
     {
         var clusterOptions = new global::Couchbase.ClusterOptions()

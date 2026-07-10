@@ -27,6 +27,8 @@ public static class CouchbaseQueryEnumerable
         RelationalCommandResolver relationalCommandResolver,
         IReadOnlyList<ReaderColumn?>? readerColumns,
         string[]? projectionAliases,
+        string[]? ownedNavigationKeys,
+        string[]? ownedNavigationAliases,
         Func<QueryContext, DbDataReader, ResultContext, SingleQueryResultCoordinator, T> shaper,
         Type contextType,
         bool standAloneStateManager,
@@ -40,6 +42,8 @@ public static class CouchbaseQueryEnumerable
             relationalCommandResolver,
             readerColumns,
             projectionAliases,
+            ownedNavigationKeys,
+            ownedNavigationAliases,
             shaper,
             contextType,
             standAloneStateManager,
@@ -72,6 +76,14 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
     private readonly DbContext _dbContext;
     private readonly IReadOnlyList<INavigation> _ownedCollectionNavigations;
     private readonly bool _ownedCollectionsSpanInheritance;
+    private readonly IReadOnlyList<INavigation> _ownedReferenceNavigations;
+    private readonly bool _ownedReferencesSpanInheritance;
+    // Maps CouchbaseProjectionAliases.NavigationKey(nav) → the navigation's actual (possibly
+    // uniquified) N1QL result-row key, resolved at compile time in
+    // CouchbaseShapedQueryCompilingExpressionVisitor once ComputeUnique has run. Only root-level
+    // owned navigations need this — a field name computed fresh from the naming policy can be
+    // stale if it collided with another projected column and was suffixed (e.g. "address0").
+    private readonly Dictionary<string, string> _ownedNavigationAliases;
     private readonly CouchbaseOwnedCollectionMaterializer _materializer = new();
     private readonly CouchbaseCollectionSnapshot _snapshot = new();
 
@@ -80,6 +92,8 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
         RelationalCommandResolver relationalCommandResolver,
         IReadOnlyList<ReaderColumn?>? readerColumns,
         string[]? projectionAliases,
+        string[]? ownedNavigationKeys,
+        string[]? ownedNavigationAliases,
         Func<QueryContext, DbDataReader, ResultContext, SingleQueryResultCoordinator, T> shaper,
         Type contextType,
         bool standAloneStateManager,
@@ -93,6 +107,12 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
         _relationalCommandResolver = relationalCommandResolver;
         _readerColumns = readerColumns;
         _projectionAliases = projectionAliases;
+        _ownedNavigationAliases = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (ownedNavigationKeys != null && ownedNavigationAliases != null)
+        {
+            for (var i = 0; i < ownedNavigationKeys.Length; i++)
+                _ownedNavigationAliases[ownedNavigationKeys[i]] = ownedNavigationAliases[i];
+        }
         _shaper = shaper;
         _contextType = contextType;
         _queryLogger = relationalQueryContext.QueryLogger;
@@ -124,25 +144,79 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
         _ownedCollectionsSpanInheritance = ownerEntityType != null &&
             _ownedCollectionNavigations.Any(
                 n => !n.DeclaringEntityType.ClrType.IsAssignableFrom(ownerEntityType.ClrType));
+
+        // Root-level OwnsOne navigations — additive fallback for genuinely nested JSON objects
+        // (see CouchbaseOwnedCollectionMaterializer.PopulateReference). Same TPH-inheritance
+        // handling as _ownedCollectionNavigations above.
+        _ownedReferenceNavigations = ownerEntityType == null ? [] :
+            ownerEntityType.GetNavigations()
+                .Concat(ownerEntityType.GetDerivedTypes().SelectMany(t => t.GetDeclaredNavigations()))
+                .Where(n => !n.IsCollection && n.TargetEntityType.IsOwned())
+                .ToArray();
+        _ownedReferencesSpanInheritance = ownerEntityType != null &&
+            _ownedReferenceNavigations.Any(
+                n => !n.DeclaringEntityType.ClrType.IsAssignableFrom(ownerEntityType.ClrType));
     }
 
     /// <summary>
-    /// Returns the subset of <see cref="_ownedCollectionNavigations"/> whose declaring entity
-    /// type is assignable from <paramref name="entity"/>'s runtime type. For non-inheritance
-    /// queries this returns the full list unchanged.
+    /// Returns the subset of <paramref name="navigations"/> whose declaring entity type is
+    /// assignable from <paramref name="entity"/>'s runtime type. For non-inheritance queries
+    /// (<paramref name="spansInheritance"/> is <see langword="false"/>) this returns the full
+    /// list unchanged. Shared by <see cref="_ownedCollectionNavigations"/> and
+    /// <see cref="_ownedReferenceNavigations"/> filtering.
     /// </summary>
-    private IReadOnlyList<INavigation> ApplicableOwnedCollections(object? entity)
+    private static IReadOnlyList<INavigation> ApplicableOwnedNavigations(
+        IReadOnlyList<INavigation> navigations, bool spansInheritance, object? entity)
     {
-        if (!_ownedCollectionsSpanInheritance || entity is null)
-            return _ownedCollectionNavigations;
+        if (!spansInheritance || entity is null)
+            return navigations;
 
-        var applicable = new List<INavigation>(_ownedCollectionNavigations.Count);
-        foreach (var nav in _ownedCollectionNavigations)
+        var applicable = new List<INavigation>(navigations.Count);
+        foreach (var nav in navigations)
         {
             if (nav.DeclaringEntityType.ClrType.IsInstanceOfType(entity))
                 applicable.Add(nav);
         }
         return applicable;
+    }
+
+    /// <summary>
+    /// If <see cref="_isTracking"/> and any property was overridden by
+    /// <see cref="CouchbaseOwnedCollectionMaterializer.PopulateReference{T}"/>, realigns EF Core's
+    /// own change-tracking snapshot for each so a later <c>DetectChanges</c> doesn't see the
+    /// override as a user-driven mutation and spuriously mark the owner <c>Modified</c>.
+    /// <para>
+    /// <see cref="Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry"/> access (via
+    /// <see cref="DbContext.Entry"/> or <see cref="Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry.State"/>)
+    /// triggers an implicit <c>DetectChanges()</c> unless <c>AutoDetectChangesEnabled</c> is
+    /// disabled first — otherwise that implicit detection would bake in <c>IsModified=true</c>
+    /// against the stale original value before this method gets a chance to fix it. This mirrors
+    /// the pattern already used by
+    /// <see cref="Couchbase.EntityFrameworkCore.Storage.Internal.CouchbaseSaveChangesInterceptor.MarkOwnersWithReplacedCollections"/>.
+    /// </para>
+    /// </summary>
+    private void RealignTrackedOriginalValues(
+        IReadOnlyList<CouchbaseOwnedCollectionMaterializer.TouchedProperty> touched)
+    {
+        if (!_isTracking || touched.Count == 0) return;
+
+        var changeTracker = _dbContext.ChangeTracker;
+        var autoDetect = changeTracker.AutoDetectChangesEnabled;
+        changeTracker.AutoDetectChangesEnabled = false;
+        try
+        {
+            foreach (var t in touched)
+            {
+                var currentValue = t.Property.PropertyInfo != null
+                    ? t.Property.PropertyInfo.GetValue(t.Instance)
+                    : t.Property.FieldInfo?.GetValue(t.Instance);
+                _dbContext.Entry(t.Instance).Property(t.Property.Name).OriginalValue = currentValue;
+            }
+        }
+        finally
+        {
+            changeTracker.AutoDetectChangesEnabled = autoDetect;
+        }
     }
 
     /// <summary>Returns an enumerator that iterates through the collection.</summary>
@@ -221,15 +295,22 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
                 // fall back to CurrentRow for shapers that complete in a single iteration.
                 var navRow = pendingEntityRow
                     ?? (reader.CurrentRow is JsonElement r ? r : (JsonElement?)null);
-                if (_ownedCollectionNavigations.Count > 0
+                if ((_ownedCollectionNavigations.Count > 0 || _ownedReferenceNavigations.Count > 0)
                     && navRow is JsonElement rowElement
                     && rowElement.ValueKind == JsonValueKind.Object)
                 {
-                    var applicable = ApplicableOwnedCollections(result);
-                    if (applicable.Count > 0)
+                    var applicableCollections = ApplicableOwnedNavigations(_ownedCollectionNavigations, _ownedCollectionsSpanInheritance, result);
+                    if (applicableCollections.Count > 0)
                     {
-                        _materializer.Populate(result, rowElement, applicable, _couchbaseDbContextOptionsBuilder.FieldNamingPolicy, _couchbaseDbContextOptionsBuilder.SerializerOptions);
-                        _snapshot.Record(result, applicable, _isTracking);
+                        _materializer.Populate(result, rowElement, applicableCollections, _couchbaseDbContextOptionsBuilder.FieldNamingPolicy, _couchbaseDbContextOptionsBuilder.SerializerOptions, _ownedNavigationAliases);
+                        _snapshot.Record(result, applicableCollections, _isTracking);
+                    }
+
+                    var applicableReferences = ApplicableOwnedNavigations(_ownedReferenceNavigations, _ownedReferencesSpanInheritance, result);
+                    if (applicableReferences.Count > 0)
+                    {
+                        var touched = _materializer.PopulateReference(result, rowElement, applicableReferences, _couchbaseDbContextOptionsBuilder.FieldNamingPolicy, _couchbaseDbContextOptionsBuilder.SerializerOptions, _ownedNavigationAliases);
+                        RealignTrackedOriginalValues(touched);
                     }
                 }
                 pendingEntityRow = null;
@@ -257,15 +338,22 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
                     var last = _shaper(_relationalQueryContext, reader, coordinator.ResultContext, coordinator);
                     coordinator.ResultContext.Values = null;
                     // CurrentRow is null at EOF; use pendingEntityRow saved above.
-                    if (_ownedCollectionNavigations.Count > 0
+                    if ((_ownedCollectionNavigations.Count > 0 || _ownedReferenceNavigations.Count > 0)
                         && pendingEntityRow is JsonElement lastRow
                         && lastRow.ValueKind == JsonValueKind.Object)
                     {
-                        var applicable = ApplicableOwnedCollections(last);
-                        if (applicable.Count > 0)
+                        var applicableCollections = ApplicableOwnedNavigations(_ownedCollectionNavigations, _ownedCollectionsSpanInheritance, last);
+                        if (applicableCollections.Count > 0)
                         {
-                            _materializer.Populate(last, lastRow, applicable, _couchbaseDbContextOptionsBuilder.FieldNamingPolicy, _couchbaseDbContextOptionsBuilder.SerializerOptions);
-                            _snapshot.Record(last, applicable, _isTracking);
+                            _materializer.Populate(last, lastRow, applicableCollections, _couchbaseDbContextOptionsBuilder.FieldNamingPolicy, _couchbaseDbContextOptionsBuilder.SerializerOptions, _ownedNavigationAliases);
+                            _snapshot.Record(last, applicableCollections, _isTracking);
+                        }
+
+                        var applicableReferences = ApplicableOwnedNavigations(_ownedReferenceNavigations, _ownedReferencesSpanInheritance, last);
+                        if (applicableReferences.Count > 0)
+                        {
+                            var touched = _materializer.PopulateReference(last, lastRow, applicableReferences, _couchbaseDbContextOptionsBuilder.FieldNamingPolicy, _couchbaseDbContextOptionsBuilder.SerializerOptions, _ownedNavigationAliases);
+                            RealignTrackedOriginalValues(touched);
                         }
                     }
                     pendingEntityRow = null;

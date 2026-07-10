@@ -224,11 +224,12 @@ public class CouchbaseShapedQueryCompilingExpressionVisitor : RelationalShapedQu
                     Expression.Constant(_couchbaseDbContextOptionsBuilder));
             }
 
-            // Add OwnsMany navigation columns to the SELECT projection using the IR so the
-            // embedded arrays arrive in the N1QL row. Done after ProcessShaper (shaper ordinals
-            // are already fixed) and before projectionAliases is built (so the new names are
-            // included in the alias array that CouchbaseDbDataReader uses for column lookup).
-            AddOwnedCollectionColumnsToProjection(selectExpression, shaper.ReturnType);
+            // Add OwnsMany/OwnsOne navigation columns to the SELECT projection using the IR so
+            // the embedded JSON arrives in the N1QL row. Done after ProcessShaper (shaper
+            // ordinals are already fixed) and before projectionAliases is built (so the new
+            // names are included in the alias array that CouchbaseDbDataReader uses for column
+            // lookup).
+            var ownedNavProjections = AddOwnedNavigationColumnsToProjection(selectExpression, shaper.ReturnType);
 
             // Build the per-ordinal N1QL response keys.  Aliases are made unique (see
             // CouchbaseProjectionAliases) so that a collection Include where the principal and
@@ -243,19 +244,22 @@ public class CouchbaseShapedQueryCompilingExpressionVisitor : RelationalShapedQu
             // signal for "no collection rows" — PopulateCollectionNavigations then fills the
             // actual collection from the embedded JSON array.
             var uniqueAliases = CouchbaseProjectionAliases.ComputeUnique(selectExpression.Projection);
-            var projectionAliasesExpression = Dependencies.LiftableConstantFactory.CreateLiftableConstant(
-                uniqueAliases,
-#pragma warning disable EF9100
-                Expression.Lambda<Func<MaterializerLiftableConstantContext, object>>(
-#pragma warning restore EF9100
-                    Expression.NewArrayInit(
-                        typeof(string),
-                        uniqueAliases.Select(a => (Expression)Expression.Constant(a, typeof(string)))),
-#pragma warning disable EF9100
-                    Expression.Parameter(typeof(MaterializerLiftableConstantContext), "_")),
-#pragma warning restore EF9100
-                "projectionAliases",
-                typeof(string[]));
+            var projectionAliasesExpression = CreateStringArrayLiftableConstant(uniqueAliases, "projectionAliases");
+
+            // Resolve each owned navigation's FINAL (post-uniquification) alias, so
+            // CouchbaseOwnedCollectionMaterializer can read the correct JSON key even when its
+            // field name collided with another projected column and was suffixed (e.g.
+            // "address" → "address0"). Keyed by CouchbaseProjectionAliases.NavigationKey rather
+            // than the field name itself, since that's exactly what may have changed.
+            var ownedNavKeys = new string[ownedNavProjections.Count];
+            var ownedNavAliases = new string[ownedNavProjections.Count];
+            for (var i = 0; i < ownedNavProjections.Count; i++)
+            {
+                ownedNavKeys[i] = CouchbaseProjectionAliases.NavigationKey(ownedNavProjections[i].Navigation);
+                ownedNavAliases[i] = uniqueAliases[ownedNavProjections[i].ProjectionIndex];
+            }
+            var ownedNavKeysExpression = CreateStringArrayLiftableConstant(ownedNavKeys, "ownedNavKeys");
+            var ownedNavAliasesExpression = CreateStringArrayLiftableConstant(ownedNavAliases, "ownedNavAliases");
 
             return Expression.Call(
                 CreateSingleQueryingEnumerableMethodInfo.MakeGenericMethod(shaper.ReturnType),
@@ -263,6 +267,8 @@ public class CouchbaseShapedQueryCompilingExpressionVisitor : RelationalShapedQu
                 relationalCommandResolver,
                 readerColumnsExpression,
                 projectionAliasesExpression,
+                ownedNavKeysExpression,
+                ownedNavAliasesExpression,
                 shaper,
                 Expression.Constant(_contextType),
                 Expression.Constant(QueryCompilationContext.QueryTrackingBehavior == QueryTrackingBehavior.NoTrackingWithIdentityResolution),
@@ -275,11 +281,21 @@ public class CouchbaseShapedQueryCompilingExpressionVisitor : RelationalShapedQu
     }
 
     /// <summary>
-    /// Appends a <see cref="ColumnExpression"/> for each OwnsMany navigation of the root entity
-    /// to <paramref name="selectExpression"/>'s projection so the embedded JSON arrays arrive
-    /// inline with the N1QL result row. This replaces the post-hoc string rewriting that
-    /// <c>InjectOwnedCollectionColumns</c> previously applied to the emitted SQL, eliminating
-    /// brittleness caused by matching FROM/AS tokens in string literals or nested subqueries.
+    /// Appends a <see cref="ColumnExpression"/> for each OwnsMany navigation, and each root-level
+    /// OwnsOne navigation, of the root entity to <paramref name="selectExpression"/>'s projection
+    /// so the embedded JSON (array or object) arrives inline with the N1QL result row. This
+    /// replaces the post-hoc string rewriting that <c>InjectOwnedCollectionColumns</c> previously
+    /// applied to the emitted SQL, eliminating brittleness caused by matching FROM/AS tokens in
+    /// string literals or nested subqueries.
+    /// <para>
+    /// OwnsMany relies on this raw JSON for materialization entirely (no JOIN is emitted).
+    /// OwnsOne still gets its usual flat table-split columns from EF Core's default relational
+    /// projection — this extra column is an additive fallback so
+    /// <see cref="CouchbaseOwnedCollectionMaterializer.PopulateReference"/> can override the
+    /// flat-column result when the navigation's data is actually stored as a genuinely nested
+    /// JSON object (e.g. a foreign/pre-existing document) rather than this provider's own flat
+    /// write scheme.
+    /// </para>
     ///
     /// Handles two shapes that EF Core emits for entities with collection includes:
     /// <list type="bullet">
@@ -289,17 +305,32 @@ public class CouchbaseShapedQueryCompilingExpressionVisitor : RelationalShapedQu
     ///     outer projections using their respective aliases.</item>
     /// </list>
     /// </summary>
-    private void AddOwnedCollectionColumnsToProjection(SelectExpression selectExpression, Type shaperReturnType)
+    /// <returns>
+    /// For each owned navigation whose column was appended, the navigation paired with the
+    /// index of its <em>outer</em> <paramref name="selectExpression"/> projection entry. The
+    /// alias at that index is only final once <see cref="CouchbaseProjectionAliases.ComputeUnique"/>
+    /// runs over the completed projection list — a colliding field name (e.g. two owned
+    /// navigations, or an owned navigation and an unrelated projected column, that both happen to
+    /// resolve to the same effective alias) gets suffixed at that point, and the raw N1QL result
+    /// row is keyed by that final, possibly-suffixed alias rather than the field name computed
+    /// here. Callers must resolve each navigation's actual key from the index returned rather
+    /// than assuming it equals the field name this method used, or a colliding fallback column
+    /// would silently fail to materialise.
+    /// </returns>
+    private List<(INavigation Navigation, int ProjectionIndex)> AddOwnedNavigationColumnsToProjection(
+        SelectExpression selectExpression, Type shaperReturnType)
     {
+        var result = new List<(INavigation Navigation, int ProjectionIndex)>();
+
         // Resolve the entity type first so we can match the TableExpression by the entity's
         // configured table name rather than the fragile 3-part "bucket.scope.collection"
         // heuristic that fails silently in test contexts where SetupKeyspaces is not called.
         var entityType = QueryCompilationContext.Model.GetEntityTypes()
             .FirstOrDefault(e => e.ClrType == shaperReturnType);
-        if (entityType == null) return;
+        if (entityType == null) return result;
 
         var expectedTableName = entityType.GetTableName();
-        if (expectedTableName == null) return;
+        if (expectedTableName == null) return result;
 
         // Locate the owner entity's TableExpression by matching its configured name.
         // Simple form:   Tables contains the entity TableExpression directly.
@@ -326,20 +357,22 @@ public class CouchbaseShapedQueryCompilingExpressionVisitor : RelationalShapedQu
                     .FirstOrDefault(t => t.Name == expectedTableName);
         }
 
-        if (ownerTable == null) return;
+        if (ownerTable == null) return result;
 
-        // Include OwnsMany navigations declared on derived types (TPH): when the base type is
-        // queried, the derived rows' owned-collection field must still be projected so it lands
-        // in the result JSON for CouchbaseQueryEnumerable to materialise. Derived types share the
+        // Include owned navigations declared on derived types (TPH): when the base type is
+        // queried, the derived rows' owned field must still be projected so it lands in the
+        // result JSON for CouchbaseQueryEnumerable to materialise. Derived types share the
         // owner's table, so the column reference against ownerTable is valid (null for base rows).
-        var ownedCollNavs = entityType.GetNavigations()
+        // Covers both OwnsMany (arrays, relied on exclusively) and root-level OwnsOne (objects,
+        // used only as a fallback — see the PopulateReference reference in the doc comment above).
+        var ownedNavs = entityType.GetNavigations()
             .Concat(entityType.GetDerivedTypes().SelectMany(t => t.GetDeclaredNavigations()))
-            .Where(n => n.IsCollection && n.TargetEntityType.IsOwned())
+            .Where(n => n.TargetEntityType.IsOwned())
             .ToList();
-        if (ownedCollNavs.Count == 0) return;
+        if (ownedNavs.Count == 0) return result;
 
         var policy = _couchbaseDbContextOptionsBuilder.FieldNamingPolicy;
-        foreach (var nav in ownedCollNavs)
+        foreach (var nav in ownedNavs)
         {
             var fieldName = policy?.ConvertName(nav.Name) ?? nav.Name;
 
@@ -357,8 +390,35 @@ public class CouchbaseShapedQueryCompilingExpressionVisitor : RelationalShapedQu
                 selectExpression.AddToProjection(
                     new ColumnExpression(fieldName, ownerTable.Alias, typeof(object), null, true));
             }
+
+            // AddToProjection always appends, so the entry we just added to the OUTER
+            // selectExpression's projection is the last one, regardless of the simple/subquery
+            // form above.
+            result.Add((nav, selectExpression.Projection.Count - 1));
         }
+
+        return result;
     }
+
+    /// <summary>
+    /// Builds a liftable <c>string[]</c> constant for the compiled query — the same pattern used
+    /// for <c>projectionAliases</c>, now shared with the owned-navigation alias-resolution arrays.
+    /// </summary>
+    [Experimental("EF9100")]
+    private Expression CreateStringArrayLiftableConstant(string[] values, string parameterName)
+        => Dependencies.LiftableConstantFactory.CreateLiftableConstant(
+            values,
+#pragma warning disable EF9100
+            Expression.Lambda<Func<MaterializerLiftableConstantContext, object>>(
+#pragma warning restore EF9100
+                Expression.NewArrayInit(
+                    typeof(string),
+                    values.Select(a => (Expression)Expression.Constant(a, typeof(string)))),
+#pragma warning disable EF9100
+                Expression.Parameter(typeof(MaterializerLiftableConstantContext), "_")),
+#pragma warning restore EF9100
+            parameterName,
+            typeof(string[]));
 
     [Experimental("EF9100")]
     private static Expression CreateReaderColumnsExpression(

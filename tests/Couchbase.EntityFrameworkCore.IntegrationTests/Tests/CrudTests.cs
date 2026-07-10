@@ -700,27 +700,46 @@ public class CrudTests(
         Assert.Equal("hotel", hotel.Type);
     }
 
-    [Fact(Skip = "Hotel.Geo is mapped with .Ignore() in TravelSampleDbContext. OwnsOne is NOT "
-        + "sufficient here: it table-splits into flat 'geo_Lat'/'geo_Lon' columns, but "
-        + "travel-sample stores geo as a genuinely nested JSON object ({\"geo\":{\"lat\":...}}), "
-        + "so those columns never match and Lat/Lon always read back null (confirmed against a "
-        + "live cluster). Needs query-translation support for reading a nested-object path on an "
-        + "OwnsOne navigation, analogous to what CouchbaseOwnedCollectionMaterializer already does "
-        + "for OwnsMany arrays.")]
+    [Fact]
     public async Task Test_Hotel_With_Geo()
     {
         await using var context = travelSampleFixture.GetDbContext();
 
-        // Query any hotel - Geo is ignored by EF so not included in query projection
-        var hotels = await context.Hotels.Take(10).ToListAsync();
+        // Sample a wider slice than most single-record tests: not every travel-sample hotel has
+        // a fully-populated geo object (a few have Geo present but null Lat/Lon), so look across
+        // enough rows to reliably find a complete one.
+        var hotels = await context.Hotels.Take(50).ToListAsync();
 
-        // Find one with geo data
-        var hotel = hotels.FirstOrDefault(h => h.Geo != null);
+        var hotel = hotels.FirstOrDefault(h => h.Geo?.Lat != null && h.Geo?.Lon != null);
 
         Assert.NotNull(hotel);
         Assert.NotNull(hotel.Geo);
         Assert.NotNull(hotel.Geo.Lat);
         Assert.NotNull(hotel.Geo.Lon);
+    }
+
+    // Tracking-safety regression: PopulateReference overrides Hotel.Geo's scalar properties in
+    // place from the nested JSON after the shaper has already snapshotted them (flat-column
+    // nulls) for change tracking. Without realigning that snapshot, EF Core's own DetectChanges
+    // would see the override as a user-driven mutation and spuriously mark the hotel Modified on
+    // the next SaveChanges. Checks the Geo entry's own IsModified flags directly rather than an
+    // aggregate SaveChangesAsync count — Hotel.Reviews (OwnsMany) items are a separate, unrelated,
+    // pre-existing issue (they come back tracked as Added on every load, forcing an owner rewrite
+    // regardless of any Geo change), which would make an aggregate write count unreliable here.
+    [Fact]
+    public async Task Test_Hotel_With_Geo_TrackedLoad_DoesNotMarkGeoModified()
+    {
+        await using var context = travelSampleFixture.GetDbContext();
+
+        var hotels = await context.Hotels.Take(50).ToListAsync();
+        var hotel = hotels.FirstOrDefault(h => h.Geo?.Lat != null && h.Geo?.Lon != null);
+        Assert.NotNull(hotel);
+
+        context.ChangeTracker.DetectChanges();
+        var geoEntry = context.Entry(hotel!.Geo!);
+        Assert.False(geoEntry.Property(nameof(TravelSampleFixture.Geo.Lat)).IsModified);
+        Assert.False(geoEntry.Property(nameof(TravelSampleFixture.Geo.Lon)).IsModified);
+        Assert.False(geoEntry.Property(nameof(TravelSampleFixture.Geo.Accuracy)).IsModified);
     }
 
     [Fact]

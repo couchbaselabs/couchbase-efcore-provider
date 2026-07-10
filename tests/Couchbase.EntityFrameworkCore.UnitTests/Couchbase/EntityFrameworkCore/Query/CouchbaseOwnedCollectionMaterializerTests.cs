@@ -234,6 +234,63 @@ public class CouchbaseOwnedCollectionMaterializerTests
     private static Microsoft.EntityFrameworkCore.Metadata.IEntityType GetOwnedType<T>(ItemContext ctx)
         => ctx.Model.GetEntityTypes().First(e => e.ClrType == typeof(T));
 
+    private static Microsoft.EntityFrameworkCore.Metadata.INavigation GetItemsNavigation(ItemContext ctx)
+        => ctx.Model.FindEntityType(typeof(ItemOwner))!.FindNavigation(nameof(ItemOwner.Items))!;
+
+    // -------------------------------------------------------------------------
+    // Populate — navigation-alias resolution (collision-proofing regression)
+    // -------------------------------------------------------------------------
+    //
+    // CouchbaseShapedQueryCompilingExpressionVisitor.AddOwnedNavigationColumnsToProjection
+    // computes a navigation's field name (e.g. "items") before CouchbaseProjectionAliases
+    // .ComputeUnique runs over the full projection. If that field name collides with another
+    // projected column's effective alias (e.g. a joined/included entity that also happens to
+    // expose an "items" property), ComputeUnique suffixes it (e.g. "items0") — and the ACTUAL
+    // N1QL result row is keyed by that suffixed alias, not the plain field name. These tests
+    // simulate that scenario directly against a synthetic row.
+
+    [Fact]
+    public void Populate_NavigationAliases_ResolvesCollidedAlias()
+    {
+        using var ctx = CreateItemContext();
+        var itemsNav = GetItemsNavigation(ctx);
+        var policy = JsonNamingPolicy.CamelCase;
+
+        var owner = new ItemOwner { Id = 1 };
+        // The array is stored under a collision-suffixed key, as the SQL generator would emit
+        // when "items" collided with another projected column's alias.
+        var doc = JsonDocument.Parse("""{"items0":[{"id":1,"value":"x"}]}""").RootElement;
+        var aliases = new Dictionary<string, string>
+        {
+            [CouchbaseProjectionAliases.NavigationKey(itemsNav)] = "items0"
+        };
+
+        var materializer = new CouchbaseOwnedCollectionMaterializer();
+        materializer.Populate(owner, doc, [itemsNav], policy, _webOptions, aliases);
+
+        Assert.Single(owner.Items);
+        Assert.Equal("x", owner.Items[0].Value);
+    }
+
+    [Fact]
+    public void Populate_WithoutNavigationAliases_MissesCollidedAlias()
+    {
+        // Negative control: without the alias map (or the key absent from it), the plain
+        // policy-computed field name ("items") never matches the actual "items0" key — proving
+        // the collision this fix addresses would otherwise silently drop the data.
+        using var ctx = CreateItemContext();
+        var itemsNav = GetItemsNavigation(ctx);
+        var policy = JsonNamingPolicy.CamelCase;
+
+        var owner = new ItemOwner { Id = 1 };
+        var doc = JsonDocument.Parse("""{"items0":[{"id":1,"value":"x"}]}""").RootElement;
+
+        var materializer = new CouchbaseOwnedCollectionMaterializer();
+        materializer.Populate(owner, doc, [itemsNav], policy, _webOptions, navigationAliases: null);
+
+        Assert.Empty(owner.Items);
+    }
+
     [Fact]
     public void MaterializeOwnedItem_ScalarProperties_AreSet()
     {
@@ -300,6 +357,196 @@ public class CouchbaseOwnedCollectionMaterializerTests
         // Second materialisation of the same JSON must also yield exactly 1 tag.
         var result2 = (OwnedItem)CouchbaseOwnedCollectionMaterializer.MaterializeOwnedItem(json, itemType, policy, _webOptions);
         Assert.Single(result2.Tags);
+    }
+
+    // -------------------------------------------------------------------------
+    // PopulateReference — in-place override for a root OwnsOne from nested JSON
+    // -------------------------------------------------------------------------
+
+    private class RefOwner
+    {
+        public int Id { get; set; }
+        public RefAddress Address { get; set; } = new();
+    }
+
+    private class RefAddress
+    {
+        public string? Street { get; set; }
+        public string? City { get; set; }
+        public RefGeo? Geo { get; set; }
+    }
+
+    private class RefGeo
+    {
+        public double? Lat { get; set; }
+        public double? Lon { get; set; }
+    }
+
+    private class RefContext(DbContextOptions<RefContext> options) : DbContext(options)
+    {
+        public DbSet<RefOwner> Owners { get; set; } = null!;
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            modelBuilder.Entity<RefOwner>(b =>
+            {
+                b.ToCouchbaseCollection("bucket", "scope", "refowner");
+                b.HasKey(o => o.Id);
+                b.OwnsOne(o => o.Address, a => a.OwnsOne(x => x.Geo));
+            });
+        }
+    }
+
+    private static RefContext CreateRefContext()
+    {
+        var opts = new global::Couchbase.ClusterOptions()
+            .WithConnectionString("couchbase://localhost")
+            .WithPasswordAuthentication("Administrator", "password");
+        var builder = new DbContextOptionsBuilder<RefContext>();
+        builder.UseCouchbaseProvider(opts);
+        return new RefContext(builder.Options);
+    }
+
+    private static Microsoft.EntityFrameworkCore.Metadata.INavigation GetRootNavigation<TOwner>(
+        RefContext ctx, string navigationName)
+        => ctx.Model.FindEntityType(typeof(TOwner))!.FindNavigation(navigationName)!;
+
+    [Fact]
+    public void PopulateReference_NestedObjectPresent_OverridesInPlace()
+    {
+        using var ctx = CreateRefContext();
+        var addressNav = GetRootNavigation<RefOwner>(ctx, nameof(RefOwner.Address));
+        var policy = JsonNamingPolicy.CamelCase;
+
+        var owner = new RefOwner { Id = 1, Address = new RefAddress { Street = "old", City = "old-city" } };
+        var existingAddress = owner.Address;
+
+        var doc = JsonDocument.Parse(
+            """{"address":{"street":"1 Main St","city":"Springfield"}}""").RootElement;
+
+        var materializer = new CouchbaseOwnedCollectionMaterializer();
+        var touched = materializer.PopulateReference(owner, doc, [addressNav], policy, _webOptions);
+
+        // In place: same instance, new values.
+        Assert.Same(existingAddress, owner.Address);
+        Assert.Equal("1 Main St", owner.Address.Street);
+        Assert.Equal("Springfield", owner.Address.City);
+
+        Assert.Equal(2, touched.Count);
+        Assert.All(touched, t => Assert.Same(existingAddress, t.Instance));
+        Assert.Contains(touched, t => t.Property.Name == nameof(RefAddress.Street));
+        Assert.Contains(touched, t => t.Property.Name == nameof(RefAddress.City));
+    }
+
+    [Fact]
+    public void PopulateReference_FieldAbsent_LeavesExistingValuesUntouched()
+    {
+        using var ctx = CreateRefContext();
+        var addressNav = GetRootNavigation<RefOwner>(ctx, nameof(RefOwner.Address));
+        var policy = JsonNamingPolicy.CamelCase;
+
+        var owner = new RefOwner { Id = 1, Address = new RefAddress { Street = "sentinel", City = "sentinel-city" } };
+
+        // No "address" key at all.
+        var doc = JsonDocument.Parse("""{"id":1}""").RootElement;
+
+        var materializer = new CouchbaseOwnedCollectionMaterializer();
+        var touched = materializer.PopulateReference(owner, doc, [addressNav], policy, _webOptions);
+
+        Assert.Empty(touched);
+        Assert.Equal("sentinel", owner.Address.Street);
+        Assert.Equal("sentinel-city", owner.Address.City);
+    }
+
+    [Fact]
+    public void PopulateReference_NavigationAliases_ResolvesCollidedAlias()
+    {
+        // Same collision-proofing concern as Populate — see the section comment above
+        // GetItemsNavigation. Here the nested object arrives under a suffixed key ("address0")
+        // rather than "address".
+        using var ctx = CreateRefContext();
+        var addressNav = GetRootNavigation<RefOwner>(ctx, nameof(RefOwner.Address));
+        var policy = JsonNamingPolicy.CamelCase;
+
+        var owner = new RefOwner { Id = 1, Address = new RefAddress { Street = "old", City = "old-city" } };
+        var doc = JsonDocument.Parse(
+            """{"address0":{"street":"1 Main St","city":"Springfield"}}""").RootElement;
+        var aliases = new Dictionary<string, string>
+        {
+            [CouchbaseProjectionAliases.NavigationKey(addressNav)] = "address0"
+        };
+
+        var materializer = new CouchbaseOwnedCollectionMaterializer();
+        var touched = materializer.PopulateReference(owner, doc, [addressNav], policy, _webOptions, aliases);
+
+        Assert.NotEmpty(touched);
+        Assert.Equal("1 Main St", owner.Address.Street);
+        Assert.Equal("Springfield", owner.Address.City);
+    }
+
+    [Fact]
+    public void PopulateReference_WithoutNavigationAliases_MissesCollidedAlias()
+    {
+        using var ctx = CreateRefContext();
+        var addressNav = GetRootNavigation<RefOwner>(ctx, nameof(RefOwner.Address));
+        var policy = JsonNamingPolicy.CamelCase;
+
+        var owner = new RefOwner { Id = 1, Address = new RefAddress { Street = "sentinel", City = "sentinel-city" } };
+        var doc = JsonDocument.Parse(
+            """{"address0":{"street":"1 Main St","city":"Springfield"}}""").RootElement;
+
+        var materializer = new CouchbaseOwnedCollectionMaterializer();
+        var touched = materializer.PopulateReference(owner, doc, [addressNav], policy, _webOptions, navigationAliases: null);
+
+        Assert.Empty(touched);
+        Assert.Equal("sentinel", owner.Address.Street);
+    }
+
+    [Fact]
+    public void PopulateReference_FieldNull_LeavesExistingValuesUntouched()
+    {
+        using var ctx = CreateRefContext();
+        var addressNav = GetRootNavigation<RefOwner>(ctx, nameof(RefOwner.Address));
+        var policy = JsonNamingPolicy.CamelCase;
+
+        var owner = new RefOwner { Id = 1, Address = new RefAddress { Street = "sentinel", City = "sentinel-city" } };
+
+        var doc = JsonDocument.Parse("""{"address":null}""").RootElement;
+
+        var materializer = new CouchbaseOwnedCollectionMaterializer();
+        var touched = materializer.PopulateReference(owner, doc, [addressNav], policy, _webOptions);
+
+        Assert.Empty(touched);
+        Assert.Equal("sentinel", owner.Address.Street);
+    }
+
+    [Fact]
+    public void PopulateReference_NestedOwnsOneWithinOwnsOne_IsPopulatedInPlace()
+    {
+        // RefAddress.Geo is itself an OwnsOne nested inside the root OwnsOne (RefOwner.Address).
+        // Recursion must apply the same in-place treatment at that depth too.
+        using var ctx = CreateRefContext();
+        var addressNav = GetRootNavigation<RefOwner>(ctx, nameof(RefOwner.Address));
+        var policy = JsonNamingPolicy.CamelCase;
+
+        var owner = new RefOwner
+        {
+            Id = 1,
+            Address = new RefAddress { Street = "1 Main St", Geo = new RefGeo { Lat = 0, Lon = 0 } }
+        };
+        var existingGeo = owner.Address.Geo!;
+
+        var doc = JsonDocument.Parse(
+            """{"address":{"street":"1 Main St","geo":{"lat":47.6,"lon":-122.3}}}""").RootElement;
+
+        var materializer = new CouchbaseOwnedCollectionMaterializer();
+        var touched = materializer.PopulateReference(owner, doc, [addressNav], policy, _webOptions);
+
+        Assert.Same(existingGeo, owner.Address.Geo);
+        Assert.Equal(47.6, owner.Address.Geo!.Lat);
+        Assert.Equal(-122.3, owner.Address.Geo!.Lon);
+
+        Assert.Contains(touched, t => t.Instance == (object)existingGeo && t.Property.Name == nameof(RefGeo.Lat));
+        Assert.Contains(touched, t => t.Instance == (object)existingGeo && t.Property.Name == nameof(RefGeo.Lon));
     }
 
     // -------------------------------------------------------------------------
