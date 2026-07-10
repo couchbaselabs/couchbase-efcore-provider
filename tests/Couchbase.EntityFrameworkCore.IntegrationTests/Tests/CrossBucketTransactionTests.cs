@@ -83,10 +83,20 @@ public class CrossBucketTransactionTests(BloggingFixture fixture)
             }
             finally
             {
-                // Clean up even if an assertion (or FindAsync) fails above — otherwise these
-                // documents would leak into subsequent test runs.
-                if (widgetA != null) context.Remove(widgetA);
-                if (widgetB != null) context.Remove(widgetB);
+                // Re-check with the same bounded polling rather than trusting widgetA/widgetB
+                // from the try block: if the poll above timed out (or an assertion threw before
+                // they were assigned), the documents can still exist on the server and must not
+                // be skipped here, or they'd leak into subsequent test runs.
+                var cleanupA = await PollForResultAsync(
+                    () => context.WidgetsA.FindAsync(id).AsTask(),
+                    result => result != null,
+                    TimeSpan.FromSeconds(5));
+                var cleanupB = await PollForResultAsync(
+                    () => context.WidgetsB.FindAsync(id).AsTask(),
+                    result => result != null,
+                    TimeSpan.FromSeconds(5));
+                if (cleanupA != null) context.Remove(cleanupA);
+                if (cleanupB != null) context.Remove(cleanupB);
                 await context.SaveChangesAsync();
             }
         }
@@ -171,9 +181,21 @@ public class CrossBucketTransactionTests(BloggingFixture fixture)
         {
             await using var cleanupScope = provider.CreateAsyncScope();
             var cleanupContext = cleanupScope.ServiceProvider.GetRequiredService<SpanningContext>();
-            var leftoverA = await cleanupContext.WidgetsA.FindAsync(newId);
+
+            // Poll (briefly) rather than a single immediate read: if the transaction
+            // unexpectedly persisted data, or the test failed partway through, a momentarily
+            // stale KV read here could miss a leftover document and leak it into later runs.
+            // Short timeout because the common case is a genuinely absent document (the
+            // transaction correctly rolled back), where this always runs to the full timeout.
+            var leftoverA = await PollForResultAsync(
+                () => cleanupContext.WidgetsA.FindAsync(newId).AsTask(),
+                result => result != null,
+                TimeSpan.FromSeconds(2));
             if (leftoverA != null) cleanupContext.Remove(leftoverA);
-            var widgetB = await cleanupContext.WidgetsB.FindAsync(conflictingId);
+            var widgetB = await PollForResultAsync(
+                () => cleanupContext.WidgetsB.FindAsync(conflictingId).AsTask(),
+                result => result != null,
+                TimeSpan.FromSeconds(2));
             if (widgetB != null) cleanupContext.Remove(widgetB);
             await cleanupContext.SaveChangesAsync();
         }
