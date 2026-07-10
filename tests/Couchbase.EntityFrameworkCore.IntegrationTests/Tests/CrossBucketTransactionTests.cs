@@ -135,12 +135,22 @@ public class CrossBucketTransactionTests(BloggingFixture fixture)
             // Verify from a fresh, untracked context — FindAsync on the same context that added
             // these entities would return them straight from the change tracker (still State=Added)
             // without ever touching the server, masking whether the rollback actually took effect.
-            // Rollback here never touched the server either (CouchbaseDbTransaction.Rollback just
-            // discards the buffered ops), so no polling for eventual consistency is needed.
+            // A single immediate read could still (rarely) miss a persisted document if a KV read
+            // is momentarily stale right after transaction completion, letting an atomic-rollback
+            // regression pass unnoticed — poll briefly for the document to appear, then assert it
+            // never did, rather than checking only once.
             await using var verifyScope = provider.CreateAsyncScope();
             var verifyContext = verifyScope.ServiceProvider.GetRequiredService<SpanningContext>();
-            Assert.Null(await verifyContext.WidgetsA.FindAsync(id));
-            Assert.Null(await verifyContext.WidgetsB.FindAsync(id));
+            var leakedWidgetA = await PollingHelper.PollForResultAsync(
+                () => verifyContext.WidgetsA.FindAsync(id).AsTask(),
+                result => result != null,
+                TimeSpan.FromSeconds(2));
+            Assert.Null(leakedWidgetA);
+            var leakedWidgetB = await PollingHelper.PollForResultAsync(
+                () => verifyContext.WidgetsB.FindAsync(id).AsTask(),
+                result => result != null,
+                TimeSpan.FromSeconds(2));
+            Assert.Null(leakedWidgetB);
         }
         finally
         {

@@ -36,7 +36,12 @@ public static class PollingHelper
         return await query();
     }
 
-    /// <summary>Polls <paramref name="condition"/> until it returns true or <paramref name="timeout"/> elapses.</summary>
+    /// <summary>
+    /// Polls <paramref name="condition"/> until it returns true, throwing <see cref="TimeoutException"/>
+    /// if it never does within <paramref name="timeout"/> — a test helper that silently returned on
+    /// timeout would let a caller's test continue (and potentially pass) despite the condition never
+    /// being satisfied.
+    /// </summary>
     public static async Task PollUntilAsync(
         Func<Task<bool>> condition,
         TimeSpan timeout,
@@ -53,5 +58,7 @@ public static class PollingHelper
             }
             await Task.Delay(interval);
         }
+
+        throw new TimeoutException($"Condition was not met within {timeout}.");
     }
 }
