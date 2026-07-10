@@ -64,8 +64,17 @@ public class CrossBucketTransactionTests(BloggingFixture fixture)
             TxWidgetB? widgetB = null;
             try
             {
-                widgetA = await context.WidgetsA.FindAsync(id);
-                widgetB = await context.WidgetsB.FindAsync(id);
+                // KV reads aren't governed by QueryScanConsistency.RequestPlus (that only affects
+                // N1QL), so a get immediately after CommitAsync can momentarily still return null.
+                // Poll with a bounded timeout, matching TransactionTests' pattern.
+                widgetA = await PollForResultAsync(
+                    () => context.WidgetsA.FindAsync(id).AsTask(),
+                    result => result != null,
+                    TimeSpan.FromSeconds(5));
+                widgetB = await PollForResultAsync(
+                    () => context.WidgetsB.FindAsync(id).AsTask(),
+                    result => result != null,
+                    TimeSpan.FromSeconds(5));
 
                 Assert.NotNull(widgetA);
                 Assert.NotNull(widgetB);
@@ -170,6 +179,29 @@ public class CrossBucketTransactionTests(BloggingFixture fixture)
         }
     }
 
+    private static async Task<T?> PollForResultAsync<T>(
+        Func<Task<T?>> query,
+        Func<T?, bool> condition,
+        TimeSpan timeout,
+        TimeSpan? pollInterval = null)
+    {
+        var interval = pollInterval ?? TimeSpan.FromMilliseconds(50);
+        var deadline = DateTime.UtcNow + timeout;
+
+        while (DateTime.UtcNow < deadline)
+        {
+            var result = await query();
+            if (condition(result))
+            {
+                return result;
+            }
+            await Task.Delay(interval);
+        }
+
+        // Return final result even if condition not met (let assertion fail with actual value).
+        return await query();
+    }
+
     public class TxWidgetA
     {
         public int Id { get; set; }
@@ -190,8 +222,9 @@ public class CrossBucketTransactionTests(BloggingFixture fixture)
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             // Reuses the isolation.widget keyspace the AppHost already provisions in both buckets
-            // (see MultiBucketSingleContextTests) — distinct CLR types keep this class's ids from
-            // colliding with that test's.
+            // (see MultiBucketSingleContextTests). Document keys are derived from the primary key
+            // value alone (no type prefix), so this class's ids (6001+) are deliberately outside
+            // that test's id range (1) to avoid colliding in the shared collection.
             modelBuilder.Entity<TxWidgetA>().ToCouchbaseCollection("default", "isolation", "widget");
             modelBuilder.Entity<TxWidgetB>().ToCouchbaseCollection("secondary", "isolation", "widget");
             modelBuilder.ConfigureToCouchbase(this, true);
