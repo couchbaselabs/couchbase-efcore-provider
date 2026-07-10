@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Query.SqlExpressions;
 
 namespace Couchbase.EntityFrameworkCore.Query.Internal;
@@ -25,6 +26,19 @@ namespace Couchbase.EntityFrameworkCore.Query.Internal;
 /// </summary>
 internal static class CouchbaseProjectionAliases
 {
+    /// <summary>
+    /// A stable, collision-free lookup key for an owned navigation, used to correlate a
+    /// navigation with its actual (possibly uniquified) N1QL result-row key — see
+    /// <see cref="Query.Internal.CouchbaseShapedQueryCompilingExpressionVisitor.AddOwnedNavigationColumnsToProjection"/>
+    /// and <see cref="Query.Internal.CouchbaseOwnedCollectionMaterializer"/>. Qualified by the
+    /// declaring entity type so two sibling TPH-derived types that happen to declare an owned
+    /// navigation with the same name (e.g. both a <c>Student</c> and a <c>Teacher</c> owning a
+    /// <c>Documents</c> collection) don't collide on this key even though their raw
+    /// <see cref="INavigation.Name"/> values are identical.
+    /// </summary>
+    public static string NavigationKey(INavigation navigation)
+        => navigation.DeclaringEntityType.ClrType.FullName + "." + navigation.Name;
+
     /// <summary>
     /// The N1QL response key for a single projection when no uniquification is applied:
     /// the explicit <c>AS</c> alias if present, otherwise the underlying column name.
