@@ -34,7 +34,7 @@ public class TransactionTests(
             await transaction.CommitAsync();
 
             // Poll for consistency with bounded timeout
-            var savedBlog = await PollForResultAsync(
+            var savedBlog = await PollingHelper.PollForResultAsync(
                 async () =>
                 {
                     await using var verifyContext = bloggingFixture.GetDbContext();
@@ -74,7 +74,7 @@ public class TransactionTests(
             await transaction.RollbackAsync();
 
             // Poll to verify document was not persisted (should remain null)
-            await PollUntilAsync(async () =>
+            await PollingHelper.PollUntilAsync(async () =>
             {
                 await using var verifyContext = bloggingFixture.GetDbContext();
                 var notSavedBlog = await verifyContext.Blogs.FindAsync(blog.BlogId);
@@ -114,7 +114,7 @@ public class TransactionTests(
             await transaction.CommitAsync();
 
             // Poll for both blogs to be persisted
-            var (saved1, saved2) = await PollForResultAsync(
+            var (saved1, saved2) = await PollingHelper.PollForResultAsync(
                 async () =>
                 {
                     await using var verifyContext = bloggingFixture.GetDbContext();
@@ -153,7 +153,7 @@ public class TransactionTests(
         try
         {
             // Poll until blog is persisted
-            await PollUntilAsync(async () =>
+            await PollingHelper.PollUntilAsync(async () =>
             {
                 await using var checkContext = bloggingFixture.GetDbContext();
                 return await checkContext.Blogs.FindAsync(blog.BlogId) != null;
@@ -171,7 +171,7 @@ public class TransactionTests(
             await transaction.CommitAsync();
 
             // Poll for updated values
-            var updatedBlog = await PollForResultAsync(
+            var updatedBlog = await PollingHelper.PollForResultAsync(
                 async () =>
                 {
                     await using var verifyContext = bloggingFixture.GetDbContext();
@@ -207,7 +207,7 @@ public class TransactionTests(
         await context.SaveChangesAsync();
 
         // Poll until blog is persisted
-        await PollUntilAsync(async () =>
+        await PollingHelper.PollUntilAsync(async () =>
         {
             await using var checkContext = bloggingFixture.GetDbContext();
             return await checkContext.Blogs.FindAsync(blog.BlogId) != null;
@@ -223,7 +223,7 @@ public class TransactionTests(
         await transaction.CommitAsync();
 
         // Poll until deletion is confirmed
-        await PollUntilAsync(async () =>
+        await PollingHelper.PollUntilAsync(async () =>
         {
             await using var verifyContext = bloggingFixture.GetDbContext();
             return await verifyContext.Blogs.FindAsync(blog.BlogId) == null;
@@ -257,7 +257,7 @@ public class TransactionTests(
             }
 
             // Poll to verify not persisted (should remain null)
-            await PollUntilAsync(async () =>
+            await PollingHelper.PollUntilAsync(async () =>
             {
                 await using var verifyContext = bloggingFixture.GetDbContext();
                 return await verifyContext.Blogs.FindAsync(blog.BlogId) == null;
@@ -328,7 +328,7 @@ public class TransactionTests(
             await context.SaveChangesAsync();
 
             // Poll for persistence
-            var savedBlog = await PollForResultAsync(
+            var savedBlog = await PollingHelper.PollForResultAsync(
                 async () =>
                 {
                     await using var verifyContext = bloggingFixture.GetDbContext();
@@ -343,53 +343,6 @@ public class TransactionTests(
         {
             context.Remove(blog);
             await context.SaveChangesAsync();
-        }
-    }
-
-    /// <summary>
-    /// Polls for a result until the condition is met or timeout is reached.
-    /// </summary>
-    private static async Task<T?> PollForResultAsync<T>(
-        Func<Task<T?>> query,
-        Func<T?, bool> condition,
-        TimeSpan timeout,
-        TimeSpan? pollInterval = null)
-    {
-        var interval = pollInterval ?? TimeSpan.FromMilliseconds(50);
-        var deadline = DateTime.UtcNow + timeout;
-
-        while (DateTime.UtcNow < deadline)
-        {
-            var result = await query();
-            if (condition(result))
-            {
-                return result;
-            }
-            await Task.Delay(interval);
-        }
-
-        // Return final result even if condition not met (let assertion fail with actual value)
-        return await query();
-    }
-
-    /// <summary>
-    /// Polls until condition is met or timeout is reached.
-    /// </summary>
-    private static async Task PollUntilAsync(
-        Func<Task<bool>> condition,
-        TimeSpan timeout,
-        TimeSpan? pollInterval = null)
-    {
-        var interval = pollInterval ?? TimeSpan.FromMilliseconds(50);
-        var deadline = DateTime.UtcNow + timeout;
-
-        while (DateTime.UtcNow < deadline)
-        {
-            if (await condition())
-            {
-                return;
-            }
-            await Task.Delay(interval);
         }
     }
 }

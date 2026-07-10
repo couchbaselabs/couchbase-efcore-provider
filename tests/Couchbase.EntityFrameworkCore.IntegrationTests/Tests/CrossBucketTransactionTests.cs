@@ -32,9 +32,19 @@ public class CrossBucketTransactionTests(BloggingFixture fixture)
 
         var provider = services.BuildServiceProvider();
 
-        await using var scope = provider.CreateAsyncScope();
-        var context = scope.ServiceProvider.GetRequiredService<SpanningContext>();
-        await context.Database.EnsureCreatedAsync();
+        try
+        {
+            await using var scope = provider.CreateAsyncScope();
+            var context = scope.ServiceProvider.GetRequiredService<SpanningContext>();
+            await context.Database.EnsureCreatedAsync();
+        }
+        catch
+        {
+            // Dispose the provider (and its cluster connection) before propagating — otherwise a
+            // failure here would leak it, since the caller never receives a provider to dispose.
+            await provider.DisposeAsync();
+            throw;
+        }
 
         return provider;
     }
@@ -67,11 +77,11 @@ public class CrossBucketTransactionTests(BloggingFixture fixture)
                 // KV reads aren't governed by QueryScanConsistency.RequestPlus (that only affects
                 // N1QL), so a get immediately after CommitAsync can momentarily still return null.
                 // Poll with a bounded timeout, matching TransactionTests' pattern.
-                widgetA = await PollForResultAsync(
+                widgetA = await PollingHelper.PollForResultAsync(
                     () => context.WidgetsA.FindAsync(id).AsTask(),
                     result => result != null,
                     TimeSpan.FromSeconds(5));
-                widgetB = await PollForResultAsync(
+                widgetB = await PollingHelper.PollForResultAsync(
                     () => context.WidgetsB.FindAsync(id).AsTask(),
                     result => result != null,
                     TimeSpan.FromSeconds(5));
@@ -87,11 +97,11 @@ public class CrossBucketTransactionTests(BloggingFixture fixture)
                 // from the try block: if the poll above timed out (or an assertion threw before
                 // they were assigned), the documents can still exist on the server and must not
                 // be skipped here, or they'd leak into subsequent test runs.
-                var cleanupA = await PollForResultAsync(
+                var cleanupA = await PollingHelper.PollForResultAsync(
                     () => context.WidgetsA.FindAsync(id).AsTask(),
                     result => result != null,
                     TimeSpan.FromSeconds(5));
-                var cleanupB = await PollForResultAsync(
+                var cleanupB = await PollingHelper.PollForResultAsync(
                     () => context.WidgetsB.FindAsync(id).AsTask(),
                     result => result != null,
                     TimeSpan.FromSeconds(5));
@@ -108,27 +118,51 @@ public class CrossBucketTransactionTests(BloggingFixture fixture)
         await using var provider = await BuildProviderAsync();
         const int id = 6002;
 
-        await using (var scope = provider.CreateAsyncScope())
+        try
         {
-            var context = scope.ServiceProvider.GetRequiredService<SpanningContext>();
-            await using var transaction = await context.Database.BeginCouchbaseTransactionAsync(DurabilityLevel.None);
+            await using (var scope = provider.CreateAsyncScope())
+            {
+                var context = scope.ServiceProvider.GetRequiredService<SpanningContext>();
+                await using var transaction = await context.Database.BeginCouchbaseTransactionAsync(DurabilityLevel.None);
 
-            context.Add(new TxWidgetA { Id = id, Name = "widget-a-rolled-back" });
-            context.Add(new TxWidgetB { Id = id, Name = "widget-b-rolled-back" });
-            await context.SaveChangesAsync();
+                context.Add(new TxWidgetA { Id = id, Name = "widget-a-rolled-back" });
+                context.Add(new TxWidgetB { Id = id, Name = "widget-b-rolled-back" });
+                await context.SaveChangesAsync();
 
-            await transaction.RollbackAsync();
+                await transaction.RollbackAsync();
+            }
+
+            // Verify from a fresh, untracked context — FindAsync on the same context that added
+            // these entities would return them straight from the change tracker (still State=Added)
+            // without ever touching the server, masking whether the rollback actually took effect.
+            // Rollback here never touched the server either (CouchbaseDbTransaction.Rollback just
+            // discards the buffered ops), so no polling for eventual consistency is needed.
+            await using var verifyScope = provider.CreateAsyncScope();
+            var verifyContext = verifyScope.ServiceProvider.GetRequiredService<SpanningContext>();
+            Assert.Null(await verifyContext.WidgetsA.FindAsync(id));
+            Assert.Null(await verifyContext.WidgetsB.FindAsync(id));
         }
-
-        // Verify from a fresh, untracked context — FindAsync on the same context that added
-        // these entities would return them straight from the change tracker (still State=Added)
-        // without ever touching the server, masking whether the rollback actually took effect.
-        // Rollback here never touched the server either (CouchbaseDbTransaction.Rollback just
-        // discards the buffered ops), so no polling for eventual consistency is needed.
-        await using var verifyScope = provider.CreateAsyncScope();
-        var verifyContext = verifyScope.ServiceProvider.GetRequiredService<SpanningContext>();
-        Assert.Null(await verifyContext.WidgetsA.FindAsync(id));
-        Assert.Null(await verifyContext.WidgetsB.FindAsync(id));
+        finally
+        {
+            // If rollback regressed (exactly what this test guards against) or an assertion
+            // above failed, the documents could actually be persisted — clean them up so they
+            // don't leak into later test runs and make other integration tests flaky. Poll
+            // (briefly) rather than a single immediate read per the same reasoning as the other
+            // cleanup blocks in this file.
+            await using var cleanupScope = provider.CreateAsyncScope();
+            var cleanupContext = cleanupScope.ServiceProvider.GetRequiredService<SpanningContext>();
+            var leftoverA = await PollingHelper.PollForResultAsync(
+                () => cleanupContext.WidgetsA.FindAsync(id).AsTask(),
+                result => result != null,
+                TimeSpan.FromSeconds(2));
+            if (leftoverA != null) cleanupContext.Remove(leftoverA);
+            var leftoverB = await PollingHelper.PollForResultAsync(
+                () => cleanupContext.WidgetsB.FindAsync(id).AsTask(),
+                result => result != null,
+                TimeSpan.FromSeconds(2));
+            if (leftoverB != null) cleanupContext.Remove(leftoverB);
+            await cleanupContext.SaveChangesAsync();
+        }
     }
 
     [Fact]
@@ -169,8 +203,15 @@ public class CrossBucketTransactionTests(BloggingFixture fixture)
             var verifyContext = verifyScope.ServiceProvider.GetRequiredService<SpanningContext>();
 
             // The default-bucket write must not have survived the failed transaction — proving
-            // the two buckets were rolled back together, not independently.
-            Assert.Null(await verifyContext.WidgetsA.FindAsync(newId));
+            // the two buckets were rolled back together, not independently. A single immediate
+            // read risks a false pass if the document is merely momentarily stale right after
+            // the failed commit and becomes visible moments later, so poll for a short window
+            // and fail as soon as it ever appears rather than checking only once.
+            var leakedWidgetA = await PollingHelper.PollForResultAsync(
+                () => verifyContext.WidgetsA.FindAsync(newId).AsTask(),
+                result => result != null,
+                TimeSpan.FromSeconds(2));
+            Assert.Null(leakedWidgetA);
             // The secondary-bucket document must still hold its pre-existing value, not the
             // conflicting insert's value.
             var widgetB = await verifyContext.WidgetsB.FindAsync(conflictingId);
@@ -187,41 +228,18 @@ public class CrossBucketTransactionTests(BloggingFixture fixture)
             // stale KV read here could miss a leftover document and leak it into later runs.
             // Short timeout because the common case is a genuinely absent document (the
             // transaction correctly rolled back), where this always runs to the full timeout.
-            var leftoverA = await PollForResultAsync(
+            var leftoverA = await PollingHelper.PollForResultAsync(
                 () => cleanupContext.WidgetsA.FindAsync(newId).AsTask(),
                 result => result != null,
                 TimeSpan.FromSeconds(2));
             if (leftoverA != null) cleanupContext.Remove(leftoverA);
-            var widgetB = await PollForResultAsync(
+            var widgetB = await PollingHelper.PollForResultAsync(
                 () => cleanupContext.WidgetsB.FindAsync(conflictingId).AsTask(),
                 result => result != null,
                 TimeSpan.FromSeconds(2));
             if (widgetB != null) cleanupContext.Remove(widgetB);
             await cleanupContext.SaveChangesAsync();
         }
-    }
-
-    private static async Task<T?> PollForResultAsync<T>(
-        Func<Task<T?>> query,
-        Func<T?, bool> condition,
-        TimeSpan timeout,
-        TimeSpan? pollInterval = null)
-    {
-        var interval = pollInterval ?? TimeSpan.FromMilliseconds(50);
-        var deadline = DateTime.UtcNow + timeout;
-
-        while (DateTime.UtcNow < deadline)
-        {
-            var result = await query();
-            if (condition(result))
-            {
-                return result;
-            }
-            await Task.Delay(interval);
-        }
-
-        // Return final result even if condition not met (let assertion fail with actual value).
-        return await query();
     }
 
     public class TxWidgetA
