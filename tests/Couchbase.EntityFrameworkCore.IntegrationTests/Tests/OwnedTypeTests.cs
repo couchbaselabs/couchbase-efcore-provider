@@ -1125,4 +1125,24 @@ public class OwnedTypeTests(
             if (c != null) { ctx.Remove(c); await ctx.SaveChangesAsync(); }
         }
     }
+
+    // Regression: OwnsMany items are materialised via raw reflection, bypassing EF Core's normal
+    // attach/fixup path, so they always come back tracked as EntityState.Added regardless of
+    // whether anything actually changed. CouchbaseDatabaseWrapper.SaveChangesAsync used to treat
+    // any non-Unchanged/Detached owned entry as "the owner must be rewritten", so a completely
+    // untouched load-then-save of an entity with an OwnsMany navigation always issued a spurious
+    // write. Fixed by ignoring EntityState for collection-owned (OwnsMany) entries and relying
+    // solely on CouchbaseSaveChangesInterceptor.MarkOwnersWithReplacedCollections' snapshot-based
+    // comparison, which only marks the owner Modified for a genuine change.
+    [Fact]
+    public async Task OwnsMany_ZeroTouchTrackedLoad_SaveChangesReturnsZero()
+    {
+        await using var ctx = fixture.GetDbContext();
+        var customer = await ctx.Customers.FirstAsync(c => c.CustomerId == 1);
+        Assert.NotEmpty(customer.ContactMethods); // sanity: this customer actually has OwnsMany data
+
+        var writes = await ctx.SaveChangesAsync();
+
+        Assert.Equal(0, writes);
+    }
 }

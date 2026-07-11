@@ -66,6 +66,23 @@ public class CouchbaseDatabaseWrapper : Database
 
             if (entityType.IsOwned())
             {
+                // OwnsMany items are materialised via raw reflection in
+                // CouchbaseOwnedCollectionMaterializer, bypassing EF Core's normal attach/fixup
+                // path entirely — so they always come back tracked as Added regardless of
+                // whether the user actually changed anything. EntityState is therefore not a
+                // trustworthy "did this genuinely change" signal for a collection-owned (OwnsMany)
+                // entry; skip it here and rely exclusively on the snapshot-based comparison in
+                // CouchbaseSaveChangesInterceptor.MarkOwnersWithReplacedCollections (which already
+                // marks the owner Modified for a real reference-replaced/added/removed/mutated
+                // change) to avoid rewriting the owner on every untouched read+save.
+                //
+                // A reference-owned (OwnsOne) entry has no such artifact: it's a normal
+                // table-split, fixup-tracked entity, so its EntityState IS a genuine signal —
+                // keep deferring on it as before.
+                var ownership = entityType.FindOwnership();
+                if (ownership != null && !ownership.IsUnique)
+                    continue;
+
                 // Collect owned entries with actual changes; their owners will be written
                 // in the second pass below if not already written by the main loop.
                 if (updateEntry.EntityState is not (EntityState.Unchanged or EntityState.Detached))
