@@ -1,6 +1,7 @@
 using Aspire.Hosting;
 using Couchbase.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging;
 
 namespace Couchbase.EntityFrameworkCode.IntegrationTests.Fixtures;
@@ -27,20 +28,40 @@ public abstract class CouchbaseFixture<T> : IDisposable, IAsyncDisposable, IAsyn
 
     public abstract Task LoadDataAsync();
 
+    // GetDbContext() calls CreateDbContextOptions on every invocation — often many times per
+    // test, across hundreds of tests sharing this fixture instance via ICollectionFixture<>.
+    // Building a fresh ILoggerFactory per call was suspected to force EF Core's internal
+    // ServiceProviderCache to treat each call as a distinct configuration (the
+    // ManyServiceProvidersCreatedWarning scenario) — confirmed NOT the case here (this
+    // ILoggerFactory feeds the Couchbase SDK's own client logging via ClusterOptions.WithLogging,
+    // which is unrelated to EF Core's own UseLoggerFactory/CoreOptionsExtension hash; verified via
+    // reflection that CouchbaseOptionsExtension/CoreOptionsExtension/NamingConventionsOptionsExtension
+    // all hash identically regardless of logger-factory identity). Still cached per fixture
+    // instance as a harmless improvement — no reason to rebuild it on every call, since its
+    // configuration (ScopeName, log file path) never changes after construction.
+    private ILoggerFactory? _loggerFactory;
+
     protected DbContextOptions<TContext> CreateDbContextOptions<TContext>() where TContext : DbContext
     {
-        var loggerFactory = LoggerFactory.Create(builder =>
+        _loggerFactory ??= LoggerFactory.Create(builder =>
         {
             builder.AddFilter(level => level >= LogLevel.Debug);
             builder.AddFile("Logs/" + ScopeName + "-{Date}.txt", LogLevel.Debug);
         });
 
         var optionsBuilder = new DbContextOptionsBuilder<TContext>();
+        // The full integration suite legitimately spans many distinct bucket/scope/DI-container
+        // combinations across ~250 tests by design (multi-bucket and DI-isolation tests each
+        // need their own internal service provider to prove real isolation) — this crosses EF
+        // Core's own ">20 internal service providers" heuristic, which defaults to throwing.
+        // Suppress it here: it's the officially documented way to acknowledge "yes, this many
+        // providers is expected" (see the warning's own message), not a sign of a real leak.
+        optionsBuilder.ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning));
         optionsBuilder.UseCouchbase(
             new ClusterOptions()
                 .WithConnectionString(Host)
                 .WithPasswordAuthentication(Username, Password)
-                .WithLogging(loggerFactory),
+                .WithLogging(_loggerFactory),
             couchbaseDbContextOptions =>
             {
                 couchbaseDbContextOptions.Bucket = BucketName;
@@ -79,18 +100,21 @@ public abstract class CouchbaseFixture<T> : IDisposable, IAsyncDisposable, IAsyn
 
     async Task IAsyncLifetime.DisposeAsync()
     {
+        _loggerFactory?.Dispose();
         await _app.DisposeAsync();
         await _appHost.DisposeAsync();
     }
 
     public void Dispose()
     {
+        _loggerFactory?.Dispose();
         _app.Dispose();
         _appHost.Dispose();
     }
 
     public async ValueTask DisposeAsync()
     {
+        _loggerFactory?.Dispose();
         await _app.DisposeAsync();
         await _appHost.DisposeAsync();
     }

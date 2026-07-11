@@ -3,6 +3,7 @@ using Couchbase.EntityFrameworkCore;
 using Couchbase.EntityFrameworkCore.Extensions;
 using Couchbase.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging;
 using Xunit;
 
@@ -480,6 +481,7 @@ public class KeyspaceMappingIntegrationTests
                 couchbaseDbContextOptions.Bucket = _fixture.BucketName;
                 couchbaseDbContextOptions.Scope = _fixture.ScopeName;
             });
+        optionsBuilder.ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning));
 
         return (TContext)Activator.CreateInstance(typeof(TContext), optionsBuilder.Options)!;
     }
@@ -502,6 +504,7 @@ public class KeyspaceMappingIntegrationTests
                 couchbaseDbContextOptions.Bucket = null!;
                 couchbaseDbContextOptions.Scope = _fixture.ScopeName;
             });
+        optionsBuilder.ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning));
 
         return (TContext)Activator.CreateInstance(typeof(TContext), optionsBuilder.Options)!;
     }
@@ -524,6 +527,7 @@ public class KeyspaceMappingIntegrationTests
                 couchbaseDbContextOptions.Bucket = "";
                 couchbaseDbContextOptions.Scope = _fixture.ScopeName;
             });
+        optionsBuilder.ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning));
 
         return (TContext)Activator.CreateInstance(typeof(TContext), optionsBuilder.Options)!;
     }
@@ -546,6 +550,7 @@ public class KeyspaceMappingIntegrationTests
                 couchbaseDbContextOptions.Bucket = _fixture.BucketName;
                 couchbaseDbContextOptions.Scope = null!;
             });
+        optionsBuilder.ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning));
 
         return (TContext)Activator.CreateInstance(typeof(TContext), optionsBuilder.Options)!;
     }
@@ -568,6 +573,7 @@ public class KeyspaceMappingIntegrationTests
                 couchbaseDbContextOptions.Bucket = _fixture.BucketName;
                 couchbaseDbContextOptions.Scope = "";
             });
+        optionsBuilder.ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning));
 
         return (TContext)Activator.CreateInstance(typeof(TContext), optionsBuilder.Options)!;
     }
