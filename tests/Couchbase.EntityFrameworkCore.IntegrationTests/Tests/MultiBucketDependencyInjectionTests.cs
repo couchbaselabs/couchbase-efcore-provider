@@ -3,6 +3,7 @@ using Couchbase.EntityFrameworkCore.Extensions;
 using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
@@ -26,11 +27,11 @@ public class MultiBucketDependencyInjectionTests(BloggingFixture fixture)
         services.AddCouchbase<PrimaryWidgetContext>(
             NewClusterOptions(),
             o => ConfigureBucket(o, "default"),
-            o => o.UseCamelCaseNamingConvention());
+            o => { o.UseCamelCaseNamingConvention(); SuppressManyProvidersWarning(o); });
         services.AddCouchbase<SecondaryWidgetContext>(
             NewClusterOptions(),
             o => ConfigureBucket(o, "secondary"),
-            o => o.UseCamelCaseNamingConvention());
+            o => { o.UseCamelCaseNamingConvention(); SuppressManyProvidersWarning(o); });
 
         await using var provider = services.BuildServiceProvider();
 
@@ -80,12 +81,14 @@ public class MultiBucketDependencyInjectionTests(BloggingFixture fixture)
             new global::Couchbase.ClusterOptions()
                 .WithConnectionString(fixture.Host)
                 .WithCredentials(fixture.Username, fixture.Password),
-            o => ConfigureBucket(o, "default"));
+            o => ConfigureBucket(o, "default"),
+            SuppressManyProvidersWarning);
         services.AddCouchbase<SecondaryWidgetContext>(
             new global::Couchbase.ClusterOptions()
                 .WithConnectionString("couchbase://cluster-b.invalid")
                 .WithCredentials("user", "password"),
-            o => ConfigureBucket(o, "default"));
+            o => ConfigureBucket(o, "default"),
+            SuppressManyProvidersWarning);
 
         using var provider = services.BuildServiceProvider();
         using var scope = provider.CreateScope();
@@ -116,9 +119,11 @@ public class MultiBucketDependencyInjectionTests(BloggingFixture fixture)
         // Distinct scope so this test gets its own EF internal service-provider cache key
         // (EF caches internal providers process-wide by connection string/bucket/scope/key).
         services.AddCouchbase<PrimaryWidgetContext>(NewClusterOptions(),
-            o => ConfigureBucket(o, "default", "clustershared"), o => o.UseCamelCaseNamingConvention());
+            o => ConfigureBucket(o, "default", "clustershared"),
+            o => { o.UseCamelCaseNamingConvention(); SuppressManyProvidersWarning(o); });
         services.AddCouchbase<SecondaryWidgetContext>(NewClusterOptions(),
-            o => ConfigureBucket(o, "secondary", "clustershared"), o => o.UseCamelCaseNamingConvention());
+            o => ConfigureBucket(o, "secondary", "clustershared"),
+            o => { o.UseCamelCaseNamingConvention(); SuppressManyProvidersWarning(o); });
 
         await using var provider = services.BuildServiceProvider();
 
@@ -154,10 +159,10 @@ public class MultiBucketDependencyInjectionTests(BloggingFixture fixture)
         });
         services.AddCouchbase<PrimaryWidgetContext>(NewClusterOptions(),
             o => { ConfigureBucket(o, "default"); o.ServiceKey = "clusterA"; },
-            o => o.UseCamelCaseNamingConvention());
+            o => { o.UseCamelCaseNamingConvention(); SuppressManyProvidersWarning(o); });
         services.AddCouchbase<SecondaryWidgetContext>(NewClusterOptions(),
             o => { ConfigureBucket(o, "secondary"); o.ServiceKey = "clusterB"; },
-            o => o.UseCamelCaseNamingConvention());
+            o => { o.UseCamelCaseNamingConvention(); SuppressManyProvidersWarning(o); });
 
         await using var provider = services.BuildServiceProvider();
 
@@ -185,6 +190,13 @@ public class MultiBucketDependencyInjectionTests(BloggingFixture fixture)
         // Read-after-write consistency so the FindAsync below sees the just-written document.
         options.ScanConsistency = global::Couchbase.Query.QueryScanConsistency.RequestPlus;
     }
+
+    // This class deliberately registers many distinct bucket/scope/cluster/ServiceKey
+    // combinations across its tests to prove real DI isolation — legitimately crossing EF Core's
+    // own ">20 internal service providers" heuristic across the full test suite. Suppress the
+    // resulting warning per-context; it's the officially documented way to acknowledge it's expected.
+    private static void SuppressManyProvidersWarning(DbContextOptionsBuilder options)
+        => options.ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning));
 
     public class Widget
     {

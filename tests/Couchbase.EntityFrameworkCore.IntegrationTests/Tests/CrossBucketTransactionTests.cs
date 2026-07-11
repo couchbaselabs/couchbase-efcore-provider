@@ -2,6 +2,7 @@ using Couchbase.EntityFrameworkCode.IntegrationTests.Fixtures;
 using Couchbase.EntityFrameworkCore.Extensions;
 using Couchbase.KeyValue;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 
 namespace Couchbase.EntityFrameworkCode.IntegrationTests.Tests;
 
@@ -28,7 +29,13 @@ public class CrossBucketTransactionTests(BloggingFixture fixture)
                 o.Scope = "isolation";
                 o.ScanConsistency = global::Couchbase.Query.QueryScanConsistency.RequestPlus;
             },
-            o => o.UseCamelCaseNamingConvention());
+            o => o.UseCamelCaseNamingConvention()
+                // Each test builds its own ServiceCollection/ServiceProvider, and the full suite
+                // legitimately accumulates many distinct DbContextOptions configurations across
+                // ~250 tests (multi-bucket/DI-isolation tests need their own internal service
+                // provider by design) — crosses EF Core's own ">20 providers" heuristic. Suppress
+                // the resulting warning, the officially documented way to acknowledge it's expected.
+                .ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning)));
 
         var provider = services.BuildServiceProvider();
 

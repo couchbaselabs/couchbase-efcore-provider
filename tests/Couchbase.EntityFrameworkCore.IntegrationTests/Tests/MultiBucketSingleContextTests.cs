@@ -1,6 +1,7 @@
 using Couchbase.EntityFrameworkCode.IntegrationTests.Fixtures;
 using Couchbase.EntityFrameworkCore.Extensions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 
 namespace Couchbase.EntityFrameworkCode.IntegrationTests.Tests;
 
@@ -29,7 +30,8 @@ public class MultiBucketSingleContextTests(BloggingFixture fixture)
                 // Read-after-write consistency so the reads below see the just-written docs.
                 o.ScanConsistency = global::Couchbase.Query.QueryScanConsistency.RequestPlus;
             },
-            o => o.UseCamelCaseNamingConvention());
+            o => o.UseCamelCaseNamingConvention()
+                .ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning)));
 
         await using var provider = services.BuildServiceProvider();
 

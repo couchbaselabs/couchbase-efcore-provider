@@ -3,6 +3,7 @@ using Couchbase.EntityFrameworkCore;
 using Couchbase.EntityFrameworkCore.Extensions;
 using Couchbase.EntityFrameworkCore.ValueGeneration;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.ValueGeneration;
 using Microsoft.Extensions.Logging;
@@ -125,6 +126,7 @@ public class SequenceValueGenerationTests : IAsyncLifetime
                 couchbaseDbContextOptions.Scope = _fixture.ScopeName;
             });
         optionsBuilder.UseCamelCaseNamingConvention();
+        optionsBuilder.ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning));
 
         return new SequenceTestDbContext(optionsBuilder.Options, SequenceName);
     }
@@ -333,6 +335,7 @@ public class SequenceValueGenerationTests : IAsyncLifetime
                 couchbaseDbContextOptions.Bucket = _fixture.BucketName;
                 couchbaseDbContextOptions.Scope = _fixture.ScopeName;
             });
+        optionsBuilder.ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning));
 
         await using var testContext = new AutoCreateSequenceDbContext(optionsBuilder.Options);
 
@@ -384,6 +387,7 @@ public class SequenceValueGenerationTests : IAsyncLifetime
                 couchbaseDbContextOptions.Bucket = _fixture.BucketName;
                 couchbaseDbContextOptions.Scope = _fixture.ScopeName;
             });
+        optionsBuilder.ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning));
 
         await using var context = new EnsureCreatedSequenceDbContext(optionsBuilder.Options);
 
@@ -444,6 +448,7 @@ public class SequenceValueGenerationTests : IAsyncLifetime
                 couchbaseDbContextOptions.Bucket = _fixture.BucketName;
                 couchbaseDbContextOptions.Scope = _fixture.ScopeName;
             });
+        optionsBuilder.ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning));
 
         await using var context = new E2EAutoCreateSequenceDbContext(optionsBuilder.Options);
 

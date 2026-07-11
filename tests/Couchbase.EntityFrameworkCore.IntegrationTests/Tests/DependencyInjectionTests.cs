@@ -3,6 +3,7 @@ using Couchbase.EntityFrameworkCode.IntegrationTests.Models;
 using Couchbase.EntityFrameworkCore.Extensions;
 using Couchbase.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging;
 using Xunit.Abstractions;
 
@@ -38,7 +39,8 @@ public class DependencyInjectionTests(
                 couchbaseDbContextOptions.Bucket = "default";
                 couchbaseDbContextOptions.Scope = "blogs";
             },
-            options => options.UseCamelCaseNamingConvention());
+            options => options.UseCamelCaseNamingConvention()
+                .ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning)));
 
         services.AddCouchbase<TravelSampleDbContext>(new ClusterOptions()
                 .WithConnectionString(travelSampleFixture.Host)
@@ -49,7 +51,8 @@ public class DependencyInjectionTests(
                 configuration.Bucket = "travel-sample";
                 configuration.Scope = "inventory";
             },
-            options => options.UseCamelCaseNamingConvention());
+            options => options.UseCamelCaseNamingConvention()
+                .ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning)));
 
         services.AddKeyedCouchbase("mine", options =>
         {
