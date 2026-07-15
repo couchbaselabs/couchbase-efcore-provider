@@ -61,6 +61,15 @@ jobs:
           -p:ValidateApiCompat=true
           --output ./artifacts
 
+      # Delete the decoded private key as soon as it's no longer needed, rather than leaving it in
+      # the workspace for the rest of the job — reduces the window for it to be accidentally swept
+      # into a later artifact/log/debug step. if: always() so this still runs if an earlier step
+      # (build/pack) failed. The runner itself is ephemeral, but this costs nothing and removes any
+      # dependency on that being true.
+      - name: Remove signing key
+        if: always()
+        run: rm -f src/Couchbase.EntityFrameworkCore/Couchbase.snk
+
       - name: Upload package artifact
         uses: actions/upload-artifact@v4
         with:

@@ -32,8 +32,10 @@
              be present at all when this assembly ends up signed. Defines a SIGNED constant so
              AssemblyInfo.cs can guard those attributes out only for a signing build — see the
              comment there for why this must be conditioned on actually signing, not on Release
-             configuration. -->
-        <DefineConstants Condition="'$(SignRelease)' == 'true'">$(DefineConstants);SIGNED</DefineConstants>
+             configuration. Keyed off SignAssembly itself (not SignRelease) so this stays correct
+             even if someone sets -p:SignAssembly=true directly instead of going through
+             SignRelease — whatever actually turns signing on also defines SIGNED. -->
+        <DefineConstants Condition="'$(SignAssembly)' == 'true'">$(DefineConstants);SIGNED</DefineConstants>
         <PackageReadmeFile>README.md</PackageReadmeFile>
         <IsPackable>true</IsPackable>
 
@@ -43,19 +45,37 @@
              (and from CI, via .github/workflows/release.yml):
              dotnet pack -c Release -p:SignRelease=true -p:ValidateApiCompat=true
              SignRelease=true is required here, not just ValidateApiCompat — the published baseline
-             package is signed, and the former CP0003 (strong-name difference) suppression below was
-             removed on the assumption this build is also signed; an unsigned run of this command
-             will reintroduce a CP0003 mismatch against the baseline.
+             package is signed, and the CP0003 (strong-name difference) suppression that this used to
+             need was removed on the assumption this build is also signed; an unsigned run of this
+             command will reintroduce a CP0003 mismatch against the baseline (verified 2026-07-14).
              Opt-in (off by default) so it doesn't slow the normal dev/test inner loop or require the
              baseline package on every build. Bump PackageValidationBaselineVersion to the latest
              released version whenever a new version ships.
 
              Accepted/expected differences are recorded in CompatibilitySuppressions.xml
-             (regenerate with -p:ApiCompatGenerateSuppressionFile=true): CP0006 is the intentional
-             ServiceKey addition to ICouchbaseDbContextOptionsBuilder. The former CP0003 (strong-name
-             difference) suppression was removed 2026-07-14 — verified locally with the real
-             Couchbase.snk that in-process signing (SignRelease=true) now produces the same strong
-             name as the baseline, so ApiCompat no longer sees a difference there. -->
+             (regenerate with -p:ApiCompatGenerateSuppressionFile=true):
+             - CP0006 on ICouchbaseDbContextOptionsBuilder.ServiceKey: the intentional ServiceKey
+               addition to that interface.
+             - The CancellationToken-threading work (2026-07-14) replaced several methods on both
+               CouchbaseClientWrapper and ICouchbaseClientWrapper with CancellationToken-taking
+               overloads rather than keeping the old ones alongside them — CP0002 (member removed)
+               covers the dropped old-signature members on both the class and the interface, while
+               CP0006 (interface member added) covers only the new signatures on the interface
+               (adding a member to a class isn't itself a breaking-change diagnostic the way adding
+               one to an interface is, so CouchbaseClientWrapper has no CP0006 entries of its own).
+             - CouchbaseQueryEnumerable.Create and CouchbaseQueryEnumerable<T>'s constructor
+               (2026-07-14, multi-bucket DI work) gained parameters, which shows up as CP0002 only
+               (the old signature no longer exists) since it's a concrete class, not an interface.
+             ICouchbaseClientWrapper, CouchbaseClientWrapper, and CouchbaseQueryEnumerable all live
+             under a ".Storage.Internal"/".Query.Internal" namespace and are provider-plumbing, not
+             part of the supported public surface — the same spirit as the project-wide EF1001
+             suppression above.
+
+             CP0003 (strong-name difference) previously needed suppressing because the release
+             assembly used to be signed manually *after* compilation, so the in-build assembly
+             ApiCompat saw was unsigned. Removed 2026-07-14 now that SignRelease=true signs
+             in-process — verified locally that a signed build produces the same strong name as the
+             baseline, so ApiCompat sees no difference there anymore. -->
         <EnablePackageValidation Condition="'$(ValidateApiCompat)' == 'true'">true</EnablePackageValidation>
         <PackageValidationBaselineVersion>2.0.0-beta.1</PackageValidationBaselineVersion>
     </PropertyGroup>

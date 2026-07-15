@@ -35,7 +35,7 @@ jobs:
       - name: Unit tests
         run: >
           dotnet test tests/Couchbase.EntityFrameworkCore.UnitTests/Couchbase.EntityFrameworkCore.UnitTests.csproj
-          --configuration Release --no-build
+          --configuration Release --no-restore --no-build
           --logger "trx;LogFileName=unit-tests.trx"
           --results-directory ./TestResults
 

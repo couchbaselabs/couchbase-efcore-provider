@@ -4,8 +4,8 @@
 
 ```sh
 dotnet restore couchbase-dotnet-ef.sln
-dotnet build couchbase-dotnet-ef.sln --configuration Release
-dotnet test tests/Couchbase.EntityFrameworkCore.UnitTests/Couchbase.EntityFrameworkCore.UnitTests.csproj
+dotnet build couchbase-dotnet-ef.sln --configuration Release --no-restore
+dotnet test tests/Couchbase.EntityFrameworkCore.UnitTests/Couchbase.EntityFrameworkCore.UnitTests.csproj --configuration Release --no-build
 ```
 
 The unit tests above don't need a Couchbase cluster. The integration tests
@@ -14,7 +14,7 @@ containerized Couchbase cluster via [Aspire](https://learn.microsoft.com/dotnet/
 require Docker to be running:
 
 ```sh
-dotnet test tests/Couchbase.EntityFrameworkCore.IntegrationTests/Couchbase.EntityFrameworkCore.IntegrationTests.csproj
+dotnet test tests/Couchbase.EntityFrameworkCore.IntegrationTests/Couchbase.EntityFrameworkCore.IntegrationTests.csproj --configuration Release --no-build
 ```
 
 ## Continuous integration
