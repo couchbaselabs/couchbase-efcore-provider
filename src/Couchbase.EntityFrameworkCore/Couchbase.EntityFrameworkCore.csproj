@@ -46,10 +46,9 @@
              CP0006 (interface member added) covers only the new signatures on the interface
              (adding a member to a class isn't itself a breaking-change diagnostic the way adding
              one to an interface is, so CouchbaseClientWrapper has no CP0006 entries); (2) the
-             multi-bucket DI work added IBucketProvider/ICouchbaseDbContextOptionsBuilder
-             parameters to CouchbaseQueryEnumerable.Create and its constructor, which similarly
-             shows up as CP0002 (the old, shorter signature no longer exists) since that's a
-             concrete class, not an interface. All of ICouchbaseClientWrapper,
+             (2) CouchbaseQueryEnumerable.Create and CouchbaseQueryEnumerable<T>'s constructor had
+             signature changes which show up as CP0002 (the old signatures no longer exist) since
+             they're concrete classes, not an interface. All of ICouchbaseClientWrapper,
              CouchbaseClientWrapper, and CouchbaseQueryEnumerable live under a
              ".Storage.Internal"/".Query.Internal" namespace and are provider-plumbing, not part of
              the supported public surface — the same spirit as the project-wide EF1001 suppression
