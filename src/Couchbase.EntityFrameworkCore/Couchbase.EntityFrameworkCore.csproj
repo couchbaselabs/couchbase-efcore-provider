@@ -35,7 +35,24 @@
              ServiceKey addition to ICouchbaseDbContextOptionsBuilder; CP0003 is the strong-name
              difference — the release assembly is signed with Couchbase.snk *after* compilation
              (manual today, CI later), so the in-build assembly ApiCompat sees is unsigned. Remove
-             the CP0003 suppression if/when the build is strong-named in-process. -->
+             the CP0003 suppression if/when the build is strong-named in-process.
+
+             The remaining entries (2026-07-14) accept two intentional pre-GA breaks from prior
+             work that was never reconciled with ApiCompat until CI started actually running it:
+             (1) the CancellationToken-threading work replaced several methods on both
+             CouchbaseClientWrapper and ICouchbaseClientWrapper with CancellationToken-taking
+             overloads rather than keeping the old ones alongside them — CP0002 (member removed)
+             covers the dropped old-signature members on both the class and the interface, while
+             CP0006 (interface member added) covers only the new signatures on the interface
+             (adding a member to a class isn't itself a breaking-change diagnostic the way adding
+             one to an interface is, so CouchbaseClientWrapper has no CP0006 entries); (2) the
+             (2) CouchbaseQueryEnumerable.Create and CouchbaseQueryEnumerable<T>'s constructor had
+             signature changes which show up as CP0002 (the old signatures no longer exist) since
+             they're concrete classes, not an interface. All of ICouchbaseClientWrapper,
+             CouchbaseClientWrapper, and CouchbaseQueryEnumerable live under a
+             ".Storage.Internal"/".Query.Internal" namespace and are provider-plumbing, not part of
+             the supported public surface — the same spirit as the project-wide EF1001 suppression
+             above. -->
         <EnablePackageValidation Condition="'$(ValidateApiCompat)' == 'true'">true</EnablePackageValidation>
         <PackageValidationBaselineVersion>2.0.0-beta.1</PackageValidationBaselineVersion>
     </PropertyGroup>
