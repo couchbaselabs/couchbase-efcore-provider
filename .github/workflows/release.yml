@@ -1,0 +1,77 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch: {}
+
+jobs:
+  pack:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      # Couchbase.snk is gitignored and only exists locally otherwise. SIGNING_KEY must be set as
+      # a repo secret containing the base64-encoded contents of the private .snk key file
+      # (`base64 -i Couchbase.snk | pbcopy` locally, then paste into the GitHub secret). Decoding it
+      # to disk here, combined with -p:SignRelease=true below, turns on in-process signing for this
+      # build only — never checked in, never logged. Signing is opt-in via that explicit property
+      # (not inferred from the key file's presence), so this step alone doesn't change anything
+      # about how the assembly builds — see the SignRelease comments in the main .csproj.
+      # `umask 077` before writing means the file lands as 0600 (owner-only) instead of the default
+      # 0644 — this is a private key, so it shouldn't be world/group-readable on the runner even
+      # though the runner is ephemeral. `printf '%s'` (not `echo`) avoids shell-dependent quirks
+      # around trailing newlines/backslash interpretation in the secret value.
+      - name: Decode signing key
+        env:
+          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
+        run: |
+          if [ -z "$SIGNING_KEY" ]; then
+            echo "::error::SIGNING_KEY secret is not set — add the base64-encoded Couchbase.snk contents as a repo secret before running this workflow." >&2
+            exit 1
+          fi
+          umask 077
+          printf '%s' "$SIGNING_KEY" | base64 --decode > src/Couchbase.EntityFrameworkCore/Couchbase.snk
+
+      - name: Restore
+        run: dotnet restore src/Couchbase.EntityFrameworkCore/Couchbase.EntityFrameworkCore.csproj
+
+      - name: Build (signed)
+        run: >
+          dotnet build src/Couchbase.EntityFrameworkCore/Couchbase.EntityFrameworkCore.csproj
+          --configuration Release
+          --no-restore
+          -p:SignRelease=true
+
+      # ValidateApiCompat compares the public API surface against PackageValidationBaselineVersion
+      # (see the .csproj) and fails on breaking changes.
+      - name: Pack (signed, API-compat validated)
+        run: >
+          dotnet pack src/Couchbase.EntityFrameworkCore/Couchbase.EntityFrameworkCore.csproj
+          --configuration Release
+          --no-restore
+          --no-build
+          -p:SignRelease=true
+          -p:ValidateApiCompat=true
+          --output ./artifacts
+
+      # Delete the decoded private key as soon as it's no longer needed, rather than leaving it in
+      # the workspace for the rest of the job — reduces the window for it to be accidentally swept
+      # into a later artifact/log/debug step. if: always() so this still runs if an earlier step
+      # (build/pack) failed. The runner itself is ephemeral, but this costs nothing and removes any
+      # dependency on that being true.
+      - name: Remove signing key
+        if: always()
+        run: rm -f src/Couchbase.EntityFrameworkCore/Couchbase.snk
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nuget-package
+          path: ./artifacts/*.nupkg

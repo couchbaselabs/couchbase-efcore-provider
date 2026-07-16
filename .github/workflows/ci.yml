@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Restore
+        run: dotnet restore couchbase-dotnet-ef.sln
+
+      # Builds the whole solution (provider, samples, unit + integration test projects) so a
+      # build break anywhere in the repo fails CI, even though only the unit tests are run below —
+      # the integration tests need a live, containerized Couchbase cluster (via Aspire) and stay a
+      # manual/local gate for now rather than adding Docker-in-runner time/flakiness to every PR.
+      - name: Build
+        run: dotnet build couchbase-dotnet-ef.sln --configuration Release --no-restore
+
+      - name: Unit tests
+        run: >
+          dotnet test tests/Couchbase.EntityFrameworkCore.UnitTests/Couchbase.EntityFrameworkCore.UnitTests.csproj
+          --configuration Release --no-restore --no-build
+          --logger "trx;LogFileName=unit-tests.trx"
+          --results-directory ./TestResults
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-results
+          path: ./TestResults
