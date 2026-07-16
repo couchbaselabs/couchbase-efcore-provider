@@ -7,18 +7,7 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ## [Unreleased]
 
-### Added
-
-- **One `DbContext` spanning multiple buckets (same cluster).** A single context can now map
-  different entities to different buckets on the same cluster. Give an entity an explicit keyspace
-  with `ToCouchbaseCollection(bucket, scope, collection)` or the new three-argument
-  `[CouchbaseKeyspace(bucket, scope, collection)]`; entities without an explicit bucket continue to
-  use the context's configured bucket. Reads, `Find`, N1QL queries, `SaveChanges`, and
-  `EnsureCreated` all resolve each entity's own bucket. Buckets must share one physical cluster
-  (cross-cluster queries/transactions are not possible — use `ServiceKey` with a context per
-  cluster). See [Configuration](docs/configuration.md#one-context-spanning-multiple-buckets).
-
-## [2.0.0-beta.2] - 2026-06-24
+## [2.0.0-beta.2] - 2026-07-15
 
 ### Added
 
@@ -30,6 +19,46 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
   `CouchbaseDbContextOptionsBuilder.ServiceKey`. Falls back to the previous per-context
   cluster-ownership behavior when no application cluster is registered. See
   [Configuration](docs/configuration.md#multiple-buckets-and-clusters).
+- **One `DbContext` spanning multiple buckets (same cluster).** A single context can now map
+  different entities to different buckets on the same cluster. Give an entity an explicit keyspace
+  with `ToCouchbaseCollection(bucket, scope, collection)` or the new three-argument
+  `[CouchbaseKeyspace(bucket, scope, collection)]`; entities without an explicit bucket continue to
+  use the context's configured bucket. Reads, `Find`, N1QL queries, `SaveChanges`, and
+  `EnsureCreated` all resolve each entity's own bucket. Buckets must share one physical cluster
+  (cross-cluster queries/transactions are not possible — use `ServiceKey` with a context per
+  cluster). Multi-document transactions spanning two buckets on the same cluster are supported and
+  covered by dedicated tests: a commit persists both buckets, and a rollback (or a failure partway
+  through) leaves neither bucket changed. See
+  [Configuration](docs/configuration.md#one-context-spanning-multiple-buckets).
+- **`OwnsOne` can now read genuinely nested JSON objects**, not just the flat `owner_property`
+  columns from EF Core's standard relational table-splitting. Real-world documents (including
+  Couchbase's own `travel-sample` dataset) that store an owned reference as an actual nested JSON
+  object — e.g. `{"geo": {"lat": ..., "lon": ...}}` rather than `{"geo_lat": ..., "geo_lon": ...}`
+  — now populate correctly. This is additive: the existing flat-column round trip for documents
+  the provider itself writes is unaffected.
+- **`CancellationToken` support on the write path.** Tokens passed to `SaveChangesAsync` now flow
+  through to the underlying Couchbase KV/query calls and are honored for real cancellation instead
+  of being accepted but ignored.
+
+### Changed
+
+- **`SaveChangesAsync` write path parallelized.** Independent document writes within a single
+  `SaveChangesAsync` call now execute concurrently (bounded concurrency) instead of one at a time,
+  significantly reducing write latency for multi-entity change sets against a real cluster.
+  Transactional writes remain sequential (ordered within the transaction), as required for
+  correctness.
+
+### Fixed
+
+- **Whole numbers formatted as JSON decimals** (e.g. `"rating": 4.0`) in `int`/`long` properties no
+  longer throw `FormatException` — real-world Couchbase documents (not just ones this provider
+  wrote) can store an integral value with a decimal point, and both the built-in JSON conversion
+  path and the provider's owned-type materializer now tolerate it.
+- **`OwnsMany` items were always tracked as `Added` on load**, causing every `SaveChangesAsync` —
+  even with no actual changes — to issue a spurious rewrite of the owner whenever it had an
+  `OwnsMany` navigation. Collection-owned entries are no longer judged by their (meaningless, for
+  this materialization path) `EntityState`; genuine changes are still reliably detected via the
+  existing collection-snapshot comparison.
 
 ## [2.0.0-beta.1] - 2026-06-23
 
