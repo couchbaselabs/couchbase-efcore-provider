@@ -26,11 +26,25 @@ gate before merging anything that touches provider internals.
 
 ## Cutting a release
 
-`.github/workflows/release.yml` runs on a `v*` tag push or manual dispatch (`workflow_dispatch`).
-It builds and strong-name-signs `Couchbase.EntityFrameworkCore`, validates the public API surface
-against the last released version (`PackageValidationBaselineVersion` in the `.csproj`), and
-uploads the resulting `.nupkg` as a workflow artifact. It does **not** publish to NuGet.org —
-download the artifact and run `dotnet nuget push` yourself once you're satisfied with it.
+`.github/workflows/release.yml` runs on manual dispatch (`workflow_dispatch`) against an existing
+tag — it does **not** trigger automatically on tag push. (GitHub Actions' tag-filter glob syntax
+combines `+`/`*` quantifiers with bracket expressions like `[0-9]` in ways that couldn't be
+confirmed from the documentation, and a release trigger silently failing to fire is a bad failure
+mode to risk — a sibling Couchbase repo, `couchbase-jvm-clients`, sidesteps the same problem the
+same way.) To cut a release:
+
+```sh
+git tag 2.0.0-beta.2
+git push labs 2.0.0-beta.2
+gh workflow run release.yml --repo couchbaselabs/couchbase-efcore-provider -f tag=2.0.0-beta.2
+```
+
+(Or via the GitHub UI: Actions → Release → Run workflow, entering the tag name.) The workflow
+checks out that tag, builds and strong-name-signs `Couchbase.EntityFrameworkCore`, validates the
+public API surface against the last released version (`PackageValidationBaselineVersion` in the
+`.csproj`), and uploads the resulting `.nupkg` as a workflow artifact. It does **not** publish to
+NuGet.org — download the artifact and run `dotnet nuget push` yourself once you're satisfied with
+it.
 
 ### One-time setup: the `SIGNING_KEY` secret
 
@@ -63,13 +77,7 @@ key on every `InternalsVisibleTo` target, and the test assemblies are never sign
 mutually exclusive. This only matters for the release workflow, which packs the main library
 standalone and never builds the test projects against the signed output.
 
-### Known gap: API-compat baseline is currently out of date
+### After a release ships
 
-Running `-p:ValidateApiCompat=true` today (`release.yml` always does) will fail: real,
-already-shipped breaking changes from prior work (the `CancellationToken` threading on
-`ICouchbaseClientWrapper`, and new constructor/factory parameters on `CouchbaseQueryEnumerable`
-from the multi-bucket DI work) were never reconciled with `CompatibilitySuppressions.xml` or a
-bumped `PackageValidationBaselineVersion`. This needs a deliberate decision — accept them as
-intentional pre-GA breaks (regenerate suppressions with
-`-p:ApiCompatGenerateSuppressionFile=true`) or bump the baseline version — before a release can
-actually ship through this workflow. See the project's GA backlog notes for current status.
+Bump `PackageValidationBaselineVersion` in the main `.csproj` to the version that just shipped, so
+the *next* release's `ValidateApiCompat` run compares against it instead of an older baseline.

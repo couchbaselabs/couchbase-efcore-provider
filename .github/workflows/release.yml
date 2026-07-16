@@ -1,9 +1,19 @@
 name: Release
 
 on:
-  push:
-    tags: ['v*']
-  workflow_dispatch: {}
+  # Manual dispatch against an existing tag, rather than triggering on tag push: GitHub Actions'
+  # tag-filter glob dialect's exact handling of a quantifier (+) applied to a bracket expression
+  # ([0-9]) couldn't be confirmed from the documentation, and a release trigger silently failing
+  # to fire is a bad failure mode to risk. A sibling Couchbase repo (couchbase-jvm-clients)
+  # sidesteps this the same way: workflow_dispatch with an explicit tag input, checked out
+  # directly by name, needs no tag-matching glob at all. Create/push the tag first (git tag
+  # 2.0.0-beta.2 && git push labs 2.0.0-beta.2), then run this workflow against it.
+  workflow_dispatch:
+    inputs:
+      tag:
+        type: string
+        description: Existing tag to release, e.g. 2.0.0-beta.2 (must already be pushed)
+        required: true
 
 jobs:
   pack:
@@ -11,6 +21,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
