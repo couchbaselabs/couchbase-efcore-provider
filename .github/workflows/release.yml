@@ -51,8 +51,15 @@ jobs:
           umask 077
           printf '%s' "$SIGNING_KEY" | base64 --decode > src/Couchbase.EntityFrameworkCore/Couchbase.snk
 
+      # -p:ValidateApiCompat=true must be passed here too, not just at pack time: when
+      # EnablePackageValidation is on, the SDK adds an implicit download of the baseline package
+      # (PackageValidationBaselineVersion) as a restore-time item, so it lands in the NuGet cache
+      # for the later --no-restore pack step to compare against. Restoring without this flag
+      # leaves that baseline package missing, and Pack fails with a FileNotFoundException looking
+      # for it in ~/.nuget/packages — confirmed by reproducing this exact failure locally against a
+      # clean NuGet cache (this bug was masked in earlier local testing by an already-warm cache).
       - name: Restore
-        run: dotnet restore src/Couchbase.EntityFrameworkCore/Couchbase.EntityFrameworkCore.csproj
+        run: dotnet restore src/Couchbase.EntityFrameworkCore/Couchbase.EntityFrameworkCore.csproj -p:ValidateApiCompat=true
 
       - name: Build (signed)
         run: >

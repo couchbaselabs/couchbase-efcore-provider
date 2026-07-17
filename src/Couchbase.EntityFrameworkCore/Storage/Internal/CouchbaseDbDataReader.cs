@@ -715,10 +715,8 @@ public class CouchbaseDbDataReader<T> : DbDataReader
     /// <summary>
     /// Asynchronously determines whether the field at the specified ordinal is null.
     /// </summary>
-    public override async Task<bool> IsDBNullAsync(int ordinal, CancellationToken cancellationToken)
-    {
-        return IsDBNull(ordinal);
-    }
+    public override Task<bool> IsDBNullAsync(int ordinal, CancellationToken cancellationToken)
+        => Task.FromResult(IsDBNull(ordinal));
 
     /// <summary>Gets the boolean value of the field at the specified ordinal.</summary>
     public override bool GetBoolean(int ordinal)
