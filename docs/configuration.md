@@ -43,8 +43,18 @@ You can see an example of this in the [CouchbaseGettingStarted](https://github.c
 ## Couchbase SDK options
 Configuring the SDK is largely the same for EF Core Couchbase DB Provider. The SDK's configuration is handled by the ClusterOptions.cs class. More details of the ClusterOptions class can be found in the [main SDK documentation](https://docs.couchbase.com/dotnet-sdk/current/ref/client-settings.html).
 
-## EF Core Couchbase DN Provider options
-The [CouchbaseDbContextOptionsBuilder](https://github.com/couchbaselabs/couchbase-efcore-provider/blob/main/src/Couchbase.EntityFrameworkCore/Infrastructure/CouchbaseDbContextOptionsBuilder.cs) handles configuration options specific to the provider.
+## EF Core Couchbase DB Provider options
+The [CouchbaseDbContextOptionsBuilder](https://github.com/couchbaselabs/couchbase-efcore-provider/blob/main/src/Couchbase.EntityFrameworkCore/Infrastructure/CouchbaseDbContextOptionsBuilder.cs) handles configuration options specific to the provider, set in the `couchbaseDbContextOptions` callback passed to `UseCouchbase`/`AddCouchbase<TContext>`:
+
+| Option | Default | Description |
+|---|---|---|
+| `Bucket` | *(required)* | The bucket this context targets by default. Individual entities can target a different bucket — see [One context spanning multiple buckets](#one-context-spanning-multiple-buckets). |
+| `Scope` | *(required)* | The scope this context targets by default. |
+| `ScanConsistency` | `NotBounded` | N1QL scan consistency for LINQ/`FromSql`/ADO.NET queries. Set `RequestPlus` for read-after-write consistency at the cost of higher query latency. See [Limitations](limitations.md) for the full explanation. |
+| `AutoCreateScopes` | `false` | Whether `EnsureCreatedAsync` automatically creates non-default scopes referenced by entity mappings. When `false`, collections mapped to a non-default scope are skipped (with a warning) instead of created. |
+| `FieldNamingPolicy` | `JsonNamingPolicy.CamelCase` | Controls how CLR navigation names are converted to JSON field names when reading/writing `OwnsMany` embedded collections. Set to `null` to use the CLR name verbatim (PascalCase), or supply a different policy such as `JsonNamingPolicy.SnakeCaseLower`. |
+| `SerializerOptions` | `null` (uses `JsonSerializerDefaults.Web`) | `JsonSerializerOptions` used when deserializing scalar values inside `OwnsMany` collections. Supply a custom instance to match a non-default serializer configured on the Couchbase SDK (custom converters, different enum handling, etc.). |
+| `ServiceKey` | `null` | Selects which application-registered, keyed Couchbase cluster this context uses — see [Multiple clusters](#multiple-clusters). |
 
 ## Multiple buckets and clusters
 
@@ -141,8 +151,11 @@ public class Customer { /* ... */ }
 ```
 
 Reads, `Find`, queries, and `SaveChanges` all resolve each entity's own bucket automatically, and
-`EnsureCreated` creates the scopes/collections in each bucket. N1QL queries and multi-document
-transactions work across these buckets because they share one cluster.
+`EnsureCreated` creates the scopes/collections in each bucket (you must still create a query index
+on each collection yourself — see [Limitations](limitations.md#schema-management-and-migrations)).
+N1QL queries and multi-document transactions work across these buckets because they share one
+cluster — see [Transactions](transactions.md) for the full cross-bucket commit/rollback guarantee
+and example.
 
 > [!NOTE]
 > Buckets mapped within one context must be on the **same** physical cluster. To reach buckets on

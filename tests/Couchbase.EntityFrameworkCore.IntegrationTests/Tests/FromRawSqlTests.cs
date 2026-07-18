@@ -62,9 +62,42 @@ public class FromRawSqlTests(
     {
         await using var context = bloggingFixture.GetDbContext();
 
-        //Exception is because of an incomplete implementation of CouchbaseDbDataReader
+        // CouchbaseFromSqlQueryingEnumerable<T>.GetEnumerator() (sync) is unimplemented for
+        // non-composed FromSql-style queries; see Test_FromSqlRaw_ToList_Throws_NotImplementedException
+        // below for the equivalent FromSqlRaw case.
         Assert.Throws<NotImplementedException>(()=>context.Blogs
             .FromSql($"SELECT * FROM `default`.`blogs`.`blog`")
+            .ToList());
+    }
+
+    [Fact]
+    public async Task Test_FromSql_ToListAsync_Returns_Results()
+    {
+        // Only the synchronous enumeration path (see Test_FromRaw_Throws_NotImplementedException
+        // and Test_FromSqlRaw_ToList_Throws_NotImplementedException) is unimplemented for
+        // non-composed FromSql-style queries — the async path is a separate, fully-implemented
+        // code path (CouchbaseFromSqlQueryingEnumerable.GetAsyncEnumerator).
+        await using var context = bloggingFixture.GetDbContext();
+
+        var results = await context.Blogs
+            .FromSql($"SELECT `b`.* FROM `default`.`blogs`.`blog` AS `b` WHERE META(`b`).id = \"1\"")
+            .AsNoTracking()
+            .ToListAsync();
+
+        Assert.Equal(1, results.Count);
+    }
+
+    [Fact]
+    public async Task Test_FromSqlRaw_ToList_Throws_NotImplementedException()
+    {
+        // The sync-enumeration gap isn't specific to interpolated FromSql (see
+        // Test_FromRaw_Throws_NotImplementedException above) — CouchbaseFromSqlQueryingEnumerable
+        // is used for any non-composed FromSql-style query, so FromSqlRaw hits the same
+        // unimplemented GetEnumerator() when enumerated synchronously.
+        await using var context = bloggingFixture.GetDbContext();
+
+        Assert.Throws<NotImplementedException>(() => context.Blogs
+            .FromSqlRaw("SELECT * FROM `default`.`blogs`.`blog`")
             .ToList());
     }
     
