@@ -103,31 +103,63 @@ ORDER BY `p`.`AuthorId`
 ```
 
 ### Supported Aggregate operators
-The following aggregate operators are supported by the developer preview:
+The following aggregate operators are supported:
 | .NET                         | SQL++             |
 |------------------------------|-------------------|
-| ~~Average(x => x.Property)~~ | ~~AVG(Property)~~ |
+| Average(x => x.Property)     | AVG(Property)     |
 | Count()                      | COUNT(*)          |
 | LongCount()                  | COUNT(*)          |
 | Max(x => x.Property)         | MAX(Property)     |
 | Min(x => x.Property)         | MIN(Property)     |
 | Sum(x => x.Property)         | SUM(Property)     |
 
-Average is not supported in the Developer Preview. See https://jira.issues.couchbase.com/browse/NCBC-3891
-
 ## SQL queries
 
-### SqlRaw
-SqlRaw is not implemented as of the EF Core Couchbase DB Provider Developer Preview because it depends on ADO.NET parameters which are minimally supported in the preview.
-
-> [!NOTE] 
-> DbContext.FromSql  will throw a NotImplementedException in EF Core Couchbase DB Provider Developer Preview 1.
+> [!NOTE]
+> Synchronous enumeration (`.ToList()`, `.First()`, etc.) of a `FromSqlRaw`/`FromSql` query that
+> hasn't been composed with further LINQ operators (`Where`, `OrderBy`, ...) throws
+> `NotImplementedException` — this applies to both `FromSqlRaw` and the interpolated `FromSql`
+> overload alike, not just one of them. The async form (`ToListAsync`/`FirstOrDefaultAsync`/etc.)
+> works for both and is used throughout the examples below.
 
 ### FromSqlRaw
-If you've decided you do want to dynamically construct your SQL, you'll have to use FromSqlRaw, which allows interpolating variable data directly into the SQL string, instead of using a database parameter:
+`FromSqlRaw` lets you write a raw SQL++ query directly, with parameters passed positionally (`{0}`, `{1}`, ...) rather than interpolated into the string — this is the recommended way to include variable data in a raw query, since it goes through the database parameter mechanism instead of string concatenation:
 ```
 string query = "SELECT p.* FROM `Blogging`.`MyBlog`.`Person` as p WHERE PersonId={0}";
 var person = await context.Set<Person>()
     .FromSqlRaw(query, 1)
     .FirstOrDefaultAsync();
+```
+
+Couchbase's `META().id` (the document key) can be queried the same way — useful when you want to fetch by key through a raw query rather than `FindAsync`:
+```
+var blog = await context.Blogs
+    .FromSqlRaw("SELECT `b`.* FROM `default`.`blogs`.`blog` AS `b` WHERE META(`b`).id = \"1\"")
+    .FirstOrDefaultAsync();
+```
+
+`FromSqlRaw` supports multiple parameters and composes with `OrderBy`/paging like any other query source:
+```
+const string sql = @"SELECT DISTINCT route.destinationairport
+    FROM `travel-sample`.`inventory`.`airport` AS airport
+    JOIN `travel-sample`.`inventory`.`route` AS route
+      ON route.sourceairport = airport.faa
+    WHERE LOWER(airport.faa) = {0}
+      AND route.stops = 0
+    ORDER BY route.destinationairport
+    LIMIT {1}
+    OFFSET {2}";
+
+var destinations = await context.Set<DestinationAirport>()
+    .FromSqlRaw(sql, airportCode, pageSize, skip)
+    .ToListAsync();
+```
+
+### FromSql
+
+`FromSql` (the interpolated-string overload, `context.Blogs.FromSql($"...")`) works the same way as `FromSqlRaw` above, including the async-only caveat noted at the top of this section:
+```
+var blogs = await context.Blogs
+    .FromSql($"SELECT `b`.* FROM `default`.`blogs`.`blog` AS `b` WHERE META(`b`).id = \"1\"")
+    .ToListAsync();
 ```

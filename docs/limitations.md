@@ -21,6 +21,25 @@ have no Couchbase equivalent.
   procedures have no Couchbase counterpart. Attempting to map an entity DML operation
   to a stored procedure throws `NotSupportedException`.
 
+* **`EnsureCreatedAsync` does not create query indexes.** It creates the bucket's scopes and
+  collections (and any configured sequences — see [Sequences](sequences.md)), but LINQ,
+  `FromSqlRaw`/`FromSql`, and `ExecuteUpdate`/`ExecuteDelete` all run as SQL++ (N1QL) queries
+  under the hood, and Couchbase's query service refuses to query a collection that has no primary
+  or secondary index at all. You must create at least a primary index yourself, for every
+  collection your model queries, before running queries against it:
+
+  ```sql
+  CREATE PRIMARY INDEX IF NOT EXISTS ON `bucket`.`scope`.`collection`
+  ```
+
+  A primary index is enough to get started but scans the whole collection; for real workloads,
+  create secondary indexes on the fields you filter/sort/join by instead
+  (`CREATE INDEX ix_name ON \`bucket\`.\`scope\`.\`collection\`(field)`). This is unrelated to
+  `EnsureCreatedAsync` and is not automated by the provider — see the [`CreatePrimaryIndexesAsync`
+  helper in the Contoso University sample](https://github.com/couchbaselabs/couchbase-efcore-provider/blob/main/samples/ContosoUniversity/Program.cs)
+  for a worked example that derives the keyspace list from the EF model and waits for indexes to
+  come online before querying.
+
 See also [Modeling](modeling.md).
 
 ## Asynchronous I/O only
@@ -72,9 +91,9 @@ See also [Querying](Queries.md) and [Configuration](configuration.md).
 ## Value generation and keys
 * **Sequence-based value generation supports a fixed set of numeric types:** `int`, `long`,
   `short`, `byte`, `uint`, `ulong`, `ushort`, and `decimal`. Other CLR types throw at
-  model build / value-generation time.
-* **Generated `Guid` primary keys are partially supported** — see
-  [Modeling](modeling.md) for details.
+  model build / value-generation time. See [Sequences and generated values](sequences.md).
+* **Generated `Guid` primary keys are supported via `UseGuid()`/`UseGuidString()`** — see
+  [Sequences and generated values](sequences.md#generated-guids) for details.
 
 ---
 
