@@ -56,6 +56,13 @@ The [CouchbaseDbContextOptionsBuilder](https://github.com/couchbaselabs/couchbas
 | `SerializerOptions` | `null` (uses `JsonSerializerDefaults.Web`) | `JsonSerializerOptions` used when deserializing scalar values inside `OwnsMany` collections. Supply a custom instance to match a non-default serializer configured on the Couchbase SDK (custom converters, different enum handling, etc.). |
 | `ServiceKey` | `null` | Selects which application-registered, keyed Couchbase cluster this context uses — see [Multiple clusters](#multiple-clusters). |
 
+> [!NOTE]
+> `FieldNamingPolicy` only controls casing for `OwnsMany` embedded collection fields — it has no
+> effect on top-level entity property casing in generated SQL++ queries. That's a separate concern
+> handled by [EFCore.NamingConventions](#controlling-querying-casing). If you change one, make sure
+> it still matches the other (and your actual document casing), or fields will silently come back
+> with default values instead of an error — see [Controlling Querying Casing](#controlling-querying-casing).
+
 ## Multiple buckets and clusters
 
 By default a `DbContext` targets a single configured bucket (and scope), and every entity is
@@ -169,7 +176,7 @@ You can control the casing of your entities using standard `NewtonSoft.JsonPrope
 
 The generated SQL++ casing can be controlled via the [EFCore.NamingConventions](https://www.nuget.org/packages/EFCore.NamingConventions) library:
 ```
-dotnet add package EFCore.NamingConventions --version 8.0.3
+dotnet add package EFCore.NamingConventions --version 10.0.1
 ```
 Which is added as part of configuration of the EF Core Couchbase DB Provider:
 ```
@@ -180,5 +187,11 @@ optionsBuilder.UseCouchbase(_clusterOptions, couchbaseDbContextOptions =>
 });
 optionsBuilder.UseCamelCaseNamingConvention();
 ```
+
+> [!NOTE]
+> This is a separate mechanism from the [`FieldNamingPolicy`](#ef-core-couchbase-db-provider-options)
+> option — `EFCore.NamingConventions` governs top-level entity property casing in generated SQL++
+> queries, while `FieldNamingPolicy` governs field casing inside `OwnsMany` embedded collections
+> only. Keep both consistent with your actual document casing.
 
 [Documentation](https://github.com/efcore/EFCore.NamingConventions) for EFCore.Naming Conventions is located on the Github repo. Of interest is the section on [supported naming conventions](https://github.com/efcore/EFCore.NamingConventions?tab=readme-ov-file#supported-naming-conventions).
