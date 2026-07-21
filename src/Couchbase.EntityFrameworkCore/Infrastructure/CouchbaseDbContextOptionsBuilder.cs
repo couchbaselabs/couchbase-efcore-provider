@@ -35,6 +35,8 @@ public class CouchbaseDbContextOptionsBuilder : ICouchbaseDbContextOptionsBuilde
 
     public bool AutoCreateScopes { get; set; }
 
+    public bool AutoCreateIndexes { get; set; }
+
     public JsonNamingPolicy? FieldNamingPolicy { get; set; } = JsonNamingPolicy.CamelCase;
 
     public JsonSerializerOptions? SerializerOptions { get; set; }
@@ -100,6 +102,23 @@ public interface ICouchbaseDbContextOptionsBuilder
     /// When true, any scopes referenced in entity keyspace mappings will be created automatically.
     /// </remarks>
     public bool AutoCreateScopes { get; set; }
+
+    /// <summary>
+    /// Gets or sets whether to automatically create a primary index on every collection referenced
+    /// by entity mappings when <see cref="Microsoft.EntityFrameworkCore.Infrastructure.DatabaseFacade.EnsureCreatedAsync"/>
+    /// is called. Defaults to false.
+    /// </summary>
+    /// <remarks>
+    /// Couchbase's query service refuses to run any N1QL query — every LINQ query, `FromSqlRaw`/
+    /// `FromSql`, and `ExecuteUpdate`/`ExecuteDelete` — against a collection with no index at all.
+    /// When true, <c>EnsureCreatedAsync</c> issues <c>CREATE PRIMARY INDEX IF NOT EXISTS</c> for
+    /// each collection it creates or already owns, and waits for the index to report online before
+    /// returning. A primary index is enough to get started but scans the whole collection; this
+    /// option does not create secondary indexes — those still need to be created manually for real
+    /// query performance. Collections skipped by <see cref="AutoCreateScopes"/> being false are
+    /// also skipped here, since there is no collection to index.
+    /// </remarks>
+    public bool AutoCreateIndexes { get; set; }
 
     /// <summary>
     /// Controls how CLR navigation names are converted to JSON field names when reading and

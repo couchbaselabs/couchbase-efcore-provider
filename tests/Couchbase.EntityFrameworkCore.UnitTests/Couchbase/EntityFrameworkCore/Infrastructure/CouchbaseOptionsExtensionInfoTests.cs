@@ -1,6 +1,8 @@
 using System;
+using System.Text.Json;
 using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.EntityFrameworkCore.Infrastructure.Internal;
+using Couchbase.Query;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
@@ -9,10 +11,16 @@ namespace Couchbase.EntityFrameworkCore.UnitTests.Couchbase.EntityFrameworkCore.
 
 /// <summary>
 /// Verifies that <c>CouchbaseOptionsExtensionInfo.ShouldUseSameServiceProvider</c> is consistent
-/// with <c>GetServiceProviderHashCode</c>. Both must key on (connection string, bucket, scope,
-/// service key, and application container) so that contexts pointing at different buckets/clusters
-/// — or registered in different DI containers — get their own internal service provider, each
-/// registering its own Couchbase cluster/bucket provider. (Multi-bucket DI.)
+/// with <c>GetServiceProviderHashCode</c>. Both must key on every setting that internal services
+/// (chiefly <c>CouchbaseDatabaseCreator</c>) read off the shared <c>ICouchbaseDbContextOptionsBuilder</c>
+/// singleton that lives inside the cached internal service provider: connection string, bucket,
+/// scope, service key, application container, <c>AutoCreateScopes</c>, <c>AutoCreateIndexes</c>,
+/// <c>ScanConsistency</c>, <c>FieldNamingPolicy</c>, and <c>SerializerOptions</c>. Two contexts
+/// that differ only in one of these, but are otherwise "equivalent," must NOT share a provider —
+/// otherwise one of them silently runs with the other's setting instead of its own. (This is
+/// exactly the bug that motivated this test file's expansion: under concurrent test-suite load, a
+/// context configured with <c>AutoCreateIndexes = true</c> silently ran as if it were <c>false</c>
+/// because an earlier, otherwise-identical context's cached provider was reused.)
 /// </summary>
 public class CouchbaseOptionsExtensionInfoTests
 {
@@ -90,6 +98,118 @@ public class CouchbaseOptionsExtensionInfoTests
         var b = new CouchbaseOptionsExtension(bBuilder).Info;
 
         Assert.False(a.ShouldUseSameServiceProvider(b));
+    }
+
+    [Fact]
+    public void DifferentAutoCreateScopes_DoesNotShareServiceProvider()
+    {
+        var aBuilder = new CouchbaseDbContextOptionsBuilder(new DbContextOptionsBuilder(), "couchbase://localhost")
+        {
+            Bucket = "bucketA", Scope = "scopeA", AutoCreateScopes = false
+        };
+        var bBuilder = new CouchbaseDbContextOptionsBuilder(new DbContextOptionsBuilder(), "couchbase://localhost")
+        {
+            Bucket = "bucketA", Scope = "scopeA", AutoCreateScopes = true
+        };
+
+        var a = new CouchbaseOptionsExtension(aBuilder).Info;
+        var b = new CouchbaseOptionsExtension(bBuilder).Info;
+
+        Assert.False(a.ShouldUseSameServiceProvider(b));
+    }
+
+    [Fact]
+    public void DifferentAutoCreateIndexes_DoesNotShareServiceProvider()
+    {
+        var aBuilder = new CouchbaseDbContextOptionsBuilder(new DbContextOptionsBuilder(), "couchbase://localhost")
+        {
+            Bucket = "bucketA", Scope = "scopeA", AutoCreateIndexes = false
+        };
+        var bBuilder = new CouchbaseDbContextOptionsBuilder(new DbContextOptionsBuilder(), "couchbase://localhost")
+        {
+            Bucket = "bucketA", Scope = "scopeA", AutoCreateIndexes = true
+        };
+
+        var a = new CouchbaseOptionsExtension(aBuilder).Info;
+        var b = new CouchbaseOptionsExtension(bBuilder).Info;
+
+        Assert.False(a.ShouldUseSameServiceProvider(b));
+    }
+
+    [Fact]
+    public void DifferentScanConsistency_DoesNotShareServiceProvider()
+    {
+        var aBuilder = new CouchbaseDbContextOptionsBuilder(new DbContextOptionsBuilder(), "couchbase://localhost")
+        {
+            Bucket = "bucketA", Scope = "scopeA", ScanConsistency = QueryScanConsistency.NotBounded
+        };
+        var bBuilder = new CouchbaseDbContextOptionsBuilder(new DbContextOptionsBuilder(), "couchbase://localhost")
+        {
+            Bucket = "bucketA", Scope = "scopeA", ScanConsistency = QueryScanConsistency.RequestPlus
+        };
+
+        var a = new CouchbaseOptionsExtension(aBuilder).Info;
+        var b = new CouchbaseOptionsExtension(bBuilder).Info;
+
+        Assert.False(a.ShouldUseSameServiceProvider(b));
+    }
+
+    [Fact]
+    public void DifferentFieldNamingPolicy_DoesNotShareServiceProvider()
+    {
+        var aBuilder = new CouchbaseDbContextOptionsBuilder(new DbContextOptionsBuilder(), "couchbase://localhost")
+        {
+            Bucket = "bucketA", Scope = "scopeA", FieldNamingPolicy = JsonNamingPolicy.CamelCase
+        };
+        var bBuilder = new CouchbaseDbContextOptionsBuilder(new DbContextOptionsBuilder(), "couchbase://localhost")
+        {
+            Bucket = "bucketA", Scope = "scopeA", FieldNamingPolicy = null
+        };
+
+        var a = new CouchbaseOptionsExtension(aBuilder).Info;
+        var b = new CouchbaseOptionsExtension(bBuilder).Info;
+
+        Assert.False(a.ShouldUseSameServiceProvider(b));
+    }
+
+    [Fact]
+    public void DifferentSerializerOptions_DoesNotShareServiceProvider()
+    {
+        var aBuilder = new CouchbaseDbContextOptionsBuilder(new DbContextOptionsBuilder(), "couchbase://localhost")
+        {
+            Bucket = "bucketA", Scope = "scopeA", SerializerOptions = new JsonSerializerOptions()
+        };
+        var bBuilder = new CouchbaseDbContextOptionsBuilder(new DbContextOptionsBuilder(), "couchbase://localhost")
+        {
+            Bucket = "bucketA", Scope = "scopeA", SerializerOptions = new JsonSerializerOptions()
+        };
+
+        var a = new CouchbaseOptionsExtension(aBuilder).Info;
+        var b = new CouchbaseOptionsExtension(bBuilder).Info;
+
+        // Different instances, even if configured identically -- SerializerOptions has no value
+        // equality, so this is intentionally reference equality (see the property's own comment).
+        Assert.False(a.ShouldUseSameServiceProvider(b));
+    }
+
+    [Fact]
+    public void SameSerializerOptionsInstance_Shares_AndSameHashCode()
+    {
+        var serializerOptions = new JsonSerializerOptions();
+        var aBuilder = new CouchbaseDbContextOptionsBuilder(new DbContextOptionsBuilder(), "couchbase://localhost")
+        {
+            Bucket = "bucketA", Scope = "scopeA", SerializerOptions = serializerOptions
+        };
+        var bBuilder = new CouchbaseDbContextOptionsBuilder(new DbContextOptionsBuilder(), "couchbase://localhost")
+        {
+            Bucket = "bucketA", Scope = "scopeA", SerializerOptions = serializerOptions
+        };
+
+        var a = new CouchbaseOptionsExtension(aBuilder).Info;
+        var b = new CouchbaseOptionsExtension(bBuilder).Info;
+
+        Assert.True(a.ShouldUseSameServiceProvider(b));
+        Assert.Equal(a.GetServiceProviderHashCode(), b.GetServiceProviderHashCode());
     }
 
     [Fact]
