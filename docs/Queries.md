@@ -113,6 +113,46 @@ The following aggregate operators are supported:
 | Min(x => x.Property)         | MIN(Property)     |
 | Sum(x => x.Property)         | SUM(Property)     |
 
+## Supported functions
+
+Beyond the string methods available since 1.0 (`ToLower`/`ToUpper`, `Substring`, `Replace`,
+`Trim`/`TrimStart`/`TrimEnd`, `Contains`), the provider translates the following .NET members to
+SQL++ so they run server-side instead of throwing or falling back to client evaluation:
+
+| .NET                                  | SQL++                              |
+|----------------------------------------|-------------------------------------|
+| `string.IndexOf(s)`                    | `POSITION(x, s)`                    |
+| `string.StartsWith(s)`                 | `LIKE` (pattern-escaped)            |
+| `string.EndsWith(s)`                   | `LIKE` (pattern-escaped)            |
+| `string.IsNullOrEmpty(s)`               | `IS NULL OR = ''`                   |
+| `string.PadLeft(n)` / `PadRight(n)`     | `LPAD(x, n)` / `RPAD(x, n)`          |
+| `string.Length`                        | `LENGTH(x)`                         |
+| `Math.Abs/Ceiling/Floor/Sqrt/Sign(x)`   | `ABS/CEIL/FLOOR/SQRT/SIGN(x)`       |
+| `Math.Round(x[, d])`                   | `ROUND(x[, d])`                     |
+| `Math.Truncate(x)`                     | `TRUNC(x)`                          |
+| `Math.Pow(x, y)`                       | `POWER(x, y)`                       |
+| `Math.Log(x)` / `Log10(x)` / `Exp(x)`  | `LN(x)` / `LOG(x)` / `EXP(x)`        |
+| `Math.Log(x, newBase)`                 | `LN(x) / LN(newBase)`                |
+| `DateTime.Year/Month/Day/Hour/Minute/Second/Millisecond/DayOfWeek/DayOfYear` | `DATE_PART_STR(x, part)` |
+| `DateTime.Date`                        | `DATE_TRUNC_STR(x, 'day', fmt)`     |
+| `DateTime.Now` / `.UtcNow` / `.Today`  | `NOW_LOCAL`/`NOW_UTC`/truncated `NOW_UTC` |
+| `DateTime.AddYears/Months/Days/Hours/Minutes/Seconds(n)` | `DATE_ADD_STR(x, n, part)` |
+| `Guid.NewGuid()`                       | `UUID()`                            |
+
+`StartsWith`/`EndsWith` escape `%`/`_`/the escape character in the search value (constant patterns
+are escaped once at translation time; parameter/column patterns are escaped at query time via
+nested `REPLACE` calls) so a literal `%` or `_` in the search text is matched literally rather than
+treated as a wildcard.
+
+`DateTime` comparisons/arithmetic work against the ISO-8601 string format the provider stores
+(millisecond precision, e.g. `2026-03-14T09:26:53.123Z`, with the fractional-seconds group and its
+decimal point entirely omitted when milliseconds are exactly zero, e.g. `2026-03-14T00:00:00Z`).
+
+Not yet supported: `Math.Min`/`Math.Max` (N1QL's `ARRAY_MAX`/`ARRAY_MIN` take a single array
+argument, not two scalars — no array-literal expression support exists yet to build one), trig
+functions (`Sin`/`Cos`/`Tan`/...), and secondary-index support for EF Core's `HasIndex()` (see
+[Limitations](limitations.md)).
+
 ## SQL queries
 
 > [!NOTE]

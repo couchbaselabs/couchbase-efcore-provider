@@ -24,6 +24,9 @@ public class CouchbaseMethodCallTranslatorProvider : RelationalMethodCallTransla
                 new SqliteRandomTranslator(sqlExpressionFactory),
                 new SqliteRegexMethodTranslator(sqlExpressionFactory),*/
                 new CouchbaseStringMethodTranslator(sqlExpressionFactory),
+                new CouchbaseMathMethodTranslator(sqlExpressionFactory),
+                new CouchbaseGuidMethodTranslator(sqlExpressionFactory),
+                new CouchbaseDateTimeMethodTranslator(sqlExpressionFactory),
                // new SqliteSubstrMethodTranslator(sqlExpressionFactory)
             });
     }
