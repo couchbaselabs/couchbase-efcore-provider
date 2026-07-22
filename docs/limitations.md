@@ -21,12 +21,15 @@ have no Couchbase equivalent.
   procedures have no Couchbase counterpart. Attempting to map an entity DML operation
   to a stored procedure throws `NotSupportedException`.
 
-* **`EnsureCreatedAsync` does not create query indexes.** It creates the bucket's scopes and
-  collections (and any configured sequences — see [Sequences](sequences.md)), but LINQ,
+* **`EnsureCreatedAsync` does not create secondary indexes.** It creates the bucket's scopes and
+  collections (and any configured sequences — see [Sequences](sequences.md)). LINQ,
   `FromSqlRaw`/`FromSql`, and `ExecuteUpdate`/`ExecuteDelete` all run as SQL++ (N1QL) queries
   under the hood, and Couchbase's query service refuses to query a collection that has no primary
-  or secondary index at all. You must create at least a primary index yourself, for every
-  collection your model queries, before running queries against it:
+  or secondary index at all — set `AutoCreateIndexes = true` on the options builder to have
+  `EnsureCreatedAsync` also create a primary index on every collection it creates or already owns,
+  waiting for each one to come online before returning (see
+  [Configuration](configuration.md#ef-core-couchbase-db-provider-options)). This defaults to
+  `false`, so by default you must still create at least a primary index yourself:
 
   ```sql
   CREATE PRIMARY INDEX IF NOT EXISTS ON `bucket`.`scope`.`collection`
@@ -34,11 +37,11 @@ have no Couchbase equivalent.
 
   A primary index is enough to get started but scans the whole collection; for real workloads,
   create secondary indexes on the fields you filter/sort/join by instead
-  (`CREATE INDEX ix_name ON \`bucket\`.\`scope\`.\`collection\`(field)`). This is unrelated to
-  `EnsureCreatedAsync` and is not automated by the provider — see the [`CreatePrimaryIndexesAsync`
-  helper in the Contoso University sample](https://github.com/couchbaselabs/couchbase-efcore-provider/blob/main/samples/ContosoUniversity/Program.cs)
-  for a worked example that derives the keyspace list from the EF model and waits for indexes to
-  come online before querying.
+  (`CREATE INDEX ix_name ON \`bucket\`.\`scope\`.\`collection\`(field)`) — the provider does not
+  automate secondary index creation from your model (there's no equivalent of EF Core's
+  `HasIndex()` support yet). See the [`CreatePrimaryIndexesAsync` helper in the Contoso University
+  sample](https://github.com/couchbaselabs/couchbase-efcore-provider/blob/main/samples/ContosoUniversity/Program.cs)
+  for a worked example of the pattern `AutoCreateIndexes` now automates.
 
 See also [Modeling](modeling.md).
 

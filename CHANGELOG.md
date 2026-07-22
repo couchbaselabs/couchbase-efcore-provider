@@ -7,6 +7,25 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ## [Unreleased]
 
+### Added
+
+- **`AutoCreateIndexes` option.** When enabled, `EnsureCreatedAsync` creates a primary index on
+  every collection it creates or already owns, and waits for each one to come online before
+  returning — closing the gap where a query issued immediately after `EnsureCreatedAsync` could
+  fail because Couchbase's query service refuses to query an unindexed collection. Defaults to
+  `false`. Does not create secondary indexes.
+
+### Fixed
+
+- **`CouchbaseOptionsExtensionInfo.ShouldUseSameServiceProvider`/`GetServiceProviderHashCode` did
+  not account for `AutoCreateScopes`, `ScanConsistency`, or `FieldNamingPolicy`** (in addition to
+  the new `AutoCreateIndexes`). Two `DbContext`s that shared a connection string/bucket/scope/
+  service key but differed in one of these settings were judged "equivalent" by EF Core and could
+  share one internal service provider — including its singleton `ICouchbaseDbContextOptionsBuilder`
+  — silently causing one context to run with the other's setting instead of its own. Caught via a
+  reproducible test-suite flake while validating `AutoCreateIndexes` under concurrent load; fixed
+  by including all of these in both methods, and `SerializerOptions` via reference equality.
+
 ## [2.0.0-beta.2] - 2026-07-15
 
 ### Added

@@ -160,24 +160,53 @@ public class CouchbaseOptionsExtension: RelationalOptionsExtension
         private object? ApplicationContainerIdentity
             => Extension._couchbaseDbContextOptionsBuilder.ApplicationContainerIdentity;
 
+        // Every property here must ALSO appear in ShouldUseSameServiceProvider below, and vice
+        // versa. Both methods exist to decide whether two DbContexts can safely share one internal
+        // service provider (see the class-level remarks on ApplyServices) — but the internal
+        // provider is where the singleton ICouchbaseDbContextOptionsBuilder instance itself lives,
+        // and CouchbaseDatabaseCreator and other internal services read EVERY one of these
+        // properties off that shared instance. Any property omitted here is silently at risk: two
+        // contexts that differ only in that property, but otherwise share a connection/bucket/
+        // scope/service key, would be judged "equivalent" and one of them would transparently get
+        // the other's setting instead of its own. (AutoCreateIndexes was added, and this exact bug
+        // was caught live: under concurrent test-suite load, a context configured with
+        // AutoCreateIndexes = true silently ran with AutoCreateIndexes = false because an
+        // internal provider built for an earlier, otherwise-identical context had already been
+        // cached and was reused.)
         public override int GetServiceProviderHashCode() => HashCode.Combine(
-            ConnectionString,
-            Extension._couchbaseDbContextOptionsBuilder.Bucket,
-            Extension._couchbaseDbContextOptionsBuilder.Scope,
-            Extension._couchbaseDbContextOptionsBuilder.ServiceKey,
+            HashCode.Combine(
+                ConnectionString,
+                Extension._couchbaseDbContextOptionsBuilder.Bucket,
+                Extension._couchbaseDbContextOptionsBuilder.Scope,
+                Extension._couchbaseDbContextOptionsBuilder.ServiceKey,
+                Extension._couchbaseDbContextOptionsBuilder.AutoCreateScopes,
+                Extension._couchbaseDbContextOptionsBuilder.AutoCreateIndexes,
+                Extension._couchbaseDbContextOptionsBuilder.ScanConsistency,
+                Extension._couchbaseDbContextOptionsBuilder.FieldNamingPolicy),
+            // JsonSerializerOptions has no value equality, so this is intentionally reference
+            // equality — two contexts built with separate (even if equivalently-configured)
+            // instances won't share a provider, which is safe (just slightly less sharing) rather
+            // than silently wrong.
+            RuntimeHelpers.GetHashCode(Extension._couchbaseDbContextOptionsBuilder.SerializerOptions),
             RuntimeHelpers.GetHashCode(ApplicationContainerIdentity));
 
         // Must be consistent with GetServiceProviderHashCode: two contexts can share an internal
-        // service provider only when their connection string, bucket, scope, service key, and
-        // application container all match. Each distinct combination registers its own Couchbase
+        // service provider only when their connection string, bucket, scope, service key,
+        // application container, and every other setting the shared ICouchbaseDbContextOptionsBuilder
+        // exposes all match. Each distinct combination registers its own Couchbase
         // cluster/bucket provider (see ApplyServices), so collapsing them onto one provider would
-        // resolve the wrong bucket or cluster.
+        // resolve the wrong bucket, cluster, or (see the remarks above) provider setting.
         public override bool ShouldUseSameServiceProvider(DbContextOptionsExtensionInfo other)
             => other is CouchbaseOptionsExtensionInfo otherInfo
                 && ConnectionString == otherInfo.ConnectionString
                 && Extension._couchbaseDbContextOptionsBuilder.Bucket == otherInfo.Extension._couchbaseDbContextOptionsBuilder.Bucket
                 && Extension._couchbaseDbContextOptionsBuilder.Scope == otherInfo.Extension._couchbaseDbContextOptionsBuilder.Scope
                 && Equals(Extension._couchbaseDbContextOptionsBuilder.ServiceKey, otherInfo.Extension._couchbaseDbContextOptionsBuilder.ServiceKey)
+                && Extension._couchbaseDbContextOptionsBuilder.AutoCreateScopes == otherInfo.Extension._couchbaseDbContextOptionsBuilder.AutoCreateScopes
+                && Extension._couchbaseDbContextOptionsBuilder.AutoCreateIndexes == otherInfo.Extension._couchbaseDbContextOptionsBuilder.AutoCreateIndexes
+                && Extension._couchbaseDbContextOptionsBuilder.ScanConsistency == otherInfo.Extension._couchbaseDbContextOptionsBuilder.ScanConsistency
+                && Extension._couchbaseDbContextOptionsBuilder.FieldNamingPolicy == otherInfo.Extension._couchbaseDbContextOptionsBuilder.FieldNamingPolicy
+                && ReferenceEquals(Extension._couchbaseDbContextOptionsBuilder.SerializerOptions, otherInfo.Extension._couchbaseDbContextOptionsBuilder.SerializerOptions)
                 && ReferenceEquals(ApplicationContainerIdentity, otherInfo.ApplicationContainerIdentity);
 
         public override void PopulateDebugInfo(IDictionary<string, string> debugInfo)
