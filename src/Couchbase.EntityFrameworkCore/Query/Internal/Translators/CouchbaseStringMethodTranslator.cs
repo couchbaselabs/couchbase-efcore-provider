@@ -210,17 +210,23 @@ public class CouchbaseStringMethodTranslator : IMethodCallTranslator
                 pattern = _sqlExpressionFactory.ApplyTypeMapping(pattern, stringTypeMapping);
 
                 // Note: we add IS NOT NULL checks here since we don't do null semantics/compensation for comparison (greater-than)
+                // CONTAINS (and string.Contains) returns a boolean, not an int -- an incorrect
+                // return type here can produce wrong materialization if this expression is ever
+                // projected directly (e.g. `.Select(x => x.Name.Contains("a"))`) rather than only
+                // consumed inside a Where predicate.
+                var containsFunction = _sqlExpressionFactory.Function(
+                    "CONTAINS",
+                    new[] { instance, pattern },
+                    nullable: true,
+                    argumentsPropagateNullability: new[] { true, true },
+                    typeof(bool));
+
                 return
                     _sqlExpressionFactory.AndAlso(
                         _sqlExpressionFactory.IsNotNull(instance),
                         _sqlExpressionFactory.AndAlso(
                             _sqlExpressionFactory.IsNotNull(pattern),
-                                _sqlExpressionFactory.Function(
-                                    "CONTAINS",
-                                    new[] { instance, pattern },
-                                    nullable: true,
-                                    argumentsPropagateNullability: new[] { true, true },
-                                    typeof(int))));
+                            _sqlExpressionFactory.ApplyDefaultTypeMapping(containsFunction)));
             }
 
             if (StartsWithMethodInfo.Equals(method))

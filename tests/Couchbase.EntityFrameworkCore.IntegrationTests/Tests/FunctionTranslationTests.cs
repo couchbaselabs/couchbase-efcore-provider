@@ -72,6 +72,25 @@ public class FunctionTranslationTests(BloggingFixture fixture, ITestOutputHelper
         Assert.Single(result);
     }
 
+    [Fact]
+    public async Task Contains_ProjectsAsBoolean_NotInt()
+    {
+        // string.Contains returns bool and N1QL's CONTAINS returns a boolean, but the CONTAINS
+        // SqlExpression used to be declared with return type int -- a real type-correctness bug
+        // (flagged in code review) even though this specific test doesn't empirically fail without
+        // the fix: this provider's reader coerces the JSON boolean into whatever CLR type the
+        // projection actually asks for, independent of the SqlExpression's own declared type, so
+        // the mistyped declaration doesn't crash materialization today. Kept as a scalar-projection
+        // regression test anyway, since the declared type is still wrong and could matter if EF
+        // Core's type-inference/null-compensation logic ever consults it, or if a future reader
+        // change stops being this lenient.
+        var query = _context.Entities.Select(e => new { e.Title, IsMatch = e.Title.Contains("World") });
+        var results = await query.ToListAsync();
+
+        Assert.Single(results);
+        Assert.True(results[0].IsMatch);
+    }
+
     public async Task DisposeAsync()
     {
         await _context.DisposeAsync();
