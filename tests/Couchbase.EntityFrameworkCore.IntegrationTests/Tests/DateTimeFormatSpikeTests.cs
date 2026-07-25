@@ -42,6 +42,10 @@ public class DateTimeFormatSpikeTests(BloggingFixture fixture, ITestOutputHelper
                 o.Bucket = fixture.BucketName;
                 o.Scope = fixture.ScopeName;
                 o.AutoCreateIndexes = true;
+                // NotBounded (the default) can race the just-completed write -- this test writes
+                // one document and immediately queries it, so RequestPlus is needed for the
+                // subsequent LINQ queries to be read-after-write consistent.
+                o.ScanConsistency = global::Couchbase.Query.QueryScanConsistency.RequestPlus;
             });
         optionsBuilder.ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning));
 
@@ -70,7 +74,8 @@ public class DateTimeFormatSpikeTests(BloggingFixture fixture, ITestOutputHelper
             var bucketId = fixture.BucketName;
             var scopeId = fixture.ScopeName;
             using var rawResult = await cluster.QueryAsync<string>(
-                $"SELECT RAW Stamp FROM `{bucketId}`.`{scopeId}`.`{collectionName}` WHERE Id = 1");
+                $"SELECT RAW Stamp FROM `{bucketId}`.`{scopeId}`.`{collectionName}` WHERE Id = 1",
+                new global::Couchbase.Query.QueryOptions().ScanConsistency(global::Couchbase.Query.QueryScanConsistency.RequestPlus));
 
             string? observedFormat = null;
             await foreach (var row in rawResult.Rows)

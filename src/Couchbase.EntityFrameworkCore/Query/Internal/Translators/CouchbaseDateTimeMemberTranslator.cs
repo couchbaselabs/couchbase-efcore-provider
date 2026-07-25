@@ -76,7 +76,7 @@ public class CouchbaseDateTimeMemberTranslator : IMemberTranslator
                 "DATE_PART_STR",
                 new[] { instance, _sqlExpressionFactory.Constant(part) },
                 nullable: true,
-                argumentsPropagateNullability: new[] { true, true },
+                argumentsPropagateNullability: new[] { true, false },
                 returnType);
         }
 
@@ -86,7 +86,7 @@ public class CouchbaseDateTimeMemberTranslator : IMemberTranslator
                 "DATE_TRUNC_STR",
                 new[] { instance, _sqlExpressionFactory.Constant("day"), _sqlExpressionFactory.Constant(Fmt) },
                 nullable: true,
-                argumentsPropagateNullability: new[] { true, true, false },
+                argumentsPropagateNullability: new[] { true, false, false },
                 returnType,
                 instance.TypeMapping);
         }

@@ -124,7 +124,7 @@ SQL++ so they run server-side instead of throwing or falling back to client eval
 | `string.IndexOf(s)`                    | `POSITION(x, s)`                    |
 | `string.StartsWith(s)`                 | `LIKE` (pattern-escaped)            |
 | `string.EndsWith(s)`                   | `LIKE` (pattern-escaped)            |
-| `string.IsNullOrEmpty(s)`               | `IS NULL OR = ''`                   |
+| `string.IsNullOrEmpty(x)`               | `x IS NULL OR x = ''`               |
 | `string.PadLeft(n)` / `PadRight(n)`     | `LPAD(x, n)` / `RPAD(x, n)`          |
 | `string.Length`                        | `LENGTH(x)`                         |
 | `Math.Abs/Ceiling/Floor/Sqrt/Sign(x)`   | `ABS/CEIL/FLOOR/SQRT/SIGN(x)`       |
@@ -135,7 +135,9 @@ SQL++ so they run server-side instead of throwing or falling back to client eval
 | `Math.Log(x, newBase)`                 | `LN(x) / LN(newBase)`                |
 | `DateTime.Year/Month/Day/Hour/Minute/Second/Millisecond/DayOfWeek/DayOfYear` | `DATE_PART_STR(x, part)` |
 | `DateTime.Date`                        | `DATE_TRUNC_STR(x, 'day', fmt)`     |
-| `DateTime.Now` / `.UtcNow` / `.Today`  | `NOW_LOCAL`/`NOW_UTC`/truncated `NOW_UTC` |
+| `DateTime.Now`                         | `NOW_LOCAL(fmt)`                    |
+| `DateTime.UtcNow`                      | `NOW_UTC(fmt)`                      |
+| `DateTime.Today`                       | `DATE_TRUNC_STR(NOW_UTC(fmt), 'day', fmt)` |
 | `DateTime.AddYears/Months/Days/Hours/Minutes/Seconds(n)` | `DATE_ADD_STR(x, n, part)` |
 | `Guid.NewGuid()`                       | `UUID()`                            |
 
