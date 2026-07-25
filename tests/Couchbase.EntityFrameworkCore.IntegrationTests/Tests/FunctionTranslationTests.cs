@@ -19,6 +19,13 @@ namespace Couchbase.EntityFrameworkCode.IntegrationTests.Tests;
 public class FunctionTranslationTests(BloggingFixture fixture, ITestOutputHelper outputHelper) : IAsyncLifetime
 {
     private static readonly string CollectionName = "fntrans" + Guid.NewGuid().ToString("N");
+
+    // Anchored to last year's March 14th rather than a hardcoded date -- always unambiguously in
+    // the past regardless of when the suite actually runs (CI with a pinned/mocked clock, a
+    // historical checkout, etc.), while staying a fixed, known value the Date/Year/Month/Add*
+    // tests below can assert against without re-deriving "what should this compute to."
+    private static readonly DateTime Published = new(DateTime.UtcNow.Year - 1, 3, 14, 9, 26, 53, 123, DateTimeKind.Utc);
+
     private FunctionTranslationDbContext _context = null!;
 
     public async Task InitializeAsync()
@@ -48,7 +55,7 @@ public class FunctionTranslationTests(BloggingFixture fixture, ITestOutputHelper
             Id = 1,
             Title = "Hello World",
             Score = -4.7,
-            Published = new DateTime(2026, 3, 14, 9, 26, 53, 123, DateTimeKind.Utc),
+            Published = Published,
         });
         await _context.SaveChangesAsync();
     }
@@ -57,9 +64,9 @@ public class FunctionTranslationTests(BloggingFixture fixture, ITestOutputHelper
     public async Task DateTime_Date_TruncatesToStartOfDay()
     {
         // DateTimeKind.Utc matters here -- Published is stored as Utc, and an Unspecified-kind
-        // DateTime parameter serializes differently, so a naive `new DateTime(2026, 3, 14)`
-        // would never compare equal even though DATE_TRUNC_STR computes the right value.
-        var expected = new DateTime(2026, 3, 14, 0, 0, 0, DateTimeKind.Utc);
+        // DateTime parameter serializes differently, so a naive `new DateTime(y, m, d)` would
+        // never compare equal even though DATE_TRUNC_STR computes the right value.
+        var expected = new DateTime(Published.Year, Published.Month, Published.Day, 0, 0, 0, DateTimeKind.Utc);
         var result = await _context.Entities.Where(e => e.Published.Date == expected).ToListAsync();
         Assert.Single(result);
     }
@@ -67,7 +74,7 @@ public class FunctionTranslationTests(BloggingFixture fixture, ITestOutputHelper
     [Fact]
     public async Task DateTime_Today_ComparesAgainstStoredDate()
     {
-        // Published is in the past (2026-03-14); Today at test-run time must be later.
+        // Published is anchored to last year, so it's always in the past relative to Today.
         var result = await _context.Entities.Where(e => e.Published < DateTime.Today).ToListAsync();
         Assert.Single(result);
     }
@@ -220,14 +227,14 @@ public class FunctionTranslationTests(BloggingFixture fixture, ITestOutputHelper
     [Fact]
     public async Task DateTime_Year_MatchesStoredYear()
     {
-        var result = await _context.Entities.Where(e => e.Published.Year == 2026).ToListAsync();
+        var result = await _context.Entities.Where(e => e.Published.Year == Published.Year).ToListAsync();
         Assert.Single(result);
     }
 
     [Fact]
     public async Task DateTime_Month_MatchesStoredMonth()
     {
-        var result = await _context.Entities.Where(e => e.Published.Month == 3).ToListAsync();
+        var result = await _context.Entities.Where(e => e.Published.Month == Published.Month).ToListAsync();
         Assert.Single(result);
     }
 
@@ -237,7 +244,7 @@ public class FunctionTranslationTests(BloggingFixture fixture, ITestOutputHelper
         // DATE_ADD_STR returns the resulting date as a string directly (see
         // CouchbaseDateTimeMethodTranslator's doc comment); this proves the comparison actually
         // executes and matches against real stored data, not just that it generates plausible SQL.
-        var expected = new DateTime(2026, 3, 15, 9, 26, 53, 123, DateTimeKind.Utc);
+        var expected = Published.AddDays(1);
         var result = await _context.Entities.Where(e => e.Published.AddDays(1) == expected).ToListAsync();
         Assert.Single(result);
     }
@@ -245,7 +252,7 @@ public class FunctionTranslationTests(BloggingFixture fixture, ITestOutputHelper
     [Fact]
     public async Task DateTime_AddYears_ProducesUsableDateTimeForComparison()
     {
-        var expected = new DateTime(2027, 3, 14, 9, 26, 53, 123, DateTimeKind.Utc);
+        var expected = Published.AddYears(1);
         var result = await _context.Entities.Where(e => e.Published.AddYears(1) == expected).ToListAsync();
         Assert.Single(result);
     }
@@ -253,7 +260,7 @@ public class FunctionTranslationTests(BloggingFixture fixture, ITestOutputHelper
     [Fact]
     public async Task DateTime_UtcNow_ComparesAgainstStoredDate()
     {
-        // Published is in the past (2026-03-14); UtcNow at test-run time must be later.
+        // Published is anchored to last year, so it's always in the past relative to UtcNow.
         var result = await _context.Entities.Where(e => e.Published < DateTime.UtcNow).ToListAsync();
         Assert.Single(result);
     }
