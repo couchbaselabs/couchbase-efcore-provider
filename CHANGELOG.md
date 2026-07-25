@@ -14,8 +14,23 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
   returning — closing the gap where a query issued immediately after `EnsureCreatedAsync` could
   fail because Couchbase's query service refuses to query an unindexed collection. Defaults to
   `false`. Does not create secondary indexes.
+- **Broader SQL++ function translation** for LINQ queries (CBEF-23): `string.StartsWith`/
+  `EndsWith` (via `LIKE`, with wildcard escaping), `string.IsNullOrEmpty`, `PadLeft`/`PadRight`,
+  and `string.Length`; `Math.Abs`/`Ceiling`/`Floor`/`Round`/`Truncate`/`Pow`/`Sqrt`/`Sign`/`Log`/
+  `Log10`/`Exp`; `DateTime` member access (`Year`/`Month`/`Day`/`Hour`/`Minute`/`Second`/
+  `Millisecond`/`DayOfWeek`/`DayOfYear`/`Date`/`Now`/`UtcNow`/`Today`) and arithmetic
+  (`AddYears`/`AddMonths`/`AddDays`/`AddHours`/`AddMinutes`/`AddSeconds`); and `Guid.NewGuid()`.
+  Previously most of these either threw `InvalidOperationException` at query-compile time or (for
+  `DateTime`/`Guid` member access) had no translator at all. See
+  [Querying — Supported functions](docs/Queries.md#supported-functions) for the full list and what
+  remains unsupported (`Math.Min`/`Max`, trig functions).
 
 ### Fixed
+
+- **`string.IndexOf` translated to N1QL's `CONTAINS`, which returns a boolean, not the integer
+  position `IndexOf` must return.** Any LINQ query using `.IndexOf(...)` silently received a
+  boolean masquerading as an `int`. Fixed to use `POSITION`, which matches `IndexOf`'s exact
+  semantics (zero-based, `-1` if not found).
 
 - **`CouchbaseOptionsExtensionInfo.ShouldUseSameServiceProvider`/`GetServiceProviderHashCode` did
   not account for `AutoCreateScopes`, `ScanConsistency`, or `FieldNamingPolicy`** (in addition to

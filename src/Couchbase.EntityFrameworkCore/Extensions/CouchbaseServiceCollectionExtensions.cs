@@ -60,7 +60,6 @@ public static class CouchbaseServiceCollectionExtensions
             .TryAdd<IShapedQueryCompilingExpressionVisitorFactory, CouchbaseShapedQueryCompilingExpressionVisitorFactory>()
             .TryAdd<IQueryableMethodTranslatingExpressionVisitorFactory, CouchbaseQueryableMethodTranslatingExpressionVisitorFactory>()
             .TryAdd<IHistoryRepository, CouchbaseHistoryRepository>()//not used but required by ASP.NET
-            .TryAdd<IMethodCallTranslatorProvider, CouchbaseMethodCallTranslatorProvider>()
 
             //Found that this was necessary, because the default convention of determining a
             //Model's primary key automatically based off of properties that have 'Id' in their`
@@ -76,16 +75,31 @@ public static class CouchbaseServiceCollectionExtensions
 
         builder.TryAddCoreServices();
 
-        // IDatabase, IValueGeneratorSelector, and IQueryCompilationContextFactory must be
-        // registered AFTER TryAddCoreServices() because EF Core's relational core services
-        // register their own implementations for all three, and TryAdd semantics mean the
-        // core registration wins over any earlier builder entry. IQueryCompilationContextFactory
+        // IDatabase, IValueGeneratorSelector, IQueryCompilationContextFactory, IMethodCallTranslatorProvider,
+        // and IMemberTranslatorProvider must be registered AFTER TryAddCoreServices() rather than
+        // relying on TryAdd ordering before it. For the first three, EF Core's relational core
+        // services are already known to register their own implementations in a way that wins
+        // over an earlier TryAdd entry regardless of order. IQueryCompilationContextFactory
         // specifically must produce CouchbaseQueryCompilationContext (which carries
         // NavigationIncludes for eager loading); the relational default produces a plain
         // RelationalQueryCompilationContext, so the type-check in CollectNavigationIncludes would
-        // silently no-op. Removing and re-adding with AddScoped guarantees our implementation
-        // is the one resolved.
-        foreach (var type in new[] { typeof(IDatabase), typeof(IValueGeneratorSelector), typeof(IQueryCompilationContextFactory) })
+        // silently no-op.
+        //
+        // IMethodCallTranslatorProvider/IMemberTranslatorProvider don't currently have that same
+        // problem -- verified against EF Core's own TryAdd implementation (first-registration-wins
+        // for single-registration services, which these are) and empirically (Couchbase's custom
+        // translators are provably the ones invoked at runtime). They're registered the same
+        // explicit way regardless, defensively: relying on an undocumented ordering guarantee in a
+        // third-party library is fragile, and this exact pattern is already needed for the other
+        // three services in this list, so there's no extra complexity cost to closing the gap here
+        // too before a future EF Core version silently reopens it.
+        //
+        // Removing and re-adding with AddScoped guarantees our implementation is the one resolved.
+        foreach (var type in new[]
+                 {
+                     typeof(IDatabase), typeof(IValueGeneratorSelector), typeof(IQueryCompilationContextFactory),
+                     typeof(IMethodCallTranslatorProvider), typeof(IMemberTranslatorProvider)
+                 })
         {
             var existing = serviceCollection.Where(d => d.ServiceType == type).ToList();
             foreach (var descriptor in existing) serviceCollection.Remove(descriptor);
@@ -93,6 +107,8 @@ public static class CouchbaseServiceCollectionExtensions
         serviceCollection.AddScoped<IDatabase, CouchbaseDatabaseWrapper>();
         serviceCollection.AddScoped<IValueGeneratorSelector, CouchbaseValueGeneratorSelector>();
         serviceCollection.AddScoped<IQueryCompilationContextFactory, CouchbaseQueryCompilationContextFactory>();
+        serviceCollection.AddScoped<IMethodCallTranslatorProvider, CouchbaseMethodCallTranslatorProvider>();
+        serviceCollection.AddScoped<IMemberTranslatorProvider, CouchbaseMemberTranslatorProvider>();
 
         serviceCollection
             //.AddScoped<IQueryContextFactory, CouchbaseQueryContextFactory>()
