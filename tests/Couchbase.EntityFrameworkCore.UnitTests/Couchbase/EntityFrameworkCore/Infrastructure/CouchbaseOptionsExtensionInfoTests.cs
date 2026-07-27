@@ -173,6 +173,25 @@ public class CouchbaseOptionsExtensionInfoTests
     }
 
     [Fact]
+    public void DifferentDateTimeFormat_DoesNotShareServiceProvider()
+    {
+        var aBuilder = new CouchbaseDbContextOptionsBuilder(new DbContextOptionsBuilder(), "couchbase://localhost")
+        {
+            Bucket = "bucketA", Scope = "scopeA", DateTimeFormat = "yyyy-MM-ddTHH:mm:ss.FFFK"
+        };
+        var bBuilder = new CouchbaseDbContextOptionsBuilder(new DbContextOptionsBuilder(), "couchbase://localhost")
+        {
+            Bucket = "bucketA", Scope = "scopeA", DateTimeFormat = "yyyy-MM-dd"
+        };
+
+        var a = new CouchbaseOptionsExtension(aBuilder).Info;
+        var b = new CouchbaseOptionsExtension(bBuilder).Info;
+
+        Assert.False(a.ShouldUseSameServiceProvider(b));
+        Assert.NotEqual(a.GetServiceProviderHashCode(), b.GetServiceProviderHashCode());
+    }
+
+    [Fact]
     public void DifferentSerializerOptions_DoesNotShareServiceProvider()
     {
         var aBuilder = new CouchbaseDbContextOptionsBuilder(new DbContextOptionsBuilder(), "couchbase://localhost")

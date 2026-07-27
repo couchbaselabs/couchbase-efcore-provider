@@ -1,4 +1,5 @@
 using System.Reflection;
+using Couchbase.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Query;
@@ -8,37 +9,33 @@ namespace Couchbase.EntityFrameworkCore.Query.Internal.Translators;
 
 /// <summary>
 /// Translates <see cref="DateTime"/> member access to SQL++. This provider's <see cref="DateTime"/>
-/// type mapping is <c>STRING</c> (ISO-8601), and the stored/parameter format was confirmed
-/// empirically (CBEF-23 step-0 spike, <c>DateTimeFormatSpikeTests</c>) to be millisecond-precision
-/// with a literal <c>Z</c> suffix for UTC values, e.g. <c>2026-03-14T09:26:53.123Z</c> --
-/// <see cref="Fmt"/> reproduces that format for every N1QL date function that accepts an explicit
-/// format string, so results stay comparable against already-stored data.
+/// type mapping is <c>STRING</c> (ISO-8601). The format used for every N1QL date function that
+/// accepts an explicit format string is <see cref="ICouchbaseDbContextOptionsBuilder.GoDateTimeFormat"/>
+/// -- the Go reference-time layout equivalent of the user-configurable
+/// <see cref="ICouchbaseDbContextOptionsBuilder.DateTimeFormat"/> -- so results stay comparable
+/// against however the user's <see cref="DateTime"/> data is actually stored, rather than assuming
+/// one hardcoded format (N1QL has no native date type; dates are just JSON strings, so nothing
+/// stops a user from storing a different convention). The default format
+/// (<c>"yyyy-MM-ddTHH:mm:ss.FFFK"</c>) was confirmed empirically (CBEF-23 step-0 spike,
+/// <c>DateTimeFormatSpikeTests</c>) to match this provider's own default <see cref="DateTime"/>
+/// serialization -- millisecond-precision with a literal <c>Z</c> suffix for UTC values, e.g.
+/// <c>2026-03-14T09:26:53.123Z</c>.
 /// <para>
-/// Non-obvious gotcha, confirmed against a live cluster: the fractional-seconds group must use
-/// Go's <c>.999</c> trimming convention, not a fixed-width <c>.000</c>. .NET's serializer omits
-/// the fractional group entirely (and the decimal point with it) when milliseconds are exactly
-/// zero -- e.g. midnight serializes as <c>2026-03-14T00:00:00Z</c>, with no <c>.000</c> at all.
-/// A fixed-width format produces a string that never matches such a parameter.
-/// </para>
-/// <para>
-/// Second gotcha: the offset directive must be <c>Z07:00</c>, not a literal <c>Z</c>. A literal
-/// <c>Z</c> is only correct for UTC values (<c>NOW_UTC</c>, <c>DATE_PART_STR</c>/<c>DATE_TRUNC_STR</c>
-/// on the UTC-stored data this provider writes) -- <c>NOW_LOCAL</c> (<see cref="DateTime.Now"/>)
-/// returns a value in the query service's local timezone, which is not UTC in general, so forcing
-/// a trailing <c>Z</c> onto it would produce a string that both lies about the offset and won't
-/// match how a <see cref="DateTimeKind.Local"/> value actually serializes (typically a real
-/// <c>+hh:mm</c>/<c>-hh:mm</c> offset). <c>Z07:00</c> renders <c>Z</c> when the offset is zero and
-/// the real offset otherwise, so the same format string is correct for both cases.
+/// Two non-obvious gotchas that motivated the default format's exact token choices, both confirmed
+/// against a live cluster (see <see cref="DotNetToGoDateFormatConverter"/> for the token mapping):
+/// (1) the fractional-seconds group must use .NET's <c>F</c> (trimmed) specifier / Go's <c>.999</c>
+/// convention, not a fixed-width <c>f</c>/<c>.000</c> -- .NET's serializer omits the fractional
+/// group entirely (and the decimal point with it) when milliseconds are exactly zero, e.g. midnight
+/// serializes as <c>2026-03-14T00:00:00Z</c> with no <c>.000</c> at all, so a fixed-width format
+/// would never match such a value. (2) the offset directive must be .NET's <c>K</c> / Go's
+/// <c>Z07:00</c>, not a literal <c>Z</c> -- a literal <c>Z</c> is only correct for UTC values
+/// (<c>NOW_UTC</c>, <c>DATE_PART_STR</c>/<c>DATE_TRUNC_STR</c> on UTC-stored data) but
+/// <c>NOW_LOCAL</c> (<see cref="DateTime.Now"/>) returns a value in the query service's local
+/// timezone, which is not UTC in general.
 /// </para>
 /// </summary>
 public class CouchbaseDateTimeMemberTranslator : IMemberTranslator
 {
-    // N1QL's Go-reference-time format style; .999 mirrors .NET's variable-width fractional
-    // seconds (trimmed, including the dot, when all-zero) rather than always padding to 3 digits.
-    // Z07:00 emits Z for a zero offset (UTC) and a real +hh:mm/-hh:mm offset otherwise, rather
-    // than forcing an incorrect literal Z onto non-UTC values (see NOW_LOCAL usage below).
-    private const string Fmt = "2006-01-02T15:04:05.999Z07:00";
-
     private static readonly IReadOnlyDictionary<MemberInfo, string> DatePartMappings = new Dictionary<MemberInfo, string>
     {
         { GetDateTimeProperty(nameof(DateTime.Year)), "year" },
@@ -58,10 +55,14 @@ public class CouchbaseDateTimeMemberTranslator : IMemberTranslator
     private static readonly MemberInfo TodayMemberInfo = GetDateTimeProperty(nameof(DateTime.Today));
 
     private readonly ISqlExpressionFactory _sqlExpressionFactory;
+    private readonly string _fmt;
 
-    public CouchbaseDateTimeMemberTranslator(ISqlExpressionFactory sqlExpressionFactory)
+    public CouchbaseDateTimeMemberTranslator(
+        ISqlExpressionFactory sqlExpressionFactory,
+        ICouchbaseDbContextOptionsBuilder optionsBuilder)
     {
         _sqlExpressionFactory = sqlExpressionFactory;
+        _fmt = optionsBuilder.GoDateTimeFormat;
     }
 
     public virtual SqlExpression? Translate(
@@ -84,7 +85,7 @@ public class CouchbaseDateTimeMemberTranslator : IMemberTranslator
         {
             return _sqlExpressionFactory.Function(
                 "DATE_TRUNC_STR",
-                new[] { instance, _sqlExpressionFactory.Constant("day"), _sqlExpressionFactory.Constant(Fmt) },
+                new[] { instance, _sqlExpressionFactory.Constant("day"), _sqlExpressionFactory.Constant(_fmt) },
                 nullable: true,
                 argumentsPropagateNullability: new[] { true, false, false },
                 returnType,
@@ -95,7 +96,7 @@ public class CouchbaseDateTimeMemberTranslator : IMemberTranslator
         {
             return _sqlExpressionFactory.Function(
                 "NOW_LOCAL",
-                new[] { _sqlExpressionFactory.Constant(Fmt) },
+                new[] { _sqlExpressionFactory.Constant(_fmt) },
                 nullable: false,
                 argumentsPropagateNullability: new[] { false },
                 returnType);
@@ -105,7 +106,7 @@ public class CouchbaseDateTimeMemberTranslator : IMemberTranslator
         {
             return _sqlExpressionFactory.Function(
                 "NOW_UTC",
-                new[] { _sqlExpressionFactory.Constant(Fmt) },
+                new[] { _sqlExpressionFactory.Constant(_fmt) },
                 nullable: false,
                 argumentsPropagateNullability: new[] { false },
                 returnType);
@@ -115,14 +116,14 @@ public class CouchbaseDateTimeMemberTranslator : IMemberTranslator
         {
             var nowUtc = _sqlExpressionFactory.Function(
                 "NOW_UTC",
-                new[] { _sqlExpressionFactory.Constant(Fmt) },
+                new[] { _sqlExpressionFactory.Constant(_fmt) },
                 nullable: false,
                 argumentsPropagateNullability: new[] { false },
                 returnType);
 
             return _sqlExpressionFactory.Function(
                 "DATE_TRUNC_STR",
-                new[] { nowUtc, _sqlExpressionFactory.Constant("day"), _sqlExpressionFactory.Constant(Fmt) },
+                new[] { nowUtc, _sqlExpressionFactory.Constant("day"), _sqlExpressionFactory.Constant(_fmt) },
                 nullable: false,
                 argumentsPropagateNullability: new[] { false, false, false },
                 returnType);

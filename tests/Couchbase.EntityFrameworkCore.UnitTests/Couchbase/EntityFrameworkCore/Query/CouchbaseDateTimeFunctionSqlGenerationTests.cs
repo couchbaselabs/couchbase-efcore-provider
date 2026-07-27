@@ -99,14 +99,51 @@ public class CouchbaseDateTimeFunctionSqlGenerationTests
         Assert.Contains("'year'", sql);
     }
 
-    private static PostContext CreateContext()
+    [Fact]
+    public void UtcNow_DefaultFormat_UsesObservedGoLayoutByteForByte()
+    {
+        // Regression guard: this exact Go layout string was empirically confirmed (CBEF-23 step-0
+        // spike) to match this provider's own default DateTime serialization. The DateTimeFormat
+        // refactor must not silently change this default.
+        using var ctx = CreateContext();
+        var query = ctx.Posts.Where(p => p.Published < DateTime.UtcNow);
+
+        Assert.Contains("2006-01-02T15:04:05.999Z07:00", query.ToQueryString());
+    }
+
+    [Fact]
+    public void Date_CustomFormat_UsesConfiguredGoLayoutNotDefault()
+    {
+        using var ctx = CreateContext("yyyy-MM-dd");
+        var stamp = new DateTime(2026, 1, 1);
+        var query = ctx.Posts.Where(p => p.Published.Date == stamp);
+
+        var sql = query.ToQueryString();
+        Assert.Contains("2006-01-02", sql);
+        Assert.DoesNotContain("2006-01-02T15:04:05.999Z07:00", sql);
+    }
+
+    [Fact]
+    public void UtcNow_CustomFormat_UsesConfiguredGoLayoutNotDefault()
+    {
+        using var ctx = CreateContext("yyyy-MM-dd");
+        var query = ctx.Posts.Where(p => p.Published < DateTime.UtcNow);
+
+        var sql = query.ToQueryString();
+        Assert.Contains("2006-01-02", sql);
+        Assert.DoesNotContain("2006-01-02T15:04:05.999Z07:00", sql);
+    }
+
+    private static PostContext CreateContext(string? dateTimeFormat = null)
     {
         var clusterOptions = new ClusterOptions()
             .WithConnectionString("couchbase://localhost")
             .WithPasswordAuthentication("Administrator", "password");
 
         var builder = new DbContextOptionsBuilder<PostContext>();
-        builder.UseCouchbaseProvider(clusterOptions);
+        builder.UseCouchbaseProvider(clusterOptions, dateTimeFormat is null
+            ? null
+            : o => o.DateTimeFormat = dateTimeFormat);
         return new PostContext(builder.Options);
     }
 

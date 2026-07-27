@@ -55,6 +55,7 @@ The [CouchbaseDbContextOptionsBuilder](https://github.com/couchbaselabs/couchbas
 | `AutoCreateIndexes` | `false` | Whether `EnsureCreatedAsync` automatically creates a primary index on every collection it creates or already owns, waiting for each index to come online before returning. Does not create secondary indexes — see [Limitations](limitations.md#schema-management-and-migrations). |
 | `FieldNamingPolicy` | `JsonNamingPolicy.CamelCase` | Controls how CLR navigation names are converted to JSON field names when reading/writing `OwnsMany` embedded collections. Set to `null` to use the CLR name verbatim (PascalCase), or supply a different policy such as `JsonNamingPolicy.SnakeCaseLower`. |
 | `SerializerOptions` | `null` (uses `JsonSerializerDefaults.Web`) | `JsonSerializerOptions` used when deserializing scalar values inside `OwnsMany` collections. Supply a custom instance to match a non-default serializer configured on the Couchbase SDK (custom converters, different enum handling, etc.). |
+| `DateTimeFormat` | `"yyyy-MM-ddTHH:mm:ss.FFFK"` | The .NET custom `DateTime` format string this provider assumes when generating or comparing against `DateTime` string values in SQL++ — used by the LINQ `DateTime` function translators (`.Date`, `.Now`, `.UtcNow`, `.Today`) and for inline `DateTime` literals. See [DateTime string format](#datetime-string-format) below. |
 | `ServiceKey` | `null` | Selects which application-registered, keyed Couchbase cluster this context uses — see [Multiple clusters](#multiple-clusters). |
 
 > [!NOTE]
@@ -63,6 +64,49 @@ The [CouchbaseDbContextOptionsBuilder](https://github.com/couchbaselabs/couchbas
 > handled by [EFCore.NamingConventions](#controlling-querying-casing). If you change one, make sure
 > it still matches the other (and your actual document casing), or fields will silently come back
 > with default values instead of an error — see [Controlling Querying Casing](#controlling-querying-casing).
+
+### DateTime string format
+
+N1QL has no native date type — a `DateTime` is stored as a plain JSON string, so nothing stops
+different data from using a different string convention (a different precision, a date-only value,
+or data written by another system entirely). The `DateTimeFormat` option tells the provider which
+convention your data actually uses, so `.Date`/`.Now`/`.UtcNow`/`.Today` comparisons and generated
+`DateTime` literals stay correct instead of assuming one hardcoded format.
+
+`DateTimeFormat` is a .NET custom `DateTime` format string. The default,
+`"yyyy-MM-ddTHH:mm:ss.FFFK"`, matches this provider's own default `DateTime` serialization
+(millisecond precision, `Z` for UTC or a real offset otherwise — e.g. `2026-03-14T09:26:53.123Z`).
+Only the following tokens are supported (the ISO-8601-relevant subset — internally converted to
+the equivalent [Go reference-time](https://pkg.go.dev/time#pkg-constants) layout N1QL's date
+functions expect):
+
+| Token | Meaning |
+|---|---|
+| `yyyy` | 4-digit year |
+| `MM` | 2-digit month |
+| `dd` | 2-digit day |
+| `HH` | 2-digit hour (24-hour) |
+| `mm` | 2-digit minute |
+| `ss` | 2-digit second |
+| `f` (repeated 1–7 times) | Fixed-width fractional seconds |
+| `F` (repeated 1–7 times) | Trimmed fractional seconds (dropped, along with the decimal point, when the value is exactly zero) |
+| `K` | `Z` for UTC, or a real `+hh:mm`/`-hh:mm` offset |
+| `T` | Literal `T` — not a reserved .NET specifier, so it needs no quoting (unlike other letters) |
+| non-letter characters (`-`, `:`, `.`, space, etc.) | Passed through as literal separators |
+| `'...'` / `"..."` | A quoted literal string, copied through verbatim (needed to use a letter — other than `T` — as a literal, e.g. `'Z'`) |
+| `\x` | Escapes the next character `x` as a literal, usable inside or outside a quoted section |
+
+Any other bare letter (`tt`, `ddd`, `zzz`, 12-hour `hh`, an un-quoted `Z`, etc.) throws an
+`ArgumentException` at configuration time (when `DateTimeFormat` is set) naming the unsupported
+token, rather than failing later with a confusing SQL++ error. Configure it alongside your other
+provider options:
+
+```csharp
+couchbaseDbContextOptions.DateTimeFormat = "yyyy-MM-dd"; // date-only convention
+```
+
+This is unrelated to `FieldNamingPolicy` — `DateTimeFormat` controls how `DateTime` *values* are
+compared/generated in SQL++, while `FieldNamingPolicy` controls JSON *field name* casing.
 
 ## Multiple buckets and clusters
 

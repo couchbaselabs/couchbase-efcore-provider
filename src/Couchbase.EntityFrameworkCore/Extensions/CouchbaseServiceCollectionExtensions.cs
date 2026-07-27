@@ -21,6 +21,7 @@ using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.EntityFrameworkCore.Update;
 using Microsoft.EntityFrameworkCore.ValueGeneration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Couchbase.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore.Query.Internal;
 using Microsoft.Extensions.Logging;
@@ -48,8 +49,19 @@ public static class CouchbaseServiceCollectionExtensions
     {
         serviceCollection.AddLogging(); //this should be injectable from the app side
 
+        // IRelationalTypeMappingSource is Singleton-lifetime (EF Core), while
+        // ICouchbaseDbContextOptionsBuilder (which carries DateTimeFormat) is Scoped --
+        // constructor-injecting the latter into the former would be a captive-dependency
+        // mismatch. Instead, capture optionsExtension.DbContextOptionsBuilder.DateTimeFormat *by
+        // value* in this factory, registered before TryAddCoreServices() so it wins under the
+        // standard skip-if-already-registered TryAdd semantics (must come first here, unlike the
+        // remove-and-AddScoped services below, which sidestep ordering entirely).
+        serviceCollection.TryAddSingleton<IRelationalTypeMappingSource>(sp => new CouchbaseTypeMappingSource(
+            sp.GetRequiredService<TypeMappingSourceDependencies>(),
+            sp.GetRequiredService<RelationalTypeMappingSourceDependencies>(),
+            optionsExtension.DbContextOptionsBuilder.DateTimeFormat));
+
         var builder = new EntityFrameworkRelationalServicesBuilder(serviceCollection)
-            .TryAdd<IRelationalTypeMappingSource, CouchbaseTypeMappingSource>()
             .TryAdd<IDatabaseProvider, DatabaseProvider<CouchbaseOptionsExtension>>()
             .TryAdd<LoggingDefinitions, CouchbaseLoggingDefinitions>()
             .TryAdd<IModificationCommandBatchFactory, CouchbaseModificationCommandBatchFactory>()

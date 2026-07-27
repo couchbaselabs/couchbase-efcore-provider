@@ -24,6 +24,12 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
   `DateTime`/`Guid` member access) had no translator at all. See
   [Querying — Supported functions](docs/Queries.md#supported-functions) for the full list and what
   remains unsupported (`Math.Min`/`Max`, trig functions).
+- **`DateTimeFormat` option.** Configures the .NET custom `DateTime` format string this provider
+  assumes when generating or comparing against `DateTime` string values in SQL++ — used by the
+  `.Date`/`.Now`/`.UtcNow`/`.Today` translators and for inline `DateTime` literals. Defaults to
+  `"yyyy-MM-ddTHH:mm:ss.FFFK"` (this provider's own default serialization), but is configurable
+  since N1QL has no native date type and data can legitimately be stored in a different
+  convention. See [Configuration — DateTime string format](docs/configuration.md#datetime-string-format).
 
 ### Fixed
 
@@ -32,14 +38,24 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
   boolean masquerading as an `int`. Fixed to use `POSITION`, which matches `IndexOf`'s exact
   semantics (zero-based, `-1` if not found).
 
+- **`CouchbaseDateTimeMemberTranslator` hardcoded a Go-layout format constant** for
+  `.Date`/`.Now`/`.UtcNow`/`.Today`, assuming every `DateTime` was stored in this provider's own
+  default format. Now driven by the configurable `DateTimeFormat` option instead.
+
+- **`CouchbaseTypeMappingSource` used EF Core's stock `DateTimeTypeMapping`**, which generates a
+  `TIMESTAMP 'yyyy-MM-dd HH:mm:ss.fffffff'` literal for inline `DateTime` constants — a syntax no
+  N1QL date-string convention uses and likely invalid SQL++. New `CouchbaseDateTimeTypeMapping`
+  generates a plain quoted string literal in the configured `DateTimeFormat` instead.
+
 - **`CouchbaseOptionsExtensionInfo.ShouldUseSameServiceProvider`/`GetServiceProviderHashCode` did
-  not account for `AutoCreateScopes`, `ScanConsistency`, or `FieldNamingPolicy`** (in addition to
-  the new `AutoCreateIndexes`). Two `DbContext`s that shared a connection string/bucket/scope/
-  service key but differed in one of these settings were judged "equivalent" by EF Core and could
-  share one internal service provider — including its singleton `ICouchbaseDbContextOptionsBuilder`
-  — silently causing one context to run with the other's setting instead of its own. Caught via a
-  reproducible test-suite flake while validating `AutoCreateIndexes` under concurrent load; fixed
-  by including all of these in both methods, and `SerializerOptions` via reference equality.
+  not account for `AutoCreateScopes`, `ScanConsistency`, `FieldNamingPolicy`, or `DateTimeFormat`**
+  (in addition to the new `AutoCreateIndexes`). Two `DbContext`s that shared a connection string/
+  bucket/scope/service key but differed in one of these settings were judged "equivalent" by EF
+  Core and could share one internal service provider — including its singleton
+  `ICouchbaseDbContextOptionsBuilder` — silently causing one context to run with the other's
+  setting instead of its own. Caught via a reproducible test-suite flake while validating
+  `AutoCreateIndexes` under concurrent load; fixed by including all of these in both methods, and
+  `SerializerOptions` via reference equality.
 
 ## [2.0.0-beta.2] - 2026-07-15
 

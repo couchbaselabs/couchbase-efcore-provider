@@ -1,10 +1,14 @@
+using Couchbase.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Query;
 
 namespace Couchbase.EntityFrameworkCore.Query.Internal.Translators;
 
 public class CouchbaseMemberTranslatorProvider : RelationalMemberTranslatorProvider
 {
-    public CouchbaseMemberTranslatorProvider(RelationalMemberTranslatorProviderDependencies dependencies) : base(dependencies)
+    public CouchbaseMemberTranslatorProvider(
+        RelationalMemberTranslatorProviderDependencies dependencies,
+        ICouchbaseDbContextOptionsBuilder optionsBuilder)
+        : base(dependencies)
     {
         var sqlExpressionFactory = dependencies.SqlExpressionFactory;
 
@@ -12,7 +16,7 @@ public class CouchbaseMemberTranslatorProvider : RelationalMemberTranslatorProvi
             new IMemberTranslator[]
             {
                 new CouchbaseStringMemberTranslator(sqlExpressionFactory),
-                new CouchbaseDateTimeMemberTranslator(sqlExpressionFactory),
+                new CouchbaseDateTimeMemberTranslator(sqlExpressionFactory, optionsBuilder),
             });
     }
 }
