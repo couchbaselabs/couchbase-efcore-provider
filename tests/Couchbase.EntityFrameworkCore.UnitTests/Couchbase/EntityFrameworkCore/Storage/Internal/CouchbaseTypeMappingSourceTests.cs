@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using Couchbase.EntityFrameworkCore.Storage.Internal;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.EntityFrameworkCore.Storage.Json;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
@@ -717,6 +718,43 @@ public class CouchbaseTypeMappingSourceTests
         var decodedBytes = Convert.FromBase64String(base64);
         Assert.Equal(originalBytes, decodedBytes);
     }
+
+    #endregion
+
+    #region FindMapping(IProperty) -- Per-Property DateTimeFormat Override
+
+    private class DateTimeFormatOverrideEntity
+    {
+        public int Id { get; set; }
+        public DateTime Ship { get; set; }
+    }
+
+    [Fact]
+    public void FindMappingByProperty_WithDateTimeFormatAnnotation_UsesPropertyFormat_NotContextDefault()
+    {
+        var modelBuilder = new ModelBuilder();
+        modelBuilder.Entity<DateTimeFormatOverrideEntity>()
+            .Property(e => e.Ship)
+            .HasAnnotation(CouchbaseTypeMappingSource.DateTimeFormatAnnotation, "yyyy-MM-dd");
+        var model = modelBuilder.FinalizeModel();
+        var property = model.FindEntityType(typeof(DateTimeFormatOverrideEntity))!.FindProperty(nameof(DateTimeFormatOverrideEntity.Ship))!;
+
+        var mapping = _typeMappingSource.FindMapping(property);
+
+        var dateTimeMapping = Assert.IsType<CouchbaseDateTimeTypeMapping>(mapping);
+        Assert.Equal("2006-01-02", dateTimeMapping.GoDateTimeFormat);
+
+        var literal = dateTimeMapping.GenerateSqlLiteral(new DateTime(2026, 3, 14));
+        Assert.Equal("'2026-03-14'", literal);
+    }
+
+    // The no-annotation fallback path (falling through to base.FindMapping(property), then the
+    // CLR-type-keyed dictionary) isn't unit-tested here in isolation -- it requires satisfying
+    // EF Core's own internal FindMapping(IProperty) dependency chain, which this file's minimal
+    // mocked TypeMappingSourceDependencies/RelationalTypeMappingSourceDependencies don't fully
+    // support. That fallback is already proven correct end-to-end, against a real DI-built
+    // CouchbaseTypeMappingSource, by CouchbaseDateTimePerPropertyFormatSqlGenerationTests's
+    // `Published` property (no override) asserting on the context-default Go layout.
 
     #endregion
 }

@@ -24,12 +24,18 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
   `DateTime`/`Guid` member access) had no translator at all. See
   [Querying — Supported functions](docs/Queries.md#supported-functions) for the full list and what
   remains unsupported (`Math.Min`/`Max`, trig functions).
-- **`DateTimeFormat` option.** Configures the .NET custom `DateTime` format string this provider
-  assumes when generating or comparing against `DateTime` string values in SQL++ — used by the
-  `.Date`/`.Now`/`.UtcNow`/`.Today` translators and for inline `DateTime` literals. Defaults to
-  `"yyyy-MM-ddTHH:mm:ss.FFFK"` (this provider's own default serialization), but is configurable
-  since N1QL has no native date type and data can legitimately be stored in a different
-  convention. See [Configuration — DateTime string format](docs/configuration.md#datetime-string-format).
+- **`DateTimeFormat` option, with a per-property override.** Configures the .NET custom `DateTime`
+  format string this provider assumes when generating or comparing against `DateTime` string
+  values in SQL++ — used by the `.Date`/`.Now`/`.UtcNow`/`.Today` translators and for inline
+  `DateTime` literals. Defaults to `"yyyy-MM-ddTHH:mm:ss.FFFK"` (this provider's own default
+  serialization), but is configurable since N1QL has no native date type and data can legitimately
+  be stored in a different convention. A single property can also override the context-wide
+  default independently via the `[DateTimeFormat]` attribute or the `HasDateTimeFormat` fluent API
+  (applies to `.Date` and inline literals for that property only — the static `.Now`/`.UtcNow`/
+  `.Today` translators have no associated property and always use the context-wide default). The
+  format string supports .NET's quoted-literal (`'...'`/`"..."`) and backslash-escape (`\x`) syntax
+  for embedding literal text, e.g. `"yyyy-MM-dd'T'HH:mm:ss"`. See
+  [Configuration — DateTime string format](docs/configuration.md#datetime-string-format).
 
 ### Fixed
 

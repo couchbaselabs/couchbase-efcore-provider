@@ -1,5 +1,6 @@
 using System.Reflection;
 using Couchbase.EntityFrameworkCore.Infrastructure;
+using Couchbase.EntityFrameworkCore.Storage.Internal;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Query;
@@ -32,6 +33,14 @@ namespace Couchbase.EntityFrameworkCore.Query.Internal.Translators;
 /// (<c>NOW_UTC</c>, <c>DATE_PART_STR</c>/<c>DATE_TRUNC_STR</c> on UTC-stored data) but
 /// <c>NOW_LOCAL</c> (<see cref="DateTime.Now"/>) returns a value in the query service's local
 /// timezone, which is not UTC in general.
+/// </para>
+/// <para>
+/// The <c>.Date</c> branch prefers a per-property override
+/// (<see cref="Metadata.DateTimeFormatAttribute"/>/<c>HasDateTimeFormat</c>), read directly off
+/// the instance's own resolved <see cref="CouchbaseDateTimeTypeMapping"/> with no DI wiring
+/// needed, falling back to the context-wide default. The static <c>.Now</c>/<c>.UtcNow</c>/
+/// <c>.Today</c> branches have no associated property/instance and always use the context-wide
+/// default -- there is no per-property signal available for them.
 /// </para>
 /// </summary>
 public class CouchbaseDateTimeMemberTranslator : IMemberTranslator
@@ -83,9 +92,16 @@ public class CouchbaseDateTimeMemberTranslator : IMemberTranslator
 
         if (instance != null && DateMemberInfo.Equals(member))
         {
+            // Prefer the format baked into the instance's own resolved type mapping -- this is
+            // how a per-property [DateTimeFormat]/HasDateTimeFormat override (a distinct
+            // CouchbaseDateTimeTypeMapping instance per property) takes effect, with zero DI
+            // wiring needed. Falls back to the context-wide default for anything else (e.g. a
+            // parameter or a column whose mapping didn't resolve to CouchbaseDateTimeTypeMapping).
+            var fmt = (instance.TypeMapping as CouchbaseDateTimeTypeMapping)?.GoDateTimeFormat ?? _fmt;
+
             return _sqlExpressionFactory.Function(
                 "DATE_TRUNC_STR",
-                new[] { instance, _sqlExpressionFactory.Constant("day"), _sqlExpressionFactory.Constant(_fmt) },
+                new[] { instance, _sqlExpressionFactory.Constant("day"), _sqlExpressionFactory.Constant(fmt) },
                 nullable: true,
                 argumentsPropagateNullability: new[] { true, false, false },
                 returnType,

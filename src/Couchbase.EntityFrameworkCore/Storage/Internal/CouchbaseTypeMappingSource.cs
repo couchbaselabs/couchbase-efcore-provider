@@ -1,4 +1,5 @@
 using System.Data;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Storage;
 using System.Text.Json.Nodes;
 
@@ -20,6 +21,14 @@ namespace Couchbase.EntityFrameworkCore.Storage.Internal;
 /// </remarks>
 public class CouchbaseTypeMappingSource : RelationalTypeMappingSource
 {
+    /// <summary>
+    /// Annotation key written by <see cref="Metadata.Conventions.DateTimeFormatConvention"/> (and
+    /// the <c>HasDateTimeFormat</c> fluent extension) to override the .NET custom
+    /// <see cref="DateTime"/> format string for a specific property, instead of the DbContext-wide
+    /// <see cref="Infrastructure.CouchbaseDbContextOptionsBuilder.DateTimeFormat"/> default.
+    /// </summary>
+    public const string DateTimeFormatAnnotation = "Couchbase:DateTimeFormat";
+
     private readonly Dictionary<Type, RelationalTypeMapping> _clrTypeMappings;
 
     public CouchbaseTypeMappingSource(
@@ -77,6 +86,28 @@ public class CouchbaseTypeMappingSource : RelationalTypeMappingSource
                     jsonValueReaderWriter: dependencies.JsonValueReaderWriterSource.FindReaderWriter(typeof(JsonArray)))
             }
         };
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// Checked before the CLR-type-keyed dictionary lookup below, since a per-property
+    /// <see cref="DateTimeFormatAnnotation"/> override is only reachable here — by the time
+    /// <see cref="FindMapping(in RelationalTypeMappingInfo)"/> is called, the
+    /// <see cref="RelationalTypeMappingInfo"/> struct it receives no longer carries an
+    /// <see cref="IProperty"/>/annotation reference to check.
+    /// </remarks>
+    public override CoreTypeMapping? FindMapping(IProperty property)
+    {
+        if (property.ClrType == typeof(DateTime) || property.ClrType == typeof(DateTime?))
+        {
+            var format = property.FindAnnotation(DateTimeFormatAnnotation)?.Value as string;
+            if (format != null)
+            {
+                return new CouchbaseDateTimeTypeMapping(format);
+            }
+        }
+
+        return base.FindMapping(property);
     }
 
     protected override RelationalTypeMapping? FindMapping(in RelationalTypeMappingInfo mappingInfo)
