@@ -183,6 +183,8 @@ public class CouchbaseOptionsExtension: RelationalOptionsExtension
                 Extension._couchbaseDbContextOptionsBuilder.AutoCreateIndexes,
                 Extension._couchbaseDbContextOptionsBuilder.ScanConsistency,
                 Extension._couchbaseDbContextOptionsBuilder.FieldNamingPolicy),
+            // Nested again: HashCode.Combine caps at 8 arguments, and the group above is already full.
+            Extension._couchbaseDbContextOptionsBuilder.DateTimeFormat,
             // JsonSerializerOptions has no value equality, so this is intentionally reference
             // equality — two contexts built with separate (even if equivalently-configured)
             // instances won't share a provider, which is safe (just slightly less sharing) rather
@@ -206,6 +208,7 @@ public class CouchbaseOptionsExtension: RelationalOptionsExtension
                 && Extension._couchbaseDbContextOptionsBuilder.AutoCreateIndexes == otherInfo.Extension._couchbaseDbContextOptionsBuilder.AutoCreateIndexes
                 && Extension._couchbaseDbContextOptionsBuilder.ScanConsistency == otherInfo.Extension._couchbaseDbContextOptionsBuilder.ScanConsistency
                 && Extension._couchbaseDbContextOptionsBuilder.FieldNamingPolicy == otherInfo.Extension._couchbaseDbContextOptionsBuilder.FieldNamingPolicy
+                && Extension._couchbaseDbContextOptionsBuilder.DateTimeFormat == otherInfo.Extension._couchbaseDbContextOptionsBuilder.DateTimeFormat
                 && ReferenceEquals(Extension._couchbaseDbContextOptionsBuilder.SerializerOptions, otherInfo.Extension._couchbaseDbContextOptionsBuilder.SerializerOptions)
                 && ReferenceEquals(ApplicationContainerIdentity, otherInfo.ApplicationContainerIdentity);
 

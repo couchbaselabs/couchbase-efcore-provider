@@ -155,4 +155,50 @@ public class CouchbaseDbContextOptionsBuilderTests
         // Assert
         Assert.Same(clusterOptions, builder.ClusterOptions);
     }
+
+    [Fact]
+    public void DateTimeFormat_DefaultsToIso8601MillisecondPrecision()
+    {
+        var builder = new CouchbaseDbContextOptionsBuilder(new DbContextOptionsBuilder(), "couchbase://localhost");
+
+        Assert.Equal("yyyy-MM-ddTHH:mm:ss.FFFK", builder.DateTimeFormat);
+        Assert.Equal("2006-01-02T15:04:05.999Z07:00", builder.GoDateTimeFormat);
+    }
+
+    [Fact]
+    public void DateTimeFormat_Setter_UpdatesGoDateTimeFormat()
+    {
+        var builder = new CouchbaseDbContextOptionsBuilder(new DbContextOptionsBuilder(), "couchbase://localhost");
+
+        builder.DateTimeFormat = "yyyy-MM-dd";
+
+        Assert.Equal("yyyy-MM-dd", builder.DateTimeFormat);
+        Assert.Equal("2006-01-02", builder.GoDateTimeFormat);
+    }
+
+    [Fact]
+    public void DateTimeFormat_Setter_WithUnsupportedToken_ThrowsImmediately()
+    {
+        // Must fail at configuration time (when DateTimeFormat is set), per the interface's own
+        // documented contract -- not deferred to whenever GoDateTimeFormat first happens to be
+        // read (typically first query compilation), which would turn a configuration mistake into
+        // a confusing failure far away from its cause.
+        var builder = new CouchbaseDbContextOptionsBuilder(new DbContextOptionsBuilder(), "couchbase://localhost");
+
+        Assert.Throws<ArgumentException>(() => builder.DateTimeFormat = "yyyy-MM-dd tt");
+    }
+
+    [Fact]
+    public void DateTimeFormat_Setter_WithUnsupportedToken_LeavesPreviousValueInPlace()
+    {
+        var builder = new CouchbaseDbContextOptionsBuilder(new DbContextOptionsBuilder(), "couchbase://localhost")
+        {
+            DateTimeFormat = "yyyy-MM-dd"
+        };
+
+        Assert.Throws<ArgumentException>(() => builder.DateTimeFormat = "yyyy-MM-dd tt");
+
+        Assert.Equal("yyyy-MM-dd", builder.DateTimeFormat);
+        Assert.Equal("2006-01-02", builder.GoDateTimeFormat);
+    }
 }

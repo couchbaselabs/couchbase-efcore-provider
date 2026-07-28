@@ -146,9 +146,13 @@ are escaped once at translation time; parameter/column patterns are escaped at q
 nested `REPLACE` calls) so a literal `%` or `_` in the search text is matched literally rather than
 treated as a wildcard.
 
-`DateTime` comparisons/arithmetic work against the ISO-8601 string format the provider stores
-(millisecond precision, e.g. `2026-03-14T09:26:53.123Z`, with the fractional-seconds group and its
-decimal point entirely omitted when milliseconds are exactly zero, e.g. `2026-03-14T00:00:00Z`).
+`fmt` in the table above is the [`DateTimeFormat`](configuration.md#datetime-string-format) option
+(converted to the equivalent Go layout N1QL's date functions expect) — it defaults to this
+provider's own default `DateTime` serialization (millisecond precision, e.g.
+`2026-03-14T09:26:53.123Z`, with the fractional-seconds group and its decimal point entirely
+omitted when milliseconds are exactly zero, e.g. `2026-03-14T00:00:00Z`), but is configurable if
+your data uses a different string convention — see
+[DateTime string format](configuration.md#datetime-string-format).
 
 Not yet supported: `Math.Min`/`Math.Max` (N1QL's `ARRAY_MAX`/`ARRAY_MIN` take a single array
 argument, not two scalars — no array-literal expression support exists yet to build one), trig

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Couchbase.EntityFrameworkCore.Extensions;
+using Couchbase.EntityFrameworkCore.Storage.Internal;
 using Couchbase.Query;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -38,6 +39,24 @@ public class CouchbaseDbContextOptionsBuilder : ICouchbaseDbContextOptionsBuilde
     public bool AutoCreateIndexes { get; set; }
 
     public JsonNamingPolicy? FieldNamingPolicy { get; set; } = JsonNamingPolicy.CamelCase;
+
+    private string _dateTimeFormat = "yyyy-MM-ddTHH:mm:ss.FFFK";
+    private string _goDateTimeFormat = DotNetToGoDateFormatConverter.Convert("yyyy-MM-ddTHH:mm:ss.FFFK");
+
+    public string DateTimeFormat
+    {
+        get => _dateTimeFormat;
+        set
+        {
+            // Convert eagerly so an unsupported token throws here, at configuration time, rather
+            // than being deferred to whenever GoDateTimeFormat first happens to be read (typically
+            // first query compilation) -- the XML doc on the interface promises the former.
+            _goDateTimeFormat = DotNetToGoDateFormatConverter.Convert(value);
+            _dateTimeFormat = value;
+        }
+    }
+
+    public string GoDateTimeFormat => _goDateTimeFormat;
 
     public JsonSerializerOptions? SerializerOptions { get; set; }
 
@@ -128,6 +147,38 @@ public interface ICouchbaseDbContextOptionsBuilder
     /// such as <see cref="JsonNamingPolicy.SnakeCaseLower"/>.
     /// </summary>
     public JsonNamingPolicy? FieldNamingPolicy { get; set; }
+
+    /// <summary>
+    /// The .NET custom <see cref="DateTime"/> format string this provider assumes when comparing
+    /// against or generating <see cref="DateTime"/> string values in SQL++ — used for the LINQ
+    /// <c>DateTime</c> function translators (<c>.Date</c>, <c>.Now</c>, <c>.UtcNow</c>, <c>.Today</c>)
+    /// and for generating inline <see cref="DateTime"/> literals. Defaults to
+    /// <c>"yyyy-MM-ddTHH:mm:ss.FFFK"</c> — millisecond-precision ISO-8601 with <c>Z</c> for UTC or
+    /// a real offset otherwise — matching this provider's own default <see cref="DateTime"/>
+    /// serialization.
+    /// </summary>
+    /// <remarks>
+    /// N1QL has no native date type — dates are just JSON strings — so nothing stops a
+    /// <see cref="DateTime"/> from being stored in a different format (date-only, different
+    /// precision, or written by another system entirely). Set this to match your actual stored
+    /// format if it differs from the default; a mismatch produces wrong comparisons, not an error.
+    /// Only a bounded, ISO-8601-relevant subset of .NET custom format tokens is supported:
+    /// <c>yyyy</c>, <c>MM</c>, <c>dd</c>, <c>HH</c>, <c>mm</c>, <c>ss</c>, <c>f</c>/<c>F</c>
+    /// (repeated 1-7 times), <c>K</c>, non-letter literal separator characters (<c>-</c>,
+    /// <c>:</c>, <c>.</c>, space), and the literal <c>T</c> (not a reserved .NET specifier, so it
+    /// needs no quoting). A quoted literal string (<c>'...'</c>/<c>"..."</c>) or a
+    /// backslash-escaped character (<c>\x</c>) can be used to include any other literal text,
+    /// including letters — an unsupported bare token throws <see cref="ArgumentException"/>
+    /// as soon as this is set, rather than producing a confusing SQL++ error later.
+    /// </remarks>
+    public string DateTimeFormat { get; set; }
+
+    /// <summary>
+    /// The Go reference-time layout string equivalent of <see cref="DateTimeFormat"/>, computed
+    /// automatically. N1QL's date functions (<c>DATE_TRUNC_STR</c>, <c>NOW_LOCAL</c>,
+    /// <c>NOW_UTC</c>) expect their <c>fmt</c> argument in this layout language, not .NET's.
+    /// </summary>
+    public string GoDateTimeFormat { get; }
 
     /// <summary>
     /// <see cref="JsonSerializerOptions"/> used when deserializing scalar values inside

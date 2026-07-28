@@ -29,7 +29,7 @@ public class CouchbaseTypeMappingSourceTests
         var relationalDependencies = new RelationalTypeMappingSourceDependencies(
             Array.Empty<IRelationalTypeMappingSourcePlugin>());
 
-        _typeMappingSource = new CouchbaseTypeMappingSource(dependencies, relationalDependencies);
+        _typeMappingSource = new CouchbaseTypeMappingSource(dependencies, relationalDependencies, "yyyy-MM-ddTHH:mm:ss.FFFK");
     }
 
     #region Numeric Types -> NUMBER
@@ -194,6 +194,18 @@ public class CouchbaseTypeMappingSourceTests
         Assert.NotNull(mapping);
         Assert.Equal("STRING", mapping.StoreType);
         Assert.Equal(typeof(DateTime), mapping.ClrType);
+    }
+
+    [Fact]
+    public void FindMapping_DateTime_UsesConfiguredFormat_NotStockTimestampSyntax()
+    {
+        var mapping = _typeMappingSource.FindMapping(typeof(DateTime));
+
+        Assert.IsType<CouchbaseDateTimeTypeMapping>(mapping);
+
+        var literal = mapping!.GenerateSqlLiteral(new DateTime(2026, 3, 14, 9, 26, 53, 123, DateTimeKind.Utc));
+        Assert.DoesNotContain("TIMESTAMP", literal, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("'2026-03-14T09:26:53.123Z'", literal);
     }
 
     [Fact]

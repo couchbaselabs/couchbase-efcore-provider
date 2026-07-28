@@ -64,6 +64,20 @@ public static class CouchbaseDbContextOptionsBuilderExtensions
         return builder;
     }
 
+    /// <summary>
+    /// Sets the .NET custom <see cref="DateTime"/> format string this provider assumes when
+    /// comparing against or generating <see cref="DateTime"/> string values in SQL++. Defaults to
+    /// <c>"yyyy-MM-ddTHH:mm:ss.FFFK"</c>. See <see cref="CouchbaseDbContextOptionsBuilder.DateTimeFormat"/>
+    /// for the supported token set.
+    /// </summary>
+    public static CouchbaseDbContextOptionsBuilder UseDateTimeFormat(
+        this CouchbaseDbContextOptionsBuilder builder,
+        string format)
+    {
+        builder.DateTimeFormat = format;
+        return builder;
+    }
+
     internal static void AddSaveChangesInterceptor(DbContextOptionsBuilder optionsBuilder)
     {
         var coreOptionsExtension = optionsBuilder.Options.FindExtension<CoreOptionsExtension>()

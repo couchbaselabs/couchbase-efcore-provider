@@ -24,7 +24,8 @@ public class CouchbaseTypeMappingSource : RelationalTypeMappingSource
 
     public CouchbaseTypeMappingSource(
         TypeMappingSourceDependencies dependencies,
-        RelationalTypeMappingSourceDependencies relationalDependencies)
+        RelationalTypeMappingSourceDependencies relationalDependencies,
+        string dateTimeFormat)
         : base(dependencies, relationalDependencies)
     {
         _clrTypeMappings = new Dictionary<Type, RelationalTypeMapping>
@@ -50,7 +51,7 @@ public class CouchbaseTypeMappingSource : RelationalTypeMappingSource
             { typeof(char), new CharTypeMapping("STRING", DbType.StringFixedLength) },
 
             // Date/time types -> STRING (ISO 8601 format)
-            { typeof(DateTime), new DateTimeTypeMapping("STRING", DbType.DateTime) },
+            { typeof(DateTime), new CouchbaseDateTimeTypeMapping(dateTimeFormat) },
             { typeof(DateTimeOffset), new DateTimeOffsetTypeMapping("STRING", DbType.DateTimeOffset) },
             { typeof(DateOnly), new DateOnlyTypeMapping("STRING") },
             { typeof(TimeOnly), new TimeOnlyTypeMapping("STRING") },
