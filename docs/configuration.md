@@ -108,6 +108,35 @@ couchbaseDbContextOptions.DateTimeFormat = "yyyy-MM-dd"; // date-only convention
 This is unrelated to `FieldNamingPolicy` — `DateTimeFormat` controls how `DateTime` *values* are
 compared/generated in SQL++, while `FieldNamingPolicy` controls JSON *field name* casing.
 
+#### Per-property override
+
+`DateTimeFormat` applies to every `DateTime` property in the context by default, but a single
+property can use a different convention — via the `[DateTimeFormat]` attribute or the
+`HasDateTimeFormat` fluent API — without affecting any other property:
+
+```csharp
+public class Order
+{
+    public int Id { get; set; }
+    public DateTime Placed { get; set; }             // uses the context-wide DateTimeFormat
+
+    [DateTimeFormat("yyyy-MM-dd")]
+    public DateTime ShipDate { get; set; }            // date-only, independent of Placed
+}
+```
+
+```csharp
+// Equivalent fluent form, e.g. if you'd rather not put attributes on the entity:
+modelBuilder.Entity<Order>()
+    .Property(o => o.ShipDate)
+    .HasDateTimeFormat("yyyy-MM-dd");
+```
+
+The override only applies to the `.Date` member translator and inline `DateTime` literals for
+that specific property — the static `DateTime.Now`/`.UtcNow`/`.Today` translators have no
+associated property to read an override from, so they always use the context-wide default even
+in a query that also touches an overridden property.
+
 ## Multiple buckets and clusters
 
 By default a `DbContext` targets a single configured bucket (and scope), and every entity is

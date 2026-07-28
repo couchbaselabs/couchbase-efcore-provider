@@ -1,4 +1,5 @@
 using Couchbase.EntityFrameworkCore.Extensions;
+using Couchbase.EntityFrameworkCore.Storage.Internal;
 using Couchbase.EntityFrameworkCore.ValueGeneration;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
@@ -694,6 +695,59 @@ public class CouchbasePropertyBuilderExtensionsTests
     }
 
     #endregion
+
+    #region HasDateTimeFormat Tests
+
+    [Fact]
+    public void HasDateTimeFormat_OnDateTimeProperty_SetsDateTimeFormatAnnotation()
+    {
+        var modelBuilder = new ModelBuilder();
+        var entityBuilder = modelBuilder.Entity<DateTimeEntity>();
+
+        entityBuilder.Property(e => e.ShipDate).HasDateTimeFormat("yyyy-MM-dd");
+
+        var property = modelBuilder.Model.FindEntityType(typeof(DateTimeEntity))!.FindProperty(nameof(DateTimeEntity.ShipDate));
+        var storedFormat = property!.FindAnnotation(CouchbaseTypeMappingSource.DateTimeFormatAnnotation)?.Value;
+        Assert.Equal("yyyy-MM-dd", storedFormat);
+    }
+
+    [Fact]
+    public void HasDateTimeFormat_OnNullableDateTimeProperty_SetsDateTimeFormatAnnotation()
+    {
+        var modelBuilder = new ModelBuilder();
+        var entityBuilder = modelBuilder.Entity<DateTimeEntity>();
+
+        entityBuilder.Property(e => e.OptionalShipDate).HasDateTimeFormat("yyyy-MM-dd");
+
+        var property = modelBuilder.Model.FindEntityType(typeof(DateTimeEntity))!.FindProperty(nameof(DateTimeEntity.OptionalShipDate));
+        var storedFormat = property!.FindAnnotation(CouchbaseTypeMappingSource.DateTimeFormatAnnotation)?.Value;
+        Assert.Equal("yyyy-MM-dd", storedFormat);
+    }
+
+    [Fact]
+    public void HasDateTimeFormat_OnNonDateTimeProperty_ThrowsInvalidOperationException()
+    {
+        // Prevents silently writing an annotation the type-mapping source would just ignore --
+        // the generic HasDateTimeFormat<TProperty> would otherwise compile fine on any property
+        // type, since TProperty is unconstrained.
+        var modelBuilder = new ModelBuilder();
+        var entityBuilder = modelBuilder.Entity<DateTimeEntity>();
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            entityBuilder.Property(e => e.Id).HasDateTimeFormat("yyyy-MM-dd"));
+
+        Assert.Contains("HasDateTimeFormat()", exception.Message);
+        Assert.Contains("DateTime", exception.Message);
+    }
+
+    #endregion
+
+    private class DateTimeEntity
+    {
+        public long Id { get; set; }
+        public DateTime ShipDate { get; set; }
+        public DateTime? OptionalShipDate { get; set; }
+    }
 
     private class TestEntity
     {

@@ -1,3 +1,4 @@
+using Couchbase.EntityFrameworkCore.Storage.Internal;
 using Couchbase.EntityFrameworkCore.ValueGeneration;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
@@ -436,6 +437,55 @@ public static class CouchbasePropertyBuilderExtensions
         propertyBuilder.HasAnnotation(CouchbaseValueGeneratorSelector.GuidStringFormatAnnotation, normalizedFormat);
 
         propertyBuilder.ValueGeneratedOnAdd();
+
+        return propertyBuilder;
+    }
+
+    #endregion
+
+    #region DateTime Format Override
+
+    /// <summary>
+    /// Overrides the .NET custom <see cref="DateTime"/> format string this provider uses for this
+    /// property, instead of the DbContext-wide
+    /// <see cref="Couchbase.EntityFrameworkCore.Infrastructure.CouchbaseDbContextOptionsBuilder.DateTimeFormat"/>
+    /// default.
+    /// </summary>
+    /// <remarks>
+    /// N1QL has no native date type — dates are just JSON strings — so nothing stops different
+    /// properties (or data written by another system) from using a different string convention
+    /// than the rest of the model. Only applies to the <c>.Date</c> member translator and inline
+    /// <see cref="DateTime"/> literals for this specific property; the static <c>.Now</c>/
+    /// <c>.UtcNow</c>/<c>.Today</c> translators have no associated property and always use the
+    /// context-wide default. Equivalent to applying
+    /// <see cref="Couchbase.EntityFrameworkCore.Metadata.DateTimeFormatAttribute"/> to the property.
+    /// </remarks>
+    /// <param name="propertyBuilder">The property builder.</param>
+    /// <param name="format">The .NET custom <see cref="DateTime"/> format string.</param>
+    /// <returns>The same property builder for method chaining.</returns>
+    /// <example>
+    /// <code>
+    /// modelBuilder.Entity&lt;Order&gt;()
+    ///     .Property(e => e.ShipDate)
+    ///     .HasDateTimeFormat("yyyy-MM-dd");
+    /// </code>
+    /// </example>
+    public static PropertyBuilder<TProperty> HasDateTimeFormat<TProperty>(
+        this PropertyBuilder<TProperty> propertyBuilder,
+        string format)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(format);
+
+        var clrType = propertyBuilder.Metadata.ClrType;
+        if (clrType != typeof(DateTime) && clrType != typeof(DateTime?))
+        {
+            throw new InvalidOperationException(
+                $"HasDateTimeFormat() can only be used on properties of type DateTime or DateTime?, but property " +
+                $"'{propertyBuilder.Metadata.DeclaringType.ClrType.Name}.{propertyBuilder.Metadata.Name}' " +
+                $"is of type '{clrType.Name}'.");
+        }
+
+        propertyBuilder.HasAnnotation(CouchbaseTypeMappingSource.DateTimeFormatAnnotation, format);
 
         return propertyBuilder;
     }
