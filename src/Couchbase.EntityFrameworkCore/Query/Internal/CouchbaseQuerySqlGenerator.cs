@@ -516,9 +516,13 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
 
                     GenerateList(emitted, e =>
                     {
-                        // Only append AS when the unique alias differs from what the projection
-                        // would emit on its own — keeps non-colliding queries byte-identical.
-                        if (e.Alias != CouchbaseProjectionAliases.EffectiveAlias(e.Projection))
+                        // Append AS when the unique alias differs from what the projection would
+                        // emit on its own (keeps non-colliding queries byte-identical), OR when the
+                        // projection is a META(alias).field column -- N1QL's own implicit naming
+                        // for that shape doesn't reliably produce the desired key (see
+                        // CouchbaseProjectionAliases.NeedsExplicitAlias).
+                        if (e.Alias != CouchbaseProjectionAliases.EffectiveAlias(e.Projection)
+                            || CouchbaseProjectionAliases.NeedsExplicitAlias(e.Projection))
                         {
                             Visit(e.Projection.Expression);
                             Sql.Append(AliasSeparator)
@@ -646,6 +650,22 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
     protected override Expression VisitColumn(ColumnExpression columnExpression)
     {
         var helper = Dependencies.SqlGenerationHelper;
+        var metaField = CouchbaseProjectionAliases.GetMetaField(columnExpression);
+        if (metaField != null)
+        {
+            // META() takes no keyspace parameter when the alias is the one being indexed/queried --
+            // https://docs.couchbase.com/server/current/n1ql/n1ql-language-reference/indexing-meta-info.html
+            // Deliberately no alias appended here -- CouchbaseProjectionAliases.EffectiveAlias
+            // already knows this renders as the lowercase field name (e.g. "id"), not the
+            // property's own name, so the outer projection-list loop in VisitSelect adds an
+            // explicit AS whenever the property name differs, exactly like any other projection.
+            Sql.Append("META(")
+                .Append(helper.DelimitIdentifier(columnExpression.TableAlias))
+                .Append(").")
+                .Append(metaField.ToLowerInvariant());
+            return columnExpression;
+        }
+
         Sql.Append(helper.DelimitIdentifier(columnExpression.TableAlias))
             .Append(".")
             .Append(helper.DelimitIdentifier(columnExpression.Name));

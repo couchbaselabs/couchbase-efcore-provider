@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using Couchbase.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Query.SqlExpressions;
 
@@ -40,8 +42,27 @@ internal static class CouchbaseProjectionAliases
         => navigation.DeclaringEntityType.ClrType.FullName + "." + navigation.Name;
 
     /// <summary>
+    /// The <see cref="CouchbaseMetaField"/> name (e.g. <c>"Cas"</c>) a column is sourced from via
+    /// <c>[CouchbaseMeta]</c>/<c>HasCouchbaseMeta</c>, or <see langword="null"/> if it's a normal
+    /// document field. <see cref="ColumnExpression.Column"/> exposes a live <see cref="IProperty"/>
+    /// reference (via <c>PropertyMappings</c>) back to the property that produced this column --
+    /// including shadow properties -- so this works without any change to how EF Core builds the
+    /// projection itself. Shared between <see cref="EffectiveAlias"/> (so the alias-uniquification
+    /// pass knows a META column's *actual* N1QL-implicit name is the lowercase field name, not the
+    /// property's own name) and <see cref="CouchbaseQuerySqlGenerator"/>'s rendering of the column
+    /// itself.
+    /// </summary>
+    public static string? GetMetaField(ColumnExpression columnExpression)
+        => columnExpression.Column?.PropertyMappings
+            .Select(m => m.Property.FindAnnotation(CouchbaseMetaAnnotationNames.MetaField)?.Value as string)
+            .FirstOrDefault(f => f != null);
+
+    /// <summary>
     /// The N1QL response key for a single projection when no uniquification is applied:
-    /// the explicit <c>AS</c> alias if present, otherwise the underlying column name.
+    /// the explicit <c>AS</c> alias if present, otherwise the underlying column name. This is the
+    /// *desired* key (what the reader expects), which for a <c>META(alias).field</c> projection is
+    /// still the property's own name (e.g. <c>"DocId"</c>) -- see <see cref="NeedsExplicitAlias"/>
+    /// for why such a projection can never rely on N1QL's own implicit naming to produce that key.
     /// </summary>
     public static string EffectiveAlias(ProjectionExpression projection)
         => projection.Alias != string.Empty
@@ -49,6 +70,18 @@ internal static class CouchbaseProjectionAliases
             : projection.Expression is ColumnExpression c
                 ? c.Name
                 : string.Empty;
+
+    /// <summary>
+    /// Whether a projection must get an explicit <c>AS &lt;alias&gt;</c> regardless of what the
+    /// collision-avoidance pass in <see cref="ComputeUnique"/> decided -- true for any
+    /// <c>META(alias).field</c> projection, since N1QL's own implicit-naming behavior for a
+    /// function-call-based expression doesn't reliably (or ever, empirically) produce the
+    /// property's own name (e.g. <c>META(d).id</c> does not implicitly come back keyed
+    /// <c>"DocId"</c>, or even reliably <c>"id"</c>) the way a bare <c>alias.field</c> reference's
+    /// implicit name always matches its own column name.
+    /// </summary>
+    public static bool NeedsExplicitAlias(ProjectionExpression projection)
+        => projection.Expression is ColumnExpression c && GetMetaField(c) != null;
 
     /// <summary>
     /// Computes a collision-free alias for every projection, in projection order.  The first

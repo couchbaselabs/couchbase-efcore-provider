@@ -91,6 +91,16 @@ See also [Querying](Queries.md) and [Configuration](configuration.md).
   as the base type to opt into TPH.
 * **Table-per-type (TPT) and table-per-concrete-type (TPC) are not supported.**
 
+## Optimistic concurrency and document metadata
+
+* **CAS-based optimistic concurrency is supported** via `[CouchbaseMeta(CouchbaseMetaField.Cas)]`
+  combined with EF Core's own `.IsConcurrencyToken()` — see
+  [Optimistic concurrency](concurrency.md). Without it, `SaveChangesAsync` performs an
+  unconditional write (today's default, unchanged behavior).
+* **`META().id`/`META().expiration` are readable** via the same `[CouchbaseMeta]` mechanism, but
+  read-only — the provider has no API for *setting* a document's TTL/expiration on write.
+* **`META().xattrs` (extended attributes) are not supported.**
+
 ## Value generation and keys
 * **Sequence-based value generation supports a fixed set of numeric types:** `int`, `long`,
   `short`, `byte`, `uint`, `ulong`, `ushort`, and `decimal`. Other CLR types throw at

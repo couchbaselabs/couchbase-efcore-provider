@@ -34,18 +34,26 @@ public class CouchbaseClientWrapper : ICouchbaseClientWrapper
 
     public string BucketName => _couchbaseDbContextOptionsBuilder.Bucket;
 
-    public async Task<bool> DeleteDocument(string id, string keyspace, CancellationToken cancellationToken = default)
+    public async Task<bool> DeleteDocument(string id, string keyspace, ulong? cas = null, CancellationToken cancellationToken = default)
     {
-        bool success;
         try
         {
             var collection = await GetCollection(keyspace, cancellationToken).ConfigureAwait(false);
-            await collection.RemoveAsync(id, new RemoveOptions().CancellationToken(cancellationToken)).ConfigureAwait(false);
-            success = true;
+            var options = new RemoveOptions().CancellationToken(cancellationToken);
+            if (cas.HasValue)
+            {
+                options = options.Cas(cas.Value);
+            }
+            await collection.RemoveAsync(id, options).ConfigureAwait(false);
+            return true;
         }
         catch (OperationCanceledException)
         {
             throw; // Surface cancellation as-is rather than masking it as a DbUpdateException.
+        }
+        catch (Couchbase.Core.Exceptions.CasMismatchException)
+        {
+            throw; // Surface as-is so the caller can translate it to DbUpdateConcurrencyException.
         }
         catch (Exception e)
         {
@@ -55,18 +63,15 @@ public class CouchbaseClientWrapper : ICouchbaseClientWrapper
             throw new DbUpdateException(
                 $"Delete failed for key {id} in keyspace {keyspace}", e);
         }
-
-        return success;
     }
 
-    public async Task<bool> CreateDocument<TEntity>(string id, string keyspace, TEntity entity, CancellationToken cancellationToken = default)
+    public async Task<ulong> CreateDocument<TEntity>(string id, string keyspace, TEntity entity, CancellationToken cancellationToken = default)
     {
-        bool success;
         try
         {
             var collection = await GetCollection(keyspace, cancellationToken).ConfigureAwait(false);
-            await collection.InsertAsync(id, entity, new InsertOptions().CancellationToken(cancellationToken)).ConfigureAwait(false);
-            success = true;
+            var result = await collection.InsertAsync(id, entity, new InsertOptions().CancellationToken(cancellationToken)).ConfigureAwait(false);
+            return result.Cas;
         }
         catch (OperationCanceledException)
         {
@@ -80,22 +85,35 @@ public class CouchbaseClientWrapper : ICouchbaseClientWrapper
             throw new DbUpdateException(
                 $"Insert failed for key {id} in keyspace {keyspace}", e);
         }
-
-        return success;
     }
 
-    public async Task<bool> UpdateDocument<TEntity>(string id, string keyspace, TEntity entity, CancellationToken cancellationToken = default)
+    public async Task<ulong> UpdateDocument<TEntity>(string id, string keyspace, TEntity entity, ulong? cas = null, CancellationToken cancellationToken = default)
     {
-        bool success;
         try
         {
             var collection = await GetCollection(keyspace, cancellationToken).ConfigureAwait(false);
-            await collection.UpsertAsync(id, entity, new UpsertOptions().CancellationToken(cancellationToken)).ConfigureAwait(false);
-            success = true;
+
+            // A CAS-checked write must use Replace (Upsert has no Cas option at all, and would
+            // silently create-or-overwrite regardless of whether the document changed underneath
+            // us) -- only take this path when the caller actually wants concurrency enforcement,
+            // to keep today's unconditional-upsert behavior unchanged for everyone else.
+            if (cas.HasValue)
+            {
+                var replaceResult = await collection.ReplaceAsync(
+                    id, entity, new ReplaceOptions().Cas(cas.Value).CancellationToken(cancellationToken)).ConfigureAwait(false);
+                return replaceResult.Cas;
+            }
+
+            var upsertResult = await collection.UpsertAsync(id, entity, new UpsertOptions().CancellationToken(cancellationToken)).ConfigureAwait(false);
+            return upsertResult.Cas;
         }
         catch (OperationCanceledException)
         {
             throw; // Surface cancellation as-is rather than masking it as a DbUpdateException.
+        }
+        catch (Couchbase.Core.Exceptions.CasMismatchException)
+        {
+            throw; // Surface as-is so the caller can translate it to DbUpdateConcurrencyException.
         }
         catch (Exception e)
         {
@@ -105,8 +123,6 @@ public class CouchbaseClientWrapper : ICouchbaseClientWrapper
             throw new DbUpdateException(
                 $"Update failed for key {id} in keyspace {keyspace}", e);
         }
-
-        return success;
     }
 
     public async Task<ICouchbaseCollection> GetCollectionAsync(string keyspace, CancellationToken cancellationToken = default)

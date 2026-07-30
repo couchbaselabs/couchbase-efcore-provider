@@ -130,6 +130,11 @@ further writes and by the in-flight KV calls themselves:
 await context.SaveChangesAsync(cancellationToken);
 ```
 
+By default, an update or delete is an unconditional write — if two callers modify the same
+document concurrently, the second write silently overwrites the first with no error. To detect
+that instead, opt into CAS-based optimistic concurrency: see
+[Optimistic concurrency](concurrency.md).
+
 ## Saving Related Data
 In addition to isolated entities, you can also make use of the relationships defined in your model.
 
