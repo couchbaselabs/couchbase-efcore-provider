@@ -134,6 +134,33 @@ public class CouchbaseDateTimeFunctionSqlGenerationTests
         Assert.DoesNotContain("2006-01-02T15:04:05.999Z07:00", sql);
     }
 
+    [Fact]
+    public void NullableDateTime_HasValue_TranslatesToIsNotNull()
+    {
+        // Handled entirely by EF Core's own core RelationalSqlTranslatingExpressionVisitor,
+        // before any provider-specific translator ever runs (it rewrites Nullable<T>.HasValue to
+        // IsNotNull(inner)) -- this is a regression guard confirming this provider's existing
+        // NotEqual -> "IS NOT NULL" rendering already handles that correctly, not a new feature.
+        using var ctx = CreateContext();
+        var query = ctx.Posts.Where(p => p.ArchivedAt.HasValue);
+
+        var sql = query.ToQueryString();
+        Assert.Contains("IS NOT NULL", sql, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void NullableDateTime_Value_TranslatesSameAsUnderlyingColumn()
+    {
+        // .Value is a no-op unwrap to the same underlying SqlExpression -- comparing it should
+        // generate identical SQL to comparing the nullable property directly.
+        using var ctx = CreateContext();
+        var stamp = new DateTime(2026, 1, 1);
+        var viaValue = ctx.Posts.Where(p => p.ArchivedAt!.Value == stamp).ToQueryString();
+        var viaDirect = ctx.Posts.Where(p => p.ArchivedAt == stamp).ToQueryString();
+
+        Assert.Equal(viaDirect, viaValue);
+    }
+
     private static PostContext CreateContext(string? dateTimeFormat = null)
     {
         var clusterOptions = new ClusterOptions()
@@ -151,6 +178,7 @@ public class CouchbaseDateTimeFunctionSqlGenerationTests
     {
         public int PostId { get; set; }
         public DateTime Published { get; set; }
+        public DateTime? ArchivedAt { get; set; }
     }
 
     private class PostContext(DbContextOptions<PostContext> options) : DbContext(options)

@@ -809,7 +809,17 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
                 Sql.Append(".");
             }
 
-            Sql.Append(sqlFunctionExpression.Name);
+            // EF Core's own SqlExpressionFactory.Coalesce() builds a builtin "COALESCE" function
+            // for '??' -- N1QL has no COALESCE function at all (it has IFMISSINGORNULL/IFNULL/NVL),
+            // so this would otherwise reach the server as invalid SQL++ and fail only at
+            // query-execution time, not at translation time. IFMISSINGORNULL is the semantically
+            // correct choice, not just a renaming: a Couchbase document field can be genuinely
+            // MISSING (absent from the JSON entirely), not just JSON null, and IFMISSINGORNULL is
+            // the only one of the three that treats both the same way '??' does in C#. EF Core
+            // flattens a chain (`a ?? b ?? c`) into a single N-ary COALESCE(a, b, c) call rather
+            // than nesting it, and IFMISSINGORNULL also accepts an arbitrary number of arguments,
+            // so a straight name substitution is correct regardless of argument count.
+            Sql.Append(sqlFunctionExpression.Name == "COALESCE" ? "IFMISSINGORNULL" : sqlFunctionExpression.Name);
         }
         else
         {

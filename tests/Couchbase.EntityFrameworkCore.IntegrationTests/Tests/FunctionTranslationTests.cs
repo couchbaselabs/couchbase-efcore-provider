@@ -98,6 +98,50 @@ public class FunctionTranslationTests(BloggingFixture fixture, ITestOutputHelper
         Assert.True(results[0].IsMatch);
     }
 
+    [Fact]
+    public async Task StringCompare_ProjectedCaseWhen_ReturnsCorrectSignForEqualGreaterLess()
+    {
+        // Title is "Hello World" for the seeded entity. Wrapped in an anonymous type -- a bare
+        // scalar .Select(e => expr) is a separate, pre-existing, unrelated materialization gap in
+        // this provider (see CouchbaseCoalesceTests's remarks), not something this test exists to
+        // cover.
+        var result = await _context.Entities.Select(e => new
+        {
+            Equal = string.Compare(e.Title, "Hello World"),
+            Greater = string.Compare(e.Title, "Apple"),
+            Less = string.Compare(e.Title, "Zebra"),
+        }).SingleAsync();
+
+        Assert.Equal(0, result.Equal);
+        Assert.True(result.Greater > 0, $"Expected a positive value, got {result.Greater}");
+        Assert.True(result.Less < 0, $"Expected a negative value, got {result.Less}");
+    }
+
+    [Fact]
+    public async Task StringCompareTo_ProjectedCaseWhen_ReturnsCorrectSignForEqualGreaterLess()
+    {
+        var result = await _context.Entities.Select(e => new
+        {
+            Equal = e.Title.CompareTo("Hello World"),
+            Greater = e.Title.CompareTo("Apple"),
+            Less = e.Title.CompareTo("Zebra"),
+        }).SingleAsync();
+
+        Assert.Equal(0, result.Equal);
+        Assert.True(result.Greater > 0, $"Expected a positive value, got {result.Greater}");
+        Assert.True(result.Less < 0, $"Expected a negative value, got {result.Less}");
+    }
+
+    [Fact]
+    public async Task StringCompare_ComparedAgainstZeroInWherePredicate_MatchesExpectedRows()
+    {
+        var greater = await _context.Entities.Where(e => string.Compare(e.Title, "Apple") > 0).ToListAsync();
+        var less = await _context.Entities.Where(e => string.Compare(e.Title, "Apple") < 0).ToListAsync();
+
+        Assert.Single(greater);
+        Assert.Empty(less);
+    }
+
     public async Task DisposeAsync()
     {
         await _context.DisposeAsync();
