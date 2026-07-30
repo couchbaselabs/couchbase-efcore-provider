@@ -476,7 +476,7 @@ public class CrudTests(
             cts.Cancel();
 
             await Assert.ThrowsAnyAsync<OperationCanceledException>(
-                () => wrapper.DeleteDocument(id, keyspace, cts.Token));
+                () => wrapper.DeleteDocument(id, keyspace, cancellationToken: cts.Token));
         }
         finally
         {

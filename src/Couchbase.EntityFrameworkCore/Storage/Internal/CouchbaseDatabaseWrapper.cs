@@ -3,6 +3,7 @@ using System.Text.Json;
 using Couchbase.EntityFrameworkCore.Extensions;
 using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.EntityFrameworkCore.Internal;
+using Couchbase.EntityFrameworkCore.Metadata;
 using Couchbase.EntityFrameworkCore.Utils;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking.Internal;
@@ -101,6 +102,8 @@ public class CouchbaseDatabaseWrapper : Database
                     $"Entity type '{entityType.ClrType.Name}' has no mapped table name. " +
                     "Ensure the entity is mapped to a Couchbase collection via ToCouchbaseCollection().");
 
+            var casProperty = GetCasProperty(entityType);
+
             switch (updateEntry.EntityState)
             {
                 case EntityState.Detached:
@@ -112,19 +115,22 @@ public class CouchbaseDatabaseWrapper : Database
                 case EntityState.Deleted:
                     // Add to writtenRoots so the deferred pass doesn't upsert a just-deleted doc.
                     writtenRoots.Add($"{entityType.ClrType.Name}:{primaryKey}");
-                    pendingWrites.Add(new PendingWrite(CouchbaseWriteKind.Delete, primaryKey, keyspace, null));
+                    pendingWrites.Add(new PendingWrite(CouchbaseWriteKind.Delete, primaryKey, keyspace, null,
+                        updateEntry, null, GetCasCheckValue(casProperty, updateEntry)));
                     break;
 
                 case EntityState.Modified:
                     writtenRoots.Add($"{entityType.ClrType.Name}:{primaryKey}");
                     pendingWrites.Add(new PendingWrite(CouchbaseWriteKind.Upsert, primaryKey, keyspace,
-                        HydrateObjectFromEntity(updateEntry, _fieldNamingPolicy)));
+                        HydrateObjectFromEntity(updateEntry, _fieldNamingPolicy),
+                        updateEntry, casProperty, GetCasCheckValue(casProperty, updateEntry)));
                     break;
 
                 case EntityState.Added:
                     writtenRoots.Add($"{entityType.ClrType.Name}:{primaryKey}");
                     pendingWrites.Add(new PendingWrite(CouchbaseWriteKind.Insert, primaryKey, keyspace,
-                        HydrateObjectFromEntity(updateEntry, _fieldNamingPolicy)));
+                        HydrateObjectFromEntity(updateEntry, _fieldNamingPolicy),
+                        updateEntry, casProperty, null));
                     break;
 
                 default:
@@ -185,16 +191,43 @@ public class CouchbaseDatabaseWrapper : Database
                     "Ensure the entity is mapped to a Couchbase collection via ToCouchbaseCollection().");
 
             var ownerDocument = HydrateObjectFromEntity(rootInternalEntry, _fieldNamingPolicy);
-            pendingWrites.Add(new PendingWrite(CouchbaseWriteKind.Upsert, ownerPrimaryKey, ownerKeyspace, ownerDocument));
+            var ownerCasProperty = GetCasProperty(rootEntityType);
+            pendingWrites.Add(new PendingWrite(CouchbaseWriteKind.Upsert, ownerPrimaryKey, ownerKeyspace, ownerDocument,
+                rootInternalEntry, ownerCasProperty, GetCasCheckValue(ownerCasProperty, rootInternalEntry)));
         }
 
         return await ExecutePendingWritesAsync(pendingWrites, transaction, cancellationToken).ConfigureAwait(false);
     }
 
+    // A [CouchbaseMeta(Cas)]-annotated property, refreshed with the resulting CAS after every
+    // successful insert/update regardless of whether it's also a concurrency token (harmless and
+    // keeps the property useful for inspection even without concurrency enforcement).
+    private static IProperty? GetCasProperty(IEntityType entityType)
+        => entityType.GetProperties().FirstOrDefault(p =>
+            p.FindAnnotation(CouchbaseMetaAnnotationNames.MetaField)?.Value as string == nameof(CouchbaseMetaField.Cas));
+
+    // Only pass a CAS as an input check (enforcing optimistic concurrency) when the property is
+    // ALSO marked .IsConcurrencyToken() -- required together deliberately, so adding
+    // [CouchbaseMeta(Cas)] alone never silently starts throwing DbUpdateConcurrencyException.
+    //
+    // Uses GetOriginalValue, not GetCurrentValue: EF Core's documented DbUpdateConcurrencyException
+    // resolution pattern is `entry.OriginalValues.SetValues(databaseValues)` before retrying
+    // SaveChanges -- that call updates OriginalValues only, never CurrentValues. Reading
+    // GetCurrentValue here would keep sending the stale, already-rejected CAS on every retry (an
+    // infinite failure loop) even though the app followed EF Core's own recommended pattern
+    // exactly. OriginalValues is also the semantically correct source for a concurrency check
+    // regardless: it represents "what this entry believes is currently in the database," which is
+    // exactly the value Couchbase's compare-and-swap needs to test against.
+    private static ulong? GetCasCheckValue(IProperty? casProperty, IUpdateEntry updateEntry)
+        => casProperty is { IsConcurrencyToken: true }
+            ? (ulong)updateEntry.GetOriginalValue(casProperty)!
+            : null;
+
     private enum CouchbaseWriteKind { Insert, Upsert, Delete }
 
     private readonly record struct PendingWrite(
-        CouchbaseWriteKind Kind, string Key, string Keyspace, object? Document);
+        CouchbaseWriteKind Kind, string Key, string Keyspace, object? Document,
+        IUpdateEntry? UpdateEntry, IProperty? CasProperty, ulong? Cas);
 
     // Upper bound on concurrent KV writes for a single SaveChanges so a very large change set
     // doesn't flood the SDK's connection pool. KV ops are I/O-bound, so this is well above core count.
@@ -255,25 +288,61 @@ public class CouchbaseDatabaseWrapper : Database
             new ParallelOptions { MaxDegreeOfParallelism = MaxWriteConcurrency, CancellationToken = cancellationToken },
             async (write, _) =>
             {
-                var written = write.Kind switch
+                try
                 {
-                    CouchbaseWriteKind.Delete => await _couchbaseClient.DeleteDocument(write.Key, write.Keyspace, cancellationToken).ConfigureAwait(false),
-                    CouchbaseWriteKind.Upsert => await _couchbaseClient.UpdateDocument(write.Key, write.Keyspace, write.Document!, cancellationToken).ConfigureAwait(false),
-                    CouchbaseWriteKind.Insert => await _couchbaseClient.CreateDocument(write.Key, write.Keyspace, write.Document!, cancellationToken).ConfigureAwait(false),
-                    _ => false
-                };
-                if (written)
-                {
-                    Interlocked.Increment(ref successCount);
+                    switch (write.Kind)
+                    {
+                        case CouchbaseWriteKind.Delete:
+                            await _couchbaseClient.DeleteDocument(write.Key, write.Keyspace, write.Cas, cancellationToken).ConfigureAwait(false);
+                            break;
+
+                        case CouchbaseWriteKind.Upsert:
+                        {
+                            var newCas = await _couchbaseClient.UpdateDocument(write.Key, write.Keyspace, write.Document!, write.Cas, cancellationToken).ConfigureAwait(false);
+                            RefreshCasProperty(write, newCas);
+                            break;
+                        }
+
+                        case CouchbaseWriteKind.Insert:
+                        {
+                            var newCas = await _couchbaseClient.CreateDocument(write.Key, write.Keyspace, write.Document!, cancellationToken).ConfigureAwait(false);
+                            RefreshCasProperty(write, newCas);
+                            break;
+                        }
+                    }
                 }
+                catch (Couchbase.Core.Exceptions.CasMismatchException ex)
+                {
+                    // Translated to EF Core's own concurrency-conflict exception -- the same type
+                    // applications already catch/retry against for any other provider, so CAS
+                    // concurrency support needs no new app-facing exception-handling API.
+                    throw new DbUpdateConcurrencyException(
+                        $"The document '{write.Key}' in keyspace '{write.Keyspace}' was modified or " +
+                        "deleted by another process since it was read (CAS mismatch).",
+                        ex,
+                        write.UpdateEntry != null ? [write.UpdateEntry] : []);
+                }
+
+                Interlocked.Increment(ref successCount);
             }).ConfigureAwait(false);
         return successCount;
+    }
+
+    // Writes the fresh, post-write CAS back onto the tracked entry so a subsequent SaveChanges
+    // against the same entity has the correct up-to-date value to check against -- mirrors how
+    // any other database-generated value (e.g. an identity column) is reflected back after a save.
+    private static void RefreshCasProperty(PendingWrite write, ulong newCas)
+    {
+        if (write.CasProperty != null && write.UpdateEntry != null)
+        {
+            write.UpdateEntry.SetStoreGeneratedValue(write.CasProperty, newCas, setModified: false);
+        }
     }
 
     // Internal seam so the null-nav behaviour can be verified without a live DbContext.
     internal static void FillOwnsOneIntoDoc(Dictionary<string, object?> doc, INavigation nav, object? navValue)
     {
-        foreach (var p in nav.TargetEntityType.GetProperties().Where(p => !p.IsShadowProperty()))
+        foreach (var p in nav.TargetEntityType.GetProperties().Where(p => !p.IsShadowProperty() && !IsMetaBacked(p)))
         {
             // When the entire navigation is null every flattened column must be written as
             // null unconditionally — do NOT call ApplyConverter here.  A converter with
@@ -301,6 +370,13 @@ public class CouchbaseDatabaseWrapper : Database
         }
         return null;
     }
+
+    // A [CouchbaseMeta]/HasCouchbaseMeta-annotated property (e.g. Cas, sourced from META()) has no
+    // document-body field at all -- it must never be written, regardless of whether it happens to
+    // be a shadow property or a real CLR property (the documented usage is a real property, e.g.
+    // `public ulong Cas { get; set; }`, so IsShadowProperty() alone would not catch it).
+    private static bool IsMetaBacked(IProperty property)
+        => property.FindAnnotation(CouchbaseMetaAnnotationNames.MetaField) != null;
 
     internal static object HydrateObjectFromEntity(IUpdateEntry updateEntry, JsonNamingPolicy? fieldNamingPolicy = null)
     {
@@ -333,6 +409,7 @@ public class CouchbaseDatabaseWrapper : Database
                 var joinDoc = new Dictionary<string, object?>();
                 foreach (var property in entityType.GetProperties())
                 {
+                    if (IsMetaBacked(property)) continue;
                     // Use GetColumnName() verbatim — do NOT apply fieldNamingPolicy here.
                     // The SQL generation path projects these columns by their exact column
                     // name (e.g. "PostsPostId", "TagsTagId"), so the written document keys
@@ -350,6 +427,7 @@ public class CouchbaseDatabaseWrapper : Database
             foreach (var property in entityType.GetProperties())
             {
                 if (property.IsShadowProperty() && property != discriminator) continue;
+                if (IsMetaBacked(property)) continue;
                 var rawValue = updateEntry.GetCurrentValue(property);
                 regularDoc[property.GetColumnName()] = ApplyConverter(property, rawValue);
             }
@@ -376,6 +454,7 @@ public class CouchbaseDatabaseWrapper : Database
         foreach (var property in entityType.GetProperties())
         {
             if (property.IsShadowProperty() && property != discriminator) continue;
+            if (IsMetaBacked(property)) continue;
             var rawDocValue = updateEntry.GetCurrentValue(property);
             doc[property.GetColumnName()] = ApplyConverter(property, rawDocValue);
         }
@@ -446,6 +525,7 @@ public class CouchbaseDatabaseWrapper : Database
         foreach (var p in entityType.GetProperties())
         {
             if (p.IsShadowProperty()) continue;
+            if (IsMetaBacked(p)) continue;
             // Read via PropertyInfo → FieldInfo fallback (field-access support).
             var rawValue = p.PropertyInfo != null
                 ? p.PropertyInfo.GetValue(item)

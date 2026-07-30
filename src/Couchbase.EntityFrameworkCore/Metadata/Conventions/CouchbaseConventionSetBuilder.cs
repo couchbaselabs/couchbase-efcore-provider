@@ -19,6 +19,7 @@ public class CouchbaseConventionSetBuilder : RelationalConventionSetBuilder
         conventionSet.Add(new JsonPropertyNameConvention(Dependencies));
         conventionSet.Add(new JsonPropertyConvention(Dependencies));
         conventionSet.Add(new DateTimeFormatConvention(Dependencies));
+        conventionSet.Add(new CouchbaseMetaConvention(Dependencies));
         return conventionSet;
     }
 }

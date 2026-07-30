@@ -4,11 +4,27 @@ namespace Couchbase.EntityFrameworkCore.Storage.Internal;
 
 public interface ICouchbaseClientWrapper
 {
-    Task<bool> DeleteDocument(string id, string keyspace, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Deletes a document. If <paramref name="cas"/> is supplied, the delete is conditioned on it
+    /// (via the SDK's <c>RemoveOptions.Cas</c>) and throws
+    /// <see cref="Couchbase.Core.Exceptions.CasMismatchException"/> if the document was modified
+    /// since that CAS was read; when <see langword="null"/>, the delete is unconditional.
+    /// </summary>
+    Task<bool> DeleteDocument(string id, string keyspace, ulong? cas = null, CancellationToken cancellationToken = default);
 
-    Task<bool> CreateDocument<TEntity>(string id, string keyspace, TEntity entity, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Inserts a new document and returns its resulting CAS.
+    /// </summary>
+    Task<ulong> CreateDocument<TEntity>(string id, string keyspace, TEntity entity, CancellationToken cancellationToken = default);
 
-    Task<bool> UpdateDocument<TEntity>(string id, string keyspace, TEntity entity, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Writes a document and returns its resulting CAS. If <paramref name="cas"/> is supplied, this
+    /// uses a CAS-checked replace (via the SDK's <c>ReplaceOptions.Cas</c>) and throws
+    /// <see cref="Couchbase.Core.Exceptions.CasMismatchException"/> if the document was modified
+    /// since that CAS was read; when <see langword="null"/>, this is an unconditional upsert
+    /// (create-or-replace), matching this method's original behavior.
+    /// </summary>
+    Task<ulong> UpdateDocument<TEntity>(string id, string keyspace, TEntity entity, ulong? cas = null, CancellationToken cancellationToken = default);
 
     string BucketName { get; }
 

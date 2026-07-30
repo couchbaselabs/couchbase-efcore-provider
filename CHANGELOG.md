@@ -9,6 +9,15 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ### Added
 
+- **N1QL `META()` support: document metadata fields and CAS-based optimistic concurrency.**
+  `[CouchbaseMeta(CouchbaseMetaField)]`/`HasCouchbaseMeta(...)` sources a property's value from
+  `META(alias).id`/`.cas`/`.expiration` instead of a document field. Combined with EF Core's own
+  `.IsConcurrencyToken()`, a `ulong` CAS property becomes a real optimistic-concurrency token:
+  `SaveChangesAsync` sends the CAS on update/delete and throws `DbUpdateConcurrencyException` on a
+  mismatch, closing a real gap where concurrent writes to the same document previously overwrote
+  each other silently with no error. `Id`/`Expiration` are read-only. See
+  [Optimistic concurrency](docs/concurrency.md).
+
 - **`AutoCreateIndexes` option.** When enabled, `EnsureCreatedAsync` creates a primary index on
   every collection it creates or already owns, and waits for each one to come online before
   returning — closing the gap where a query issued immediately after `EnsureCreatedAsync` could

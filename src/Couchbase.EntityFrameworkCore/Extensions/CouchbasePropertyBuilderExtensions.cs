@@ -1,3 +1,4 @@
+using Couchbase.EntityFrameworkCore.Metadata;
 using Couchbase.EntityFrameworkCore.Storage.Internal;
 using Couchbase.EntityFrameworkCore.ValueGeneration;
 using Microsoft.EntityFrameworkCore;
@@ -486,6 +487,54 @@ public static class CouchbasePropertyBuilderExtensions
         }
 
         propertyBuilder.HasAnnotation(CouchbaseTypeMappingSource.DateTimeFormatAnnotation, format);
+
+        return propertyBuilder;
+    }
+
+    #endregion
+
+    #region META() Field Override
+
+    /// <summary>
+    /// Sources this property's value from N1QL's <c>META()</c> function instead of a JSON document
+    /// field. See <see cref="Couchbase.EntityFrameworkCore.Metadata.CouchbaseMetaField"/> for the
+    /// supported fields. Equivalent to applying
+    /// <see cref="Couchbase.EntityFrameworkCore.Metadata.CouchbaseMetaAttribute"/> to the property.
+    /// </summary>
+    /// <remarks>
+    /// For <see cref="Couchbase.EntityFrameworkCore.Metadata.CouchbaseMetaField.Cas"/>, also call
+    /// <c>.IsConcurrencyToken()</c> so EF Core treats it as an optimistic-concurrency token — the
+    /// two are required together deliberately, so this provider's CAS-specific write-path behavior
+    /// is never silently triggered just by adding <c>.IsConcurrencyToken()</c> to an unrelated
+    /// property.
+    /// </remarks>
+    /// <param name="propertyBuilder">The property builder.</param>
+    /// <param name="field">The document-metadata field this property is sourced from.</param>
+    /// <returns>The same property builder for method chaining.</returns>
+    /// <example>
+    /// <code>
+    /// modelBuilder.Entity&lt;Order&gt;()
+    ///     .Property(e => e.Cas)
+    ///     .HasCouchbaseMeta(CouchbaseMetaField.Cas)
+    ///     .IsConcurrencyToken();
+    /// </code>
+    /// </example>
+    public static PropertyBuilder<TProperty> HasCouchbaseMeta<TProperty>(
+        this PropertyBuilder<TProperty> propertyBuilder,
+        CouchbaseMetaField field)
+    {
+        var expectedClrType = CouchbaseMetaFieldClrTypes.Get(field);
+        var clrType = propertyBuilder.Metadata.ClrType;
+        if (clrType != expectedClrType)
+        {
+            throw new InvalidOperationException(
+                $"HasCouchbaseMeta({field}) can only be used on properties of type '{CouchbaseMetaFieldClrTypes.GetDisplayName(field)}', " +
+                $"but property '{propertyBuilder.Metadata.DeclaringType.ClrType.Name}.{propertyBuilder.Metadata.Name}' " +
+                $"is of type '{clrType.Name}'.");
+        }
+
+        propertyBuilder.HasAnnotation(CouchbaseMetaAnnotationNames.MetaField, field.ToString());
+        propertyBuilder.ValueGeneratedOnAddOrUpdate();
 
         return propertyBuilder;
     }
