@@ -140,6 +140,18 @@ SQL++ so they run server-side instead of throwing or falling back to client eval
 | `DateTime.Today`                       | `DATE_TRUNC_STR(NOW_UTC(fmt), 'day', fmt)` |
 | `DateTime.AddYears/Months/Days/Hours/Minutes/Seconds(n)` | `DATE_ADD_STR(x, n, part)` |
 | `Guid.NewGuid()`                       | `UUID()`                            |
+| `a ?? b`                               | `IFMISSINGORNULL(a, b)`             |
+| `string.Compare(a, b)` / `a.CompareTo(b)` | `CASE WHEN a = b THEN 0 WHEN a > b THEN 1 WHEN a < b THEN -1 END` |
+
+C#'s `??` translates to N1QL's `IFMISSINGORNULL`, not a generic `COALESCE` (which N1QL doesn't
+have) — this is also the semantically correct choice, not just a renaming: a Couchbase document
+field can be genuinely *missing* (absent from the JSON entirely), not just JSON `null`, and
+`IFMISSINGORNULL` is the only N1QL null-handling function that treats both the way `??` does.
+
+`string.Compare`/`.CompareTo` only produce the `CASE WHEN` shown above when the raw `int` result
+is actually used (e.g. projected in a `Select`). The common `string.Compare(a, b) > 0` /
+`a.CompareTo(b) == 0` shape is simplified directly to `a > b` / `a = b` before translation, with no
+`CASE` involved at all.
 
 `StartsWith`/`EndsWith` escape `%`/`_`/the escape character in the search value (constant patterns
 are escaped once at translation time; parameter/column patterns are escaped at query time via

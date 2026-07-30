@@ -111,6 +111,124 @@ public class CouchbaseStringFunctionSqlGenerationTests
         Assert.Contains("LIKE", sql, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public void Trim_NoArgs_InWherePredicate_TranslatesToTrim()
+    {
+        using var ctx = CreateContext();
+        var query = ctx.Posts.Where(p => p.Title.Trim() == "x");
+
+        var sql = query.ToQueryString();
+
+        Assert.Contains("trim(", sql, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Trim_CharArg_InWherePredicate_TranslatesToTrimWithCharacterSet()
+    {
+        using var ctx = CreateContext();
+        var query = ctx.Posts.Where(p => p.Title.Trim('x') == "y");
+
+        var sql = query.ToQueryString();
+
+        Assert.Contains("trim(", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("'x'", sql);
+    }
+
+    [Fact]
+    public void Trim_CharArrayArg_InWherePredicate_TranslatesToTrimWithCharacterSet()
+    {
+        using var ctx = CreateContext();
+        var query = ctx.Posts.Where(p => p.Title.Trim('x', 'y') == "z");
+
+        var sql = query.ToQueryString();
+
+        Assert.Contains("trim(", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("'xy'", sql);
+    }
+
+    [Fact]
+    public void TrimStart_NoArgs_InWherePredicate_TranslatesToLtrim()
+    {
+        using var ctx = CreateContext();
+        var query = ctx.Posts.Where(p => p.Title.TrimStart() == "x");
+
+        var sql = query.ToQueryString();
+
+        Assert.Contains("ltrim(", sql, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void TrimEnd_NoArgs_InWherePredicate_TranslatesToRtrim()
+    {
+        using var ctx = CreateContext();
+        var query = ctx.Posts.Where(p => p.Title.TrimEnd() == "x");
+
+        var sql = query.ToQueryString();
+
+        Assert.Contains("rtrim(", sql, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void StringCompare_ComparedAgainstZeroInWherePredicate_SimplifiesToDirectComparison()
+    {
+        // EF Core's own QueryOptimizingExpressionVisitor recognizes the
+        // `string.Compare(a, b) > 0` shape and rewrites it directly to `a > b` before
+        // translation -- no CASE expression is even built for this common shape. This is
+        // core EF Core behavior, not anything Couchbase-specific, but it's cheap and
+        // valuable to pin down since it's the actual query shape most application code writes.
+        using var ctx = CreateContext();
+        var query = ctx.Posts.Where(p => string.Compare(p.Title, "abc") > 0);
+
+        var sql = query.ToQueryString();
+
+        Assert.Contains("`b`.`Title` > 'abc'", sql);
+        Assert.DoesNotContain("CASE", sql, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void StringCompareTo_ComparedAgainstZeroInWherePredicate_SimplifiesToDirectComparison()
+    {
+        using var ctx = CreateContext();
+        var query = ctx.Posts.Where(p => p.Title.CompareTo("abc") == 0);
+
+        var sql = query.ToQueryString();
+
+        Assert.Contains("`b`.`Title` = 'abc'", sql);
+        Assert.DoesNotContain("CASE", sql, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void StringCompare_ProjectedDirectly_TranslatesToCaseWhen()
+    {
+        // Once the raw int result is actually needed (not just compared against 0), EF Core's
+        // base ComparisonTranslator (registered by RelationalMethodCallTranslatorProvider,
+        // inherited unmodified here) builds a CaseExpression -- this provider's inherited
+        // CaseExpression rendering must produce valid N1QL for this to work, confirmed here.
+        using var ctx = CreateContext();
+        var query = ctx.Posts.Select(p => string.Compare(p.Title, "abc"));
+
+        var sql = query.ToQueryString();
+
+        Assert.Contains("CASE", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("WHEN `b`.`Title` = 'abc' THEN 0", sql);
+        Assert.Contains("WHEN `b`.`Title` > 'abc' THEN 1", sql);
+        Assert.Contains("WHEN `b`.`Title` < 'abc' THEN -1", sql);
+    }
+
+    [Fact]
+    public void StringCompareTo_ProjectedDirectly_TranslatesToCaseWhen()
+    {
+        using var ctx = CreateContext();
+        var query = ctx.Posts.Select(p => p.Title.CompareTo("abc"));
+
+        var sql = query.ToQueryString();
+
+        Assert.Contains("CASE", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("WHEN `b`.`Title` = 'abc' THEN 0", sql);
+        Assert.Contains("WHEN `b`.`Title` > 'abc' THEN 1", sql);
+        Assert.Contains("WHEN `b`.`Title` < 'abc' THEN -1", sql);
+    }
+
     private static PostContext CreateContext()
     {
         var clusterOptions = new ClusterOptions()

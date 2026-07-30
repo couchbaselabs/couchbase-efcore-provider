@@ -45,8 +45,18 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
   format string supports .NET's quoted-literal (`'...'`/`"..."`) and backslash-escape (`\x`) syntax
   for embedding literal text, e.g. `"yyyy-MM-dd'T'HH:mm:ss"`. See
   [Configuration — DateTime string format](docs/configuration.md#datetime-string-format).
+- **Confirmed `string.Compare`/`.CompareTo` translate correctly**, via EF Core's own base
+  `ComparisonTranslator` (inherited unmodified) and this provider's inherited `CASE WHEN`
+  rendering — no new provider code was needed. See
+  [Querying — Supported functions](docs/Queries.md#supported-functions).
 
 ### Fixed
+
+- **C#'s `??` (null-coalescing) generated N1QL's nonexistent `COALESCE` function**, reaching the
+  server as invalid SQL++ and failing only at query-execution time, never at translation time. Now
+  translates to `IFMISSINGORNULL`, which is also the semantically correct choice: a Couchbase
+  document field can be genuinely missing from the JSON, not just `null`, and `IFMISSINGORNULL` is
+  the only N1QL null-handling function that treats both the way `??` does.
 
 - **`string.IndexOf` translated to N1QL's `CONTAINS`, which returns a boolean, not the integer
   position `IndexOf` must return.** Any LINQ query using `.IndexOf(...)` silently received a

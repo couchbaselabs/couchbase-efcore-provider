@@ -425,6 +425,33 @@ public class CouchbaseTypeMappingSourceTests
     }
 
     [Fact]
+    public void DecimalMapping_GenerateSqlLiteral_IsCultureInvariant()
+    {
+        // Uses the stock EF Core DecimalTypeMapping unmodified (CouchbaseTypeMappingSource.cs
+        // registers it as-is), which already formats with CultureInfo.InvariantCulture -- but a
+        // future change that reintroduces a bare ToString()/string.Format without an explicit
+        // IFormatProvider would silently corrupt N1QL for any de-DE-style comma-decimal culture
+        // (e.g. "19,99" is either a syntax error or two arguments, not one number). This guards
+        // that regression class directly, mirroring Linq2Couchbase's own defensive test for the
+        // exact same concern.
+        var originalCulture = System.Globalization.CultureInfo.CurrentCulture;
+        try
+        {
+            System.Globalization.CultureInfo.CurrentCulture = new System.Globalization.CultureInfo("de-DE");
+
+            var mapping = _typeMappingSource.FindMapping(typeof(decimal));
+            var literal = mapping!.GenerateSqlLiteral(19.99m);
+
+            Assert.Contains("19.99", literal);
+            Assert.DoesNotContain(",", literal);
+        }
+        finally
+        {
+            System.Globalization.CultureInfo.CurrentCulture = originalCulture;
+        }
+    }
+
+    [Fact]
     public void BoolMapping_GenerateSqlLiteral_ProducesTrueFalseLiterals()
     {
         // Arrange
