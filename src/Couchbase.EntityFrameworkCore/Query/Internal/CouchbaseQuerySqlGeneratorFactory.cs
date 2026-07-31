@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore.Query;
@@ -8,16 +9,22 @@ namespace Couchbase.EntityFrameworkCore.Query.Internal;
 public class CouchbaseQuerySqlGeneratorFactory : IQuerySqlGeneratorFactory
 {
     private readonly QuerySqlGeneratorDependencies _dependencies;
+    private readonly JsonNamingPolicy? _fieldNamingPolicy;
 
-    public CouchbaseQuerySqlGeneratorFactory(QuerySqlGeneratorDependencies dependencies/*, ICouchbaseDbContextOptionsBuilder couchbaseDbContextOptionsBuilder*/)
+    // JsonNamingPolicy? is captured by value at DI-registration time (see
+    // CouchbaseServiceCollectionExtensions.AddEntityFrameworkCouchbase) rather than resolving
+    // ICouchbaseDbContextOptionsBuilder here directly -- IQuerySqlGeneratorFactory is
+    // Singleton-lifetime (EF Core's own registration), while ICouchbaseDbContextOptionsBuilder is
+    // Scoped, so constructor-injecting the latter would be a captive-dependency bug.
+    public CouchbaseQuerySqlGeneratorFactory(QuerySqlGeneratorDependencies dependencies, JsonNamingPolicy? fieldNamingPolicy)
     {
         _dependencies = dependencies;
-        //_couchbaseDbContextOptionsBuilder = couchbaseDbContextOptionsBuilder;
+        _fieldNamingPolicy = fieldNamingPolicy;
     }
-    
+
     public QuerySqlGenerator Create()
     {
-        return new CouchbaseQuerySqlGenerator(_dependencies/*, _couchbaseDbContextOptionsBuilder*/);
+        return new CouchbaseQuerySqlGenerator(_dependencies, _fieldNamingPolicy);
     }
 }
 

@@ -9,6 +9,13 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ### Added
 
+- **`.Any(predicate)`/`.Any()` over a depth-1 `OwnsMany` navigation.** Previously silently
+  produced invalid SQL++ (an `EXISTS` subquery with an empty `FROM` clause, since the owned
+  collection is a JSON array embedded in the parent document, not a real keyspace to correlate
+  against). Now translates to N1QL's `ANY x IN parentAlias.field SATISFIES ... END`. Nested owned
+  collections (reached through another owned navigation), `.All(predicate)`, `.Count(predicate)`,
+  and `.Contains()` over an owned collection are not yet supported. See
+  [Modeling — OwnsMany](docs/modeling.md#ownsmany).
 - **N1QL `META()` support: document metadata fields and CAS-based optimistic concurrency.**
   `[CouchbaseMeta(CouchbaseMetaField)]`/`HasCouchbaseMeta(...)` sources a property's value from
   `META(alias).id`/`.cas`/`.expiration` instead of a document field. Combined with EF Core's own

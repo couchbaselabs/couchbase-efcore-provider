@@ -1145,4 +1145,92 @@ public class OwnedTypeTests(
 
         Assert.Equal(0, writes);
     }
+
+    // -------------------------------------------------------------------------
+    // .Any(predicate) / .Any() over a depth-1 OwnsMany navigation
+    //
+    // This provider maps OwnsMany collections as a JSON array embedded in the parent document --
+    // EF Core translates .Any(predicate) identically for owned and non-owned collections, as a
+    // correlated EXISTS subquery whose sole FROM table is the owned type's TableExpression, which
+    // this provider's owned-table JOIN suppression renders as nothing (an empty-FROM-clause N1QL
+    // error). CouchbaseQuerySqlGenerator.GenerateExists now recognizes this shape and renders N1QL's
+    // ANY...SATISFIES...END instead. Alice (1) and Carol (3) have a "phone" contact method; Bob (2)
+    // does not (email only) -- used throughout to prove real inclusion/exclusion, not just that the
+    // generated SQL text looks right.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task OwnsMany_Any_WithPredicate_ReturnsOnlyMatchingCustomers()
+    {
+        await using var ctx = fixture.GetDbContext();
+        var customers = await ctx.Customers
+            .Where(c => c.ContactMethods.Any(cm => cm.Type == "phone"))
+            .ToListAsync();
+
+        Assert.Equal(2, customers.Count);
+        Assert.Contains(customers, c => c.CustomerId == 1);
+        Assert.Contains(customers, c => c.CustomerId == 3);
+        Assert.DoesNotContain(customers, c => c.CustomerId == 2);
+    }
+
+    [Fact]
+    public async Task OwnsMany_Any_Negated_ReturnsOnlyNonMatchingCustomers()
+    {
+        await using var ctx = fixture.GetDbContext();
+        var customers = await ctx.Customers
+            .Where(c => !c.ContactMethods.Any(cm => cm.Type == "phone"))
+            .ToListAsync();
+
+        Assert.Single(customers);
+        Assert.Equal(2, customers[0].CustomerId);
+    }
+
+    [Fact]
+    public async Task OwnsMany_Any_NoPredicate_ExcludesCustomerWithEmptyCollection()
+    {
+        const int id = 700;
+        try
+        {
+            await using (var ctx = fixture.GetDbContext())
+            {
+                ctx.Update(new OwnedTypeFixture.Customer
+                {
+                    CustomerId = id,
+                    Name = "NoContacts",
+                    Address = new OwnedTypeFixture.Address { Street = "1 Empty Way", City = "Nowhere" },
+                    ContactMethods = []
+                });
+                await ctx.SaveChangesAsync();
+            }
+
+            await using (var ctx = fixture.GetDbContext())
+            {
+                var withAny = await ctx.Customers.Where(c => c.ContactMethods.Any()).ToListAsync();
+                Assert.DoesNotContain(withAny, c => c.CustomerId == id);
+                Assert.Contains(withAny, c => c.CustomerId == 1);
+
+                var withoutAny = await ctx.Customers.Where(c => !c.ContactMethods.Any()).ToListAsync();
+                Assert.Contains(withoutAny, c => c.CustomerId == id);
+                Assert.DoesNotContain(withoutAny, c => c.CustomerId == 1);
+            }
+        }
+        finally
+        {
+            await using var ctx = fixture.GetDbContext();
+            var customer = await ctx.Customers.FirstOrDefaultAsync(c => c.CustomerId == id);
+            if (customer != null) { ctx.Remove(customer); await ctx.SaveChangesAsync(); }
+        }
+    }
+
+    [Fact]
+    public async Task OwnsMany_Any_WithPredicate_CombinesWithOtherWhereConditions()
+    {
+        await using var ctx = fixture.GetDbContext();
+        var customers = await ctx.Customers
+            .Where(c => c.Name == "Alice" && c.ContactMethods.Any(cm => cm.Type == "phone"))
+            .ToListAsync();
+
+        Assert.Single(customers);
+        Assert.Equal(1, customers[0].CustomerId);
+    }
 }

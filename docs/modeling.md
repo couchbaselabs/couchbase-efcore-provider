@@ -310,6 +310,22 @@ modelBuilder.Entity<Customer>().OwnsMany(c => c.ContactMethods, cm =>
 
 The collection property can be typed as `List<T>` or `HashSet<T>` — both are fully supported.
 
+`.Any(predicate)` and predicate-less `.Any()` are supported for a depth-1 `OwnsMany` navigation
+(a collection declared directly on the entity being queried), translating to N1QL's
+`ANY x IN parentAlias.field SATISFIES ... END` rather than a real `EXISTS` subquery, since the
+collection is a JSON array already embedded in the current document rather than a separate
+keyspace to correlate against:
+
+```csharp
+var withPhone = await context.Customers
+    .Where(c => c.ContactMethods.Any(m => m.Type == "phone"))
+    .ToListAsync();
+```
+
+`.Any(predicate)` over a *nested* owned collection (one reached through another owned navigation,
+e.g. `c.ContactMethods.Any(m => m.Tags.Any(...))`), `.All(predicate)`, `.Count(predicate)`, and
+`.Contains()` over an owned collection are not yet supported.
+
 ### Field-backed access
 
 If an owned type's properties are get-only (backed by a private field, with no public setter),

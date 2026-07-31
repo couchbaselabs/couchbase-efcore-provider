@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using Couchbase.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Query.SqlExpressions;
@@ -40,6 +41,18 @@ internal static class CouchbaseProjectionAliases
     /// </summary>
     public static string NavigationKey(INavigation navigation)
         => navigation.DeclaringEntityType.ClrType.FullName + "." + navigation.Name;
+
+    /// <summary>
+    /// The JSON field name an owned-collection navigation is stored under, given the configured
+    /// <c>FieldNamingPolicy</c> — the raw CLR navigation name if no policy is configured (or the
+    /// policy leaves it unchanged), otherwise the policy-converted name (e.g. <c>"contactMethods"</c>
+    /// for a <c>ContactMethods</c> navigation under the default camelCase policy). Shared between
+    /// <see cref="Query.Internal.CouchbaseShapedQueryCompilingExpressionVisitor.AddOwnedNavigationColumnsToProjection"/>
+    /// (read-path projection) and <see cref="CouchbaseQuerySqlGenerator"/>'s <c>ANY...SATISFIES</c>
+    /// rendering for <c>.Any(predicate)</c> over an owned collection, so the two can never drift.
+    /// </summary>
+    public static string GetOwnedCollectionFieldName(INavigation navigation, JsonNamingPolicy? fieldNamingPolicy)
+        => fieldNamingPolicy?.ConvertName(navigation.Name) ?? navigation.Name;
 
     /// <summary>
     /// The <see cref="CouchbaseMetaField"/> name (e.g. <c>"Cas"</c>) a column is sourced from via
