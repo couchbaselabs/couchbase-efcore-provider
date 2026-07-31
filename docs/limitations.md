@@ -69,6 +69,11 @@ The Couchbase SDK is asynchronous, so the synchronous EF Core code paths throw `
   persisted and queried only when configured as EF Core owned types (`OwnsOne` /
   `OwnsMany`) or as related entities. Plain CLR objects nested on an entity that are
   not mapped this way are ignored by EF Core.
+* **`.Any(predicate)` over an `OwnsMany` navigation is supported only one level deep**
+  (a collection declared directly on the entity being queried). `.Any(predicate)` over a
+  *nested* owned collection reached through another owned navigation, `.All(predicate)`,
+  `.Count(predicate)`, and `.Contains()` over an owned collection are not yet supported. See
+  [Modeling — OwnsMany](modeling.md#ownsmany).
 
 See also [Querying](Queries.md) and [Configuration](configuration.md).
 

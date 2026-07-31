@@ -190,7 +190,15 @@ public class CouchbaseMetaTests(BloggingFixture fixture) : IAsyncLifetime
         var entity = await readCtx.Entities.SingleAsync(e => e.Id == 6);
 
         Assert.True(entity.Expiration > 0, "Expiration should be a nonzero epoch-seconds value when a TTL is set.");
-        var expectedNoEarlierThan = beforeInsert.AddMinutes(30).ToUnixTimeSeconds();
+
+        // The expiration is computed from the *server's* clock at the moment it processes the
+        // write, not the client's -- ToUnixTimeSeconds() floors to whole seconds, and even small
+        // client/server clock skew (routine under Aspire's containerized cluster) can put the
+        // server's floored second one tick below the client's, independent of network latency.
+        // A few seconds of slack on the lower bound absorbs that without weakening the assertion's
+        // actual purpose (proving a real ~30-minute TTL was read back, not an exact-second match).
+        const int clockSkewSlack = 5;
+        var expectedNoEarlierThan = beforeInsert.AddMinutes(30).AddSeconds(-clockSkewSlack).ToUnixTimeSeconds();
         var expectedNoLaterThan = DateTimeOffset.UtcNow.AddMinutes(30).AddMinutes(1).ToUnixTimeSeconds();
         Assert.InRange(entity.Expiration, expectedNoEarlierThan, expectedNoLaterThan);
     }

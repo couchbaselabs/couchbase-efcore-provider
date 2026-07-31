@@ -374,7 +374,7 @@ public class CouchbaseShapedQueryCompilingExpressionVisitor : RelationalShapedQu
         var policy = _couchbaseDbContextOptionsBuilder.FieldNamingPolicy;
         foreach (var nav in ownedNavs)
         {
-            var fieldName = policy?.ConvertName(nav.Name) ?? nav.Name;
+            var fieldName = CouchbaseProjectionAliases.GetOwnedCollectionFieldName(nav, policy);
 
             if (innerSelect != null)
             {

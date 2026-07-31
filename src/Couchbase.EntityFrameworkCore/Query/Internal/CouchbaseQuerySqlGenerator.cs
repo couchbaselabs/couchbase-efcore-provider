@@ -10,6 +10,7 @@ using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.EntityFrameworkCore.Metadata;
 using Couchbase.EntityFrameworkCore.Utils;
 using Couchbase.Extensions.DependencyInjection;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Query;
@@ -23,9 +24,19 @@ namespace Couchbase.EntityFrameworkCore.Query.Internal;
 public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
 {
     private readonly ConcurrentDictionary<string, CouchbaseKeyspace> _tableNameCache = new();
+    private readonly System.Text.Json.JsonNamingPolicy? _fieldNamingPolicy;
 
-    public CouchbaseQuerySqlGenerator(QuerySqlGeneratorDependencies dependencies) : base(dependencies)
+    // Set only while rendering the SATISFIES clause of an owned-collection ANY(...) expression
+    // (see GenerateExists/TryRenderOwnedCollectionAny) -- ColumnExpressions bound to this alias
+    // refer to properties of an array element embedded in JSON, which are written under the
+    // policy-converted name (e.g. "title", not "Title"), unlike every other column this generator
+    // renders. Saved/restored around the Visit() call rather than cleared, since a query can
+    // contain more than one such ANY(...) expression (e.g. `a.Xs.Any(...) || a.Ys.Any(...)`).
+    private string? _ownedAnyAlias;
+
+    public CouchbaseQuerySqlGenerator(QuerySqlGeneratorDependencies dependencies, System.Text.Json.JsonNamingPolicy? fieldNamingPolicy = null) : base(dependencies)
     {
+        _fieldNamingPolicy = fieldNamingPolicy;
     }
 
     /// <inheritdoc />
@@ -149,6 +160,34 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
             any = true;
         }
         return any;
+    }
+
+    /// <summary>
+    /// Same check as <see cref="IsOwnedTable"/>, but also returns every owned <see cref="IEntityType"/>
+    /// mapped to the table — needed by <see cref="TryRenderOwnedCollectionAny"/> to resolve the
+    /// owning navigation via <see cref="IEntityType.FindOwnership"/>.
+    /// </summary>
+    /// <remarks>
+    /// A table can carry more than one owned <see cref="IEntityType"/> when the OwnsMany item
+    /// type itself table-splits a nested <c>OwnsOne</c> (e.g. <c>ContactMethod</c> hosting its own
+    /// <c>Label</c>) — both mappings pass <see cref="IsOwnedTable"/>'s <c>All</c> check, but only
+    /// one of them (<c>ContactMethod</c>, not <c>Label</c>) is the collection's own item type whose
+    /// ownership correlates to the correct parent. There's no cheap way to tell which from the
+    /// table alone, so every candidate is returned and the caller tries each in turn.
+    /// </remarks>
+    private static bool TryGetOwnedEntityTypes(TableExpression tableExpression, out List<IEntityType> entityTypes)
+    {
+        entityTypes = new List<IEntityType>();
+        foreach (var mapping in tableExpression.Table.EntityTypeMappings)
+        {
+            if (mapping.TypeBase is not IEntityType et || !et.IsOwned())
+            {
+                entityTypes = new List<IEntityType>();
+                return false;
+            }
+            entityTypes.Add(et);
+        }
+        return entityTypes.Count > 0;
     }
 
     /// <summary>
@@ -605,6 +644,27 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
 
     protected override void GenerateExists(ExistsExpression existsExpression, bool negated)
     {
+        // `.Any(predicate)`/`.Any()` over an OwnsMany navigation translates (via EF Core's own,
+        // unmodified RelationalQueryableMethodTranslatingExpressionVisitor.TranslateAny) into a
+        // correlated EXISTS subquery whose sole FROM table is the owned type's TableExpression --
+        // but VisitTable renders that table as nothing (it's embedded JSON, not a real keyspace),
+        // which would otherwise produce an empty-FROM-clause N1QL error. Render it instead as
+        // N1QL's ANY...SATISFIES...END over the parent document's array field directly.
+        if (existsExpression.Subquery.Tables is [TableExpression tableExpression]
+            && TryGetOwnedEntityTypes(tableExpression, out var ownedEntityTypes))
+        {
+            // A table can carry more than one owned entity type via table-splitting (see
+            // TryGetOwnedEntityTypes' remarks) -- try each until one's ownership actually matches
+            // this subquery's correlation predicate.
+            foreach (var candidate in ownedEntityTypes)
+            {
+                if (TryRenderOwnedCollectionAny(existsExpression, negated, tableExpression, candidate))
+                {
+                    return;
+                }
+            }
+        }
+
         if (negated)
         {
             Sql.Append("NOT ");
@@ -619,6 +679,206 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
 
         Sql.Append(")");
     }
+
+    /// <summary>
+    /// Renders <c>ANY &lt;ownedAlias&gt; IN &lt;parentAlias&gt;.&lt;fieldName&gt; SATISFIES
+    /// &lt;predicate&gt; END</c> in place of the correlated <c>EXISTS</c> subquery EF Core built
+    /// for `.Any(predicate)`/`.Any()` over a depth-1 OwnsMany navigation. Returns
+    /// <see langword="false"/> (writing nothing) if the ownership/navigation can't be resolved, so
+    /// the caller falls through to the default (and, for this shape, broken) EXISTS rendering
+    /// rather than silently producing wrong SQL.
+    /// </summary>
+    private bool TryRenderOwnedCollectionAny(
+        ExistsExpression existsExpression, bool negated, TableExpression ownedTable, IEntityType ownedEntityType)
+    {
+        var ownership = ownedEntityType.FindOwnership();
+        if (ownership?.PrincipalToDependent == null)
+        {
+            return false;
+        }
+
+        if (!TryStripCorrelation(
+                existsExpression.Subquery.Predicate, ownedTable.Alias!, ownership,
+                out var residual, out var parentAlias))
+        {
+            return false;
+        }
+
+        var fieldName = CouchbaseProjectionAliases.GetOwnedCollectionFieldName(ownership.PrincipalToDependent, _fieldNamingPolicy);
+        var helper = Dependencies.SqlGenerationHelper;
+
+        if (negated)
+        {
+            Sql.Append("NOT (");
+        }
+
+        Sql.Append("ANY ")
+            .Append(helper.DelimitIdentifier(ownedTable.Alias!))
+            .Append(" IN ")
+            .Append(helper.DelimitIdentifier(parentAlias!))
+            .Append(".")
+            .Append(helper.DelimitIdentifier(fieldName))
+            .Append(" SATISFIES ");
+
+        if (residual == null)
+        {
+            Sql.Append("true");
+        }
+        else
+        {
+            var previous = _ownedAnyAlias;
+            _ownedAnyAlias = ownedTable.Alias;
+            try
+            {
+                Visit(residual);
+            }
+            finally
+            {
+                _ownedAnyAlias = previous;
+            }
+        }
+
+        Sql.Append(" END");
+
+        if (negated)
+        {
+            Sql.Append(")");
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Splits <paramref name="predicate"/> into the correlation conjunct(s) EF Core added when
+    /// expanding the owned-collection navigation (<c>child.FK = parent.PK</c>, or
+    /// <c>child.FK IS NOT NULL AND child.FK = parent.PK</c> per FK property when any FK/PK
+    /// property is nullable) and everything else (the user's original `.Any(predicate)`
+    /// condition, or <see langword="null"/> for predicate-less `.Any()`). Also recovers the
+    /// correlated outer query's alias as a side effect of removing the correlation conjunct(s) --
+    /// the surviving side of each stripped comparison, by construction, refers to it.
+    /// </summary>
+    private static bool TryStripCorrelation(
+        SqlExpression? predicate,
+        string ownedAlias,
+        IForeignKey ownership,
+        out SqlExpression? residual,
+        out string? parentAlias)
+    {
+        residual = null;
+        parentAlias = null;
+
+        if (predicate == null)
+        {
+            return false;
+        }
+
+        var conjuncts = new List<SqlExpression>();
+        FlattenAndAlso(predicate, conjuncts);
+
+        var fkProperties = ownership.Properties;
+        var pkProperties = ownership.PrincipalKey.Properties;
+
+        for (var i = 0; i < fkProperties.Count; i++)
+        {
+            var fkColumn = fkProperties[i].GetColumnName();
+            var pkColumn = pkProperties[i].GetColumnName();
+
+            // Plain shape: a single Equal comparing the FK column (owned side) against the PK
+            // column (outer/parent side) -- the common case (OwnsMany shadow FKs are non-nullable
+            // by convention).
+            var plainIndex = conjuncts.FindIndex(c => IsCorrelationEqual(c, ownedAlias, fkColumn, pkColumn, out _));
+            if (plainIndex >= 0)
+            {
+                IsCorrelationEqual(conjuncts[plainIndex], ownedAlias, fkColumn, pkColumn, out var foundAlias);
+                parentAlias ??= foundAlias;
+                conjuncts.RemoveAt(plainIndex);
+                continue;
+            }
+
+            // Null-guarded shape: a separate `fkColumn IS NOT NULL` conjunct alongside the Equal,
+            // for a nullable FK/PK property.
+            var notNullIndex = conjuncts.FindIndex(c => IsColumnNotNull(c, ownedAlias, fkColumn));
+            var equalIndex = conjuncts.FindIndex(c => IsCorrelationEqual(c, ownedAlias, fkColumn, pkColumn, out _));
+            if (notNullIndex >= 0 && equalIndex >= 0)
+            {
+                IsCorrelationEqual(conjuncts[equalIndex], ownedAlias, fkColumn, pkColumn, out var foundAlias);
+                parentAlias ??= foundAlias;
+                // Remove the higher index first so the lower index stays valid.
+                if (notNullIndex > equalIndex)
+                {
+                    conjuncts.RemoveAt(notNullIndex);
+                    conjuncts.RemoveAt(equalIndex);
+                }
+                else
+                {
+                    conjuncts.RemoveAt(equalIndex);
+                    conjuncts.RemoveAt(notNullIndex);
+                }
+                continue;
+            }
+
+            // A required FK/PK property pair's correlation conjunct wasn't found at all -- this
+            // isn't the shape we expect from ExpandOwnedNavigation, so don't guess.
+            return false;
+        }
+
+        if (parentAlias == null)
+        {
+            return false;
+        }
+
+        residual = conjuncts.Count == 0
+            ? null
+            : conjuncts.Aggregate((left, right) => new SqlBinaryExpression(
+                ExpressionType.AndAlso, left, right, typeof(bool), left.TypeMapping));
+
+        return true;
+    }
+
+    private static void FlattenAndAlso(SqlExpression expression, List<SqlExpression> conjuncts)
+    {
+        if (expression is SqlBinaryExpression { OperatorType: ExpressionType.AndAlso } binary)
+        {
+            FlattenAndAlso(binary.Left, conjuncts);
+            FlattenAndAlso(binary.Right, conjuncts);
+        }
+        else
+        {
+            conjuncts.Add(expression);
+        }
+    }
+
+    private static bool IsCorrelationEqual(
+        SqlExpression expression, string ownedAlias, string fkColumn, string pkColumn, out string? parentAlias)
+    {
+        parentAlias = null;
+        if (expression is not SqlBinaryExpression { OperatorType: ExpressionType.Equal } binary)
+        {
+            return false;
+        }
+
+        if (binary.Left is ColumnExpression left && binary.Right is ColumnExpression right)
+        {
+            if (left.TableAlias == ownedAlias && left.Name == fkColumn && right.TableAlias != ownedAlias && right.Name == pkColumn)
+            {
+                parentAlias = right.TableAlias;
+                return true;
+            }
+
+            if (right.TableAlias == ownedAlias && right.Name == fkColumn && left.TableAlias != ownedAlias && left.Name == pkColumn)
+            {
+                parentAlias = left.TableAlias;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool IsColumnNotNull(SqlExpression expression, string ownedAlias, string columnName)
+        => expression is SqlBinaryExpression { OperatorType: ExpressionType.NotEqual } binary
+           && ((binary.Left is ColumnExpression lc && lc.TableAlias == ownedAlias && lc.Name == columnName && binary.Right is SqlConstantExpression { Value: null })
+               || (binary.Right is ColumnExpression rc && rc.TableAlias == ownedAlias && rc.Name == columnName && binary.Left is SqlConstantExpression { Value: null }));
 
     protected override Expression VisitTable(TableExpression tableExpression)
     {
@@ -666,9 +926,17 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
             return columnExpression;
         }
 
+        // Inside an owned-collection ANY(...)'s SATISFIES clause (see
+        // TryRenderOwnedCollectionAny), a column bound to the owned alias refers to a property of
+        // an array element embedded in JSON -- those are written under the policy-converted name
+        // (e.g. "title", not "Title"), unlike every other column this generator renders.
+        var propertyName = columnExpression.TableAlias == _ownedAnyAlias
+            ? _fieldNamingPolicy?.ConvertName(columnExpression.Name) ?? columnExpression.Name
+            : columnExpression.Name;
+
         Sql.Append(helper.DelimitIdentifier(columnExpression.TableAlias))
             .Append(".")
-            .Append(helper.DelimitIdentifier(columnExpression.Name));
+            .Append(helper.DelimitIdentifier(propertyName));
 
         return columnExpression;
     }

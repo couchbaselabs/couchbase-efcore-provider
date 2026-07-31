@@ -61,13 +61,26 @@ public static class CouchbaseServiceCollectionExtensions
             sp.GetRequiredService<RelationalTypeMappingSourceDependencies>(),
             optionsExtension.DbContextOptionsBuilder.DateTimeFormat));
 
+        // Same captive-dependency concern as IRelationalTypeMappingSource above:
+        // IQuerySqlGeneratorFactory is Singleton-lifetime (EF Core's own registration), while
+        // ICouchbaseDbContextOptionsBuilder (which carries FieldNamingPolicy) is Scoped -- capture
+        // FieldNamingPolicy *by value* here instead. Must also come before TryAddCoreServices()
+        // for the same first-registration-wins reason.
+        // Same captive-dependency concern as IRelationalTypeMappingSource above:
+        // IQuerySqlGeneratorFactory is Singleton-lifetime (EF Core's own registration), while
+        // ICouchbaseDbContextOptionsBuilder (which carries FieldNamingPolicy) is Scoped -- capture
+        // FieldNamingPolicy *by value* here instead. Must also come before TryAddCoreServices()
+        // for the same first-registration-wins reason.
+        serviceCollection.TryAddSingleton<IQuerySqlGeneratorFactory>(sp => new CouchbaseQuerySqlGeneratorFactory(
+            sp.GetRequiredService<QuerySqlGeneratorDependencies>(),
+            optionsExtension.DbContextOptionsBuilder.FieldNamingPolicy));
+
         var builder = new EntityFrameworkRelationalServicesBuilder(serviceCollection)
             .TryAdd<IDatabaseProvider, DatabaseProvider<CouchbaseOptionsExtension>>()
             .TryAdd<LoggingDefinitions, CouchbaseLoggingDefinitions>()
             .TryAdd<IModificationCommandBatchFactory, CouchbaseModificationCommandBatchFactory>()
             .TryAdd<IUpdateSqlGenerator, CouchbaseUpdateSqlGenerator>()
             //.TryAdd<IAsyncQueryProvider, CouchbaseQueryProvider>()
-            .TryAdd<IQuerySqlGeneratorFactory, CouchbaseQuerySqlGeneratorFactory>()
             .TryAdd<ISqlGenerationHelper, CouchbaseSqlGenerationHelper>()
             .TryAdd<IShapedQueryCompilingExpressionVisitorFactory, CouchbaseShapedQueryCompilingExpressionVisitorFactory>()
             .TryAdd<IQueryableMethodTranslatingExpressionVisitorFactory, CouchbaseQueryableMethodTranslatingExpressionVisitorFactory>()
