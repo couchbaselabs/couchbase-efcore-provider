@@ -810,4 +810,174 @@ public class CrudTests(
             Assert.Null(deletedHotel);
         }
     }
+
+    // -------------------------------------------------------------------------
+    // PublicLikes -- a scalar "primitive collection" property (List<string>, not OwnsMany) mapped
+    // directly to a JSON array field. TranslatePrimitiveCollection expands it into a rowset via
+    // N1QL's UNNEST ... AS value for .Count/.Contains/.Any, while indexer/.ElementAt() render N1QL's
+    // native arr[i] subscript directly (TranslateElementAtOrDefault) -- this Couchbase Server version
+    // doesn't support UNNEST's AT-alias positional binding, so there's no ordered-rowset indexing
+    // fallback available. These exercise real query EXECUTION against a live cluster, not just
+    // generated-SQL-text assertions -- the actual point, since the whole feature is about a
+    // previously-untranslatable LINQ shape.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task Hotel_PublicLikes_Indexer_ReturnsMatchingHotel()
+    {
+        const int id = 999999002;
+        try
+        {
+            await using (var writeCtx = travelSampleFixture.GetDbContext())
+            {
+                writeCtx.Update(new TravelSampleFixture.Hotel
+                {
+                    Id = id,
+                    Type = "hotel",
+                    Title = "Indexer Test Hotel",
+                    Name = "Indexer Test Hotel",
+                    PublicLikes = ["Alice", "Bob", "Carol"],
+                });
+                await writeCtx.SaveChangesAsync();
+            }
+
+            await using var readCtx = travelSampleFixture.GetDbContext();
+            var match = await readCtx.Hotels.Where(h => h.PublicLikes![0] == "Alice").ToListAsync();
+            Assert.Contains(match, h => h.Id == id);
+
+            var noMatch = await readCtx.Hotels.Where(h => h.PublicLikes![0] == "Bob").ToListAsync();
+            Assert.DoesNotContain(noMatch, h => h.Id == id);
+        }
+        finally
+        {
+            await using var cleanupCtx = travelSampleFixture.GetDbContext();
+            var toRemove = await cleanupCtx.Hotels.SingleOrDefaultAsync(h => h.Id == id);
+            if (toRemove != null)
+            {
+                cleanupCtx.Remove(toRemove);
+                await cleanupCtx.SaveChangesAsync();
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Hotel_PublicLikes_Contains_ReturnsMatchingHotel()
+    {
+        const int id = 999999003;
+        try
+        {
+            await using (var writeCtx = travelSampleFixture.GetDbContext())
+            {
+                writeCtx.Update(new TravelSampleFixture.Hotel
+                {
+                    Id = id,
+                    Type = "hotel",
+                    Title = "Contains Test Hotel",
+                    Name = "Contains Test Hotel",
+                    PublicLikes = ["Alice", "Bob", "Carol"],
+                });
+                await writeCtx.SaveChangesAsync();
+            }
+
+            await using var readCtx = travelSampleFixture.GetDbContext();
+            var match = await readCtx.Hotels.Where(h => h.PublicLikes!.Contains("Bob")).ToListAsync();
+            Assert.Contains(match, h => h.Id == id);
+
+            var noMatch = await readCtx.Hotels.Where(h => h.PublicLikes!.Contains("Nobody")).ToListAsync();
+            Assert.DoesNotContain(noMatch, h => h.Id == id);
+        }
+        finally
+        {
+            await using var cleanupCtx = travelSampleFixture.GetDbContext();
+            var toRemove = await cleanupCtx.Hotels.SingleOrDefaultAsync(h => h.Id == id);
+            if (toRemove != null)
+            {
+                cleanupCtx.Remove(toRemove);
+                await cleanupCtx.SaveChangesAsync();
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Hotel_PublicLikes_CountAndAnyPredicate_MatchExpectedHotels()
+    {
+        const int id = 999999004;
+        try
+        {
+            await using (var writeCtx = travelSampleFixture.GetDbContext())
+            {
+                writeCtx.Update(new TravelSampleFixture.Hotel
+                {
+                    Id = id,
+                    Type = "hotel",
+                    Title = "Count Test Hotel",
+                    Name = "Count Test Hotel",
+                    PublicLikes = ["Alice", "Bob", "Carol"],
+                });
+                await writeCtx.SaveChangesAsync();
+            }
+
+            await using var readCtx = travelSampleFixture.GetDbContext();
+
+            var countMatch = await readCtx.Hotels.Where(h => h.PublicLikes!.Count == 3).ToListAsync();
+            Assert.Contains(countMatch, h => h.Id == id);
+
+            var countNoMatch = await readCtx.Hotels.Where(h => h.PublicLikes!.Count > 10).ToListAsync();
+            Assert.DoesNotContain(countNoMatch, h => h.Id == id);
+
+            var anyMatch = await readCtx.Hotels.Where(h => h.PublicLikes!.Any(n => n.StartsWith("Car"))).ToListAsync();
+            Assert.Contains(anyMatch, h => h.Id == id);
+
+            var anyNoMatch = await readCtx.Hotels.Where(h => h.PublicLikes!.Any(n => n == "Nobody")).ToListAsync();
+            Assert.DoesNotContain(anyNoMatch, h => h.Id == id);
+        }
+        finally
+        {
+            await using var cleanupCtx = travelSampleFixture.GetDbContext();
+            var toRemove = await cleanupCtx.Hotels.SingleOrDefaultAsync(h => h.Id == id);
+            if (toRemove != null)
+            {
+                cleanupCtx.Remove(toRemove);
+                await cleanupCtx.SaveChangesAsync();
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Hotel_PublicLikes_AbsentField_ExcludedNotError()
+    {
+        // A hotel written without PublicLikes at all (genuinely MISSING, not an empty array) must
+        // be excluded from queries over the collection, not error -- mirrors N1QL's general
+        // MISSING-is-falsy semantics this provider already leans on elsewhere.
+        const int id = 999999005;
+        try
+        {
+            await using (var writeCtx = travelSampleFixture.GetDbContext())
+            {
+                writeCtx.Update(new TravelSampleFixture.Hotel
+                {
+                    Id = id,
+                    Type = "hotel",
+                    Title = "No Likes Test Hotel",
+                    Name = "No Likes Test Hotel",
+                    PublicLikes = null,
+                });
+                await writeCtx.SaveChangesAsync();
+            }
+
+            await using var readCtx = travelSampleFixture.GetDbContext();
+            var results = await readCtx.Hotels.Where(h => h.PublicLikes!.Contains("Anyone")).ToListAsync();
+            Assert.DoesNotContain(results, h => h.Id == id);
+        }
+        finally
+        {
+            await using var cleanupCtx = travelSampleFixture.GetDbContext();
+            var toRemove = await cleanupCtx.Hotels.SingleOrDefaultAsync(h => h.Id == id);
+            if (toRemove != null)
+            {
+                cleanupCtx.Remove(toRemove);
+                await cleanupCtx.SaveChangesAsync();
+            }
+        }
+    }
 }

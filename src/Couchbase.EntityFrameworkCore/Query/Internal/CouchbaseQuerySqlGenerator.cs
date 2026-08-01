@@ -535,6 +535,19 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
                     {
                         Sql.Append("RAW ");
                     }
+                    else if (expression is CouchbaseUnnestValueExpression)
+                    {
+                        // A single CouchbaseUnnestValueExpression projection is always the
+                        // SelectExpression TranslatePrimitiveCollection built for a primitive
+                        // collection -- consumed by the surrounding expression tree as an IN-list
+                        // source (.Contains()/.Any(predicate)) or similar set-of-scalars context.
+                        // N1QL's default `SELECT expr` wraps each row in an object keyed by an
+                        // implicit alias (e.g. `{"p": "Bob"}`), which breaks direct value
+                        // comparison against a bare scalar -- confirmed via a live-cluster spike
+                        // that `'Bob' IN (SELECT p FROM ...)` never matches without this.
+                        // `SELECT RAW expr` projects the bare scalar value instead.
+                        Sql.Append("RAW ");
+                    }
                     GenerateList(selectExpression.Projection, e => Visit(e));
                 }
                 else if (selectExpression.Alias == null)
@@ -640,6 +653,31 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
         }
 
         return selectExpression;
+    }
+
+    /// <summary>
+    /// Renders a scalar subquery (e.g. <c>.Count()</c>/<c>.Sum()</c>/<c>.Max()</c> used in a
+    /// comparison) with a trailing <c>[0]</c> array-subscript. Confirmed via a live-cluster spike:
+    /// unlike ANSI SQL, N1QL's parenthesized-subquery-as-expression syntax always evaluates to an
+    /// ARRAY of the subquery's result rows, even for a single-row/single-column result -- e.g.
+    /// <c>(SELECT RAW COUNT(*) FROM t.public_likes AS p) = 3</c> silently never matches, comparing
+    /// <c>[3]</c> against <c>3</c>, while the identical query with a trailing <c>[0]</c> correctly
+    /// unwraps the one-element array to the bare scalar. <see cref="ExistsExpression"/> and
+    /// <see cref="InExpression"/>'s <c>Subquery</c> shape are unaffected -- N1QL gives
+    /// <c>EXISTS (...)</c>/<c>... IN (...)</c> their own dedicated boolean semantics that don't
+    /// go through this array-valued-expression path (both already render correctly without it).
+    /// </summary>
+    protected override Expression VisitScalarSubquery(ScalarSubqueryExpression scalarSubqueryExpression)
+    {
+        Sql.AppendLine("(");
+        using (Sql.Indent())
+        {
+            Visit(scalarSubqueryExpression.Subquery);
+        }
+
+        Sql.Append(")[0]");
+
+        return scalarSubqueryExpression;
     }
 
     protected override void GenerateExists(ExistsExpression existsExpression, bool negated)
@@ -879,6 +917,75 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
         => expression is SqlBinaryExpression { OperatorType: ExpressionType.NotEqual } binary
            && ((binary.Left is ColumnExpression lc && lc.TableAlias == ownedAlias && lc.Name == columnName && binary.Right is SqlConstantExpression { Value: null })
                || (binary.Right is ColumnExpression rc && rc.TableAlias == ownedAlias && rc.Name == columnName && binary.Left is SqlConstantExpression { Value: null }));
+
+    /// <summary>
+    /// Dispatch point for provider-specific extension expression types (<see cref="ExpressionType.Extension"/>).
+    /// <see cref="CouchbaseUnnestExpression"/>, <see cref="CouchbaseUnnestValueExpression"/>, and
+    /// <see cref="CouchbaseArrayIndexExpression"/> are the only ones this provider introduces;
+    /// anything else falls through to the base dispatcher (which itself handles all of EF Core's
+    /// own stock extension node types -- <see cref="TableExpression"/>, <see cref="ColumnExpression"/>,
+    /// etc.).
+    /// </summary>
+    protected override Expression VisitExtension(Expression node)
+        => node switch
+        {
+            CouchbaseUnnestExpression unnestExpression => GenerateUnnest(unnestExpression),
+            CouchbaseUnnestValueExpression valueExpression => GenerateUnnestValue(valueExpression),
+            CouchbaseArrayIndexExpression arrayIndexExpression => GenerateArrayIndex(arrayIndexExpression),
+            _ => base.VisitExtension(node),
+        };
+
+    /// <summary>
+    /// Renders a bare reference to a <see cref="CouchbaseUnnestExpression"/>'s alias -- see that
+    /// expression type's remarks for why this, not a named <c>alias.value</c> column reference, is
+    /// the correct projection for N1QL's <c>FROM arrayExpr AS alias</c> (confirmed via a
+    /// live-cluster spike: the SQLite-style <c>alias.value</c> shape silently evaluates to MISSING
+    /// for every row and returns an empty result set, no error).
+    /// </summary>
+    private Expression GenerateUnnestValue(CouchbaseUnnestValueExpression valueExpression)
+    {
+        Sql.Append(Dependencies.SqlGenerationHelper.DelimitIdentifier(valueExpression.Alias));
+        return valueExpression;
+    }
+
+    /// <summary>
+    /// Renders <c>&lt;arrayExpr&gt; AS &lt;alias&gt;</c> as the sole FROM-clause term of the
+    /// wrapping <see cref="SelectExpression"/> that
+    /// <see cref="CouchbaseQueryableMethodTranslatingExpressionVisitor.TranslatePrimitiveCollection"/>
+    /// built for a scalar primitive-collection property. Deliberately omits the literal <c>UNNEST</c>
+    /// keyword: confirmed via a live-cluster spike that this Couchbase Server version rejects
+    /// <c>UNNEST</c> as the primary/sole FROM-term ("UNNEST (reserved word)") -- it's only valid as a
+    /// secondary/join-like term following a real keyspace-ref. A bare correlated array expression as
+    /// the primary FROM-term (no <c>UNNEST</c> keyword at all) is confirmed to work correctly,
+    /// including inside a correlated subquery, which is the only shape
+    /// <see cref="CouchbaseUnnestExpression"/> is ever used in. No positional/ordinal alias either --
+    /// see that method's remarks for why (this Couchbase Server version also rejects
+    /// <c>UNNEST ... AT alias</c>).
+    /// </summary>
+    private Expression GenerateUnnest(CouchbaseUnnestExpression unnestExpression)
+    {
+        var helper = Dependencies.SqlGenerationHelper;
+
+        Visit(unnestExpression.ArrayExpression);
+        Sql.Append(" AS ").Append(helper.DelimitIdentifier(unnestExpression.Alias!));
+
+        return unnestExpression;
+    }
+
+    /// <summary>
+    /// Renders N1QL's native array-subscript syntax (<c>arrayExpr[indexExpr]</c>), built by
+    /// <see cref="CouchbaseQueryableMethodTranslatingExpressionVisitor.TranslateElementAtOrDefault"/>
+    /// for <c>.ElementAt(i)</c>/indexer access over a scalar primitive-collection property.
+    /// </summary>
+    private Expression GenerateArrayIndex(CouchbaseArrayIndexExpression arrayIndexExpression)
+    {
+        Visit(arrayIndexExpression.Array);
+        Sql.Append("[");
+        Visit(arrayIndexExpression.Index);
+        Sql.Append("]");
+
+        return arrayIndexExpression;
+    }
 
     protected override Expression VisitTable(TableExpression tableExpression)
     {
@@ -1120,14 +1227,23 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
     protected override void GenerateIn(InExpression inExpression, bool negated)
     {
         Visit(inExpression.Item);
-        Sql.Append(negated ? " NOT IN [" : " IN [");
 
+        // N1QL's array-literal IN syntax (`x IN [1, 2, 3]`) only applies to a flat Values list --
+        // a Subquery-shaped InExpression (e.g. `.Contains()` over a queryable source, including
+        // this provider's own UNNEST-backed primitive collections) is a real correlated/uncorrelated
+        // SELECT and must use standard parenthesized subquery-IN syntax instead. Confirmed
+        // pre-existing: `InExpression.Values`/`.Subquery` are mutually-exclusive alternate shapes of
+        // the same node type, and this method previously always bracketed both the same way --
+        // harmless as long as nothing produced the Subquery shape, until primitive collections did.
         if (inExpression.Values is not null)
         {
+            Sql.Append(negated ? " NOT IN [" : " IN [");
             GenerateList(inExpression.Values, e => Visit(e));
+            Sql.Append("]");
         }
         else
         {
+            Sql.Append(negated ? " NOT IN (" : " IN (");
             Sql.AppendLine();
 
             using (Sql.Indent())
@@ -1136,9 +1252,8 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
             }
 
             Sql.AppendLine();
+            Sql.Append(")");
         }
-
-        Sql.Append("]");
     }
 
     private void GenerateList<T>(

@@ -502,7 +502,22 @@ public class CouchbaseDatabaseWrapper : Database
     /// </summary>
     private static object? ApplyConverter(IProperty property, object? rawValue)
     {
-        var converter = property.GetValueConverter() ?? property.FindTypeMapping()?.Converter;
+        var explicitConverter = property.GetValueConverter();
+        if (explicitConverter is null && property.GetElementType() is not null)
+        {
+            // Scalar "primitive collection" properties (List<T>/T[], not OwnsMany) get an
+            // automatic CollectionToJsonStringConverter from EF Core's type-mapping source
+            // unless a provider declares native array storage support -- correct for a
+            // relational text column, but Couchbase documents are already JSON, so applying it
+            // here would double-encode the array as a quoted JSON string instead of a native
+            // array field. Skip it and let the raw CLR collection flow through to the
+            // document's own JSON serialization, which already writes it as a real array (see
+            // CouchbaseArrayIndexExpression/TranslatePrimitiveCollection, which assume exactly
+            // this on the read side).
+            return rawValue;
+        }
+
+        var converter = explicitConverter ?? property.FindTypeMapping()?.Converter;
         // Always call the converter if one is present, even for null rawValue, because a
         // converter with ConvertsNulls=true may map null to a non-null provider value.
         return converter is not null && (rawValue is not null || converter.ConvertsNulls)

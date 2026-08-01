@@ -9,6 +9,15 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ### Added
 
+- **Scalar primitive collections (`List<T>`/`T[]`, not `OwnsMany`).** A `List<T>`/`T[]` property
+  of a scalar element type mapped directly on an entity is now stored as a native JSON array
+  (previously silently double-encoded as a JSON string via EF Core's default primitive-collection
+  converter, breaking any query against it) and supports indexer/`.ElementAt()` (N1QL's native
+  array-subscript syntax; behaves like `.ElementAtOrDefault()` — out-of-range/negative returns the
+  default value rather than throwing), `.Contains()`, `.Count`, and `.Any(predicate)` (a
+  correlated subquery over the array field). `.OrderBy(...).ElementAt(...)`/
+  `.Where(...).ElementAt(...)` compositions and reverse-`.Contains()` over a local in-memory
+  collection are not supported. See [Modeling — Primitive collections](docs/modeling.md#primitive-collections).
 - **`.Any(predicate)`/`.Any()` over a depth-1 `OwnsMany` navigation.** Previously silently
   produced invalid SQL++ (an `EXISTS` subquery with an empty `FROM` clause, since the owned
   collection is a JSON array embedded in the parent document, not a real keyspace to correlate
