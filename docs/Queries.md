@@ -171,6 +171,29 @@ argument, not two scalars — no array-literal expression support exists yet to 
 functions (`Sin`/`Cos`/`Tan`/...), and secondary-index support for EF Core's `HasIndex()` (see
 [Limitations](limitations.md)).
 
+## Primitive collections
+
+A scalar `List<T>`/`T[]` property mapped directly on an entity (not via `OwnsMany`) — see
+[Primitive collections](modeling.md#primitive-collections) — supports indexer/`.ElementAt()`,
+`.Contains()`, `.Count`, and `.Any(predicate)`:
+
+```
+context.Hotels.Where(h => h.PublicLikes[0] == "Alice");
+context.Hotels.Where(h => h.PublicLikes.Contains("Bob"));
+context.Hotels.Where(h => h.PublicLikes.Count == 3);
+context.Hotels.Where(h => h.PublicLikes.Any(n => n.StartsWith("Car")));
+```
+
+Indexer/`.ElementAt()` translates directly to N1QL's native array-subscript syntax
+(`field[index]`); `.Contains()`/`.Count`/`.Any(predicate)` translate to a correlated subquery over
+the array field. Indexer/`.ElementAt()` always behaves like `.ElementAtOrDefault()` — an
+out-of-range or negative index returns the element type's default rather than throwing, matching
+N1QL's own `MISSING`-for-out-of-range semantics.
+
+`.OrderBy(...).ElementAt(...)`/`.Where(...).ElementAt(...)` compositions and reverse-`.Contains()`
+over a local in-memory collection are not supported for a primitive collection source — see
+[Limitations](limitations.md).
+
 ## SQL queries
 
 > [!NOTE]

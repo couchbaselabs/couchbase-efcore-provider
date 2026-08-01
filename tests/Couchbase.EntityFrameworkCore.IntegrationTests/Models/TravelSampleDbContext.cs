@@ -34,6 +34,14 @@ public class TravelSampleDbContext(DbContextOptions<TravelSampleDbContext> optio
         // overrides those flat-column reads with the nested JSON when present.
         modelBuilder.Entity<TravelSampleFixture.Hotel>().OwnsOne(h => h.Geo);
 
+        // PublicLikes is a scalar primitive collection (List<string>, not OwnsMany) -- its
+        // [JsonPropertyName("public_likes")] attribute is currently NOT honored for primitive-
+        // collection properties (a separate, pre-existing bug: JsonPropertyNameConvention's
+        // HasColumnName gets overwritten by something in the primitive-collection discovery path,
+        // confirmed empirically -- the generated column name comes out "publicLikes", not
+        // "public_likes"). Set the column name explicitly via fluent API until that's fixed.
+        modelBuilder.Entity<TravelSampleFixture.Hotel>().Property(h => h.PublicLikes).HasColumnName("public_likes");
+
         // Configure Couchbase mappings
         modelBuilder.ConfigureToCouchbase(this, true);
         modelBuilder.Entity<TravelSampleFixture.DestinationAirport>().ToCouchbaseCollection(this, "destinationairport");

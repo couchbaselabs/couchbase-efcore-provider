@@ -84,6 +84,7 @@ public static class CouchbaseServiceCollectionExtensions
             .TryAdd<ISqlGenerationHelper, CouchbaseSqlGenerationHelper>()
             .TryAdd<IShapedQueryCompilingExpressionVisitorFactory, CouchbaseShapedQueryCompilingExpressionVisitorFactory>()
             .TryAdd<IQueryableMethodTranslatingExpressionVisitorFactory, CouchbaseQueryableMethodTranslatingExpressionVisitorFactory>()
+            .TryAdd<IRelationalParameterBasedSqlProcessorFactory, CouchbaseParameterBasedSqlProcessorFactory>()
             .TryAdd<IHistoryRepository, CouchbaseHistoryRepository>()//not used but required by ASP.NET
 
             //Found that this was necessary, because the default convention of determining a

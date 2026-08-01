@@ -74,6 +74,15 @@ The Couchbase SDK is asynchronous, so the synchronous EF Core code paths throw `
   *nested* owned collection reached through another owned navigation, `.All(predicate)`,
   `.Count(predicate)`, and `.Contains()` over an owned collection are not yet supported. See
   [Modeling — OwnsMany](modeling.md#ownsmany).
+* **Indexer/`.ElementAt()` over a scalar primitive collection (`List<T>`/`T[]`, not `OwnsMany`)
+  has no ordering guarantee beyond direct array position**, and always behaves like
+  `.ElementAtOrDefault()` (an out-of-range or negative index returns the default value rather than
+  throwing) — this Couchbase Server version has no N1QL syntax for a deterministic positional
+  binding over an unnested array. `.OrderBy(...).ElementAt(...)`/`.Where(...).ElementAt(...)`
+  compositions and reverse-`.Contains()` over a local in-memory collection are not supported for a
+  primitive collection source. Indexing into a scalar collection *inside* an `OwnsMany` navigation
+  (e.g. `customer.ContactMethods[0].Type`) is not yet supported at all. See
+  [Modeling — Primitive collections](modeling.md#primitive-collections).
 
 See also [Querying](Queries.md) and [Configuration](configuration.md).
 

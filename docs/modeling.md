@@ -371,3 +371,42 @@ modelBuilder.Entity<Customer>().OwnsMany(c => c.Contacts, cm =>
 });
 ```
 
+## Primitive collections
+
+A `List<T>`/`T[]` property of a scalar element type (`string`, numeric types, `bool`, `Guid`,
+`DateTime`) mapped directly on an entity — not via `OwnsMany` — is stored as a native JSON array
+field, no configuration required:
+
+```
+public class Hotel
+{
+    public int Id { get; set; }
+    public List<string> PublicLikes { get; set; } = [];
+}
+```
+
+The following LINQ operators are supported over a primitive collection property:
+
+```
+// Indexer / .ElementAt()
+context.Hotels.Where(h => h.PublicLikes[0] == "Alice");
+
+// .Contains()
+context.Hotels.Where(h => h.PublicLikes.Contains("Bob"));
+
+// .Count
+context.Hotels.Where(h => h.PublicLikes.Count == 3);
+
+// .Any(predicate)
+context.Hotels.Where(h => h.PublicLikes.Any(n => n.StartsWith("Car")));
+```
+
+Indexer/`.ElementAt()` access always behaves like `.ElementAtOrDefault()` — an out-of-range or
+negative index returns the element type's default value rather than throwing, since N1QL's array
+subscript returns `MISSING` (falsy) for an out-of-range position instead of erroring.
+
+**Limitations**: there is no supported way to observe or rely on array position beyond direct
+indexing — `.OrderBy(...).ElementAt(...)` and `.Where(...).ElementAt(...)` compositions, and
+reverse-`.Contains()` over a local in-memory collection (`someList.Contains(h.SomeProperty)`), are
+not supported for a primitive collection source. See [limitations.md](limitations.md).
+
