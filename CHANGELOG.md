@@ -9,6 +9,17 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ### Added
 
+- **Indexer/`.ElementAt()` over a depth-1 `OwnsMany` navigation** (e.g.
+  `customer.ContactMethods[0].Type`). Previously fell back to EF Core's generic correlated-subquery
+  + OFFSET/LIMIT translation, which — like `.Any(predicate)` before its own fix — hit the same
+  empty-FROM-clause bug (the owned collection's `TableExpression` renders as nothing) and, when
+  used as a projection, additionally returned `null` because EF Core never assigns this shape a
+  projection alias and the fallback alias-inference didn't recognize it either. Now translates to
+  N1QL's native `parentAlias.field[index].propertyName` array subscript, mirroring
+  `.Any(predicate)`'s own detect/strip/render approach. Behaves like `.ElementAtOrDefault()`
+  (out-of-range returns the default rather than throwing). `.Where(...).ElementAt(...)`
+  compositions and indexing into a scalar collection nested inside an owned item are not yet
+  supported. See [Modeling — OwnsMany](docs/modeling.md#ownsmany).
 - **Scalar primitive collections (`List<T>`/`T[]`, not `OwnsMany`).** A `List<T>`/`T[]` property
   of a scalar element type mapped directly on an entity is now stored as a native JSON array
   (previously silently double-encoded as a JSON string via EF Core's default primitive-collection

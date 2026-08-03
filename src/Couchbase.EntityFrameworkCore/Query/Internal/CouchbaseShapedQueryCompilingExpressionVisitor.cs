@@ -243,7 +243,7 @@ public class CouchbaseShapedQueryCompilingExpressionVisitor : RelationalShapedQu
             // the N1QL result and return DBNull via CouchbaseDbDataReader, which is the expected
             // signal for "no collection rows" — PopulateCollectionNavigations then fills the
             // actual collection from the embedded JSON array.
-            var uniqueAliases = CouchbaseProjectionAliases.ComputeUnique(selectExpression.Projection);
+            var uniqueAliases = CouchbaseProjectionAliases.ComputeUnique(selectExpression.Projection, _couchbaseDbContextOptionsBuilder.FieldNamingPolicy);
             var projectionAliasesExpression = CreateStringArrayLiftableConstant(uniqueAliases, "projectionAliases");
 
             // Resolve each owned navigation's FINAL (post-uniquification) alias, so

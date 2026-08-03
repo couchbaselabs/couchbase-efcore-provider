@@ -194,6 +194,10 @@ N1QL's own `MISSING`-for-out-of-range semantics.
 over a local in-memory collection are not supported for a primitive collection source — see
 [Limitations](limitations.md).
 
+Indexer/`.ElementAt()` is also supported over a depth-1 `OwnsMany` navigation (e.g.
+`customer.ContactMethods[0].Type`), translating to the same native array-subscript approach — see
+[Modeling — OwnsMany](modeling.md#ownsmany).
+
 ## SQL queries
 
 > [!NOTE]

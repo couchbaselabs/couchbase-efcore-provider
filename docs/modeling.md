@@ -326,6 +326,21 @@ var withPhone = await context.Customers
 e.g. `c.ContactMethods.Any(m => m.Tags.Any(...))`), `.All(predicate)`, `.Count(predicate)`, and
 `.Contains()` over an owned collection are not yet supported.
 
+Indexer/`.ElementAt()` access is also supported for a depth-1 `OwnsMany` navigation, translating
+to N1QL's native `parentAlias.field[index].propertyName` array subscript:
+
+```csharp
+var customersWithEmailFirst = await context.Customers
+    .Where(c => c.ContactMethods[0].Type == "email")
+    .ToListAsync();
+```
+
+As with a scalar [primitive collection](#primitive-collections)'s indexer, this always behaves
+like `.ElementAtOrDefault()` — an out-of-range index is excluded/returns default rather than
+throwing. `.Where(...).ElementAt(...)` composed before the index, and indexing into a scalar
+collection nested *inside* an owned item (e.g. `customer.ContactMethods[0].Tags[0]`), are not yet
+supported.
+
 ### Field-backed access
 
 If an owned type's properties are get-only (backed by a private field, with no public setter),

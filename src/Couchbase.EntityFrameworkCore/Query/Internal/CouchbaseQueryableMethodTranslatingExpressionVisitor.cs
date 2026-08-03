@@ -96,15 +96,30 @@ public class CouchbaseQueryableMethodTranslatingExpressionVisitor : RelationalQu
     /// <see cref="TranslatePrimitiveCollection"/> for why that approach isn't available here.
     /// Only handles the exact, untouched shape <see cref="TranslatePrimitiveCollection"/> itself
     /// produces (a bare <see cref="CouchbaseUnnestExpression"/>, no predicate/ordering/offset/limit
-    /// applied yet) -- anything else (e.g. <c>.Where(...).ElementAt(i)</c>,
-    /// <c>.OrderBy(...).ElementAt(i)</c>) returns <see langword="null"/>, which surfaces as EF
-    /// Core's standard "could not be translated" exception rather than silently producing an
-    /// incorrect result for a composition this provider cannot express correctly.
+    /// applied yet). Any OTHER composition over a <see cref="CouchbaseUnnestExpression"/> source --
+    /// <c>.Where(...).ElementAt(i)</c>, <c>.OrderBy(...).ElementAt(i)</c> -- returns
+    /// <see langword="null"/> outright rather than falling back to the base implementation, which
+    /// would still render as syntactically valid but semantically nondeterministic N1QL for that
+    /// source (no <c>AT alias</c> positional binding exists for this provider's unnest rendering,
+    /// so there's no real row order to skip over) -- silently returning a wrong element instead of
+    /// failing loudly. A non-unnest source (e.g. an <c>OwnsMany</c> navigation's FK-joined
+    /// <see cref="TableExpression"/>) still falls back to the base implementation, which
+    /// <see cref="CouchbaseQuerySqlGenerator"/> has its own chance to render correctly (or reject)
+    /// at the SQL-generation layer.
     /// </summary>
     protected override ShapedQueryExpression? TranslateElementAtOrDefault(
         ShapedQueryExpression source, Expression index, bool returnDefault)
     {
-        if (source.QueryExpression is not SelectExpression
+        if (source.QueryExpression is not SelectExpression { Tables: [CouchbaseUnnestExpression] } unnestSourceSelect)
+        {
+            // Not a primitive-collection source at all (e.g. an OwnsMany navigation's FK-joined
+            // TableExpression) -- fall back to the base implementation, which
+            // CouchbaseQuerySqlGenerator has its own chance to render correctly (or reject) at the
+            // SQL-generation layer.
+            return base.TranslateElementAtOrDefault(source, index, returnDefault);
+        }
+
+        if (unnestSourceSelect is not
             {
                 Tables: [CouchbaseUnnestExpression unnestExpression],
                 Predicate: null,
@@ -114,6 +129,13 @@ public class CouchbaseQueryableMethodTranslatingExpressionVisitor : RelationalQu
                 IsDistinct: false,
             } selectExpression)
         {
+            // A primitive-collection source with extra composition already applied --
+            // .Where(...).ElementAt(i), .OrderBy(...).ElementAt(i). Must return null outright
+            // rather than fall back: the base OFFSET/LIMIT implementation would still render as
+            // syntactically valid N1QL over this source (CouchbaseQuerySqlGenerator.GenerateUnnest
+            // handles it), but semantically nondeterministic -- no AT alias positional binding
+            // exists for this provider's unnest rendering, so there's no real row order to skip
+            // over, and it would silently return a wrong element instead of failing loudly.
             return null;
         }
 
