@@ -70,10 +70,11 @@ The Couchbase SDK is asynchronous, so the synchronous EF Core code paths throw `
   `OwnsMany`) or as related entities. Plain CLR objects nested on an entity that are
   not mapped this way are ignored by EF Core.
 * **`.Any(predicate)`/`.All(predicate)`/`.Count(predicate)` over an `OwnsMany` navigation are
-  supported only one level deep** (a collection declared directly on the entity being queried) --
-  the *nested* case (reached through another owned navigation, e.g.
-  `c.ContactMethods.Any(m => m.Tags.Any(...))`) is not yet supported. See
-  [Modeling — OwnsMany](modeling.md#ownsmany).
+  supported at any nesting depth** — both a collection declared directly on the entity being
+  queried and the *nested* case, reached through another owned navigation (e.g.
+  `c.ContactMethods.Any(m => m.Tags.Any(t => t.Key == "priority"))`, or deeper). An indexer access
+  can also appear as the innermost predicate (e.g. `c.ContactMethods.Any(m => m.Tags[0].Key ==
+  "priority")`). See [Modeling — OwnsMany](modeling.md#ownsmany).
 * **`.Contains()` directly on an `OwnsMany` navigation is not supported** — this is a crash inside
   EF Core's own core query-translation code, not a gap in this provider's SQL generation, and
   would reproduce for any relational provider once the owned collection's key is composite (the
@@ -89,8 +90,13 @@ The Couchbase SDK is asynchronous, so the synchronous EF Core code paths throw `
 * **Indexer/`.ElementAt()` over a depth-1 `OwnsMany` navigation** (e.g.
   `customer.ContactMethods[0].Type`) has the same `.ElementAtOrDefault()`-like out-of-range
   behavior and the same `.Where(...).ElementAt(...)`-composition limitation as a primitive
-  collection's indexer. Indexing into a scalar collection *nested inside* an owned item (e.g.
-  `customer.ContactMethods[0].Tags[0]`) is not yet supported. See
+  collection's indexer.
+* **A direct chained indexer through two levels of `OwnsMany` is not supported** (e.g.
+  `customer.ContactMethods[0].Tags[0].Key`) — this is a crash inside EF Core's own core
+  query-translation code (`InvalidOperationException`, "could not be translated"), not a gap in
+  this provider's SQL generation, the same class of limitation as `.Contains()` over an `OwnsMany`
+  navigation above. Use `.Any(predicate)` with an inner indexer instead (e.g.
+  `customer.ContactMethods.Any(m => m.Tags[0].Key == "priority")`), which is fully supported. See
   [Modeling — OwnsMany](modeling.md#ownsmany).
 
 See also [Querying](Queries.md) and [Configuration](configuration.md).
