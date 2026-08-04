@@ -349,9 +349,19 @@ arbitrary (tracked or untracked) `ContactMethod` instance to build the compariso
 property has no CLR getter to read from. `.Any(predicate)` (comparing individual properties, not
 the whole entity) is the supported alternative.
 
-`.Any(predicate)`/`.All(predicate)`/`.Count(predicate)` over a *nested* owned collection (one
-reached through another owned navigation, e.g. `c.ContactMethods.Any(m => m.Tags.Any(...))`) are
-not yet supported.
+`.Any(predicate)`/`.All(predicate)`/`.Count(predicate)` also work when the target collection is
+reached through *another* owned navigation (nested, depth > 1), e.g.:
+
+```csharp
+var withPriorityTag = await context.Customers
+    .Where(c => c.ContactMethods.Any(m => m.Tags.Any(t => t.Key == "priority")))
+    .ToListAsync();
+```
+
+This needs no special-cased translation: each level's `ANY ... SATISFIES ... END` (or correlated
+`COUNT` subquery) is rendered relative to the enclosing level's own array alias, so the same
+mechanism just recurses naturally to any depth. An indexer access can also appear as the
+innermost predicate, e.g. `c.ContactMethods.Any(m => m.Tags[0].Key == "priority")`.
 
 Indexer/`.ElementAt()` access is also supported for a depth-1 `OwnsMany` navigation, translating
 to N1QL's native `parentAlias.field[index].propertyName` array subscript:
@@ -364,9 +374,12 @@ var customersWithEmailFirst = await context.Customers
 
 As with a scalar [primitive collection](#primitive-collections)'s indexer, this always behaves
 like `.ElementAtOrDefault()` — an out-of-range index is excluded/returns default rather than
-throwing. `.Where(...).ElementAt(...)` composed before the index, and indexing into a scalar
-collection nested *inside* an owned item (e.g. `customer.ContactMethods[0].Tags[0]`), are not yet
-supported.
+throwing. `.Where(...).ElementAt(...)` composed before the index is not supported. **A direct
+chained indexer through two levels of `OwnsMany`** (e.g. `customer.ContactMethods[0].Tags[0].Key`,
+as opposed to an indexer appearing inside a `.Any(predicate)` as shown above) **is not
+supported** — this fails inside EF Core's own core query-translation code before any
+Couchbase-specific code runs, the same class of limitation as `.Contains()` above. Use
+`.Any(predicate)` with an inner indexer instead.
 
 ### Field-backed access
 

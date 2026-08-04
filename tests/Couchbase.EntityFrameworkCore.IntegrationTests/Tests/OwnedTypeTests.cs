@@ -1376,4 +1376,98 @@ public class OwnedTypeTests(
         Assert.Single(customers);
         Assert.Equal(1, customers[0].CustomerId);
     }
+
+    // -------------------------------------------------------------------------
+    // .Any()/.All()/.Count(predicate)/indexer through a collection reached via ANOTHER owned
+    // navigation (depth > 1), e.g. customer.ContactMethods.Any(cm => cm.Tags.Any(...)).
+    //
+    // None of this needed new production code -- CouchbaseQuerySqlGenerator's owned-collection
+    // detection (TryGetOwnedEntityTypes/TryStripCorrelation) is written generically per-owned-type
+    // and alias-parameterized, so Visit(residual) naturally recurses back into the same logic for
+    // the inner shape. Only Carol (3) has any ContactMethod with a Tags entry at all: her "email"
+    // method has Tags [{Key="priority", Val="high", Audits=[...]}, {Key="verified", Val="true"}],
+    // her "phone" method has Tags=[]. Alice (1) and Bob (2) have Tags=[] on every ContactMethod.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task OwnsMany_NestedAny_ReturnsOnlyCustomerWithMatchingNestedTag()
+    {
+        await using var ctx = fixture.GetDbContext();
+        var customers = await ctx.Customers
+            .Where(c => c.ContactMethods.Any(cm => cm.Tags.Any(t => t.Key == "priority")))
+            .ToListAsync();
+
+        Assert.Single(customers);
+        Assert.Equal(3, customers[0].CustomerId);
+    }
+
+    [Fact]
+    public async Task OwnsMany_NestedAny_Negated_ExcludesCustomerWithMatchingNestedTag()
+    {
+        await using var ctx = fixture.GetDbContext();
+        var customers = await ctx.Customers
+            .Where(c => !c.ContactMethods.Any(cm => cm.Tags.Any(t => t.Key == "priority")))
+            .ToListAsync();
+
+        Assert.Equal(2, customers.Count);
+        Assert.Contains(customers, c => c.CustomerId == 1);
+        Assert.Contains(customers, c => c.CustomerId == 2);
+        Assert.DoesNotContain(customers, c => c.CustomerId == 3);
+    }
+
+    [Fact]
+    public async Task OwnsMany_NestedCountWithPredicate_ReturnsOnlyMatchingCustomer()
+    {
+        await using var ctx = fixture.GetDbContext();
+        var customers = await ctx.Customers
+            .Where(c => c.ContactMethods.Any(cm => cm.Tags.Count(t => t.Key == "priority") > 0))
+            .ToListAsync();
+
+        Assert.Single(customers);
+        Assert.Equal(3, customers[0].CustomerId);
+    }
+
+    [Fact]
+    public async Task OwnsMany_OuterCountWithNestedAnyPredicate_ReturnsOnlyMatchingCustomer()
+    {
+        // Counts ContactMethods that themselves have a matching nested Tag -- only Carol's
+        // "email" method qualifies, so the count is exactly 1 for Carol and 0 for everyone else.
+        await using var ctx = fixture.GetDbContext();
+        var customers = await ctx.Customers
+            .Where(c => c.ContactMethods.Count(cm => cm.Tags.Any(t => t.Key == "priority")) >= 1)
+            .ToListAsync();
+
+        Assert.Single(customers);
+        Assert.Equal(3, customers[0].CustomerId);
+    }
+
+    [Fact]
+    public async Task OwnsMany_NestedAnyWithInnerIndexer_ReturnsOnlyMatchingCustomer()
+    {
+        // .Any() wrapping an inner indexer access (cm.Tags[0]) rather than a further .Any()/.All().
+        // Empty Tags arrays (Alice/Bob, and Carol's "phone" method) must not throw -- N1QL's
+        // array-subscript on an out-of-range/empty array evaluates to MISSING/NULL, which safely
+        // compares false rather than erroring server-side.
+        await using var ctx = fixture.GetDbContext();
+        var customers = await ctx.Customers
+            .Where(c => c.ContactMethods.Any(cm => cm.Tags[0].Key == "priority"))
+            .ToListAsync();
+
+        Assert.Single(customers);
+        Assert.Equal(3, customers[0].CustomerId);
+    }
+
+    [Fact]
+    public async Task OwnsMany_DoublyNestedAny_Depth3ThroughAudits_ReturnsOnlyMatchingCustomer()
+    {
+        // Three levels of owned-collection nesting: Customer -> ContactMethods -> Tags -> Audits.
+        // Only Carol's "priority" tag has an audit with Note == "confirmed".
+        await using var ctx = fixture.GetDbContext();
+        var customers = await ctx.Customers
+            .Where(c => c.ContactMethods.Any(cm => cm.Tags.Any(t => t.Audits.Any(a => a.Note == "confirmed"))))
+            .ToListAsync();
+
+        Assert.Single(customers);
+        Assert.Equal(3, customers[0].CustomerId);
+    }
 }

@@ -9,6 +9,18 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ### Added
 
+- **`.Any(predicate)`/`.All(predicate)`/`.Count(predicate)` over a *nested* `OwnsMany` navigation**
+  (reached through another owned navigation, e.g. `c.ContactMethods.Any(m => m.Tags.Any(t =>
+  t.Key == "priority"))`, at any depth) — confirmed to need no new production code: the existing
+  owned-collection detection is written generically per-owned-type and alias-parameterized (not
+  hardcoded to the top-level navigation), so it naturally recurses for the inner shape. An indexer
+  access can also appear as the innermost predicate (e.g. `c.ContactMethods.Any(m => m.Tags[0].Key
+  == "priority")`). A *direct chained* indexer through two levels with no `.Any()`/`.All()`/
+  `.Count()` wrapping it (e.g. `customer.ContactMethods[0].Tags[0].Key`) is confirmed **not**
+  fixable at this provider's layer — it fails inside EF Core's own core query-translation code
+  before any Couchbase-specific code runs, the same class of limitation as `.Contains()` below;
+  use `.Any(predicate)` with an inner indexer instead. See
+  [Modeling — OwnsMany](docs/modeling.md#ownsmany).
 - **`.All(predicate)` and `.Count(predicate)` over a depth-1 `OwnsMany` navigation.**
   `.All(predicate)` needed no new production code — EF Core translates it as the same
   `NOT EXISTS(... WHERE NOT predicate)` shape `.Any(predicate)` already produces, so it flows
