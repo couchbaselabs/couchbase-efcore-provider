@@ -9,6 +9,19 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ### Added
 
+- **`.All(predicate)` and `.Count(predicate)` over a depth-1 `OwnsMany` navigation.**
+  `.All(predicate)` needed no new production code — EF Core translates it as the same
+  `NOT EXISTS(... WHERE NOT predicate)` shape `.Any(predicate)` already produces, so it flows
+  through the existing owned-collection detection for free. `.Count(predicate)`/predicate-less
+  `.Count()` translate to a correlated
+  `(SELECT RAW COUNT(*) FROM parentAlias.field AS alias [WHERE predicate])[0]` subquery, mirroring
+  `.Any(predicate)`'s detect/strip/render approach. Any other aggregate composed over an owned
+  collection (e.g. `.Sum()`, `.Max()`) now throws a clear `NotSupportedException` instead of
+  silently producing an empty-FROM-clause N1QL parse error. `.Contains()` directly on an
+  `OwnsMany` navigation is confirmed **not** fixable at this provider's layer — it crashes inside
+  EF Core's own core query-translation code (`RelationalSqlTranslatingExpressionVisitor.ParameterValueExtractor`)
+  for any relational provider once the owned collection's key is composite, EF Core's default for
+  an owned type; use `.Any(predicate)` instead. See [Modeling — OwnsMany](docs/modeling.md#ownsmany).
 - **Indexer/`.ElementAt()` over a depth-1 `OwnsMany` navigation** (e.g.
   `customer.ContactMethods[0].Type`). Previously fell back to EF Core's generic correlated-subquery
   + OFFSET/LIMIT translation, which — like `.Any(predicate)` before its own fix — hit the same

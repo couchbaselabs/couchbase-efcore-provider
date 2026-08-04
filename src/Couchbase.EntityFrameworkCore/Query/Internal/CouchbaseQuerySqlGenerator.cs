@@ -686,11 +686,17 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
             return scalarSubqueryExpression;
         }
 
-        // TryRenderOwnedElementAt returned false either because this isn't an owned-collection
-        // ElementAt shape at all (falls through to the generic rendering below, which is correct
-        // for e.g. Count()/Sum()/Max() subqueries), or because it IS one but with an unsupported
-        // composition on top (.Where(...)/.OrderBy(...) before .ElementAt(i) -- out of scope, see
-        // TryResolveOwnedElementAt's remarks). The latter must not fall through: VisitTable
+        if (TryRenderOwnedCollectionCount(scalarSubqueryExpression.Subquery))
+        {
+            return scalarSubqueryExpression;
+        }
+
+        // Neither of the above matched, either because this isn't an owned-collection subquery at
+        // all (falls through to the generic rendering below, which is correct for e.g.
+        // Sum()/Max() subqueries), or because it IS one but with an unsupported shape --
+        // .Where(...)/.OrderBy(...) before .ElementAt(i), or anything other than a plain
+        // .Count(predicate)-shaped COUNT(*) (out of scope, see TryResolveOwnedElementAt's and
+        // TryRenderOwnedCollectionCount's remarks). The latter must not fall through: VisitTable
         // renders an owned TableExpression as nothing (it's embedded JSON, not a real keyspace),
         // so the generic rendering below would silently produce an empty-FROM-clause N1QL parse
         // error instead of a clear translation-time failure.
@@ -698,8 +704,9 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
             && TryGetOwnedEntityTypes(ownedTableCandidate, out _))
         {
             throw new NotSupportedException(
-                "Composing .Where(...)/.OrderBy(...) before an indexer/.ElementAt() access over an "
-                + "OwnsMany navigation is not supported.");
+                "This composition over an OwnsMany navigation is not supported (e.g. composing "
+                + ".Where(...)/.OrderBy(...) before an indexer/.ElementAt() access, or a "
+                + "non-Count() aggregate other than .Any()/.All(predicate)/.Count(predicate)).");
         }
 
         Sql.AppendLine("(");
@@ -711,6 +718,81 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
         Sql.Append(")[0]");
 
         return scalarSubqueryExpression;
+    }
+
+    /// <summary>
+    /// Renders <c>(SELECT RAW COUNT(*) FROM parentAlias.field AS ownedAlias [WHERE
+    /// predicate])[0]</c> in place of the base class's generic correlated-subquery translation of
+    /// <c>.Count(predicate)</c> over a depth-1 <c>OwnsMany</c> navigation -- mirrors
+    /// <see cref="TryRenderOwnedCollectionAny"/>'s detect/strip/render pattern, using the same
+    /// bare-correlated-array-as-FROM-term shape already proven live for a scalar primitive
+    /// collection's <c>.Count</c> (<see cref="CouchbaseQueryableMethodTranslatingExpressionVisitor.TranslatePrimitiveCollection"/>),
+    /// just substituting the owned array field for the primitive one. The trailing <c>[0]</c>
+    /// unwrap matches every other scalar subquery this generator renders (see
+    /// <see cref="VisitScalarSubquery"/>'s remarks on N1QL's array-valued subquery-expression
+    /// semantics).
+    /// </summary>
+    private bool TryRenderOwnedCollectionCount(SelectExpression subquery)
+    {
+        if (subquery is not
+            {
+                Tables: [TableExpression ownedTable],
+                Projection: [{ Expression: SqlFunctionExpression { IsBuiltIn: true, Name: "COUNT" } }],
+                Orderings: [],
+                Offset: null,
+                Limit: null,
+                IsDistinct: false,
+            }
+            || !TryGetOwnedEntityTypes(ownedTable, out var ownedEntityTypes))
+        {
+            return false;
+        }
+
+        foreach (var candidate in ownedEntityTypes)
+        {
+            var ownership = candidate.FindOwnership();
+            if (ownership?.PrincipalToDependent == null)
+            {
+                continue;
+            }
+
+            if (!TryStripCorrelation(subquery.Predicate, ownedTable.Alias!, ownership, out var residual, out var parentAlias))
+            {
+                continue;
+            }
+
+            var fieldName = CouchbaseProjectionAliases.GetOwnedCollectionFieldName(ownership.PrincipalToDependent, _fieldNamingPolicy);
+            var helper = Dependencies.SqlGenerationHelper;
+
+            Sql.Append("(SELECT RAW COUNT(*) FROM ")
+                .Append(helper.DelimitIdentifier(parentAlias!))
+                .Append(".")
+                .Append(helper.DelimitIdentifier(fieldName))
+                .Append(" AS ")
+                .Append(helper.DelimitIdentifier(ownedTable.Alias!));
+
+            if (residual != null)
+            {
+                Sql.Append(" WHERE ");
+
+                var previous = _ownedAnyAlias;
+                _ownedAnyAlias = ownedTable.Alias;
+                try
+                {
+                    Visit(residual);
+                }
+                finally
+                {
+                    _ownedAnyAlias = previous;
+                }
+            }
+
+            Sql.Append(")[0]");
+
+            return true;
+        }
+
+        return false;
     }
 
     /// <summary>
