@@ -42,6 +42,18 @@ namespace Couchbase.EntityFrameworkCore.Query.Internal.Translators;
 /// <c>.Today</c> branches have no associated property/instance and always use the context-wide
 /// default -- there is no per-property signal available for them.
 /// </para>
+/// <para>
+/// If <paramref name="instance"/>'s resolved type mapping carries a
+/// <see cref="Storage.Internal.UnixMillisDateTimeConverter"/> (i.e. the property is
+/// <see cref="Metadata.UnixMillisDateTimeAttribute"/>-annotated), the date-part and <c>.Date</c>
+/// members instead translate to N1QL's <c>_MILLIS</c> date-function family
+/// (<c>DATE_PART_MILLIS</c>/<c>DATE_TRUNC_MILLIS</c>), which operates on/returns milliseconds
+/// directly -- no format string involved, unlike the <c>_STR</c> family. This check is confirmed
+/// necessary empirically: EF Core's own binary-comparison type inference does NOT propagate a
+/// converted property's type mapping onto anything -- each side of a comparison/member access is
+/// translated independently, so without this branch a millis-mapped property's <c>.Year</c>/
+/// <c>.Date</c> would silently emit a <c>_STR</c>-family call against a <c>NUMBER</c> column.
+/// </para>
 /// </summary>
 public class CouchbaseDateTimeMemberTranslator : IMemberTranslator
 {
@@ -82,6 +94,16 @@ public class CouchbaseDateTimeMemberTranslator : IMemberTranslator
     {
         if (instance != null && DatePartMappings.TryGetValue(member, out var part))
         {
+            if (UnixMillisDateTimeConverter.IsUnixMillis(instance.TypeMapping))
+            {
+                return _sqlExpressionFactory.Function(
+                    "DATE_PART_MILLIS",
+                    new[] { instance, _sqlExpressionFactory.Constant(part) },
+                    nullable: true,
+                    argumentsPropagateNullability: new[] { true, false },
+                    returnType);
+            }
+
             return _sqlExpressionFactory.Function(
                 "DATE_PART_STR",
                 new[] { instance, _sqlExpressionFactory.Constant(part) },
@@ -92,6 +114,17 @@ public class CouchbaseDateTimeMemberTranslator : IMemberTranslator
 
         if (instance != null && DateMemberInfo.Equals(member))
         {
+            if (UnixMillisDateTimeConverter.IsUnixMillis(instance.TypeMapping))
+            {
+                return _sqlExpressionFactory.Function(
+                    "DATE_TRUNC_MILLIS",
+                    new[] { instance, _sqlExpressionFactory.Constant("day") },
+                    nullable: true,
+                    argumentsPropagateNullability: new[] { true, false },
+                    returnType,
+                    instance.TypeMapping);
+            }
+
             // Prefer the format baked into the instance's own resolved type mapping -- this is
             // how a per-property [DateTimeFormat]/HasDateTimeFormat override (a distinct
             // CouchbaseDateTimeTypeMapping instance per property) takes effect, with zero DI

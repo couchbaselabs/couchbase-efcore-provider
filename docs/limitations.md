@@ -98,6 +98,15 @@ The Couchbase SDK is asynchronous, so the synchronous EF Core code paths throw `
   navigation above. Use `.Any(predicate)` with an inner indexer instead (e.g.
   `customer.ContactMethods.Any(m => m.Tags[0].Key == "priority")`), which is fully supported. See
   [Modeling — OwnsMany](modeling.md#ownsmany).
+* **A `[UnixMillisDateTime]`-mapped property cannot be compared directly against
+  `DateTime.UtcNow`/`.Now`/`.Today`** — these static members have no associated property, so they
+  always translate to the string-based date-function family regardless of what they're compared
+  against, and the comparison throws `NotSupportedException` at query-translation time rather than
+  silently comparing a `NUMBER` against a string. Capture the value into a local variable before
+  the query instead. This mode also has no bearing on GSI/secondary-index alignment — this
+  provider has no `HasIndex()` support at all (see above), so whether a hand-created secondary
+  index matches a millis-mapped comparison's shape is entirely the user's own responsibility. See
+  [Unix-millis DateTime storage](configuration.md#unix-millis-datetime-storage).
 
 See also [Querying](Queries.md) and [Configuration](configuration.md).
 

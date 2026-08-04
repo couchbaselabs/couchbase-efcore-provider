@@ -137,6 +137,52 @@ that specific property — the static `DateTime.Now`/`.UtcNow`/`.Today` translat
 associated property to read an override from, so they always use the context-wide default even
 in a query that also touches an overridden property.
 
+### Unix-millis DateTime storage
+
+Some Couchbase data stores dates as Unix epoch milliseconds (a JSON `NUMBER`) rather than a
+string. Mark a property with `[UnixMillisDateTime]` (or the `HasUnixMillisDateTime` fluent API) to
+store and query it that way instead of this provider's default ISO-8601 string:
+
+```csharp
+public class Event
+{
+    public int Id { get; set; }
+
+    [UnixMillisDateTime]
+    public DateTime OccurredAt { get; set; }
+}
+```
+
+```csharp
+// Equivalent fluent form:
+modelBuilder.Entity<Event>()
+    .Property(e => e.OccurredAt)
+    .HasUnixMillisDateTime();
+```
+
+Under the hood this attaches a `ValueConverter<DateTime, long>` — EF Core's own standard
+value-conversion mechanism — so normal read/write paths need no special handling. Query-side member
+access (`.Year`, `.Date`, `Add*`) translates to N1QL's `_MILLIS` date-function family
+(`DATE_PART_MILLIS`/`DATE_TRUNC_MILLIS`/`DATE_ADD_MILLIS`) instead of the `_STR` family used for the
+default string representation — see [Supported functions](Queries.md#supported-functions).
+
+**Comparing against `DateTime.UtcNow`/`.Now`/`.Today` directly is not supported.** These static
+members have no associated property, so they always translate to the `_STR`-family functions
+regardless of what they're compared against — each side of a comparison is translated
+independently, with the static member's N1QL function chosen before any binary-expression-level
+context exists to know it's being compared against a millis column. Comparing a
+`[UnixMillisDateTime]` property directly against one of them throws `NotSupportedException` at
+query-translation time rather than silently comparing a `NUMBER` against a `_STR` function's
+string result. Capture the value into a local variable before the query instead:
+
+```csharp
+var now = DateTime.UtcNow;
+var recent = await context.Events.Where(e => e.OccurredAt > now).ToListAsync();
+```
+
+A captured local becomes a query parameter, which correctly infers the millis conversion from the
+property it's compared against — unlike the static members, which never see that context.
+
 ## Multiple buckets and clusters
 
 By default a `DbContext` targets a single configured bucket (and scope), and every entity is

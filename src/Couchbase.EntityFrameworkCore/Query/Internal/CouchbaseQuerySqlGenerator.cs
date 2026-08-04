@@ -9,6 +9,7 @@ using System.Reflection.Metadata;
 using System.Text;
 using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.EntityFrameworkCore.Metadata;
+using Couchbase.EntityFrameworkCore.Storage.Internal;
 using Couchbase.EntityFrameworkCore.Utils;
 using Couchbase.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
@@ -1223,6 +1224,55 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
             .Append(Dependencies.SqlGenerationHelper.DelimitIdentifier(tableExpression.Alias));
 
         return tableExpression;
+    }
+
+    private static readonly HashSet<string> DateTimeStrFunctionNames =
+        new(StringComparer.Ordinal) { "NOW_UTC", "NOW_LOCAL", "DATE_TRUNC_STR", "DATE_PART_STR", "DATE_ADD_STR" };
+
+    private static readonly HashSet<ExpressionType> ComparisonOperators = new()
+    {
+        ExpressionType.Equal, ExpressionType.NotEqual,
+        ExpressionType.LessThan, ExpressionType.LessThanOrEqual,
+        ExpressionType.GreaterThan, ExpressionType.GreaterThanOrEqual,
+    };
+
+    /// <summary>
+    /// Guards against a confirmed structural limitation: <see cref="DateTime.UtcNow"/>/
+    /// <see cref="DateTime.Now"/>/<see cref="DateTime.Today"/> have no associated property, so
+    /// <see cref="Metadata.UnixMillisDateTimeAttribute"/>-mapped properties (stored as a
+    /// <c>NUMBER</c>) cannot be compared against them directly -- each side of a comparison is
+    /// translated independently, with the static member's <c>_STR</c>-family N1QL function chosen
+    /// before any binary-expression-level context exists to know it's being compared against a
+    /// millis column. Confirmed empirically: EF Core's binary-comparison type inference does not
+    /// (and structurally cannot) retroactively change an already-built function call. Rather than
+    /// silently comparing a <c>NUMBER</c> against a <c>_STR</c> function's string result (which
+    /// would produce a wrong-but-plausible-looking query), detect the shape here and throw --
+    /// mirrors this provider's established "fail loud instead of silently wrong" pattern (e.g. the
+    /// <c>NotSupportedException</c> thrown for an unsupported aggregate over an owned collection).
+    /// </summary>
+    protected override Expression VisitSqlBinary(SqlBinaryExpression sqlBinaryExpression)
+    {
+        if (ComparisonOperators.Contains(sqlBinaryExpression.OperatorType))
+        {
+            CheckForMismatchedDateTimeStorageComparison(sqlBinaryExpression.Left, sqlBinaryExpression.Right);
+            CheckForMismatchedDateTimeStorageComparison(sqlBinaryExpression.Right, sqlBinaryExpression.Left);
+        }
+
+        return base.VisitSqlBinary(sqlBinaryExpression);
+    }
+
+    private static void CheckForMismatchedDateTimeStorageComparison(SqlExpression millisSide, SqlExpression strSide)
+    {
+        if (UnixMillisDateTimeConverter.IsUnixMillis(millisSide.TypeMapping)
+            && strSide is SqlFunctionExpression { IsBuiltIn: true, Name: var name }
+            && DateTimeStrFunctionNames.Contains(name))
+        {
+            throw new NotSupportedException(
+                "Comparing a [UnixMillisDateTime] property directly against DateTime.UtcNow/.Now/.Today "
+                + "is not supported -- these static members have no associated property, so they cannot "
+                + "be translated as milliseconds to match. Capture the value into a local variable before "
+                + "the query instead, e.g. `var now = DateTime.UtcNow; ... .Where(x => x.MillisProp > now)`.");
+        }
     }
 
     protected override Expression VisitColumn(ColumnExpression columnExpression)

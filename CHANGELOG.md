@@ -9,6 +9,20 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ### Added
 
+- **`[UnixMillisDateTime]`/`HasUnixMillisDateTime` — Unix-millis `DateTime` storage mode.** Stores a
+  `DateTime` property as Unix epoch milliseconds (a JSON `NUMBER`) instead of this provider's
+  default ISO-8601 string, for data that already uses that convention. Attaches a
+  `ValueConverter<DateTime, long>` via EF Core's own standard `HasConversion` mechanism — composed
+  with the existing `typeof(long)` -> `LongTypeMapping("NUMBER")` entry with no new type-mapping
+  class or `FindMapping(IProperty)` override needed (confirmed via `.ToQueryString()` spike:
+  `instance.TypeMapping` on a converted property already resolves correctly through EF Core's own
+  generic converter-composition machinery). `.Year`/`.Month`/etc./`.Date`/`Add*` translate to
+  N1QL's `DATE_PART_MILLIS`/`DATE_TRUNC_MILLIS`/`DATE_ADD_MILLIS` instead of the `_STR` family.
+  Confirmed structural limitation, not fixable via smarter type propagation: comparing a
+  millis-mapped property directly against `DateTime.UtcNow`/`.Now`/`.Today` now throws a clear
+  `NotSupportedException` at query-translation time (previously would have silently compared a
+  `NUMBER` against a string) — capture the value into a local variable before the query instead.
+  See [Unix-millis DateTime storage](docs/configuration.md#unix-millis-datetime-storage).
 - **`.Any(predicate)`/`.All(predicate)`/`.Count(predicate)` over a *nested* `OwnsMany` navigation**
   (reached through another owned navigation, e.g. `c.ContactMethods.Any(m => m.Tags.Any(t =>
   t.Key == "priority"))`, at any depth) — confirmed to need no new production code: the existing
