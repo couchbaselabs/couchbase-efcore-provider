@@ -76,13 +76,35 @@ internal static class CouchbaseProjectionAliases
     /// *desired* key (what the reader expects), which for a <c>META(alias).field</c> projection is
     /// still the property's own name (e.g. <c>"DocId"</c>) -- see <see cref="NeedsExplicitAlias"/>
     /// for why such a projection can never rely on N1QL's own implicit naming to produce that key.
+    /// <para>
+    /// A projection folded from indexer/<c>.ElementAt()</c> access over a depth-1 <c>OwnsMany</c>
+    /// navigation (<see cref="CouchbaseQuerySqlGenerator.TryResolveOwnedElementAt"/>) gets no
+    /// alias from EF Core at all (unlike a plain member access) -- resolved here as the accessed
+    /// property's own (policy-converted) name, matching exactly what
+    /// <see cref="CouchbaseQuerySqlGenerator"/> renders as the trailing <c>.propertyName</c>
+    /// segment of the native array subscript it emits for this shape.
+    /// </para>
     /// </summary>
-    public static string EffectiveAlias(ProjectionExpression projection)
-        => projection.Alias != string.Empty
-            ? projection.Alias
-            : projection.Expression is ColumnExpression c
-                ? c.Name
-                : string.Empty;
+    public static string EffectiveAlias(ProjectionExpression projection, JsonNamingPolicy? fieldNamingPolicy = null)
+    {
+        if (projection.Alias != string.Empty)
+        {
+            return projection.Alias;
+        }
+
+        if (projection.Expression is ColumnExpression c)
+        {
+            return c.Name;
+        }
+
+        if (projection.Expression is ScalarSubqueryExpression { Subquery: var subquery }
+            && CouchbaseQuerySqlGenerator.TryResolveOwnedElementAt(subquery, out _, out _, out _, out var elementAtColumn))
+        {
+            return fieldNamingPolicy?.ConvertName(elementAtColumn.Name) ?? elementAtColumn.Name;
+        }
+
+        return string.Empty;
+    }
 
     /// <summary>
     /// Whether a projection must get an explicit <c>AS &lt;alias&gt;</c> regardless of what the
@@ -91,21 +113,26 @@ internal static class CouchbaseProjectionAliases
     /// function-call-based expression doesn't reliably (or ever, empirically) produce the
     /// property's own name (e.g. <c>META(d).id</c> does not implicitly come back keyed
     /// <c>"DocId"</c>, or even reliably <c>"id"</c>) the way a bare <c>alias.field</c> reference's
-    /// implicit name always matches its own column name.
+    /// implicit name always matches its own column name. Also true for the owned-collection
+    /// indexer/<c>.ElementAt()</c> shape described on <see cref="EffectiveAlias"/> -- EF Core never
+    /// assigns that projection an alias of its own, so nothing here can rely on it matching N1QL's
+    /// implicit naming by coincidence; an explicit <c>AS</c> is emitted unconditionally instead.
     /// </summary>
     public static bool NeedsExplicitAlias(ProjectionExpression projection)
-        => projection.Expression is ColumnExpression c && GetMetaField(c) != null;
+        => (projection.Expression is ColumnExpression c && GetMetaField(c) != null)
+            || (projection.Expression is ScalarSubqueryExpression { Subquery: var subquery }
+                && CouchbaseQuerySqlGenerator.TryResolveOwnedElementAt(subquery, out _, out _, out _, out _));
 
     /// <summary>
     /// Computes a collision-free alias for every projection, in projection order.  The first
     /// occurrence of an effective alias is kept verbatim; subsequent duplicates get an
     /// incrementing numeric suffix (e.g. <c>rating</c>, <c>rating0</c>, <c>rating1</c>).
     /// </summary>
-    public static string[] ComputeUnique(IReadOnlyList<ProjectionExpression> projections)
+    public static string[] ComputeUnique(IReadOnlyList<ProjectionExpression> projections, JsonNamingPolicy? fieldNamingPolicy = null)
     {
         var names = new string[projections.Count];
         for (var i = 0; i < projections.Count; i++)
-            names[i] = EffectiveAlias(projections[i]);
+            names[i] = EffectiveAlias(projections[i], fieldNamingPolicy);
         return MakeUnique(names);
     }
 

@@ -110,6 +110,28 @@ public class PrimitiveCollectionTests
     }
 
     [Fact]
+    public void WhereComposedBeforeElementAt_FailsTranslation_NotSilentlyWrong()
+    {
+        // .Where(...).ElementAt(i) over a primitive collection must fail translation outright,
+        // not fall back to EF Core's generic OFFSET/LIMIT implementation: that would render as
+        // syntactically valid N1QL over this provider's UNNEST-less rendering (GenerateUnnest
+        // handles the FROM-clause fine), but there is no AT-alias positional binding to make
+        // OFFSET/LIMIT deterministic, so it would silently return a wrong element instead of
+        // failing loudly.
+        using var ctx = CreateContext();
+        Assert.Throws<InvalidOperationException>(
+            () => ctx.Posts.Select(p => p.Tags.Where(t => t != "x").ElementAt(0)).ToQueryString());
+    }
+
+    [Fact]
+    public void OrderByComposedBeforeElementAt_FailsTranslation_NotSilentlyWrong()
+    {
+        using var ctx = CreateContext();
+        Assert.Throws<InvalidOperationException>(
+            () => ctx.Posts.Select(p => p.Tags.OrderBy(t => t).ElementAt(0)).ToQueryString());
+    }
+
+    [Fact]
     public void ArrayLiteralIn_StillUsesBrackets_NotBrokenByRegression()
     {
         // Control case: an ordinary .Contains() over an in-memory list (not a queryable primitive

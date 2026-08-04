@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq.Expressions;
 using System.Net.WebSockets;
 using System.Reflection;
@@ -521,8 +522,11 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
                     && pe.Expression is ColumnExpression col
                     && skippedAliases.Contains(col.TableAlias);
 
-                if (selectExpression.Projection.Count == 1)
+                if (selectExpression.Projection.Count == 1 && selectExpression.Alias != null)
                 {
+                    // Subquery context (used as a WHERE-clause/comparison building block, never
+                    // read back by JSON key directly) -- no alias-correctness concerns, just emit
+                    // the RAW-prefix logic these shapes need and the bare expression.
                     var expression = selectExpression.Projection.First().Expression;
                     if (expression is SqlFunctionExpression sqlFunctionExpression)
                     {
@@ -552,12 +556,13 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
                 }
                 else if (selectExpression.Alias == null)
                 {
-                    // Top-level SELECT: each row becomes a JSON object keyed by alias, so two
-                    // projections sharing an effective alias (e.g. a collection Include where the
-                    // principal and dependent both expose `rating` / `blogId`) would collide on a
-                    // single key. Emit a unique alias for every colliding projection, aligned with
-                    // the alias array built in CouchbaseShapedQueryCompilingExpressionVisitor.
-                    var uniqueAliases = CouchbaseProjectionAliases.ComputeUnique(selectExpression.Projection);
+                    // Top-level SELECT (including the single-projection case, e.g. a bare
+                    // `.Select(x => x.Scalar)`): each row becomes a JSON object keyed by alias, so
+                    // two projections sharing an effective alias (e.g. a collection Include where
+                    // the principal and dependent both expose `rating` / `blogId`) would collide on
+                    // a single key. Emit a unique alias for every colliding projection, aligned
+                    // with the alias array built in CouchbaseShapedQueryCompilingExpressionVisitor.
+                    var uniqueAliases = CouchbaseProjectionAliases.ComputeUnique(selectExpression.Projection, _fieldNamingPolicy);
                     var emitted = new List<(ProjectionExpression Projection, string Alias)>();
                     for (var i = 0; i < selectExpression.Projection.Count; i++)
                     {
@@ -566,14 +571,21 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
                             emitted.Add((projection, uniqueAliases[i]));
                     }
 
+                    if (selectExpression.Projection.Count == 1
+                        && selectExpression.Projection[0].Expression is SqlFunctionExpression { Name: "COUNT" } or ExistsExpression or CouchbaseUnnestValueExpression)
+                    {
+                        Sql.Append("RAW ");
+                    }
+
                     GenerateList(emitted, e =>
                     {
                         // Append AS when the unique alias differs from what the projection would
                         // emit on its own (keeps non-colliding queries byte-identical), OR when the
-                        // projection is a META(alias).field column -- N1QL's own implicit naming
-                        // for that shape doesn't reliably produce the desired key (see
+                        // projection needs one unconditionally (a META(alias).field column, or the
+                        // owned-collection indexer/.ElementAt() shape, neither of which N1QL's own
+                        // implicit naming can be relied on to key correctly -- see
                         // CouchbaseProjectionAliases.NeedsExplicitAlias).
-                        if (e.Alias != CouchbaseProjectionAliases.EffectiveAlias(e.Projection)
+                        if (e.Alias != CouchbaseProjectionAliases.EffectiveAlias(e.Projection, _fieldNamingPolicy)
                             || CouchbaseProjectionAliases.NeedsExplicitAlias(e.Projection))
                         {
                             Visit(e.Projection.Expression);
@@ -669,6 +681,27 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
     /// </summary>
     protected override Expression VisitScalarSubquery(ScalarSubqueryExpression scalarSubqueryExpression)
     {
+        if (TryRenderOwnedElementAt(scalarSubqueryExpression.Subquery))
+        {
+            return scalarSubqueryExpression;
+        }
+
+        // TryRenderOwnedElementAt returned false either because this isn't an owned-collection
+        // ElementAt shape at all (falls through to the generic rendering below, which is correct
+        // for e.g. Count()/Sum()/Max() subqueries), or because it IS one but with an unsupported
+        // composition on top (.Where(...)/.OrderBy(...) before .ElementAt(i) -- out of scope, see
+        // TryResolveOwnedElementAt's remarks). The latter must not fall through: VisitTable
+        // renders an owned TableExpression as nothing (it's embedded JSON, not a real keyspace),
+        // so the generic rendering below would silently produce an empty-FROM-clause N1QL parse
+        // error instead of a clear translation-time failure.
+        if (scalarSubqueryExpression.Subquery.Tables is [TableExpression ownedTableCandidate]
+            && TryGetOwnedEntityTypes(ownedTableCandidate, out _))
+        {
+            throw new NotSupportedException(
+                "Composing .Where(...)/.OrderBy(...) before an indexer/.ElementAt() access over an "
+                + "OwnsMany navigation is not supported.");
+        }
+
         Sql.AppendLine("(");
         using (Sql.Indent())
         {
@@ -678,6 +711,102 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
         Sql.Append(")[0]");
 
         return scalarSubqueryExpression;
+    }
+
+    /// <summary>
+    /// Renders N1QL's native <c>parentAlias.field[offset].propertyName</c> subscript in place of
+    /// the base class's generic correlated-subquery + OFFSET/LIMIT translation of
+    /// <c>.ElementAt(i)</c>/indexer access over a depth-1 <c>OwnsMany</c> navigation -- mirrors
+    /// <see cref="TryRenderOwnedCollectionAny"/>'s detect/strip/render pattern exactly. Confirmed
+    /// via a Phase-0 spike that <see cref="CouchbaseQueryableMethodTranslatingExpressionVisitor.TranslateElementAtOrDefault"/>
+    /// falling back to the base implementation for this shape hits the exact same
+    /// empty-FROM-clause bug class <c>.Any()</c> had (its sole table is an owned
+    /// <see cref="TableExpression"/>, which <see cref="VisitTable"/> renders as nothing).
+    /// Returns <see langword="false"/> (writing nothing) if the shape doesn't match cleanly --
+    /// including a genuine user <c>.Where(...)</c> composed before <c>.ElementAt(i)</c>, which is
+    /// out of scope for v1 -- so the caller falls through to the default (and, for this shape,
+    /// broken) rendering rather than silently producing an incorrect result.
+    /// </summary>
+    private bool TryRenderOwnedElementAt(SelectExpression subquery)
+    {
+        if (!TryResolveOwnedElementAt(subquery, out var ownership, out var parentAlias, out var offset, out var column))
+        {
+            return false;
+        }
+
+        var fieldName = CouchbaseProjectionAliases.GetOwnedCollectionFieldName(ownership.PrincipalToDependent!, _fieldNamingPolicy);
+        var propertyName = _fieldNamingPolicy?.ConvertName(column.Name) ?? column.Name;
+        var helper = Dependencies.SqlGenerationHelper;
+
+        Sql.Append(helper.DelimitIdentifier(parentAlias))
+            .Append(".")
+            .Append(helper.DelimitIdentifier(fieldName))
+            .Append("[");
+        Visit(offset);
+        Sql.Append("].")
+            .Append(helper.DelimitIdentifier(propertyName));
+
+        return true;
+    }
+
+    /// <summary>
+    /// Detects the exact shape <see cref="TryRenderOwnedElementAt"/> renders -- a correlated
+    /// subquery over a depth-1 <c>OwnsMany</c> navigation's owned table, filtered down to one row
+    /// via <c>OFFSET</c>/<c>LIMIT 1</c> with no other composition -- without writing any SQL.
+    /// Shared with <see cref="CouchbaseProjectionAliases"/> so the SQL generator's rendering and
+    /// the shaped-query compiler's expected-alias computation can never drift (the same concern
+    /// <see cref="CouchbaseProjectionAliases.GetOwnedCollectionFieldName"/> already solves for the
+    /// array field name itself).
+    /// </summary>
+    internal static bool TryResolveOwnedElementAt(
+        SelectExpression subquery,
+        [NotNullWhen(true)] out IForeignKey? ownership,
+        [NotNullWhen(true)] out string? parentAlias,
+        [NotNullWhen(true)] out SqlExpression? offset,
+        [NotNullWhen(true)] out ColumnExpression? column)
+    {
+        ownership = null;
+        parentAlias = null;
+        offset = null;
+        column = null;
+
+        if (subquery is not
+            {
+                Tables: [TableExpression ownedTable],
+                Projection: [{ Expression: ColumnExpression projectedColumn }],
+                Offset: { } off,
+                Limit: SqlConstantExpression { Value: 1 },
+                Orderings: [],
+                IsDistinct: false,
+            }
+            || projectedColumn.TableAlias != ownedTable.Alias
+            || !TryGetOwnedEntityTypes(ownedTable, out var ownedEntityTypes))
+        {
+            return false;
+        }
+
+        foreach (var candidate in ownedEntityTypes)
+        {
+            var candidateOwnership = candidate.FindOwnership();
+            if (candidateOwnership?.PrincipalToDependent == null)
+            {
+                continue;
+            }
+
+            if (!TryStripCorrelation(subquery.Predicate, ownedTable.Alias!, candidateOwnership, out var residual, out var foundParentAlias)
+                || residual != null)
+            {
+                continue;
+            }
+
+            ownership = candidateOwnership;
+            parentAlias = foundParentAlias;
+            offset = off;
+            column = projectedColumn;
+            return true;
+        }
+
+        return false;
     }
 
     protected override void GenerateExists(ExistsExpression existsExpression, bool negated)
@@ -800,7 +929,7 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
         string ownedAlias,
         IForeignKey ownership,
         out SqlExpression? residual,
-        out string? parentAlias)
+        [NotNullWhen(true)] out string? parentAlias)
     {
         residual = null;
         parentAlias = null;

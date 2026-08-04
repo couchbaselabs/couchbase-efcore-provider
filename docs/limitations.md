@@ -80,9 +80,13 @@ The Couchbase SDK is asynchronous, so the synchronous EF Core code paths throw `
   throwing) — this Couchbase Server version has no N1QL syntax for a deterministic positional
   binding over an unnested array. `.OrderBy(...).ElementAt(...)`/`.Where(...).ElementAt(...)`
   compositions and reverse-`.Contains()` over a local in-memory collection are not supported for a
-  primitive collection source. Indexing into a scalar collection *inside* an `OwnsMany` navigation
-  (e.g. `customer.ContactMethods[0].Type`) is not yet supported at all. See
-  [Modeling — Primitive collections](modeling.md#primitive-collections).
+  primitive collection source. See [Modeling — Primitive collections](modeling.md#primitive-collections).
+* **Indexer/`.ElementAt()` over a depth-1 `OwnsMany` navigation** (e.g.
+  `customer.ContactMethods[0].Type`) has the same `.ElementAtOrDefault()`-like out-of-range
+  behavior and the same `.Where(...).ElementAt(...)`-composition limitation as a primitive
+  collection's indexer. Indexing into a scalar collection *nested inside* an owned item (e.g.
+  `customer.ContactMethods[0].Tags[0]`) is not yet supported. See
+  [Modeling — OwnsMany](modeling.md#ownsmany).
 
 See also [Querying](Queries.md) and [Configuration](configuration.md).
 

@@ -1233,4 +1233,68 @@ public class OwnedTypeTests(
         Assert.Single(customers);
         Assert.Equal(1, customers[0].CustomerId);
     }
+
+    // -------------------------------------------------------------------------
+    // Indexer / .ElementAt() over a depth-1 OwnsMany navigation
+    //
+    // Falls back to EF Core's own generic correlated-subquery + OFFSET/LIMIT translation (the
+    // same shape .Any() has), which hits the identical empty-FROM-clause bug class --
+    // CouchbaseQuerySqlGenerator.VisitScalarSubquery now recognizes this shape and renders N1QL's
+    // native parentAlias.field[index].propertyName subscript instead. Alice (1): [email, phone];
+    // Bob (2): [email] only (no index 1); Carol (3): [email, phone] -- used to prove real
+    // value/inclusion-exclusion behavior, not just that the generated SQL text looks right.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task OwnsMany_IndexerProjected_ReturnsCorrectValue()
+    {
+        await using var ctx = fixture.GetDbContext();
+        var type = await ctx.Customers
+            .Where(c => c.CustomerId == 1)
+            .Select(c => c.ContactMethods[0].Type)
+            .SingleAsync();
+
+        Assert.Equal("email", type);
+    }
+
+    [Fact]
+    public async Task OwnsMany_ElementAt_NonZeroIndex_ReturnsCorrectValue()
+    {
+        await using var ctx = fixture.GetDbContext();
+        var value = await ctx.Customers
+            .Where(c => c.CustomerId == 1)
+            .Select(c => c.ContactMethods.ElementAt(1).Value)
+            .SingleAsync();
+
+        Assert.Equal("555-0100", value);
+    }
+
+    [Fact]
+    public async Task OwnsMany_IndexerInPredicate_ReturnsOnlyMatchingCustomers()
+    {
+        // Only Alice (1) and Carol (3) have a "phone" contact method at index 1 -- Bob (2) has no
+        // index 1 at all (a single email-only contact method).
+        await using var ctx = fixture.GetDbContext();
+        var customers = await ctx.Customers
+            .Where(c => c.ContactMethods[1].Type == "phone")
+            .ToListAsync();
+
+        Assert.Equal(2, customers.Count);
+        Assert.Contains(customers, c => c.CustomerId == 1);
+        Assert.Contains(customers, c => c.CustomerId == 3);
+        Assert.DoesNotContain(customers, c => c.CustomerId == 2);
+    }
+
+    [Fact]
+    public async Task OwnsMany_Indexer_OutOfRangeIndex_ExcludedNotError()
+    {
+        // Bob (2) has only one contact method -- ContactMethods[1] is genuinely out of range, and
+        // must be excluded (N1QL's array subscript returns MISSING for it) rather than error.
+        await using var ctx = fixture.GetDbContext();
+        var customers = await ctx.Customers
+            .Where(c => c.ContactMethods[1].Type == "email")
+            .ToListAsync();
+
+        Assert.DoesNotContain(customers, c => c.CustomerId == 2);
+    }
 }
