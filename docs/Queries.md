@@ -166,6 +166,14 @@ omitted when milliseconds are exactly zero, e.g. `2026-03-14T00:00:00Z`), but is
 your data uses a different string convention — see
 [DateTime string format](configuration.md#datetime-string-format).
 
+A `DateTime` property marked
+[`[UnixMillisDateTime]`](configuration.md#unix-millis-datetime-storage) is stored as a JSON
+`NUMBER` (Unix epoch milliseconds) instead of an ISO-8601 string, and its `.Year`/`.Month`/etc./
+`.Date`/`Add*` members instead translate to N1QL's `_MILLIS` date-function family
+(`DATE_PART_MILLIS`/`DATE_TRUNC_MILLIS`/`DATE_ADD_MILLIS`) rather than the `_STR` family shown
+above — see [Unix-millis DateTime storage](configuration.md#unix-millis-datetime-storage) for the
+comparison-against-`DateTime.UtcNow` caveat.
+
 Not yet supported: `Math.Min`/`Math.Max` (N1QL's `ARRAY_MAX`/`ARRAY_MIN` take a single array
 argument, not two scalars — no array-literal expression support exists yet to build one), trig
 functions (`Sin`/`Cos`/`Tan`/...), and secondary-index support for EF Core's `HasIndex()` (see

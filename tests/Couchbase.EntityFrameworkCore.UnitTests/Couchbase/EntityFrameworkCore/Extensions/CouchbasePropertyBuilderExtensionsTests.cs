@@ -743,6 +743,47 @@ public class CouchbasePropertyBuilderExtensionsTests
 
     #endregion
 
+    #region HasUnixMillisDateTime Tests
+
+    [Fact]
+    public void HasUnixMillisDateTime_OnDateTimeProperty_SetsUnixMillisConverter()
+    {
+        var modelBuilder = new ModelBuilder();
+        var entityBuilder = modelBuilder.Entity<DateTimeEntity>();
+
+        entityBuilder.Property(e => e.ShipDate).HasUnixMillisDateTime();
+
+        var property = modelBuilder.Model.FindEntityType(typeof(DateTimeEntity))!.FindProperty(nameof(DateTimeEntity.ShipDate));
+        Assert.IsType<UnixMillisDateTimeConverter>(property!.GetValueConverter());
+    }
+
+    [Fact]
+    public void HasUnixMillisDateTime_OnNullableDateTimeProperty_SetsUnixMillisConverter()
+    {
+        var modelBuilder = new ModelBuilder();
+        var entityBuilder = modelBuilder.Entity<DateTimeEntity>();
+
+        entityBuilder.Property(e => e.OptionalShipDate).HasUnixMillisDateTime();
+
+        var property = modelBuilder.Model.FindEntityType(typeof(DateTimeEntity))!.FindProperty(nameof(DateTimeEntity.OptionalShipDate));
+        Assert.IsType<UnixMillisDateTimeConverter>(property!.GetValueConverter());
+    }
+
+    [Fact]
+    public void HasUnixMillisDateTime_OnNonDateTimeProperty_ThrowsInvalidOperationException()
+    {
+        var modelBuilder = new ModelBuilder();
+        var entityBuilder = modelBuilder.Entity<DateTimeEntity>();
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            entityBuilder.Property(e => e.Id).HasUnixMillisDateTime());
+
+        Assert.Contains("HasUnixMillisDateTime()", exception.Message);
+        Assert.Contains("DateTime", exception.Message);
+    }
+
+    #endregion
+
     #region HasCouchbaseMeta Tests
 
     [Fact]

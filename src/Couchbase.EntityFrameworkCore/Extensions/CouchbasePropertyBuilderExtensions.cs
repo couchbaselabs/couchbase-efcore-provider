@@ -493,6 +493,48 @@ public static class CouchbasePropertyBuilderExtensions
 
     #endregion
 
+    #region Unix Millis DateTime Storage
+
+    /// <summary>
+    /// Stores this <see cref="DateTime"/> property as Unix epoch milliseconds (a JSON
+    /// <c>NUMBER</c>) instead of this provider's default ISO-8601 string. Equivalent to applying
+    /// <see cref="Couchbase.EntityFrameworkCore.Metadata.UnixMillisDateTimeAttribute"/> to the
+    /// property.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="DateTime.UtcNow"/>/<see cref="DateTime.Now"/>/<see cref="DateTime.Today"/> have no
+    /// associated property, so they cannot be made millis-aware — comparing this property directly
+    /// against one of them throws at query-translation time. Capture the value into a local
+    /// variable before the query instead.
+    /// </remarks>
+    /// <param name="propertyBuilder">The property builder.</param>
+    /// <returns>The same property builder for method chaining.</returns>
+    /// <example>
+    /// <code>
+    /// modelBuilder.Entity&lt;Event&gt;()
+    ///     .Property(e => e.OccurredAt)
+    ///     .HasUnixMillisDateTime();
+    /// </code>
+    /// </example>
+    public static PropertyBuilder<TProperty> HasUnixMillisDateTime<TProperty>(
+        this PropertyBuilder<TProperty> propertyBuilder)
+    {
+        var clrType = propertyBuilder.Metadata.ClrType;
+        if (clrType != typeof(DateTime) && clrType != typeof(DateTime?))
+        {
+            throw new InvalidOperationException(
+                $"HasUnixMillisDateTime() can only be used on properties of type DateTime or DateTime?, but property " +
+                $"'{propertyBuilder.Metadata.DeclaringType.ClrType.Name}.{propertyBuilder.Metadata.Name}' " +
+                $"is of type '{clrType.Name}'.");
+        }
+
+        propertyBuilder.HasConversion(typeof(UnixMillisDateTimeConverter));
+
+        return propertyBuilder;
+    }
+
+    #endregion
+
     #region META() Field Override
 
     /// <summary>

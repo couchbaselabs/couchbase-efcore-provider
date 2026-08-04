@@ -1,4 +1,5 @@
 using System.Reflection;
+using Couchbase.EntityFrameworkCore.Storage.Internal;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Query;
@@ -15,6 +16,13 @@ namespace Couchbase.EntityFrameworkCore.Query.Internal.Translators;
 /// <c>2026-03-15T09:26:53.123Z</c> directly). Couchbase's own documentation describes this
 /// function's return value as milliseconds, which does NOT match observed behavior; trust the
 /// live result over the docs here. No MILLIS_TO_STR/MILLIS_TO_UTC wrapping is needed.
+/// <para>
+/// If <c>instance</c>'s resolved type mapping carries a
+/// <see cref="UnixMillisDateTimeConverter"/> (i.e. the property is
+/// <see cref="Metadata.UnixMillisDateTimeAttribute"/>-annotated), translates to N1QL's
+/// <c>DATE_ADD_MILLIS(date_millis, n, part)</c> instead, which operates on/returns milliseconds
+/// directly.
+/// </para>
 /// </summary>
 public class CouchbaseDateTimeMethodTranslator : IMethodCallTranslator
 {
@@ -43,8 +51,12 @@ public class CouchbaseDateTimeMethodTranslator : IMethodCallTranslator
     {
         if (instance != null && AddMethodMappings.TryGetValue(method, out var part))
         {
+            var functionName = UnixMillisDateTimeConverter.IsUnixMillis(instance.TypeMapping)
+                ? "DATE_ADD_MILLIS"
+                : "DATE_ADD_STR";
+
             return _sqlExpressionFactory.Function(
-                "DATE_ADD_STR",
+                functionName,
                 new[] { instance, arguments[0], _sqlExpressionFactory.Constant(part) },
                 nullable: true,
                 argumentsPropagateNullability: new[] { true, true, false },
