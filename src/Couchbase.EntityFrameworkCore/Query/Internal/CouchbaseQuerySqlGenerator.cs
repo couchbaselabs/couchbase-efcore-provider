@@ -1132,11 +1132,11 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
 
     /// <summary>
     /// Dispatch point for provider-specific extension expression types (<see cref="ExpressionType.Extension"/>).
-    /// <see cref="CouchbaseUnnestExpression"/>, <see cref="CouchbaseUnnestValueExpression"/>, and
-    /// <see cref="CouchbaseArrayIndexExpression"/> are the only ones this provider introduces;
-    /// anything else falls through to the base dispatcher (which itself handles all of EF Core's
-    /// own stock extension node types -- <see cref="TableExpression"/>, <see cref="ColumnExpression"/>,
-    /// etc.).
+    /// <see cref="CouchbaseUnnestExpression"/>, <see cref="CouchbaseUnnestValueExpression"/>,
+    /// <see cref="CouchbaseArrayIndexExpression"/>, and <see cref="CouchbaseArrayConstantExpression"/>
+    /// are the only ones this provider introduces; anything else falls through to the base
+    /// dispatcher (which itself handles all of EF Core's own stock extension node types --
+    /// <see cref="TableExpression"/>, <see cref="ColumnExpression"/>, etc.).
     /// </summary>
     protected override Expression VisitExtension(Expression node)
         => node switch
@@ -1144,6 +1144,7 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
             CouchbaseUnnestExpression unnestExpression => GenerateUnnest(unnestExpression),
             CouchbaseUnnestValueExpression valueExpression => GenerateUnnestValue(valueExpression),
             CouchbaseArrayIndexExpression arrayIndexExpression => GenerateArrayIndex(arrayIndexExpression),
+            CouchbaseArrayConstantExpression arrayConstantExpression => GenerateArrayConstant(arrayConstantExpression),
             _ => base.VisitExtension(node),
         };
 
@@ -1197,6 +1198,29 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
         Sql.Append("]");
 
         return arrayIndexExpression;
+    }
+
+    /// <summary>
+    /// Renders an inline N1QL array literal (<c>[e1, e2, ...]</c>), built by
+    /// <see cref="CouchbaseSqlTranslatingExpressionVisitor.GenerateGreatest"/>/<c>GenerateLeast</c>
+    /// to supply the single array argument <c>ARRAY_MAX</c>/<c>ARRAY_MIN</c> require.
+    /// </summary>
+    private Expression GenerateArrayConstant(CouchbaseArrayConstantExpression arrayConstantExpression)
+    {
+        Sql.Append("[");
+        for (var i = 0; i < arrayConstantExpression.Elements.Count; i++)
+        {
+            if (i > 0)
+            {
+                Sql.Append(", ");
+            }
+
+            Visit(arrayConstantExpression.Elements[i]);
+        }
+
+        Sql.Append("]");
+
+        return arrayConstantExpression;
     }
 
     protected override Expression VisitTable(TableExpression tableExpression)

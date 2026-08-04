@@ -251,6 +251,49 @@ public class FunctionTranslationTests(BloggingFixture fixture, ITestOutputHelper
     }
 
     [Fact]
+    public async Task Min_ColumnVsConstant_ReturnsSmallerValue()
+    {
+        // Score is -4.7 for the seeded entity -- smaller than 0, so Math.Min(Score, 0) == Score.
+        var result = await _context.Entities.Where(e => Math.Min(e.Score, 0) == e.Score).ToListAsync();
+        Assert.Single(result);
+    }
+
+    [Fact]
+    public async Task Max_ColumnVsConstant_ReturnsLargerValue()
+    {
+        // Score is -4.7 for the seeded entity -- smaller than 0, so Math.Max(Score, 0) == 0, not Score.
+        var result = await _context.Entities.Where(e => Math.Max(e.Score, 0) == 0).ToListAsync();
+        Assert.Single(result);
+    }
+
+    [Fact]
+    public async Task Min_TwoColumns_ReturnsCorrectValue()
+    {
+        var result = await _context.Entities.Where(e => Math.Min(e.Score, e.Score - 1) == e.Score - 1).ToListAsync();
+        Assert.Single(result);
+    }
+
+    [Fact]
+    public async Task EfFunctionsGreatest_ThreeArguments_ReturnsLargestValue()
+    {
+        // Score is -4.7; greatest of Score, 0, and -10 is 0.
+        var result = await _context.Entities
+            .Where(e => EF.Functions.Greatest(e.Score, 0, -10) == 0)
+            .ToListAsync();
+        Assert.Single(result);
+    }
+
+    [Fact]
+    public async Task EfFunctionsLeast_ThreeArguments_ReturnsSmallestValue()
+    {
+        // Score is -4.7; least of Score, 0, and -10 is -10.
+        var result = await _context.Entities
+            .Where(e => EF.Functions.Least(e.Score, 0, -10) == -10)
+            .ToListAsync();
+        Assert.Single(result);
+    }
+
+    [Fact]
     public async Task NewGuid_ProjectsNonEmptyValue()
     {
         // A projection that also references a real column keeps a normal FROM clause -- the

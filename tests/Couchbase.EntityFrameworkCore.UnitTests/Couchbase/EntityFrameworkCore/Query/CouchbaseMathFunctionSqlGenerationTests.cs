@@ -133,6 +133,86 @@ public class CouchbaseMathFunctionSqlGenerationTests
         Assert.Contains("/", sql);
     }
 
+    [Fact]
+    public void Min_TranslatesToArrayMinOverArrayLiteral()
+    {
+        using var ctx = CreateContext();
+        var query = ctx.Posts.Where(p => Math.Min(p.Score, 1.0) > 0);
+
+        var sql = query.ToQueryString();
+        Assert.Contains("ARRAY_MIN([", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("`Score`", sql);
+    }
+
+    [Fact]
+    public void Max_TranslatesToArrayMaxOverArrayLiteral()
+    {
+        using var ctx = CreateContext();
+        var query = ctx.Posts.Where(p => Math.Max(p.Score, 1.0) > 0);
+
+        var sql = query.ToQueryString();
+        Assert.Contains("ARRAY_MAX([", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("`Score`", sql);
+    }
+
+    [Fact]
+    public void Min_BothColumns_TranslatesToArrayMinWithBothColumns()
+    {
+        using var ctx = CreateContext();
+        var query = ctx.Posts.Where(p => Math.Min(p.Score, p.OtherScore) > 0);
+
+        var sql = query.ToQueryString();
+        Assert.Contains("ARRAY_MIN([", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("`Score`", sql);
+        Assert.Contains("`OtherScore`", sql);
+    }
+
+    [Fact]
+    public void Max_NestedChain_FlattensIntoSingleArrayMaxWithThreeElements()
+    {
+        // C# only has the 2-arg overload, but EF Core's own core visitor recognizes a chained
+        // Math.Max(Math.Max(a, b), c) of the SAME method and flattens it into a single N-ary
+        // GenerateGreatest([a, b, c]) call -- confirmed by reading RelationalSqlTranslatingExpressionVisitor's
+        // TryFlattenVisit -- rather than nesting ARRAY_MAX(ARRAY_MAX([a,b]), c).
+        using var ctx = CreateContext();
+        var query = ctx.Posts.Where(p => Math.Max(Math.Max(p.Score, p.OtherScore), 1.0) > 0);
+
+        var sql = query.ToQueryString();
+        Assert.Contains("ARRAY_MAX([", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("`Score`", sql);
+        Assert.Contains("`OtherScore`", sql);
+
+        var firstIndex = sql.IndexOf("ARRAY_MAX([", StringComparison.OrdinalIgnoreCase);
+        var secondIndex = sql.IndexOf("ARRAY_MAX([", firstIndex + 1, StringComparison.OrdinalIgnoreCase);
+        Assert.True(secondIndex < 0, "Expected a single flattened ARRAY_MAX([ call, not nested calls.");
+    }
+
+    [Fact]
+    public void EfFunctionsGreatest_TranslatesToArrayMaxOverArrayLiteral()
+    {
+        // Comes for free from the same GenerateGreatest override Math.Max uses -- EF.Functions.Greatest
+        // supports an arbitrary number of arguments (not just two), unlike Math.Max.
+        using var ctx = CreateContext();
+        var query = ctx.Posts.Where(p => EF.Functions.Greatest(p.Score, p.OtherScore, 1.0) > 0);
+
+        var sql = query.ToQueryString();
+        Assert.Contains("ARRAY_MAX([", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("`Score`", sql);
+        Assert.Contains("`OtherScore`", sql);
+    }
+
+    [Fact]
+    public void EfFunctionsLeast_TranslatesToArrayMinOverArrayLiteral()
+    {
+        using var ctx = CreateContext();
+        var query = ctx.Posts.Where(p => EF.Functions.Least(p.Score, p.OtherScore, 1.0) > 0);
+
+        var sql = query.ToQueryString();
+        Assert.Contains("ARRAY_MIN([", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("`Score`", sql);
+        Assert.Contains("`OtherScore`", sql);
+    }
+
     private static PostContext CreateContext()
     {
         var clusterOptions = new ClusterOptions()
@@ -148,6 +228,7 @@ public class CouchbaseMathFunctionSqlGenerationTests
     {
         public int PostId { get; set; }
         public double Score { get; set; }
+        public double OtherScore { get; set; }
     }
 
     private class PostContext(DbContextOptions<PostContext> options) : DbContext(options)
