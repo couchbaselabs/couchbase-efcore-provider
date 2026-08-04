@@ -1297,4 +1297,83 @@ public class OwnedTypeTests(
 
         Assert.DoesNotContain(customers, c => c.CustomerId == 2);
     }
+
+    // -------------------------------------------------------------------------
+    // .All(predicate) / .Count(predicate) over a depth-1 OwnsMany navigation
+    //
+    // .All(predicate) needs no new production code -- EF Core translates it as the same
+    // NOT EXISTS(... WHERE NOT predicate) shape .Any(predicate) already produces, so it flows
+    // through the existing owned-collection detection for free. .Count(predicate) needed a new
+    // CouchbaseQuerySqlGenerator.TryRenderOwnedCollectionCount hook. Alice (1): [email, phone];
+    // Bob (2): [email] only; Carol (3): [email, phone] -- used to prove real inclusion/exclusion,
+    // not just that the generated SQL text looks right.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task OwnsMany_All_ReturnsOnlyCustomersWhereEveryContactMatches()
+    {
+        // Only Bob (2) has EVERY contact method matching "email" -- Alice and Carol each also
+        // have a "phone" contact method.
+        await using var ctx = fixture.GetDbContext();
+        var customers = await ctx.Customers
+            .Where(c => c.ContactMethods.All(cm => cm.Type == "email"))
+            .ToListAsync();
+
+        Assert.Single(customers);
+        Assert.Equal(2, customers[0].CustomerId);
+    }
+
+    [Fact]
+    public async Task OwnsMany_All_Negated_ReturnsOnlyCustomersWhereNotEveryContactMatches()
+    {
+        await using var ctx = fixture.GetDbContext();
+        var customers = await ctx.Customers
+            .Where(c => !c.ContactMethods.All(cm => cm.Type == "email"))
+            .ToListAsync();
+
+        Assert.Equal(2, customers.Count);
+        Assert.Contains(customers, c => c.CustomerId == 1);
+        Assert.Contains(customers, c => c.CustomerId == 3);
+    }
+
+    [Fact]
+    public async Task OwnsMany_CountWithPredicate_ReturnsOnlyMatchingCustomers()
+    {
+        await using var ctx = fixture.GetDbContext();
+        var customers = await ctx.Customers
+            .Where(c => c.ContactMethods.Count(cm => cm.Type == "phone") >= 1)
+            .ToListAsync();
+
+        Assert.Equal(2, customers.Count);
+        Assert.Contains(customers, c => c.CustomerId == 1);
+        Assert.Contains(customers, c => c.CustomerId == 3);
+        Assert.DoesNotContain(customers, c => c.CustomerId == 2);
+    }
+
+    [Fact]
+    public async Task OwnsMany_CountWithoutPredicate_ReturnsOnlyMatchingCustomers()
+    {
+        // Alice and Carol have 2 contact methods; Bob has only 1.
+        await using var ctx = fixture.GetDbContext();
+        var customers = await ctx.Customers
+            .Where(c => c.ContactMethods.Count() > 1)
+            .ToListAsync();
+
+        Assert.Equal(2, customers.Count);
+        Assert.Contains(customers, c => c.CustomerId == 1);
+        Assert.Contains(customers, c => c.CustomerId == 3);
+        Assert.DoesNotContain(customers, c => c.CustomerId == 2);
+    }
+
+    [Fact]
+    public async Task OwnsMany_CountWithPredicate_CombinesWithOtherWhereConditions()
+    {
+        await using var ctx = fixture.GetDbContext();
+        var customers = await ctx.Customers
+            .Where(c => c.Name == "Alice" && c.ContactMethods.Count(cm => cm.Type == "phone") >= 1)
+            .ToListAsync();
+
+        Assert.Single(customers);
+        Assert.Equal(1, customers[0].CustomerId);
+    }
 }

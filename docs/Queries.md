@@ -195,8 +195,10 @@ over a local in-memory collection are not supported for a primitive collection s
 [Limitations](limitations.md).
 
 Indexer/`.ElementAt()` is also supported over a depth-1 `OwnsMany` navigation (e.g.
-`customer.ContactMethods[0].Type`), translating to the same native array-subscript approach — see
-[Modeling — OwnsMany](modeling.md#ownsmany).
+`customer.ContactMethods[0].Type`), translating to the same native array-subscript approach, as
+are `.Any(predicate)`, `.All(predicate)`, and `.Count(predicate)` — see
+[Modeling — OwnsMany](modeling.md#ownsmany) (including why `.Contains()` directly on an `OwnsMany`
+navigation is not supported).
 
 ## SQL queries
 

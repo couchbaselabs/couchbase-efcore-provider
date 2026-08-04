@@ -322,9 +322,36 @@ var withPhone = await context.Customers
     .ToListAsync();
 ```
 
-`.Any(predicate)` over a *nested* owned collection (one reached through another owned navigation,
-e.g. `c.ContactMethods.Any(m => m.Tags.Any(...))`), `.All(predicate)`, `.Count(predicate)`, and
-`.Contains()` over an owned collection are not yet supported.
+`.All(predicate)` and `.Count(predicate)` (with or without a predicate) are also supported for a
+depth-1 `OwnsMany` navigation:
+
+```csharp
+var allEmail = await context.Customers
+    .Where(c => c.ContactMethods.All(m => m.Type == "email"))
+    .ToListAsync();
+
+var twoOrMorePhones = await context.Customers
+    .Where(c => c.ContactMethods.Count(m => m.Type == "phone") >= 2)
+    .ToListAsync();
+```
+
+`.All(predicate)` translates via the same `ANY ... SATISFIES ... END` mechanism as `.Any()` (EF
+Core itself expresses `.All(predicate)` as a negated `.Any(x => !predicate(x))`, so it needs no
+separate translation). `.Count(predicate)`/`.Count()` translate to a correlated
+`(SELECT RAW COUNT(*) FROM parentAlias.field AS alias [WHERE predicate])[0]` subquery.
+
+**`.Contains()` directly on an `OwnsMany` navigation is not supported** — not a limitation of this
+provider's SQL generation, but a crash inside EF Core's own core query-translation code
+(`RelationalSqlTranslatingExpressionVisitor.ParameterValueExtractor`) that reproduces for any
+relational provider once the owned collection's key is composite (owner key + declared key, EF
+Core's default for an owned type): it can't read the shadow foreign-key property's value off an
+arbitrary (tracked or untracked) `ContactMethod` instance to build the comparison, since a shadow
+property has no CLR getter to read from. `.Any(predicate)` (comparing individual properties, not
+the whole entity) is the supported alternative.
+
+`.Any(predicate)`/`.All(predicate)`/`.Count(predicate)` over a *nested* owned collection (one
+reached through another owned navigation, e.g. `c.ContactMethods.Any(m => m.Tags.Any(...))`) are
+not yet supported.
 
 Indexer/`.ElementAt()` access is also supported for a depth-1 `OwnsMany` navigation, translating
 to N1QL's native `parentAlias.field[index].propertyName` array subscript:
