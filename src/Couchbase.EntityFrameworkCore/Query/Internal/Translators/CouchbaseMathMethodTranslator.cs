@@ -32,6 +32,12 @@ public class CouchbaseMathMethodTranslator : IMethodCallTranslator
         { GetMathMethod(nameof(Math.Log), typeof(double)), "LN" },
         { GetMathMethod(nameof(Math.Log10), typeof(double)), "LOG" }, // N1QL's LOG is fixed base-10.
         { GetMathMethod(nameof(Math.Exp), typeof(double)), "EXP" },
+        { GetMathMethod(nameof(Math.Sin), typeof(double)), "SIN" },
+        { GetMathMethod(nameof(Math.Cos), typeof(double)), "COS" },
+        { GetMathMethod(nameof(Math.Tan), typeof(double)), "TAN" },
+        { GetMathMethod(nameof(Math.Asin), typeof(double)), "ASIN" },
+        { GetMathMethod(nameof(Math.Acos), typeof(double)), "ACOS" },
+        { GetMathMethod(nameof(Math.Atan), typeof(double)), "ATAN" },
     };
 
     private static readonly IReadOnlyDictionary<MethodInfo, string> RoundWithDigitsFunctionMappings = new Dictionary<MethodInfo, string>
@@ -39,6 +45,8 @@ public class CouchbaseMathMethodTranslator : IMethodCallTranslator
         { GetMathMethod(nameof(Math.Round), typeof(double), typeof(int)), "ROUND" },
         { GetMathMethod(nameof(Math.Round), typeof(decimal), typeof(int)), "ROUND" },
     };
+
+    private static readonly MethodInfo Atan2MethodInfo = GetMathMethod(nameof(Math.Atan2), typeof(double), typeof(double));
 
     private static readonly MethodInfo PowMethodInfo = GetMathMethod(nameof(Math.Pow), typeof(double), typeof(double));
 
@@ -71,6 +79,16 @@ public class CouchbaseMathMethodTranslator : IMethodCallTranslator
         {
             return _sqlExpressionFactory.Function(
                 roundFunctionName,
+                new[] { arguments[0], arguments[1] },
+                nullable: true,
+                argumentsPropagateNullability: new[] { true, true },
+                method.ReturnType);
+        }
+
+        if (Atan2MethodInfo.Equals(method))
+        {
+            return _sqlExpressionFactory.Function(
+                "ATAN2",
                 new[] { arguments[0], arguments[1] },
                 nullable: true,
                 argumentsPropagateNullability: new[] { true, true },

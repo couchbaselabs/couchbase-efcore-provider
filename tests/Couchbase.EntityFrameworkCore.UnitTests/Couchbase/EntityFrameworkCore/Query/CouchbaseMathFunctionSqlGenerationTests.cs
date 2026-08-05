@@ -134,6 +134,73 @@ public class CouchbaseMathFunctionSqlGenerationTests
     }
 
     [Fact]
+    public void Sin_TranslatesToSin()
+    {
+        using var ctx = CreateContext();
+        var query = ctx.Posts.Where(p => Math.Sin(p.Score) > 0);
+
+        Assert.Contains("SIN(", query.ToQueryString(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Cos_TranslatesToCos()
+    {
+        using var ctx = CreateContext();
+        var query = ctx.Posts.Where(p => Math.Cos(p.Score) > 0);
+
+        Assert.Contains("COS(", query.ToQueryString(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Tan_TranslatesToTan()
+    {
+        using var ctx = CreateContext();
+        var query = ctx.Posts.Where(p => Math.Tan(p.Score) > 0);
+
+        Assert.Contains("TAN(", query.ToQueryString(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Asin_TranslatesToAsin()
+    {
+        using var ctx = CreateContext();
+        var query = ctx.Posts.Where(p => Math.Asin(p.Score) > 0);
+
+        Assert.Contains("ASIN(", query.ToQueryString(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Acos_TranslatesToAcos()
+    {
+        using var ctx = CreateContext();
+        var query = ctx.Posts.Where(p => Math.Acos(p.Score) > 0);
+
+        Assert.Contains("ACOS(", query.ToQueryString(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Atan_TranslatesToAtan()
+    {
+        using var ctx = CreateContext();
+        var query = ctx.Posts.Where(p => Math.Atan(p.Score) > 0);
+
+        Assert.Contains("ATAN(", query.ToQueryString(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Atan2_TranslatesToAtan2()
+    {
+        // Math.Atan2(y, x) is order-sensitive -- assert the exact argument order rather than just
+        // that both operands appear somewhere in the SQL, so a translator bug that swaps y/x would
+        // actually fail this test.
+        using var ctx = CreateContext();
+        var query = ctx.Posts.Where(p => Math.Atan2(p.Score, p.OtherScore) > 0);
+
+        var sql = query.ToQueryString();
+        Assert.Contains("ATAN2(`b`.`Score`, `b`.`OtherScore`)", sql, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void Min_TranslatesToArrayMinOverArrayLiteral()
     {
         using var ctx = CreateContext();

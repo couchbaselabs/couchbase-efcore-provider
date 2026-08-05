@@ -251,6 +251,65 @@ public class FunctionTranslationTests(BloggingFixture fixture, ITestOutputHelper
     }
 
     [Fact]
+    public async Task Sin_ReturnsCorrectValue()
+    {
+        // Projected and compared client-side with a tolerance, rather than filtered with an exact
+        // equality WHERE clause, since a transcendental function's last-bit result can legitimately
+        // differ between .NET's and the query engine's underlying math library. Wrapped in an
+        // anonymous type -- a bare scalar .Select(e => expr) is a separate, pre-existing, unrelated
+        // materialization gap in this provider (see CouchbaseCoalesceTests's remarks), not something
+        // this test exists to cover.
+        var result = await _context.Entities.Select(e => new { Value = Math.Sin(e.Score) }).SingleAsync();
+        Assert.Equal(Math.Sin(-4.7), result.Value, precision: 9);
+    }
+
+    [Fact]
+    public async Task Cos_ReturnsCorrectValue()
+    {
+        var result = await _context.Entities.Select(e => new { Value = Math.Cos(e.Score) }).SingleAsync();
+        Assert.Equal(Math.Cos(-4.7), result.Value, precision: 9);
+    }
+
+    [Fact]
+    public async Task Tan_ReturnsCorrectValue()
+    {
+        var result = await _context.Entities.Select(e => new { Value = Math.Tan(e.Score) }).SingleAsync();
+        Assert.Equal(Math.Tan(-4.7), result.Value, precision: 9);
+    }
+
+    [Fact]
+    public async Task Asin_ReturnsCorrectValue()
+    {
+        // Asin/Acos require a domain of [-1, 1] -- Score (-4.7) is out of range, so this projects
+        // (Score - Score), always exactly 0, to stay in-domain while still depending on the
+        // entity property (so EF Core can't fold it client-side before translation) and exercising
+        // the real translator against live data.
+        var result = await _context.Entities.Select(e => new { Value = Math.Asin(e.Score - e.Score) }).SingleAsync();
+        Assert.Equal(Math.Asin(0), result.Value, precision: 9);
+    }
+
+    [Fact]
+    public async Task Acos_ReturnsCorrectValue()
+    {
+        var result = await _context.Entities.Select(e => new { Value = Math.Acos(e.Score - e.Score) }).SingleAsync();
+        Assert.Equal(Math.Acos(0), result.Value, precision: 9);
+    }
+
+    [Fact]
+    public async Task Atan_ReturnsCorrectValue()
+    {
+        var result = await _context.Entities.Select(e => new { Value = Math.Atan(e.Score) }).SingleAsync();
+        Assert.Equal(Math.Atan(-4.7), result.Value, precision: 9);
+    }
+
+    [Fact]
+    public async Task Atan2_ReturnsCorrectValue()
+    {
+        var result = await _context.Entities.Select(e => new { Value = Math.Atan2(e.Score, 1.0) }).SingleAsync();
+        Assert.Equal(Math.Atan2(-4.7, 1.0), result.Value, precision: 9);
+    }
+
+    [Fact]
     public async Task Min_ColumnVsConstant_ReturnsSmallerValue()
     {
         // Score is -4.7 for the seeded entity -- smaller than 0, so Math.Min(Score, 0) == Score.

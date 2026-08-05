@@ -133,6 +133,8 @@ SQL++ so they run server-side instead of throwing or falling back to client eval
 | `Math.Pow(x, y)`                       | `POWER(x, y)`                       |
 | `Math.Log(x)` / `Log10(x)` / `Exp(x)`  | `LN(x)` / `LOG(x)` / `EXP(x)`        |
 | `Math.Log(x, newBase)`                 | `LN(x) / LN(newBase)`                |
+| `Math.Sin/Cos/Tan/Asin/Acos/Atan(x)`   | `SIN/COS/TAN/ASIN/ACOS/ATAN(x)`      |
+| `Math.Atan2(y, x)`                     | `ATAN2(y, x)`                        |
 | `Math.Min(a, b)` / `Math.Max(a, b)`    | `ARRAY_MIN([a, b])` / `ARRAY_MAX([a, b])` |
 | `EF.Functions.Least(...)` / `EF.Functions.Greatest(...)` | `ARRAY_MIN([...])` / `ARRAY_MAX([...])` |
 | `DateTime.Year/Month/Day/Hour/Minute/Second/Millisecond/DayOfWeek/DayOfYear` | `DATE_PART_STR(x, part)` |
@@ -182,8 +184,8 @@ an inline array literal (`[a, b, ...]`) to bridge the two. `EF.Functions.Least`/
 any number of arguments; a chain of `Math.Max(Math.Max(a, b), c)`-style calls is automatically
 flattened by EF Core into a single N-ary `ARRAY_MAX([a, b, c])` rather than nesting.
 
-Not yet supported: trig functions (`Sin`/`Cos`/`Tan`/...), and secondary-index support for EF
-Core's `HasIndex()` (see [Limitations](limitations.md)).
+Not yet supported: secondary-index support for EF Core's `HasIndex()` (see
+[Limitations](limitations.md)).
 
 ## Primitive collections
 
