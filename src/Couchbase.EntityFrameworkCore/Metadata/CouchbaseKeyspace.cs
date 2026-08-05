@@ -147,4 +147,45 @@ public readonly record struct CouchbaseKeyspace
         result = new CouchbaseKeyspace(bucket, scope, collection);
         return true;
     }
+
+    /// <summary>
+    /// Resolves an entity's table name into its actual keyspace: parsed as a full
+    /// <c>Bucket.Scope.Collection</c> reference (via <c>ToCouchbaseCollection</c>/
+    /// <c>[CouchbaseKeyspace]</c>) when <paramref name="tableName"/> is in that form, falling back
+    /// to a bare collection named <paramref name="tableName"/> in
+    /// <paramref name="configuredBucket"/>/<paramref name="configuredScope"/> otherwise.
+    /// </summary>
+    /// <remarks>
+    /// Shared so bucket resolution stays consistent between schema-management code (collection/
+    /// index creation, in <c>CouchbaseDatabaseCreator</c>) and runtime value generation (Couchbase
+    /// sequences, in <c>CouchbaseValueGeneratorSelector</c>) — both need to agree on which bucket a
+    /// given entity's data (and anything derived from it, like a sequence) actually lives in.
+    /// <paramref name="tableName"/> must be non-null and non-empty: a <see cref="CouchbaseKeyspace"/>
+    /// always represents a genuine bucket/scope/collection triple, so there is no valid keyspace to
+    /// return for an entity with no table of its own (e.g. an owned type). Callers that only need
+    /// the bucket, and may have no table name at all, should use <see cref="ResolveBucket"/> instead.
+    /// </remarks>
+    public static CouchbaseKeyspace Resolve(string tableName, string configuredBucket, string configuredScope)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(tableName);
+
+        if (TryParse(tableName, out var keyspace))
+        {
+            return keyspace!.Value;
+        }
+
+        return new CouchbaseKeyspace(configuredBucket, configuredScope, tableName);
+    }
+
+    /// <summary>
+    /// Resolves an entity's table name into just its actual bucket, falling back to
+    /// <paramref name="configuredBucket"/> when <paramref name="tableName"/> isn't a full
+    /// <c>Bucket.Scope.Collection</c> reference — including when it's <see langword="null"/> or
+    /// empty (an entity with no table of its own, e.g. an owned type, or a non-entity
+    /// <c>DeclaringType</c> in value generation). Unlike <see cref="Resolve"/>, this never
+    /// constructs a <see cref="CouchbaseKeyspace"/>, so it has no non-empty-collection
+    /// requirement to satisfy.
+    /// </summary>
+    public static string ResolveBucket(string? tableName, string configuredBucket)
+        => TryParse(tableName, out var keyspace) ? keyspace!.Value.Bucket : configuredBucket;
 }

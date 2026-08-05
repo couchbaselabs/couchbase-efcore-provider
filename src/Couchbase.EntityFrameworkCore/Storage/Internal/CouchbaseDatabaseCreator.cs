@@ -140,22 +140,13 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
     }
 
     /// <summary>
-    /// Resolves an entity type's table name into its actual keyspace — parsed as a full
-    /// <c>Bucket.Scope.Collection</c> reference (via <see cref="ToCouchbaseCollection"/>/
-    /// <c>[CouchbaseKeyspace]</c>) when present, falling back to the table name as a collection
-    /// in the configured bucket/scope otherwise. Shared by <see cref="GetEntityKeyspacesByBucket"/>
-    /// and <see cref="CreateSecondaryIndexesAsync"/> so both resolve keyspaces identically.
+    /// Resolves an entity type's table name into its actual keyspace. Thin wrapper over
+    /// <see cref="CouchbaseKeyspace.Resolve"/> using this creator's configured bucket/scope as the
+    /// fallback. Shared by <see cref="GetEntityKeyspacesByBucket"/> and
+    /// <see cref="CreateSecondaryIndexesAsync"/> so both resolve keyspaces identically.
     /// </summary>
     private CouchbaseKeyspace ResolveEntityKeyspace(string tableName)
-    {
-        if (CouchbaseKeyspace.TryParse(tableName, out var keyspace))
-        {
-            return keyspace!.Value;
-        }
-
-        return new CouchbaseKeyspace(
-            _couchbaseDbContextOptionsBuilder.Bucket, _couchbaseDbContextOptionsBuilder.Scope, tableName);
-    }
+        => CouchbaseKeyspace.Resolve(tableName, _couchbaseDbContextOptionsBuilder.Bucket, _couchbaseDbContextOptionsBuilder.Scope);
 
     private async Task CreateCollectionsAsync(CancellationToken cancellationToken)
     {
@@ -230,12 +221,20 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
 
     private async Task CreateSequencesAsync(CancellationToken cancellationToken)
     {
-        // Collect all unique sequences from the model that should be auto-created
-        // Use tuple key (scope, name) to avoid delimiter parsing issues
-        var sequences = new Dictionary<(string Scope, string Name), CouchbaseSequenceOptions>();
+        // Collect all unique sequences from the model that should be auto-created.
+        // Keyed by (bucket, scope, name) rather than just (scope, name): a sequence lives at
+        // bucket.scope.name, so the same (scope, name) in two DIFFERENT buckets is a genuinely
+        // distinct sequence, not a conflict -- see CouchbaseKeyspace.Resolve for how each
+        // sequence-owning property's entity's actual bucket is determined (mirrors how
+        // GetEntityKeyspacesByBucket() resolves collections/indexes, rather than always assuming
+        // the configured bucket).
+        var sequences = new Dictionary<(string Bucket, string Scope, string Name), CouchbaseSequenceOptions>();
 
         foreach (var entityType in _designTimeModel.Model.GetEntityTypes())
         {
+            var sequenceBucket = CouchbaseKeyspace.ResolveBucket(
+                entityType.GetTableName(), _couchbaseDbContextOptionsBuilder.Bucket);
+
             foreach (var property in entityType.GetProperties())
             {
                 var sequenceName = property.FindAnnotation(CouchbaseValueGeneratorSelector.SequenceNameAnnotation)?.Value as string;
@@ -274,7 +273,7 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
                 var options = property.FindAnnotation(CouchbaseValueGeneratorSelector.SequenceOptionsAnnotation)?.Value as CouchbaseSequenceOptions
                     ?? CouchbaseSequenceOptions.Default;
 
-                var key = (sequenceScope, sequenceName);
+                var key = (sequenceBucket, sequenceScope, sequenceName);
                 if (sequences.TryGetValue(key, out var existingOptions))
                 {
                     // Check for conflicting options
@@ -282,10 +281,11 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
                     {
                         var propertyPath = $"{property.DeclaringType.ClrType.Name}.{property.Name}";
                         throw new InvalidOperationException(
-                            $"Conflicting sequence options detected for sequence '{sequenceName}' in scope '{sequenceScope}'. " +
-                            $"Property '{propertyPath}' specifies different options than a previously configured property. " +
-                            $"Existing: {existingOptions.ToSqlOptionsClause()}, Conflicting: {options.ToSqlOptionsClause()}. " +
-                            $"Ensure all properties using the same sequence have identical options.");
+                            $"Conflicting sequence options detected for sequence '{sequenceName}' in scope '{sequenceScope}' " +
+                            $"(bucket '{sequenceBucket}'). Property '{propertyPath}' specifies different options than a " +
+                            $"previously configured property. Existing: {existingOptions.ToSqlOptionsClause()}, " +
+                            $"Conflicting: {options.ToSqlOptionsClause()}. Ensure all properties using the same sequence " +
+                            "have identical options.");
                     }
                 }
                 else
@@ -296,19 +296,20 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
         }
 
         // Create each sequence
-        foreach (var ((scope, name), options) in sequences)
+        foreach (var ((bucket, scope, name), options) in sequences)
         {
-            await CreateSequenceAsync(scope, name, options, cancellationToken);
+            await CreateSequenceAsync(bucket, scope, name, options, cancellationToken);
         }
     }
 
-    private async Task CreateSequenceAsync(string scope, string sequenceName, CouchbaseSequenceOptions options, CancellationToken cancellationToken)
+    private async Task CreateSequenceAsync(
+        string bucketName, string scope, string sequenceName, CouchbaseSequenceOptions options, CancellationToken cancellationToken)
     {
-        var bucket = await GetBucketAsync(cancellationToken);
+        var bucket = await GetBucketAsync(bucketName, cancellationToken);
         var scopeObj = await bucket.ScopeAsync(scope);
 
         // Build CREATE SEQUENCE statement using proper identifier escaping
-        var bucketIdentifier = _sqlGenerationHelper.DelimitIdentifier(_couchbaseDbContextOptionsBuilder.Bucket);
+        var bucketIdentifier = _sqlGenerationHelper.DelimitIdentifier(bucketName);
         var scopeIdentifier = _sqlGenerationHelper.DelimitIdentifier(scope);
         var sequenceIdentifier = _sqlGenerationHelper.DelimitIdentifier(sequenceName);
 
@@ -742,13 +743,15 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
 
     private async Task DropSequencesAsync(CancellationToken cancellationToken)
     {
-        var bucket = await GetBucketAsync(cancellationToken);
-
-        // Collect all unique sequences from the model
-        var sequences = new HashSet<(string Scope, string Name)>();
+        // Collect all unique sequences from the model, keyed by (bucket, scope, name) -- see
+        // CreateSequencesAsync's comment on why bucket must be part of the key.
+        var sequences = new HashSet<(string Bucket, string Scope, string Name)>();
 
         foreach (var entityType in _designTimeModel.Model.GetEntityTypes())
         {
+            var sequenceBucket = CouchbaseKeyspace.ResolveBucket(
+                entityType.GetTableName(), _couchbaseDbContextOptionsBuilder.Bucket);
+
             foreach (var property in entityType.GetProperties())
             {
                 var sequenceName = property.FindAnnotation(CouchbaseValueGeneratorSelector.SequenceNameAnnotation)?.Value as string;
@@ -760,19 +763,20 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
                 var sequenceScope = property.FindAnnotation(CouchbaseValueGeneratorSelector.SequenceScopeAnnotation)?.Value as string
                     ?? _couchbaseDbContextOptionsBuilder.Scope;
 
-                sequences.Add((sequenceScope, sequenceName));
+                sequences.Add((sequenceBucket, sequenceScope, sequenceName));
             }
         }
 
         // Drop each sequence
-        foreach (var (scope, sequenceName) in sequences)
+        foreach (var (bucketName, scope, sequenceName) in sequences)
         {
             try
             {
+                var bucket = await GetBucketAsync(bucketName, cancellationToken);
                 var scopeObj = await bucket.ScopeAsync(scope);
 
                 // Use proper identifier escaping
-                var bucketIdentifier = _sqlGenerationHelper.DelimitIdentifier(_couchbaseDbContextOptionsBuilder.Bucket);
+                var bucketIdentifier = _sqlGenerationHelper.DelimitIdentifier(bucketName);
                 var scopeIdentifier = _sqlGenerationHelper.DelimitIdentifier(scope);
                 var sequenceIdentifier = _sqlGenerationHelper.DelimitIdentifier(sequenceName);
 
@@ -793,7 +797,8 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
                 // Log at Warning so unexpected failures are visible. Cancellation is excluded so it
                 // stops this loop immediately instead of being logged and swallowed while cleanup
                 // of the remaining sequences continues.
-                _logger.LogWarning(ex, "Failed to drop sequence {SequenceName} in scope {Scope}", sequenceName, scope);
+                _logger.LogWarning(ex, "Failed to drop sequence {SequenceName} in scope {Scope} (bucket {BucketName})",
+                    sequenceName, scope, bucketName);
             }
         }
     }
