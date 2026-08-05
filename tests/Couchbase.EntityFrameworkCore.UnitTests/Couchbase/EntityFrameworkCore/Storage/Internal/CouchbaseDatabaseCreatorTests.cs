@@ -96,6 +96,46 @@ public class CouchbaseDatabaseCreatorTests
         return new FakeQueryResult<T> { Rows = rows.ToAsyncEnumerable() };
     }
 
+    private static Mock<IProperty> CreateMockProperty(string columnName, IEntityType declaringEntityType)
+    {
+        var mockProperty = new Mock<IProperty>();
+        var columnNameAnnotation = new Mock<IAnnotation>();
+        columnNameAnnotation.Setup(a => a.Value).Returns(columnName);
+        mockProperty.Setup(p => p.FindAnnotation(RelationalAnnotationNames.ColumnName)).Returns(columnNameAnnotation.Object);
+        mockProperty.Setup(p => p.Name).Returns(columnName);
+        mockProperty.Setup(p => p.DeclaringType).Returns(declaringEntityType);
+        return mockProperty;
+    }
+
+    private static Mock<IIndex> CreateMockIndex(
+        IEntityType declaringEntityType,
+        IReadOnlyList<IProperty> properties,
+        string indexName,
+        bool isUnique = false,
+        string? filter = null)
+    {
+        var mockIndex = new Mock<IIndex>();
+        mockIndex.Setup(i => i.Properties).Returns(properties);
+        mockIndex.Setup(i => i.IsUnique).Returns(isUnique);
+        mockIndex.Setup(i => i.DeclaringEntityType).Returns(declaringEntityType);
+        // IIndex.DeclaringEntityType is a covariant `new` property hiding the base
+        // IReadOnlyIndex.DeclaringEntityType slot -- GetDatabaseName()/GetFilter() etc. are
+        // extension methods on IReadOnlyIndex, so that base slot must be set up separately or it
+        // resolves to Moq's default (null), NullReferenceException-ing downstream.
+        mockIndex.As<IReadOnlyIndex>().Setup(i => i.DeclaringEntityType).Returns(declaringEntityType);
+        mockIndex.Setup(i => i.Name).Returns((string?)null);
+        mockIndex.Setup(i => i[RelationalAnnotationNames.Name]).Returns(indexName);
+
+        if (filter != null)
+        {
+            var filterAnnotation = new Mock<IAnnotation>();
+            filterAnnotation.Setup(a => a.Value).Returns(filter);
+            mockIndex.Setup(i => i.FindAnnotation(RelationalAnnotationNames.Filter)).Returns(filterAnnotation.Object);
+        }
+
+        return mockIndex;
+    }
+
     private RelationalDatabaseCreatorDependencies CreateMockDependencies()
     {
         var mockConnection = new Mock<IRelationalConnection>();
@@ -752,6 +792,381 @@ public class CouchbaseDatabaseCreatorTests
         _mockScope.Verify(
             s => s.QueryAsync<dynamic>(It.IsAny<string>(), It.IsAny<QueryOptions>()),
             Times.Never);
+    }
+
+    #endregion
+
+    #region EnsureCreatedAsync Tests - Secondary Index Creation (HasIndex())
+
+    [Fact]
+    public async Task EnsureCreatedAsync_WithAutoCreateIndexesDisabled_DoesNotCreateSecondaryIndex()
+    {
+        // Arrange - AutoCreateIndexes defaults to false via the constructor setup
+        _mockOptions.Setup(o => o.Bucket).Returns("my-bucket");
+        _mockOptions.Setup(o => o.Scope).Returns("my-scope");
+
+        _mockBucketManager.Setup(m => m.GetBucketAsync("my-bucket", It.IsAny<GetBucketOptions>()))
+            .ReturnsAsync(new BucketSettings { Name = "my-bucket" });
+        _mockCluster.Setup(c => c.BucketAsync("my-bucket")).ReturnsAsync(_mockBucket.Object);
+        _mockCollectionManager.Setup(m => m.GetAllScopesAsync(It.IsAny<GetAllScopesOptions>()))
+            .ReturnsAsync(new List<ScopeSpec> { new ScopeSpec("my-scope") });
+
+        var mockEntityType = new Mock<IEntityType>();
+        var mockTableNameAnnotation = new Mock<IAnnotation>();
+        mockTableNameAnnotation.Setup(a => a.Value).Returns("TestCollection");
+        mockEntityType.Setup(e => e.FindAnnotation("Relational:TableName")).Returns(mockTableNameAnnotation.Object);
+        mockEntityType.Setup(e => e.ClrType).Returns(typeof(TestEntity));
+        mockEntityType.Setup(e => e.GetProperties()).Returns(Array.Empty<IProperty>());
+
+        var mockScoreProperty = CreateMockProperty("Score", mockEntityType.Object);
+        var mockIndex = CreateMockIndex(mockEntityType.Object, new[] { mockScoreProperty.Object }, "ix_score");
+        mockEntityType.Setup(e => e.GetIndexes()).Returns(new[] { mockIndex.Object });
+
+        _mockModel.Setup(m => m.GetEntityTypes()).Returns(new[] { mockEntityType.Object });
+
+        var creator = CreateCreator();
+
+        // Act
+        await creator.EnsureCreatedAsync();
+
+        // Assert - no index DDL issued (neither primary nor secondary) when the option is off
+        _mockScope.Verify(
+            s => s.QueryAsync<dynamic>(It.IsAny<string>(), It.IsAny<QueryOptions>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task EnsureCreatedAsync_WithAutoCreateIndexesEnabled_CreatesSingleFieldSecondaryIndex()
+    {
+        // Arrange
+        _mockOptions.Setup(o => o.Bucket).Returns("my-bucket");
+        _mockOptions.Setup(o => o.Scope).Returns("my-scope");
+        _mockOptions.Setup(o => o.AutoCreateIndexes).Returns(true);
+
+        _mockBucketManager.Setup(m => m.GetBucketAsync("my-bucket", It.IsAny<GetBucketOptions>()))
+            .ReturnsAsync(new BucketSettings { Name = "my-bucket" });
+        _mockCluster.Setup(c => c.BucketAsync("my-bucket")).ReturnsAsync(_mockBucket.Object);
+        _mockCollectionManager.Setup(m => m.GetAllScopesAsync(It.IsAny<GetAllScopesOptions>()))
+            .ReturnsAsync(new List<ScopeSpec> { new ScopeSpec("my-scope") });
+
+        var mockEntityType = new Mock<IEntityType>();
+        var mockTableNameAnnotation = new Mock<IAnnotation>();
+        mockTableNameAnnotation.Setup(a => a.Value).Returns("TestCollection");
+        mockEntityType.Setup(e => e.FindAnnotation("Relational:TableName")).Returns(mockTableNameAnnotation.Object);
+        mockEntityType.Setup(e => e.ClrType).Returns(typeof(TestEntity));
+        mockEntityType.Setup(e => e.GetProperties()).Returns(Array.Empty<IProperty>());
+
+        var mockScoreProperty = CreateMockProperty("Score", mockEntityType.Object);
+        var mockIndex = CreateMockIndex(mockEntityType.Object, new[] { mockScoreProperty.Object }, "ix_score");
+        mockEntityType.Setup(e => e.GetIndexes()).Returns(new[] { mockIndex.Object });
+
+        _mockModel.Setup(m => m.GetEntityTypes()).Returns(new[] { mockEntityType.Object });
+
+        var creator = CreateCreator();
+
+        // Act
+        await creator.EnsureCreatedAsync();
+
+        // Assert - the secondary index DDL is issued with the index's own name, the resolved
+        // collection's keyspace, and the single indexed field, and the creator waits for it to
+        // report online via a name-scoped system:indexes check (no is_primary filter -- a
+        // secondary index's row omits that field entirely on this server rather than setting it
+        // to false, confirmed by a live spike; see WaitForSecondaryIndexOnlineAsync's own comment).
+        _mockScope.Verify(
+            s => s.QueryAsync<dynamic>(
+                It.Is<string>(sql => sql.StartsWith("CREATE INDEX `ix_score` IF NOT EXISTS")
+                                      && sql.Contains("`my-bucket`") && sql.Contains("`my-scope`")
+                                      && sql.Contains("`TestCollection`") && sql.Contains("(`Score`)")),
+                It.IsAny<QueryOptions>()),
+            Times.Once);
+        _mockCluster.Verify(
+            c => c.QueryAsync<int>(
+                It.Is<string>(sql => sql.Contains("system:indexes") && sql.Contains("name = $name")),
+                It.IsAny<QueryOptions>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task EnsureCreatedAsync_WithAutoCreateIndexesEnabled_CreatesCompositeSecondaryIndex()
+    {
+        // Arrange
+        _mockOptions.Setup(o => o.Bucket).Returns("my-bucket");
+        _mockOptions.Setup(o => o.Scope).Returns("my-scope");
+        _mockOptions.Setup(o => o.AutoCreateIndexes).Returns(true);
+
+        _mockBucketManager.Setup(m => m.GetBucketAsync("my-bucket", It.IsAny<GetBucketOptions>()))
+            .ReturnsAsync(new BucketSettings { Name = "my-bucket" });
+        _mockCluster.Setup(c => c.BucketAsync("my-bucket")).ReturnsAsync(_mockBucket.Object);
+        _mockCollectionManager.Setup(m => m.GetAllScopesAsync(It.IsAny<GetAllScopesOptions>()))
+            .ReturnsAsync(new List<ScopeSpec> { new ScopeSpec("my-scope") });
+
+        var mockEntityType = new Mock<IEntityType>();
+        var mockTableNameAnnotation = new Mock<IAnnotation>();
+        mockTableNameAnnotation.Setup(a => a.Value).Returns("TestCollection");
+        mockEntityType.Setup(e => e.FindAnnotation("Relational:TableName")).Returns(mockTableNameAnnotation.Object);
+        mockEntityType.Setup(e => e.ClrType).Returns(typeof(TestEntity));
+        mockEntityType.Setup(e => e.GetProperties()).Returns(Array.Empty<IProperty>());
+
+        var mockScoreProperty = CreateMockProperty("Score", mockEntityType.Object);
+        var mockCategoryProperty = CreateMockProperty("Category", mockEntityType.Object);
+        var mockIndex = CreateMockIndex(
+            mockEntityType.Object, new[] { mockScoreProperty.Object, mockCategoryProperty.Object }, "ix_score_category");
+        mockEntityType.Setup(e => e.GetIndexes()).Returns(new[] { mockIndex.Object });
+
+        _mockModel.Setup(m => m.GetEntityTypes()).Returns(new[] { mockEntityType.Object });
+
+        var creator = CreateCreator();
+
+        // Act
+        await creator.EnsureCreatedAsync();
+
+        // Assert - both fields appear, in declaration order, inside a single parenthesized list
+        _mockScope.Verify(
+            s => s.QueryAsync<dynamic>(
+                It.Is<string>(sql => sql.StartsWith("CREATE INDEX `ix_score_category` IF NOT EXISTS")
+                                      && sql.Contains("(`Score`, `Category`)")),
+                It.IsAny<QueryOptions>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task EnsureCreatedAsync_WithAutoCreateIndexesEnabled_CreatesFilteredSecondaryIndex()
+    {
+        // Arrange
+        _mockOptions.Setup(o => o.Bucket).Returns("my-bucket");
+        _mockOptions.Setup(o => o.Scope).Returns("my-scope");
+        _mockOptions.Setup(o => o.AutoCreateIndexes).Returns(true);
+
+        _mockBucketManager.Setup(m => m.GetBucketAsync("my-bucket", It.IsAny<GetBucketOptions>()))
+            .ReturnsAsync(new BucketSettings { Name = "my-bucket" });
+        _mockCluster.Setup(c => c.BucketAsync("my-bucket")).ReturnsAsync(_mockBucket.Object);
+        _mockCollectionManager.Setup(m => m.GetAllScopesAsync(It.IsAny<GetAllScopesOptions>()))
+            .ReturnsAsync(new List<ScopeSpec> { new ScopeSpec("my-scope") });
+
+        var mockEntityType = new Mock<IEntityType>();
+        var mockTableNameAnnotation = new Mock<IAnnotation>();
+        mockTableNameAnnotation.Setup(a => a.Value).Returns("TestCollection");
+        mockEntityType.Setup(e => e.FindAnnotation("Relational:TableName")).Returns(mockTableNameAnnotation.Object);
+        mockEntityType.Setup(e => e.ClrType).Returns(typeof(TestEntity));
+        mockEntityType.Setup(e => e.GetProperties()).Returns(Array.Empty<IProperty>());
+
+        var mockScoreProperty = CreateMockProperty("Score", mockEntityType.Object);
+        var mockIndex = CreateMockIndex(
+            mockEntityType.Object, new[] { mockScoreProperty.Object }, "ix_score_filtered", filter: "`Score` > 0");
+        mockEntityType.Setup(e => e.GetIndexes()).Returns(new[] { mockIndex.Object });
+
+        _mockModel.Setup(m => m.GetEntityTypes()).Returns(new[] { mockEntityType.Object });
+
+        var creator = CreateCreator();
+
+        // Act
+        await creator.EnsureCreatedAsync();
+
+        // Assert - HasFilter()'s raw predicate string is spliced verbatim into a WHERE clause
+        _mockScope.Verify(
+            s => s.QueryAsync<dynamic>(
+                It.Is<string>(sql => sql.Contains("(`Score`)") && sql.EndsWith(" WHERE `Score` > 0")),
+                It.IsAny<QueryOptions>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task EnsureCreatedAsync_WithAutoCreateIndexesEnabled_UniqueIndex_LogsWarningButStillCreatesIndex()
+    {
+        // Arrange - N1QL GSI secondary indexes cannot enforce uniqueness; IsUnique should be a
+        // logged no-op warning, not a thrown error or a silently-dropped index.
+        _mockOptions.Setup(o => o.Bucket).Returns("my-bucket");
+        _mockOptions.Setup(o => o.Scope).Returns("my-scope");
+        _mockOptions.Setup(o => o.AutoCreateIndexes).Returns(true);
+
+        _mockBucketManager.Setup(m => m.GetBucketAsync("my-bucket", It.IsAny<GetBucketOptions>()))
+            .ReturnsAsync(new BucketSettings { Name = "my-bucket" });
+        _mockCluster.Setup(c => c.BucketAsync("my-bucket")).ReturnsAsync(_mockBucket.Object);
+        _mockCollectionManager.Setup(m => m.GetAllScopesAsync(It.IsAny<GetAllScopesOptions>()))
+            .ReturnsAsync(new List<ScopeSpec> { new ScopeSpec("my-scope") });
+
+        var mockEntityType = new Mock<IEntityType>();
+        var mockTableNameAnnotation = new Mock<IAnnotation>();
+        mockTableNameAnnotation.Setup(a => a.Value).Returns("TestCollection");
+        mockEntityType.Setup(e => e.FindAnnotation("Relational:TableName")).Returns(mockTableNameAnnotation.Object);
+        mockEntityType.Setup(e => e.ClrType).Returns(typeof(TestEntity));
+        mockEntityType.Setup(e => e.GetProperties()).Returns(Array.Empty<IProperty>());
+
+        var mockScoreProperty = CreateMockProperty("Score", mockEntityType.Object);
+        var mockIndex = CreateMockIndex(
+            mockEntityType.Object, new[] { mockScoreProperty.Object }, "ix_score_unique", isUnique: true);
+        mockEntityType.Setup(e => e.GetIndexes()).Returns(new[] { mockIndex.Object });
+
+        _mockModel.Setup(m => m.GetEntityTypes()).Returns(new[] { mockEntityType.Object });
+
+        var creator = CreateCreator();
+
+        // Act
+        await creator.EnsureCreatedAsync();
+
+        // Assert - the index is still created as a plain, non-unique index...
+        _mockScope.Verify(
+            s => s.QueryAsync<dynamic>(
+                It.Is<string>(sql => sql.StartsWith("CREATE INDEX `ix_score_unique` IF NOT EXISTS")),
+                It.IsAny<QueryOptions>()),
+            Times.Once);
+
+        // ...and a warning is logged explaining uniqueness cannot be enforced.
+        _mockLogger.Verify(
+            l => l.Log(
+                LogLevel.Warning,
+                It.IsAny<EventId>(),
+                It.Is<It.IsAnyType>((state, _) => state.ToString()!.Contains("cannot enforce uniqueness")),
+                It.IsAny<Exception>(),
+                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task EnsureCreatedAsync_WithAutoCreateIndexesEnabled_SkipsIndexOnOwnedTypeProperty()
+    {
+        // Arrange - an index referencing a property declared on an owned type isn't resolvable to
+        // a single JSON field path on the root document in this pass; it should be skipped with a
+        // warning rather than producing broken DDL.
+        _mockOptions.Setup(o => o.Bucket).Returns("my-bucket");
+        _mockOptions.Setup(o => o.Scope).Returns("my-scope");
+        _mockOptions.Setup(o => o.AutoCreateIndexes).Returns(true);
+
+        _mockBucketManager.Setup(m => m.GetBucketAsync("my-bucket", It.IsAny<GetBucketOptions>()))
+            .ReturnsAsync(new BucketSettings { Name = "my-bucket" });
+        _mockCluster.Setup(c => c.BucketAsync("my-bucket")).ReturnsAsync(_mockBucket.Object);
+        _mockCollectionManager.Setup(m => m.GetAllScopesAsync(It.IsAny<GetAllScopesOptions>()))
+            .ReturnsAsync(new List<ScopeSpec> { new ScopeSpec("my-scope") });
+
+        var mockEntityType = new Mock<IEntityType>();
+        var mockTableNameAnnotation = new Mock<IAnnotation>();
+        mockTableNameAnnotation.Setup(a => a.Value).Returns("TestCollection");
+        mockEntityType.Setup(e => e.FindAnnotation("Relational:TableName")).Returns(mockTableNameAnnotation.Object);
+        mockEntityType.Setup(e => e.ClrType).Returns(typeof(TestEntity));
+        mockEntityType.Setup(e => e.GetProperties()).Returns(Array.Empty<IProperty>());
+
+        var mockOwnedEntityType = new Mock<IEntityType>();
+        mockOwnedEntityType.Setup(e => e.IsOwned()).Returns(true);
+
+        var mockOwnedProperty = CreateMockProperty("Street", mockOwnedEntityType.Object);
+        var mockIndex = CreateMockIndex(mockEntityType.Object, new[] { mockOwnedProperty.Object }, "ix_address_street");
+        mockEntityType.Setup(e => e.GetIndexes()).Returns(new[] { mockIndex.Object });
+
+        _mockModel.Setup(m => m.GetEntityTypes()).Returns(new[] { mockEntityType.Object });
+
+        var creator = CreateCreator();
+
+        // Act
+        await creator.EnsureCreatedAsync();
+
+        // Assert - no CREATE INDEX for the owned-type-backed index
+        _mockScope.Verify(
+            s => s.QueryAsync<dynamic>(
+                It.Is<string>(sql => sql.StartsWith("CREATE INDEX")),
+                It.IsAny<QueryOptions>()),
+            Times.Never);
+
+        _mockLogger.Verify(
+            l => l.Log(
+                LogLevel.Warning,
+                It.IsAny<EventId>(),
+                It.Is<It.IsAnyType>((state, _) => state.ToString()!.Contains("declared on an owned type")),
+                It.IsAny<Exception>(),
+                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task EnsureCreatedAsync_WithAutoCreateIndexesEnabled_ConflictingIndexDefinitionsWithSameName_Throws()
+    {
+        // Arrange - two distinct index definitions sharing the same database name within the same
+        // keyspace is a real model bug: "CREATE INDEX ... IF NOT EXISTS" silently keeps whichever
+        // definition is created first, so the actually-created index could permanently diverge from
+        // one of the two definitions with no error ever surfacing. This must fail loudly instead of
+        // silently overwriting the dictionary entry for the first definition.
+        _mockOptions.Setup(o => o.Bucket).Returns("my-bucket");
+        _mockOptions.Setup(o => o.Scope).Returns("my-scope");
+        _mockOptions.Setup(o => o.AutoCreateIndexes).Returns(true);
+
+        _mockBucketManager.Setup(m => m.GetBucketAsync("my-bucket", It.IsAny<GetBucketOptions>()))
+            .ReturnsAsync(new BucketSettings { Name = "my-bucket" });
+        _mockCluster.Setup(c => c.BucketAsync("my-bucket")).ReturnsAsync(_mockBucket.Object);
+        _mockCollectionManager.Setup(m => m.GetAllScopesAsync(It.IsAny<GetAllScopesOptions>()))
+            .ReturnsAsync(new List<ScopeSpec> { new ScopeSpec("my-scope") });
+
+        var mockEntityType = new Mock<IEntityType>();
+        var mockTableNameAnnotation = new Mock<IAnnotation>();
+        mockTableNameAnnotation.Setup(a => a.Value).Returns("TestCollection");
+        mockEntityType.Setup(e => e.FindAnnotation("Relational:TableName")).Returns(mockTableNameAnnotation.Object);
+        mockEntityType.Setup(e => e.ClrType).Returns(typeof(TestEntity));
+        mockEntityType.Setup(e => e.GetProperties()).Returns(Array.Empty<IProperty>());
+
+        var mockScoreProperty = CreateMockProperty("Score", mockEntityType.Object);
+        var mockNameProperty = CreateMockProperty("Name", mockEntityType.Object);
+        var mockIndexA = CreateMockIndex(mockEntityType.Object, new[] { mockScoreProperty.Object }, "ix_conflict");
+        var mockIndexB = CreateMockIndex(mockEntityType.Object, new[] { mockNameProperty.Object }, "ix_conflict");
+        mockEntityType.Setup(e => e.GetIndexes()).Returns(new[] { mockIndexA.Object, mockIndexB.Object });
+
+        _mockModel.Setup(m => m.GetEntityTypes()).Returns(new[] { mockEntityType.Object });
+
+        var creator = CreateCreator();
+
+        // Act & Assert
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => creator.EnsureCreatedAsync());
+        Assert.Contains("ix_conflict", ex.Message);
+    }
+
+    [Fact]
+    public async Task EnsureCreatedAsync_WithAutoCreateIndexesEnabled_IdenticalIndexDefinitionsWithSameName_CreatesOnlyOnce()
+    {
+        // Arrange - a TPH-shared collection where two entity types happen to declare the exact
+        // same index (same name, same field) is a legitimate duplicate, not a conflict -- it must
+        // still dedupe to a single CREATE INDEX / online-wait, not throw.
+        _mockOptions.Setup(o => o.Bucket).Returns("my-bucket");
+        _mockOptions.Setup(o => o.Scope).Returns("my-scope");
+        _mockOptions.Setup(o => o.AutoCreateIndexes).Returns(true);
+
+        _mockBucketManager.Setup(m => m.GetBucketAsync("my-bucket", It.IsAny<GetBucketOptions>()))
+            .ReturnsAsync(new BucketSettings { Name = "my-bucket" });
+        _mockCluster.Setup(c => c.BucketAsync("my-bucket")).ReturnsAsync(_mockBucket.Object);
+        _mockCollectionManager.Setup(m => m.GetAllScopesAsync(It.IsAny<GetAllScopesOptions>()))
+            .ReturnsAsync(new List<ScopeSpec> { new ScopeSpec("my-scope") });
+
+        var mockBaseEntityType = new Mock<IEntityType>();
+        var mockBaseTableNameAnnotation = new Mock<IAnnotation>();
+        mockBaseTableNameAnnotation.Setup(a => a.Value).Returns("SharedCollection");
+        mockBaseEntityType.Setup(e => e.FindAnnotation("Relational:TableName")).Returns(mockBaseTableNameAnnotation.Object);
+        mockBaseEntityType.Setup(e => e.ClrType).Returns(typeof(TestEntity));
+        mockBaseEntityType.Setup(e => e.GetProperties()).Returns(Array.Empty<IProperty>());
+        var mockBaseScoreProperty = CreateMockProperty("Score", mockBaseEntityType.Object);
+        var mockBaseIndex = CreateMockIndex(mockBaseEntityType.Object, new[] { mockBaseScoreProperty.Object }, "ix_shared_score");
+        mockBaseEntityType.Setup(e => e.GetIndexes()).Returns(new[] { mockBaseIndex.Object });
+
+        var mockDerivedEntityType = new Mock<IEntityType>();
+        var mockDerivedTableNameAnnotation = new Mock<IAnnotation>();
+        mockDerivedTableNameAnnotation.Setup(a => a.Value).Returns("SharedCollection");
+        mockDerivedEntityType.Setup(e => e.FindAnnotation("Relational:TableName")).Returns(mockDerivedTableNameAnnotation.Object);
+        mockDerivedEntityType.Setup(e => e.ClrType).Returns(typeof(TestDerivedEntity));
+        mockDerivedEntityType.Setup(e => e.GetProperties()).Returns(Array.Empty<IProperty>());
+        var mockDerivedScoreProperty = CreateMockProperty("Score", mockDerivedEntityType.Object);
+        var mockDerivedIndex = CreateMockIndex(mockDerivedEntityType.Object, new[] { mockDerivedScoreProperty.Object }, "ix_shared_score");
+        mockDerivedEntityType.Setup(e => e.GetIndexes()).Returns(new[] { mockDerivedIndex.Object });
+
+        _mockModel.Setup(m => m.GetEntityTypes())
+            .Returns(new[] { mockBaseEntityType.Object, mockDerivedEntityType.Object });
+
+        var creator = CreateCreator();
+
+        // Act
+        await creator.EnsureCreatedAsync();
+
+        // Assert - one CREATE INDEX and one online-wait for the shared definition, not two, and no
+        // exception thrown
+        _mockScope.Verify(
+            s => s.QueryAsync<dynamic>(
+                It.Is<string>(sql => sql.StartsWith("CREATE INDEX `ix_shared_score` IF NOT EXISTS")),
+                It.IsAny<QueryOptions>()),
+            Times.Once);
     }
 
     #endregion

@@ -21,27 +21,30 @@ have no Couchbase equivalent.
   procedures have no Couchbase counterpart. Attempting to map an entity DML operation
   to a stored procedure throws `NotSupportedException`.
 
-* **`EnsureCreatedAsync` does not create secondary indexes.** It creates the bucket's scopes and
-  collections (and any configured sequences — see [Sequences](sequences.md)). LINQ,
+* **`EnsureCreatedAsync` does not create any index by default.** It always creates the bucket's
+  scopes and collections (and any configured sequences — see [Sequences](sequences.md)). LINQ,
   `FromSqlRaw`/`FromSql`, and `ExecuteUpdate`/`ExecuteDelete` all run as SQL++ (N1QL) queries
   under the hood, and Couchbase's query service refuses to query a collection that has no primary
   or secondary index at all — set `AutoCreateIndexes = true` on the options builder to have
   `EnsureCreatedAsync` also create a primary index on every collection it creates or already owns,
-  waiting for each one to come online before returning (see
-  [Configuration](configuration.md#ef-core-couchbase-db-provider-options)). This defaults to
+  plus a secondary index for every `HasIndex()` declared on the model, waiting for each one to come
+  online before returning (see
+  [Secondary indexes (HasIndex())](configuration.md#secondary-indexes-hasindex)). This defaults to
   `false`, so by default you must still create at least a primary index yourself:
 
   ```sql
   CREATE PRIMARY INDEX IF NOT EXISTS ON `bucket`.`scope`.`collection`
   ```
 
-  A primary index is enough to get started but scans the whole collection; for real workloads,
-  create secondary indexes on the fields you filter/sort/join by instead
-  (`CREATE INDEX ix_name ON \`bucket\`.\`scope\`.\`collection\`(field)`) — the provider does not
-  automate secondary index creation from your model (there's no equivalent of EF Core's
-  `HasIndex()` support yet). See the [`CreatePrimaryIndexesAsync` helper in the Contoso University
-  sample](https://github.com/couchbaselabs/couchbase-efcore-provider/blob/main/samples/ContosoUniversity/Program.cs)
-  for a worked example of the pattern `AutoCreateIndexes` now automates.
+  A primary index is enough to get started but scans the whole collection; for real workloads, use
+  `HasIndex()` (or create secondary indexes manually) on the fields you filter/sort/join by
+  instead. `HasIndex()` support has some gaps: **N1QL secondary indexes have no unique-constraint
+  concept**, so `.IsUnique()` is a no-op (logged as a warning) rather than enforced, and **an index
+  referencing a property declared on an owned type (`OwnsOne`/`OwnsMany`) is not auto-created** —
+  it's skipped with a warning since it isn't resolvable to a single JSON field path on the root
+  document in this pass; create it manually instead. See
+  [Secondary indexes (HasIndex())](configuration.md#secondary-indexes-hasindex) for the full
+  picture, including the required explicit index name.
 
 See also [Modeling](modeling.md).
 
@@ -103,9 +106,9 @@ The Couchbase SDK is asynchronous, so the synchronous EF Core code paths throw `
   always translate to the string-based date-function family regardless of what they're compared
   against, and the comparison throws `NotSupportedException` at query-translation time rather than
   silently comparing a `NUMBER` against a string. Capture the value into a local variable before
-  the query instead. This mode also has no bearing on GSI/secondary-index alignment — this
-  provider has no `HasIndex()` support at all (see above), so whether a hand-created secondary
-  index matches a millis-mapped comparison's shape is entirely the user's own responsibility. See
+  the query instead. `HasIndex()` on a `[UnixMillisDateTime]` property auto-creates a secondary
+  index normally (it's just a `NUMBER` field like any other), but whether the index's field order
+  matches your queries' access patterns is, as with any index, your own responsibility. See
   [Unix-millis DateTime storage](configuration.md#unix-millis-datetime-storage).
 
 See also [Querying](Queries.md) and [Configuration](configuration.md).

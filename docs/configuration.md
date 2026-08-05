@@ -52,7 +52,7 @@ The [CouchbaseDbContextOptionsBuilder](https://github.com/couchbaselabs/couchbas
 | `Scope` | *(required)* | The scope this context targets by default. |
 | `ScanConsistency` | `NotBounded` | N1QL scan consistency for LINQ/`FromSql`/ADO.NET queries. Set `RequestPlus` for read-after-write consistency at the cost of higher query latency. See [Limitations](limitations.md) for the full explanation. |
 | `AutoCreateScopes` | `false` | Whether `EnsureCreatedAsync` automatically creates non-default scopes referenced by entity mappings. When `false`, collections mapped to a non-default scope are skipped (with a warning) instead of created. |
-| `AutoCreateIndexes` | `false` | Whether `EnsureCreatedAsync` automatically creates a primary index on every collection it creates or already owns, waiting for each index to come online before returning. Does not create secondary indexes — see [Limitations](limitations.md#schema-management-and-migrations). |
+| `AutoCreateIndexes` | `false` | Whether `EnsureCreatedAsync` automatically creates a primary index, and a secondary index for every `HasIndex()` declared on the model, on every collection it creates or already owns — waiting for each index to come online before returning. See [Secondary indexes (HasIndex())](#secondary-indexes-hasindex) below. |
 | `FieldNamingPolicy` | `JsonNamingPolicy.CamelCase` | Controls how CLR navigation names are converted to JSON field names when reading/writing `OwnsMany` embedded collections. Set to `null` to use the CLR name verbatim (PascalCase), or supply a different policy such as `JsonNamingPolicy.SnakeCaseLower`. |
 | `SerializerOptions` | `null` (uses `JsonSerializerDefaults.Web`) | `JsonSerializerOptions` used when deserializing scalar values inside `OwnsMany` collections. Supply a custom instance to match a non-default serializer configured on the Couchbase SDK (custom converters, different enum handling, etc.). |
 | `DateTimeFormat` | `"yyyy-MM-ddTHH:mm:ss.FFFK"` | The .NET custom `DateTime` format string this provider assumes when generating or comparing against `DateTime` string values in SQL++ — used by the LINQ `DateTime` function translators (`.Date`, `.Now`, `.UtcNow`, `.Today`) and for inline `DateTime` literals. See [DateTime string format](#datetime-string-format) below. |
@@ -182,6 +182,42 @@ var recent = await context.Events.Where(e => e.OccurredAt > now).ToListAsync();
 
 A captured local becomes a query parameter, which correctly infers the millis conversion from the
 property it's compared against — unlike the static members, which never see that context.
+
+### Secondary indexes (HasIndex())
+
+When `AutoCreateIndexes` is `true`, `EnsureCreatedAsync` also creates a N1QL secondary (GSI) index
+for every `HasIndex()` declared on the model, in addition to the primary index:
+
+```csharp
+modelBuilder.Entity<Post>(b =>
+{
+    b.ToCouchbaseCollection("bucket", "scope", "post");
+    b.HasIndex(p => p.Score).HasDatabaseName("ix_post_score");
+    b.HasIndex(p => new { p.Category, p.Score }).HasDatabaseName("ix_post_category_score");
+    b.HasIndex(p => p.Score).HasDatabaseName("ix_post_active_score").HasFilter("`Status` = 'active'");
+});
+```
+
+This generates `CREATE INDEX <name> IF NOT EXISTS ON \`bucket\`.\`scope\`.\`collection\`(field[,
+field...]) [WHERE <filter>]` for each index and waits for it to report online, the same way primary
+index creation does. A few things to know:
+
+* **An explicit index name is required.** Unlike `CREATE PRIMARY INDEX` (which is anonymous), N1QL
+  requires every secondary index to have a name — always call `.HasDatabaseName(...)`.
+* **`HasFilter(...)` takes a raw N1QL predicate string**, spliced verbatim into the generated
+  `WHERE` clause (the same convention SqlServer/Sqlite treat it under) — it is not translated from
+  a LINQ expression.
+* **`.IsUnique()` is a no-op, logged as a warning.** N1QL secondary indexes have no concept of a
+  unique constraint the way a relational index does — the index is still created (as a plain,
+  non-unique index), just without the enforcement. Enforce uniqueness in application code if you
+  need it.
+* **Only indexes on the entity's own direct (non-owned) properties are auto-created.** An index
+  referencing a property declared on an owned type (`OwnsOne`/`OwnsMany`) isn't resolvable to a
+  single JSON field path on the root document in this pass — it is skipped with a warning; create
+  it manually instead.
+* Index field names are taken from `GetColumnName()` verbatim — root-level entity properties are
+  unaffected by `FieldNamingPolicy` (that option only applies to `OwnsMany` embedded collection
+  fields).
 
 ## Multiple buckets and clusters
 

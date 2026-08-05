@@ -9,6 +9,21 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ### Added
 
+- **`HasIndex()` secondary-index auto-creation.** `EnsureCreatedAsync` (with `AutoCreateIndexes =
+  true`) now creates a N1QL `CREATE INDEX` for every `HasIndex()` declared on the model, in
+  addition to the existing primary-index creation, and waits for each to come online before
+  returning — reusing the same retry-on-transient-failure and online-polling machinery already
+  proven for primary indexes. Composite fields, `.HasFilter(...)` (spliced verbatim into the
+  generated `WHERE` clause), and an explicit `.HasDatabaseName(...)` are all supported; N1QL
+  requires a secondary index to be named (unlike the anonymous `CREATE PRIMARY INDEX`), confirmed
+  via a live spike. `.IsUnique()` is a logged no-op warning (N1QL GSI has no unique-constraint
+  concept), and an index referencing a property declared on an owned type is skipped with a
+  warning (not resolvable to a single JSON field path on the root document in this pass) — both
+  documented gaps rather than silent failures. Found along the way: a secondary index's
+  `system:indexes` row omits the `is_primary` field entirely on this server rather than reporting
+  `false`, so the online-wait query matches by name within the keyspace instead of also filtering
+  on `is_primary = false` (which would otherwise never match, per N1QL's missing-value semantics).
+  See [Secondary indexes (HasIndex())](docs/configuration.md#secondary-indexes-hasindex).
 - **`Math.Sin`/`Cos`/`Tan`/`Asin`/`Acos`/`Atan`/`Atan2`.** Direct 1:1 N1QL equivalents
   (`SIN`/`COS`/`TAN`/`ASIN`/`ACOS`/`ATAN`/`ATAN2`) — no array-literal complexity like `Math.Min`/`Max`
   needed, since these all take/return plain scalars. See

@@ -184,8 +184,8 @@ an inline array literal (`[a, b, ...]`) to bridge the two. `EF.Functions.Least`/
 any number of arguments; a chain of `Math.Max(Math.Max(a, b), c)`-style calls is automatically
 flattened by EF Core into a single N-ary `ARRAY_MAX([a, b, c])` rather than nesting.
 
-Not yet supported: secondary-index support for EF Core's `HasIndex()` (see
-[Limitations](limitations.md)).
+EF Core's `HasIndex()` is supported for auto-creating N1QL secondary indexes via
+`EnsureCreatedAsync` — see [Secondary indexes (HasIndex())](configuration.md#secondary-indexes-hasindex).
 
 ## Primitive collections
 
