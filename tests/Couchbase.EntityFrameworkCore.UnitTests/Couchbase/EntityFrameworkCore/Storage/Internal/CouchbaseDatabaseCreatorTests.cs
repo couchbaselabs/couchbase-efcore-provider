@@ -1,6 +1,7 @@
 using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.EntityFrameworkCore.Storage.Internal;
 using Couchbase.EntityFrameworkCore.UnitTests.Fakes;
+using Couchbase.EntityFrameworkCore.ValueGeneration;
 using Couchbase.Extensions.DependencyInjection;
 using Couchbase.KeyValue;
 using Couchbase.Management.Buckets;
@@ -555,6 +556,144 @@ public class CouchbaseDatabaseCreatorTests
         _mockCollectionManager.Verify(
             m => m.CreateCollectionAsync("other-scope", It.IsAny<string>(), It.IsAny<CreateCollectionSettings>(), It.IsAny<CreateCollectionOptions>()),
             Times.Never);
+    }
+
+    #endregion
+
+    #region EnsureCreatedAsync Tests - Sequence Creation
+
+    private static Mock<IProperty> CreateMockSequenceProperty(IEntityType declaringEntityType, string sequenceName)
+    {
+        var mockProperty = new Mock<IProperty>();
+        var sequenceNameAnnotation = new Mock<IAnnotation>();
+        sequenceNameAnnotation.Setup(a => a.Value).Returns(sequenceName);
+        mockProperty.Setup(p => p.FindAnnotation(CouchbaseValueGeneratorSelector.SequenceNameAnnotation))
+            .Returns(sequenceNameAnnotation.Object);
+        mockProperty.Setup(p => p.DeclaringType).Returns(declaringEntityType);
+        mockProperty.Setup(p => p.Name).Returns("Id");
+        return mockProperty;
+    }
+
+    [Fact]
+    public async Task EnsureCreatedAsync_WithSequenceOnEntityMappedToDifferentBucket_CreatesSequenceInEntityMappedBucket()
+    {
+        // Arrange - the entity lives in "secondary-bucket", not the context's configured bucket
+        // ("my-bucket"). The sequence backing one of its properties must be created in
+        // "secondary-bucket" too, not the configured bucket -- this is the cross-bucket sequences
+        // fix (previously CreateSequencesAsync always used the configured bucket).
+        _mockOptions.Setup(o => o.Bucket).Returns("my-bucket");
+        _mockOptions.Setup(o => o.Scope).Returns("my-scope");
+
+        _mockBucketManager.Setup(m => m.GetBucketAsync("my-bucket", It.IsAny<GetBucketOptions>()))
+            .ReturnsAsync(new BucketSettings { Name = "my-bucket" });
+        _mockCluster.Setup(c => c.BucketAsync("my-bucket")).ReturnsAsync(_mockBucket.Object);
+        _mockCollectionManager.Setup(m => m.GetAllScopesAsync(It.IsAny<GetAllScopesOptions>()))
+            .ReturnsAsync(new List<ScopeSpec> { new ScopeSpec("my-scope") });
+
+        // Secondary bucket with its own collection manager + scope, mirroring
+        // EnsureCreatedAsync_SecondaryBucketDifferentScope_DoesNotCreateConfiguredScopeThere's setup.
+        var mockSecondaryBucket = new Mock<IBucket>();
+        var mockSecondaryCollectionManager = new Mock<ICouchbaseCollectionManager>();
+        var mockSecondaryScope = new Mock<IScope>();
+        mockSecondaryBucket.Setup(b => b.Collections).Returns(mockSecondaryCollectionManager.Object);
+        mockSecondaryBucket.Setup(b => b.ScopeAsync("my-scope")).ReturnsAsync(mockSecondaryScope.Object);
+        mockSecondaryCollectionManager.Setup(m => m.GetAllScopesAsync(It.IsAny<GetAllScopesOptions>()))
+            .ReturnsAsync(new List<ScopeSpec> { new ScopeSpec("my-scope") });
+        mockSecondaryScope.Setup(s => s.QueryAsync<dynamic>(It.IsAny<string>(), It.IsAny<QueryOptions>()))
+            .ReturnsAsync(CreateFakeQueryResult(new List<dynamic>()));
+        _mockCluster.Setup(c => c.BucketAsync("secondary-bucket")).ReturnsAsync(mockSecondaryBucket.Object);
+
+        var mockEntityType = new Mock<IEntityType>();
+        var mockTableNameAnnotation = new Mock<IAnnotation>();
+        mockTableNameAnnotation.Setup(a => a.Value).Returns("secondary-bucket.my-scope.MyCollection");
+        mockEntityType.Setup(e => e.FindAnnotation("Relational:TableName")).Returns(mockTableNameAnnotation.Object);
+        mockEntityType.Setup(e => e.ClrType).Returns(typeof(TestEntity));
+
+        var mockSequenceProperty = CreateMockSequenceProperty(mockEntityType.Object, "order_seq");
+        mockEntityType.Setup(e => e.GetProperties()).Returns(new[] { mockSequenceProperty.Object });
+        _mockModel.Setup(m => m.GetEntityTypes()).Returns(new[] { mockEntityType.Object });
+
+        var creator = CreateCreator();
+
+        // Act
+        await creator.EnsureCreatedAsync();
+
+        // Assert - the sequence is created in the entity's actual bucket...
+        mockSecondaryScope.Verify(
+            s => s.QueryAsync<dynamic>(
+                It.Is<string>(sql => sql.StartsWith("CREATE SEQUENCE IF NOT EXISTS")
+                                      && sql.Contains("`secondary-bucket`") && sql.Contains("`my-scope`")
+                                      && sql.Contains("`order_seq`")),
+                It.IsAny<QueryOptions>()),
+            Times.Once);
+
+        // ...and not in the configured bucket.
+        _mockScope.Verify(
+            s => s.QueryAsync<dynamic>(It.Is<string>(sql => sql.StartsWith("CREATE SEQUENCE")), It.IsAny<QueryOptions>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task EnsureCreatedAsync_SameSequenceNameAndScopeInDifferentBuckets_CreatesBothNotAConflict()
+    {
+        // Arrange - two entities in DIFFERENT buckets happen to use the same sequence name in the
+        // same (default) scope. A sequence's true identity is bucket.scope.name, so this must
+        // create two distinct sequences, not be treated as a name conflict.
+        _mockOptions.Setup(o => o.Bucket).Returns("my-bucket");
+        _mockOptions.Setup(o => o.Scope).Returns("my-scope");
+
+        _mockBucketManager.Setup(m => m.GetBucketAsync("my-bucket", It.IsAny<GetBucketOptions>()))
+            .ReturnsAsync(new BucketSettings { Name = "my-bucket" });
+        _mockCluster.Setup(c => c.BucketAsync("my-bucket")).ReturnsAsync(_mockBucket.Object);
+        _mockCollectionManager.Setup(m => m.GetAllScopesAsync(It.IsAny<GetAllScopesOptions>()))
+            .ReturnsAsync(new List<ScopeSpec> { new ScopeSpec("my-scope") });
+
+        var mockSecondaryBucket = new Mock<IBucket>();
+        var mockSecondaryCollectionManager = new Mock<ICouchbaseCollectionManager>();
+        var mockSecondaryScope = new Mock<IScope>();
+        mockSecondaryBucket.Setup(b => b.Collections).Returns(mockSecondaryCollectionManager.Object);
+        mockSecondaryBucket.Setup(b => b.ScopeAsync("my-scope")).ReturnsAsync(mockSecondaryScope.Object);
+        mockSecondaryCollectionManager.Setup(m => m.GetAllScopesAsync(It.IsAny<GetAllScopesOptions>()))
+            .ReturnsAsync(new List<ScopeSpec> { new ScopeSpec("my-scope") });
+        mockSecondaryScope.Setup(s => s.QueryAsync<dynamic>(It.IsAny<string>(), It.IsAny<QueryOptions>()))
+            .ReturnsAsync(CreateFakeQueryResult(new List<dynamic>()));
+        _mockCluster.Setup(c => c.BucketAsync("secondary-bucket")).ReturnsAsync(mockSecondaryBucket.Object);
+
+        var mockEntityTypeA = new Mock<IEntityType>();
+        var mockTableNameAnnotationA = new Mock<IAnnotation>();
+        mockTableNameAnnotationA.Setup(a => a.Value).Returns("CollectionA");
+        mockEntityTypeA.Setup(e => e.FindAnnotation("Relational:TableName")).Returns(mockTableNameAnnotationA.Object);
+        mockEntityTypeA.Setup(e => e.ClrType).Returns(typeof(TestEntity));
+        var mockSequencePropertyA = CreateMockSequenceProperty(mockEntityTypeA.Object, "shared_seq");
+        mockEntityTypeA.Setup(e => e.GetProperties()).Returns(new[] { mockSequencePropertyA.Object });
+
+        var mockEntityTypeB = new Mock<IEntityType>();
+        var mockTableNameAnnotationB = new Mock<IAnnotation>();
+        mockTableNameAnnotationB.Setup(a => a.Value).Returns("secondary-bucket.my-scope.CollectionB");
+        mockEntityTypeB.Setup(e => e.FindAnnotation("Relational:TableName")).Returns(mockTableNameAnnotationB.Object);
+        mockEntityTypeB.Setup(e => e.ClrType).Returns(typeof(TestDerivedEntity));
+        var mockSequencePropertyB = CreateMockSequenceProperty(mockEntityTypeB.Object, "shared_seq");
+        mockEntityTypeB.Setup(e => e.GetProperties()).Returns(new[] { mockSequencePropertyB.Object });
+
+        _mockModel.Setup(m => m.GetEntityTypes()).Returns(new[] { mockEntityTypeA.Object, mockEntityTypeB.Object });
+
+        var creator = CreateCreator();
+
+        // Act & Assert - no InvalidOperationException for a "conflict" that isn't one
+        await creator.EnsureCreatedAsync();
+
+        _mockScope.Verify(
+            s => s.QueryAsync<dynamic>(
+                It.Is<string>(sql => sql.StartsWith("CREATE SEQUENCE IF NOT EXISTS")
+                                      && sql.Contains("`my-bucket`") && sql.Contains("`shared_seq`")),
+                It.IsAny<QueryOptions>()),
+            Times.Once);
+        mockSecondaryScope.Verify(
+            s => s.QueryAsync<dynamic>(
+                It.Is<string>(sql => sql.StartsWith("CREATE SEQUENCE IF NOT EXISTS")
+                                      && sql.Contains("`secondary-bucket`") && sql.Contains("`shared_seq`")),
+                It.IsAny<QueryOptions>()),
+            Times.Once);
     }
 
     #endregion

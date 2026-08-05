@@ -148,6 +148,23 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ### Fixed
 
+- **Sequences always targeted the context's configured bucket, not the actual bucket of the
+  entity using them.** `CreateSequencesAsync`/`DropSequencesAsync` and
+  `CouchbaseValueGeneratorSelector`'s runtime `NEXT VALUE FOR` generator now resolve each
+  sequence-owning property's entity's actual bucket (via a new shared `CouchbaseKeyspace.Resolve`
+  helper, mirroring how collections/indexes already resolve per-entity), so an entity mapped to a
+  different bucket via `ToCouchbaseCollection`/`[CouchbaseKeyspace]` gets its sequence created in
+  and read from that same bucket instead of the configured one. The bug was self-consistent
+  (creation and runtime generation agreed on the same wrong bucket, so it never crashed) — it just
+  silently placed the sequence somewhere other than where the entity's data actually lives, which
+  could surface as a permissions issue on the configured bucket, or simply mean the sequence
+  couldn't be found where a user went looking for it. Sequences are now keyed by
+  `(bucket, scope, name)` rather than just `(scope, name)`, so the same sequence name/scope in two
+  different buckets is correctly treated as two distinct sequences, not a naming conflict. The
+  sequence's *scope* is unaffected by this fix — it still defaults to the context's configured
+  scope unless overridden via `UseSequence(scope, name)`/the attribute's `Scope` property. See
+  [Sequences and generated values](docs/sequences.md#usesequence-fluent-api).
+
 - **C#'s `??` (null-coalescing) generated N1QL's nonexistent `COALESCE` function**, reaching the
   server as invalid SQL++ and failing only at query-execution time, never at translation time. Now
   translates to `IFMISSINGORNULL`, which is also the semantically correct choice: a Couchbase

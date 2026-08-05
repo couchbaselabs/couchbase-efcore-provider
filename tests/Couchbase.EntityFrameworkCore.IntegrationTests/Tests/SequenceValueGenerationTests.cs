@@ -476,21 +476,84 @@ public class SequenceValueGenerationTests : IAsyncLifetime
         _outputHelper.WriteLine("TEST PASSED: End-to-end auto-create sequence workflow verified");
     }
 
-    private async Task DropSequenceIfExistsAsync(string sequenceName)
+    private async Task DropSequenceIfExistsAsync(string sequenceName, string? bucketName = null, string? scopeName = null)
     {
         try
         {
-            await using var context = CreateSequenceTestDbContext();
-            var connection = context.Database.GetDbConnection();
-            await connection.OpenAsync();
-
-            using var command = connection.CreateCommand();
-            command.CommandText = $"DROP SEQUENCE IF EXISTS `{_fixture.BucketName}`.`{_fixture.ScopeName}`.`{sequenceName}`";
-            await command.ExecuteNonQueryAsync();
+            var clusterOptions = new ClusterOptions()
+                .WithConnectionString(_fixture.Host)
+                .WithCredentials(_fixture.Username, _fixture.Password);
+            using var cluster = await Cluster.ConnectAsync(clusterOptions);
+            using var result = await cluster.QueryAsync<dynamic>(
+                $"DROP SEQUENCE IF EXISTS `{bucketName ?? _fixture.BucketName}`.`{scopeName ?? _fixture.ScopeName}`.`{sequenceName}`");
+            await foreach (var _ in result.Rows)
+            {
+            }
         }
         catch (Exception ex)
         {
             _outputHelper.WriteLine($"Note: Could not drop sequence {sequenceName}: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// End-to-end proof of the cross-bucket sequences fix: an entity mapped to a bucket other
+    /// than the context's configured one must have its sequence created AND consumed against
+    /// that entity's actual bucket, not the configured one. Before the fix, CreateSequencesAsync
+    /// always created the sequence in the configured bucket while CouchbaseValueGeneratorSelector
+    /// always queried NEXT VALUE FOR against the configured bucket too -- so the bug was
+    /// self-consistent (never crashed), it just misplaced the sequence. This test only fails if
+    /// EITHER side of that consistency breaks -- e.g. creation resolves the entity's bucket but
+    /// runtime generation doesn't (or vice versa) -- which would make SaveChangesAsync throw a
+    /// "sequence does not exist" error instead of assigning a value.
+    /// </summary>
+    [Fact]
+    public async Task EnsureCreatedAsync_ThenSaveChanges_SequenceOnSecondaryBucketEntity_CreatesAndUsesSequenceInThatBucket()
+    {
+        const string secondaryBucketSeqName = "secondary_bucket_seq";
+
+        await DropSequenceIfExistsAsync(secondaryBucketSeqName, bucketName: "secondary", scopeName: "isolation");
+
+        var optionsBuilder = new DbContextOptionsBuilder<SecondaryBucketSequenceDbContext>();
+        optionsBuilder.UseCouchbase(
+            new ClusterOptions()
+                .WithConnectionString(_fixture.Host)
+                .WithPasswordAuthentication(_fixture.Username, _fixture.Password),
+            couchbaseDbContextOptions =>
+            {
+                // "isolation" (not the fixture's default "blogs" scope) mirrors
+                // IndexCreationTests.cs's SecondaryBucketIndexContext convention: "isolation" is
+                // the one scope pre-provisioned in BOTH "default" and "secondary" buckets. The
+                // sequence's own scope (below) has no bucket override to follow, only a scope
+                // override, so it must match the CONTEXT's configured scope here to land in the
+                // scope that actually exists on the secondary bucket.
+                couchbaseDbContextOptions.Bucket = "default";
+                couchbaseDbContextOptions.Scope = "isolation";
+            });
+        optionsBuilder.ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning));
+
+        await using var context = new SecondaryBucketSequenceDbContext(optionsBuilder.Options);
+
+        try
+        {
+            await context.Database.EnsureCreatedAsync();
+            _outputHelper.WriteLine("EnsureCreatedAsync completed");
+
+            var entity = new SecondaryBucketSequenceEntity { Name = "Cross-bucket sequence test" };
+            Assert.Equal(0, entity.Id);
+
+            context.Entities.Add(entity);
+            await context.SaveChangesAsync();
+
+            Assert.True(entity.Id > 0, $"Expected positive Id from sequence, got {entity.Id}");
+            _outputHelper.WriteLine($"Entity saved with Id = {entity.Id} using the sequence in bucket 'secondary'");
+
+            context.Entities.Remove(entity);
+            await context.SaveChangesAsync();
+        }
+        finally
+        {
+            await DropSequenceIfExistsAsync(secondaryBucketSeqName, bucketName: "secondary", scopeName: "isolation");
         }
     }
 
@@ -660,6 +723,42 @@ public class SequenceValueGenerationTests : IAsyncLifetime
                 // Default options (StartWith = 1, IncrementBy = 1)
                 entity.Property(e => e.Id).UseSequence("e2e_auto_seq");
                 entity.ToCouchbaseCollection(this, "e2e_auto_create_entities");
+            });
+
+            modelBuilder.ConfigureToCouchbase(this, true);
+        }
+    }
+
+    /// <summary>
+    /// Entity for the cross-bucket sequences test, mapped to the "secondary" bucket (pre-provisioned
+    /// by the AppHost, same bucket MultiBucketSingleContextTests/IndexCreationTests rely on) while
+    /// the context itself is configured for the default bucket.
+    /// </summary>
+    public class SecondaryBucketSequenceEntity
+    {
+        public long Id { get; set; }
+        public string Name { get; set; } = string.Empty;
+    }
+
+    public class SecondaryBucketSequenceDbContext : DbContext
+    {
+        public SecondaryBucketSequenceDbContext(DbContextOptions<SecondaryBucketSequenceDbContext> options)
+            : base(options)
+        {
+        }
+
+        public DbSet<SecondaryBucketSequenceEntity> Entities { get; set; }
+
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            base.OnModelCreating(modelBuilder);
+
+            modelBuilder.Entity<SecondaryBucketSequenceEntity>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Id).UseSequence("secondary_bucket_seq");
+                // Mapped to the "secondary" bucket while the context is configured for the default.
+                entity.ToCouchbaseCollection("secondary", "isolation", "secondary_bucket_seq_entities");
             });
 
             modelBuilder.ConfigureToCouchbase(this, true);

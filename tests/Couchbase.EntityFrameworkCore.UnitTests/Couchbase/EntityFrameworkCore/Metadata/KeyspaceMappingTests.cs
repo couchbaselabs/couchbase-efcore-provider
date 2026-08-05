@@ -253,4 +253,67 @@ public class KeyspaceMappingTests
     }
 
     #endregion
+
+    #region CouchbaseKeyspace.Resolve / ResolveBucket Tests
+
+    [Fact]
+    public void Resolve_WithFullKeyspaceTableName_ReturnsParsedKeyspace_IgnoringConfiguredValues()
+    {
+        var resolved = CouchbaseKeyspace.Resolve("secondary.isolation.MyCollection", "configured-bucket", "configured-scope");
+
+        Assert.Equal("secondary", resolved.Bucket);
+        Assert.Equal("isolation", resolved.Scope);
+        Assert.Equal("MyCollection", resolved.Collection);
+    }
+
+    [Fact]
+    public void Resolve_WithBareTableName_FallsBackToConfiguredBucketAndScope()
+    {
+        var resolved = CouchbaseKeyspace.Resolve("MyCollection", "configured-bucket", "configured-scope");
+
+        Assert.Equal("configured-bucket", resolved.Bucket);
+        Assert.Equal("configured-scope", resolved.Scope);
+        Assert.Equal("MyCollection", resolved.Collection);
+    }
+
+    [Fact]
+    public void Resolve_WithNullOrEmptyTableName_Throws()
+    {
+        // A CouchbaseKeyspace always represents a genuine bucket/scope/collection triple -- there
+        // is no valid keyspace to return for an entity with no table of its own (e.g. an owned
+        // type). Callers with a possibly-null/empty table name that only need the bucket must use
+        // ResolveBucket instead, which has no such requirement.
+        Assert.ThrowsAny<ArgumentException>(() => CouchbaseKeyspace.Resolve(null!, "configured-bucket", "configured-scope"));
+        Assert.ThrowsAny<ArgumentException>(() => CouchbaseKeyspace.Resolve("", "configured-bucket", "configured-scope"));
+    }
+
+    [Fact]
+    public void ResolveBucket_WithFullKeyspaceTableName_ReturnsParsedBucket()
+    {
+        var bucket = CouchbaseKeyspace.ResolveBucket("secondary.isolation.MyCollection", "configured-bucket");
+
+        Assert.Equal("secondary", bucket);
+    }
+
+    [Fact]
+    public void ResolveBucket_WithBareTableName_FallsBackToConfiguredBucket()
+    {
+        var bucket = CouchbaseKeyspace.ResolveBucket("MyCollection", "configured-bucket");
+
+        Assert.Equal("configured-bucket", bucket);
+    }
+
+    [Fact]
+    public void ResolveBucket_WithNullOrEmptyTableName_FallsBackToConfiguredBucket_WithoutThrowing()
+    {
+        // Regression test: an owned type (or, in CouchbaseValueGeneratorSelector, a property whose
+        // DeclaringType isn't an entity type at all) has no table name of its own. ResolveBucket
+        // must gracefully fall back to the configured bucket instead of crashing -- unlike Resolve,
+        // it never constructs a CouchbaseKeyspace, so it has no non-empty-collection requirement to
+        // violate.
+        Assert.Equal("configured-bucket", CouchbaseKeyspace.ResolveBucket(null, "configured-bucket"));
+        Assert.Equal("configured-bucket", CouchbaseKeyspace.ResolveBucket("", "configured-bucket"));
+    }
+
+    #endregion
 }

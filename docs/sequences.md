@@ -7,7 +7,12 @@ integer/long primary keys, configured either via the fluent `UseSequence` API or
 ## UseSequence (fluent API)
 
 The simplest form looks up a sequence of the given name in the bucket/scope the `DbContext` is
-already configured for:
+already configured for — unless the property's entity is itself mapped to a different bucket
+(via `ToCouchbaseCollection(bucket, scope, collection)` or `[CouchbaseKeyspace]`), in which case
+the sequence's **bucket** automatically follows that entity's actual bucket, both when it's
+auto-created and when a value is generated at runtime. The sequence's **scope** does not follow
+the entity the same way — it always defaults to the context's configured scope unless you pass
+one explicitly (below).
 
 ```
 modelBuilder.Entity<Order>()
@@ -80,6 +85,12 @@ Sequences targeting a **non-default scope** (via `UseSequence(scope, ...)` or th
 `Scope` property) are **not** auto-created, since that scope might not exist yet — a warning is
 logged instead. Create the scope and sequence yourself in that case, or set `AutoCreate = false`
 if you're managing the sequence's lifecycle entirely outside of `EnsureCreatedAsync`.
+
+If the property's entity is mapped to a different bucket than the context's configured one, the
+sequence is created (and, at runtime, queried via `NEXT VALUE FOR`) in that entity's actual
+bucket, matching how collections and indexes already resolve per-entity — not the context's
+configured bucket. Two sequences with the same name and scope in different buckets are distinct,
+not a naming conflict, since a sequence's true identity is `bucket.scope.name`.
 
 ## Generated GUIDs
 

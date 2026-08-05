@@ -1,8 +1,10 @@
+using Couchbase.EntityFrameworkCore.Extensions;
 using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.EntityFrameworkCore.ValueGeneration;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.EntityFrameworkCore.ValueGeneration;
 using Moq;
 using Xunit;
@@ -203,6 +205,65 @@ public class CouchbaseValueGeneratorSelectorTests
         // Act & Assert
         var exception = Assert.Throws<InvalidOperationException>(() => _selector.TrySelect(property, typeBase, out _));
         Assert.Contains("not supported", exception.Message);
+    }
+
+    #endregion
+
+    #region Cross-bucket Sequence Resolution Tests
+
+    [Fact]
+    public void Select_SequenceOnEntityMappedToDifferentBucket_ResolvesEntityMappedBucketNotConfiguredBucket()
+    {
+        // Arrange - LongEntity is mapped explicitly to a bucket other than the context's
+        // configured one ("test-bucket", from the constructor's _mockOptionsBuilder setup). The
+        // generated NEXT VALUE FOR query must target the entity's actual bucket, not the
+        // configured one -- this is the fix for the cross-bucket sequences gap.
+        var modelBuilder = new ModelBuilder();
+        modelBuilder.Entity<LongEntity>(b =>
+        {
+            b.ToCouchbaseCollection("secondary-bucket", "myscope", "mycollection");
+            b.Property(e => e.Id).HasAnnotation(CouchbaseValueGeneratorSelector.SequenceNameAnnotation, "order_seq");
+        });
+
+        var model = modelBuilder.FinalizeModel();
+        var entityType = model.FindEntityType(typeof(LongEntity))!;
+        var property = entityType.FindProperty(nameof(LongEntity.Id))!;
+
+        // Act
+        Assert.True(_selector.TrySelect(property, entityType, out var generator));
+        var sequenceGenerator = Assert.IsType<CouchbaseSequenceValueGenerator<long>>(generator);
+        var sql = sequenceGenerator.BuildSequenceQuery(CreateSqlGenerationHelper());
+
+        // Assert
+        Assert.Contains("`secondary-bucket`", sql);
+        Assert.DoesNotContain("`test-bucket`", sql);
+    }
+
+    [Fact]
+    public void Select_SequenceOnEntityWithNoExplicitBucketMapping_UsesConfiguredBucket()
+    {
+        // Arrange - regression guard for the common case: an entity with no explicit
+        // ToCouchbaseCollection/[CouchbaseKeyspace] bucket override must still resolve to the
+        // context's configured bucket.
+        var (property, typeBase) = CreatePropertyWithAnnotation<LongEntity>(
+            nameof(LongEntity.Id),
+            CouchbaseValueGeneratorSelector.SequenceNameAnnotation,
+            "order_seq");
+
+        // Act
+        Assert.True(_selector.TrySelect(property, typeBase, out var generator));
+        var sequenceGenerator = Assert.IsType<CouchbaseSequenceValueGenerator<long>>(generator);
+        var sql = sequenceGenerator.BuildSequenceQuery(CreateSqlGenerationHelper());
+
+        // Assert
+        Assert.Contains("`test-bucket`", sql);
+    }
+
+    private static ISqlGenerationHelper CreateSqlGenerationHelper()
+    {
+        var mock = new Mock<ISqlGenerationHelper>();
+        mock.Setup(h => h.DelimitIdentifier(It.IsAny<string>())).Returns<string>(s => $"`{s}`");
+        return mock.Object;
     }
 
     #endregion

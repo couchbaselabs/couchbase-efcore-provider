@@ -1,5 +1,7 @@
 using System.Reflection;
 using Couchbase.EntityFrameworkCore.Infrastructure;
+using Couchbase.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.ValueGeneration;
 
@@ -130,7 +132,13 @@ public class CouchbaseValueGeneratorSelector : RelationalValueGeneratorSelector
     {
         var scopeOverride = property.FindAnnotation(SequenceScopeAnnotation)?.Value as string;
         var scope = scopeOverride ?? _optionsBuilder.Scope;
-        var bucket = _optionsBuilder.Bucket;
+
+        // Resolve the OWNING entity's actual bucket (mirroring CouchbaseDatabaseCreator's
+        // schema-management resolution) rather than assuming the configured bucket -- an entity
+        // mapped to a different bucket via ToCouchbaseCollection/[CouchbaseKeyspace] must generate
+        // its sequence values against that same bucket, not the context's default.
+        var tableName = (property.DeclaringType as IReadOnlyEntityType)?.GetTableName();
+        var bucket = CouchbaseKeyspace.ResolveBucket(tableName, _optionsBuilder.Bucket);
 
         return new CouchbaseSequenceValueGenerator<T>(
             sequenceName,
