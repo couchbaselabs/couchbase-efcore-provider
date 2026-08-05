@@ -27,6 +27,8 @@ public class CouchbaseSqlNullabilityProcessor : SqlNullabilityProcessor
                 => VisitArrayIndex(arrayIndexExpression, allowOptimizedExpansion, out nullable),
             CouchbaseUnnestValueExpression valueExpression
                 => VisitUnnestValue(valueExpression, out nullable),
+            CouchbaseArrayConstantExpression arrayConstantExpression
+                => VisitArrayConstant(arrayConstantExpression, allowOptimizedExpansion, out nullable),
             _ => base.VisitCustomSqlExpression(sqlExpression, allowOptimizedExpansion, out nullable)
         };
 
@@ -47,5 +49,23 @@ public class CouchbaseSqlNullabilityProcessor : SqlNullabilityProcessor
         nullable = true;
 
         return arrayIndexExpression.Update(array, index);
+    }
+
+    protected virtual SqlExpression VisitArrayConstant(
+        CouchbaseArrayConstantExpression arrayConstantExpression, bool allowOptimizedExpansion, out bool nullable)
+    {
+        var elements = new SqlExpression[arrayConstantExpression.Elements.Count];
+        for (var i = 0; i < elements.Length; i++)
+        {
+            elements[i] = Visit(arrayConstantExpression.Elements[i], out _);
+        }
+
+        // The array literal itself ([e1, e2, ...]) is never null, regardless of whether any
+        // individual element is -- an element being NULL just makes that slot contain NULL, not
+        // the whole array. Distinct from CouchbaseArrayIndexExpression above, where indexing INTO
+        // an array can itself produce MISSING.
+        nullable = false;
+
+        return arrayConstantExpression.Update(elements);
     }
 }

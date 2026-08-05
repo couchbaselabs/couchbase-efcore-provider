@@ -133,6 +133,8 @@ SQL++ so they run server-side instead of throwing or falling back to client eval
 | `Math.Pow(x, y)`                       | `POWER(x, y)`                       |
 | `Math.Log(x)` / `Log10(x)` / `Exp(x)`  | `LN(x)` / `LOG(x)` / `EXP(x)`        |
 | `Math.Log(x, newBase)`                 | `LN(x) / LN(newBase)`                |
+| `Math.Min(a, b)` / `Math.Max(a, b)`    | `ARRAY_MIN([a, b])` / `ARRAY_MAX([a, b])` |
+| `EF.Functions.Least(...)` / `EF.Functions.Greatest(...)` | `ARRAY_MIN([...])` / `ARRAY_MAX([...])` |
 | `DateTime.Year/Month/Day/Hour/Minute/Second/Millisecond/DayOfWeek/DayOfYear` | `DATE_PART_STR(x, part)` |
 | `DateTime.Date`                        | `DATE_TRUNC_STR(x, 'day', fmt)`     |
 | `DateTime.Now`                         | `NOW_LOCAL(fmt)`                    |
@@ -174,10 +176,14 @@ A `DateTime` property marked
 above — see [Unix-millis DateTime storage](configuration.md#unix-millis-datetime-storage) for the
 comparison-against-`DateTime.UtcNow` caveat.
 
-Not yet supported: `Math.Min`/`Math.Max` (N1QL's `ARRAY_MAX`/`ARRAY_MIN` take a single array
-argument, not two scalars — no array-literal expression support exists yet to build one), trig
-functions (`Sin`/`Cos`/`Tan`/...), and secondary-index support for EF Core's `HasIndex()` (see
-[Limitations](limitations.md)).
+`Math.Min`/`Math.Max` and `EF.Functions.Least`/`Greatest` translate to N1QL's `ARRAY_MIN`/`ARRAY_MAX`
+functions, which take a single array argument rather than N scalar arguments — the provider builds
+an inline array literal (`[a, b, ...]`) to bridge the two. `EF.Functions.Least`/`Greatest` accept
+any number of arguments; a chain of `Math.Max(Math.Max(a, b), c)`-style calls is automatically
+flattened by EF Core into a single N-ary `ARRAY_MAX([a, b, c])` rather than nesting.
+
+Not yet supported: trig functions (`Sin`/`Cos`/`Tan`/...), and secondary-index support for EF
+Core's `HasIndex()` (see [Limitations](limitations.md)).
 
 ## Primitive collections
 

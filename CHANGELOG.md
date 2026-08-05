@@ -9,6 +9,17 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ### Added
 
+- **`Math.Min(a, b)`/`Math.Max(a, b)` and `EF.Functions.Least`/`Greatest`.** N1QL has no variadic
+  `GREATEST`/`LEAST` function — the equivalent is `ARRAY_MIN`/`ARRAY_MAX`, which take a single array
+  argument. Added a new `CouchbaseArrayConstantExpression` (an inline N1QL array literal,
+  `[e1, e2, ...]`) and a `CouchbaseSqlTranslatingExpressionVisitor` overriding EF Core's own
+  `GenerateGreatest`/`GenerateLeast` hooks to build `ARRAY_MAX`/`ARRAY_MIN` over it. Found along the
+  way: EF Core's core `RelationalSqlTranslatingExpressionVisitor` intercepts `Math.Max`/`Math.Min`
+  directly and calls these two hooks (returning `null`/unsupported by default) — registering them in
+  an `IMethodCallTranslator` (the originally-planned approach) is dead code that's never reached.
+  This also means `EF.Functions.Least`/`Greatest` (accepting any number of arguments, not just two)
+  and automatic flattening of a `Math.Max(Math.Max(a, b), c)`-style chain into a single N-ary
+  `ARRAY_MAX([a, b, c])` come for free. See [Supported functions](docs/Queries.md#supported-functions).
 - **`[UnixMillisDateTime]`/`HasUnixMillisDateTime` — Unix-millis `DateTime` storage mode.** Stores a
   `DateTime` property as Unix epoch milliseconds (a JSON `NUMBER`) instead of this provider's
   default ISO-8601 string, for data that already uses that convention. Attaches a
