@@ -9,6 +9,10 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ### Added
 
+- **`Math.Sin`/`Cos`/`Tan`/`Asin`/`Acos`/`Atan`/`Atan2`.** Direct 1:1 N1QL equivalents
+  (`SIN`/`COS`/`TAN`/`ASIN`/`ACOS`/`ATAN`/`ATAN2`) — no array-literal complexity like `Math.Min`/`Max`
+  needed, since these all take/return plain scalars. See
+  [Supported functions](docs/Queries.md#supported-functions).
 - **`Math.Min(a, b)`/`Math.Max(a, b)` and `EF.Functions.Least`/`Greatest`.** N1QL has no variadic
   `GREATEST`/`LEAST` function — the equivalent is `ARRAY_MIN`/`ARRAY_MAX`, which take a single array
   argument. Added a new `CouchbaseArrayConstantExpression` (an inline N1QL array literal,
