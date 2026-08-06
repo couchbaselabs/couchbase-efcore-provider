@@ -9,6 +9,7 @@ using System.Reflection.Metadata;
 using System.Text;
 using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.EntityFrameworkCore.Metadata;
+using Couchbase.EntityFrameworkCore.Query.Internal.Translators;
 using Couchbase.EntityFrameworkCore.Storage.Internal;
 using Couchbase.EntityFrameworkCore.Utils;
 using Couchbase.Extensions.DependencyInjection;
@@ -1461,6 +1462,19 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
             return sqlFunctionExpression;
         }
 
+        // CouchbaseMissingValuedMethodTranslator carries EF.Functions.IsMissing/IsNotMissing/
+        // IsValued/IsNotValued as a marker SqlFunctionExpression, since there's no valid
+        // "function-call" rendering for N1QL's IS [NOT] MISSING/VALUED family -- they're postfix
+        // operators on an operand, not callable functions taking parenthesized arguments.
+        if (sqlFunctionExpression.Arguments is { Count: 1 } postfixArguments
+            && PostfixOperatorText.TryGetValue(sqlFunctionExpression.Name, out var postfixOperatorText))
+        {
+            Sql.Append("(");
+            Visit(postfixArguments[0]);
+            Sql.Append(") ").Append(postfixOperatorText);
+            return sqlFunctionExpression;
+        }
+
         if (sqlFunctionExpression.IsBuiltIn)
         {
             if (sqlFunctionExpression.Instance != null)
@@ -1558,6 +1572,18 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
             generationAction(items[i]);
         }
     }
+
+    /// <summary>
+    /// Maps <see cref="CouchbaseMissingValuedMethodTranslator"/>'s internal marker function names
+    /// to the N1QL postfix operator text <see cref="VisitSqlFunction"/> substitutes for them.
+    /// </summary>
+    private static readonly Dictionary<string, string> PostfixOperatorText = new()
+    {
+        [CouchbaseMissingValuedMethodTranslator.IsMissingFunctionName] = "IS MISSING",
+        [CouchbaseMissingValuedMethodTranslator.IsNotMissingFunctionName] = "IS NOT MISSING",
+        [CouchbaseMissingValuedMethodTranslator.IsValuedFunctionName] = "IS VALUED",
+        [CouchbaseMissingValuedMethodTranslator.IsNotValuedFunctionName] = "IS NOT VALUED",
+    };
 
     /// <summary>
     /// Returns <c>true</c> for CLR types that <see cref="VisitSqlUnary"/> maps to

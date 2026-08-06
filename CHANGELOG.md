@@ -9,6 +9,16 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ### Added
 
+- **`EF.Functions.IsMissing`/`IsNotMissing`/`IsValued`/`IsNotValued`.** Exposes N1QL's postfix
+  `IS [NOT] MISSING`/`IS [NOT] VALUED` operators, letting a query distinguish a field that's
+  genuinely *missing* (absent from the JSON entirely) from one that's present with an explicit
+  JSON `null` — a distinction ordinary `== null`/`??` cannot make, since both already treat missing
+  and JSON-null the same way. New generic `CouchbaseDbFunctionsExtensions` marker methods (mirroring
+  EF Core's own `Greatest<T>`/`Least<T>` pattern) translated by a new
+  `CouchbaseMissingValuedMethodTranslator`, rendered via a marker `SqlFunctionExpression` that
+  `CouchbaseQuerySqlGenerator` rewrites to postfix syntax — there's no valid "function-call"
+  rendering for these, since N1QL's IS MISSING family is a postfix operator on an operand, not a
+  callable function. See [Supported functions](docs/Queries.md#supported-functions).
 - **`HasIndex()` secondary-index auto-creation.** `EnsureCreatedAsync` (with `AutoCreateIndexes =
   true`) now creates a N1QL `CREATE INDEX` for every `HasIndex()` declared on the model, in
   addition to the existing primary-index creation, and waits for each to come online before

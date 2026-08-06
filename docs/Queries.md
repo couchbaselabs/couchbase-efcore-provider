@@ -146,11 +146,27 @@ SQL++ so they run server-side instead of throwing or falling back to client eval
 | `Guid.NewGuid()`                       | `UUID()`                            |
 | `a ?? b`                               | `IFMISSINGORNULL(a, b)`             |
 | `string.Compare(a, b)` / `a.CompareTo(b)` | `CASE WHEN a = b THEN 0 WHEN a > b THEN 1 WHEN a < b THEN -1 END` |
+| `EF.Functions.IsMissing(x)` / `IsNotMissing(x)` | `(x) IS MISSING` / `(x) IS NOT MISSING` |
+| `EF.Functions.IsValued(x)` / `IsNotValued(x)` | `(x) IS VALUED` / `(x) IS NOT VALUED` |
 
 C#'s `??` translates to N1QL's `IFMISSINGORNULL`, not a generic `COALESCE` (which N1QL doesn't
 have) — this is also the semantically correct choice, not just a renaming: a Couchbase document
 field can be genuinely *missing* (absent from the JSON entirely), not just JSON `null`, and
 `IFMISSINGORNULL` is the only N1QL null-handling function that treats both the way `??` does.
+
+`EF.Functions.IsMissing`/`IsNotMissing`/`IsValued`/`IsNotValued` let a query distinguish those same
+two cases explicitly, rather than folding them together the way `??`/`== null` do. `x == null`
+matches a field that's present with a JSON `null` *and* (per the same missing-is-falsy N1QL
+semantics `??` relies on) a field that's genuinely missing — if you need to tell those two apart,
+or you specifically want "field is present with a real, non-null value," use these instead:
+
+```csharp
+var missing = await context.Posts.Where(p => EF.Functions.IsMissing(p.Title)).ToListAsync();
+var hasRealValue = await context.Posts.Where(p => EF.Functions.IsValued(p.Title)).ToListAsync();
+```
+
+These have no client-side (in-memory) implementation — they can only be used inside a LINQ query
+that gets translated to SQL++; calling one directly throws `InvalidOperationException`.
 
 `string.Compare`/`.CompareTo` only produce the `CASE WHEN` shown above when the raw `int` result
 is actually used (e.g. projected in a `Select`). The common `string.Compare(a, b) > 0` /
