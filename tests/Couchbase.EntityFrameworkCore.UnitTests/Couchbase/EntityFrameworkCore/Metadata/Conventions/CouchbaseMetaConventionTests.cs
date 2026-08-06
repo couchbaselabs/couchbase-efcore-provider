@@ -36,6 +36,26 @@ public class CouchbaseMetaConventionTests
         Assert.Contains("ulong", exception.Message);
     }
 
+    [Fact]
+    public void FlagsAttribute_OnUintProperty_SetsAnnotation()
+    {
+        using var ctx = CreateContext();
+
+        var property = ctx.Model.FindEntityType(typeof(ValidEntity))!.FindProperty(nameof(ValidEntity.Flags))!;
+
+        Assert.Equal("Flags", property.FindAnnotation(CouchbaseMetaAnnotationNames.MetaField)?.Value);
+    }
+
+    [Fact]
+    public void TypeAttribute_OnStringProperty_SetsAnnotation()
+    {
+        using var ctx = CreateContext();
+
+        var property = ctx.Model.FindEntityType(typeof(ValidEntity))!.FindProperty(nameof(ValidEntity.DocType))!;
+
+        Assert.Equal("Type", property.FindAnnotation(CouchbaseMetaAnnotationNames.MetaField)?.Value);
+    }
+
     private static ValidContext CreateContext()
     {
         var clusterOptions = new ClusterOptions()
@@ -62,6 +82,12 @@ public class CouchbaseMetaConventionTests
 
         [CouchbaseMeta(CouchbaseMetaField.Cas)]
         public ulong Cas { get; set; }
+
+        [CouchbaseMeta(CouchbaseMetaField.Flags)]
+        public uint Flags { get; set; }
+
+        [CouchbaseMeta(CouchbaseMetaField.Type)]
+        public string DocType { get; set; } = string.Empty;
     }
 
     private class ValidContext(DbContextOptions<ValidContext> options) : DbContext(options)

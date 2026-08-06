@@ -138,8 +138,18 @@ See also [Querying](Queries.md) and [Configuration](configuration.md).
   combined with EF Core's own `.IsConcurrencyToken()` — see
   [Optimistic concurrency](concurrency.md). Without it, `SaveChangesAsync` performs an
   unconditional write (today's default, unchanged behavior).
-* **`META().id`/`META().expiration` are readable** via the same `[CouchbaseMeta]` mechanism, but
-  read-only — the provider has no API for *setting* a document's TTL/expiration on write.
+* **`META().id`/`META().expiration`/`META().flags`/`META().type` are readable** via the same
+  `[CouchbaseMeta]` mechanism, but read-only — the provider has no API for *setting* a document's
+  TTL/expiration on write.
+* **Known Couchbase Server limitation: don't combine `Flags` and `Expiration` in the same query.**
+  Projecting `META(alias).flags` together with `META(alias).expiration` in one `SELECT` — e.g. by
+  putting both `[CouchbaseMeta(CouchbaseMetaField.Flags)]` and
+  `[CouchbaseMeta(CouchbaseMetaField.Expiration)]` on the same queried entity — makes the Couchbase
+  Server query engine itself return `0` for `flags`, regardless of the document's real value. This
+  was confirmed to be a server-side query-engine bug (not something this provider's SQL generation
+  or materialization causes), by issuing the exact failing SQL directly via the SDK and observing
+  the wrong value already present in the raw N1QL response. `Flags` reads back correctly alone or
+  combined with `Cas`/`Id`/`Type` — only the combination with `Expiration` is affected.
 * **`META().xattrs` (extended attributes) are not supported.**
 
 ## Value generation and keys

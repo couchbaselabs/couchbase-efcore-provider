@@ -10,7 +10,8 @@ namespace Couchbase.EntityFrameworkCode.IntegrationTests.Tests;
 /// <summary>
 /// Proves N1QL <c>META()</c> support against a real cluster: <c>META().cas</c> as an EF Core
 /// optimistic-concurrency token (closing the previously-nonexistent concurrent-write detection
-/// gap), and read-only <c>META().id</c>/<c>META().expiration</c> access.
+/// gap), and read-only <c>META().id</c>/<c>META().expiration</c>/<c>META().flags</c>/<c>META().type</c>
+/// access.
 /// </summary>
 [Collection(CouchbaseTestingCollection.Name)]
 public class CouchbaseMetaTests(BloggingFixture fixture) : IAsyncLifetime
@@ -247,6 +248,205 @@ public class CouchbaseMetaTests(BloggingFixture fixture) : IAsyncLifetime
                 b.ToCouchbaseCollection(this, collectionName);
                 b.Property(e => e.Cas).IsConcurrencyToken();
             });
+        }
+    }
+}
+
+/// <summary>
+/// Proves N1QL <c>META().flags</c>/<c>META().type</c> support against a real cluster.
+/// </summary>
+/// <remarks>
+/// <see cref="FlagsTypeEntity"/> deliberately does NOT also carry a <c>[CouchbaseMeta(Expiration)]</c>
+/// property -- projecting <c>META(alias).flags</c> together with <c>META(alias).expiration</c> in
+/// the same SELECT was found (via an isolated live-cluster spike, bypassing this provider's reader
+/// entirely and inspecting the raw N1QL response) to make the Couchbase Server query engine itself
+/// return <c>0</c> for <c>flags</c>, regardless of the document's real flags value -- a query-engine
+/// bug, not something this provider's SQL generation or materialization causes or can work around.
+/// See the "Known limitations" note on <see cref="CouchbaseMetaField.Flags"/> and
+/// <c>docs/limitations.md</c>.
+/// </remarks>
+[Collection(CouchbaseTestingCollection.Name)]
+public class CouchbaseMetaFlagsTypeTests(BloggingFixture fixture) : IAsyncLifetime
+{
+    private static readonly string CollectionName = "metaflags" + Guid.NewGuid().ToString("N");
+
+    public Task InitializeAsync() => Task.CompletedTask;
+
+    private FlagsTypeDbContext CreateContext()
+    {
+        var optionsBuilder = new DbContextOptionsBuilder<FlagsTypeDbContext>();
+        optionsBuilder.UseCouchbase(
+            new global::Couchbase.ClusterOptions()
+                .WithConnectionString(fixture.Host)
+                .WithPasswordAuthentication(fixture.Username, fixture.Password),
+            o =>
+            {
+                o.Bucket = fixture.BucketName;
+                o.Scope = fixture.ScopeName;
+                o.AutoCreateIndexes = true;
+                o.ScanConsistency = global::Couchbase.Query.QueryScanConsistency.RequestPlus;
+            });
+        optionsBuilder.ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning));
+        return new FlagsTypeDbContext(optionsBuilder.Options, CollectionName);
+    }
+
+    [Fact]
+    public async Task Type_ForJsonDocument_ReadsAsJson()
+    {
+        await using var ctx = CreateContext();
+        await ctx.Database.EnsureCreatedAsync();
+        ctx.Entities.Add(new FlagsTypeEntity { Id = 1, Name = "typed" });
+        await ctx.SaveChangesAsync();
+
+        await using var readCtx = CreateContext();
+        var entity = await readCtx.Entities.SingleAsync(e => e.Id == 1);
+
+        Assert.Equal("json", entity.DocType);
+    }
+
+    [Fact]
+    public async Task Flags_ForJsonDocument_ReadsAsNonZeroValue()
+    {
+        await using var ctx = CreateContext();
+        await ctx.Database.EnsureCreatedAsync();
+        ctx.Entities.Add(new FlagsTypeEntity { Id = 2, Name = "flagged" });
+        await ctx.SaveChangesAsync();
+
+        await using var readCtx = CreateContext();
+        var entity = await readCtx.Entities.SingleAsync(e => e.Id == 2);
+
+        // The exact bit pattern is an SDK/serializer implementation detail (it encodes datatype
+        // hints, not anything this provider controls) -- assert only that a real value comes back,
+        // not a specific constant.
+        Assert.NotEqual(0u, entity.DocFlags);
+    }
+
+    public async Task DisposeAsync()
+    {
+        try
+        {
+            var clusterOptions = new global::Couchbase.ClusterOptions()
+                .WithConnectionString(fixture.Host)
+                .WithCredentials(fixture.Username, fixture.Password);
+            using var cluster = await global::Couchbase.Cluster.ConnectAsync(clusterOptions);
+            var bucket = await cluster.BucketAsync(fixture.BucketName);
+            await bucket.Collections.DropCollectionAsync(fixture.ScopeName, CollectionName);
+        }
+        catch (global::Couchbase.Management.Collections.CollectionNotFoundException)
+        {
+        }
+    }
+
+    public class FlagsTypeEntity
+    {
+        public int Id { get; set; }
+        public string Name { get; set; } = string.Empty;
+
+        [CouchbaseMeta(CouchbaseMetaField.Flags)]
+        public uint DocFlags { get; set; }
+
+        [CouchbaseMeta(CouchbaseMetaField.Type)]
+        public string DocType { get; set; } = string.Empty;
+    }
+
+    public class FlagsTypeDbContext(DbContextOptions<FlagsTypeDbContext> options, string collectionName)
+        : DbContext(options)
+    {
+        public DbSet<FlagsTypeEntity> Entities { get; set; } = null!;
+
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            base.OnModelCreating(modelBuilder);
+            modelBuilder.Entity<FlagsTypeEntity>(b => b.ToCouchbaseCollection(this, collectionName));
+        }
+    }
+}
+
+/// <summary>
+/// Documents a confirmed Couchbase Server N1QL query-engine limitation (not a bug in this
+/// provider): projecting <c>META(alias).flags</c> together with <c>META(alias).expiration</c> in
+/// the same SELECT makes the server return <c>0</c> for <c>flags</c> regardless of the document's
+/// real value. Confirmed via a raw <c>QueryAsync&lt;JsonElement&gt;</c> call bypassing this
+/// provider's SQL generation and reader entirely -- the wrong value is already present in the raw
+/// N1QL response, so there is nothing to fix client-side. If a future Couchbase Server release
+/// fixes this, this test starts failing and should be treated as a signal to relax the "avoid
+/// combining Flags with Expiration" guidance in <c>docs/limitations.md</c> and on
+/// <see cref="CouchbaseMetaField.Flags"/>'s XML doc comment.
+/// </summary>
+[Collection(CouchbaseTestingCollection.Name)]
+public class CouchbaseMetaFlagsExpirationKnownLimitationTests(BloggingFixture fixture) : IAsyncLifetime
+{
+    private static readonly string CollectionName = "metaflagsexp" + Guid.NewGuid().ToString("N");
+
+    public Task InitializeAsync() => Task.CompletedTask;
+
+    [Fact]
+    public async Task Flags_CombinedWithExpirationInSameQuery_ServerReturnsZeroInsteadOfRealValue()
+    {
+        var optionsBuilder = new DbContextOptionsBuilder<CombinedDbContext>();
+        optionsBuilder.UseCouchbase(
+            new global::Couchbase.ClusterOptions()
+                .WithConnectionString(fixture.Host)
+                .WithPasswordAuthentication(fixture.Username, fixture.Password),
+            o =>
+            {
+                o.Bucket = fixture.BucketName;
+                o.Scope = fixture.ScopeName;
+                o.AutoCreateIndexes = true;
+                o.ScanConsistency = global::Couchbase.Query.QueryScanConsistency.RequestPlus;
+            });
+        optionsBuilder.ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning));
+
+        await using var ctx = new CombinedDbContext(optionsBuilder.Options, CollectionName);
+        await ctx.Database.EnsureCreatedAsync();
+        ctx.Entities.Add(new CombinedEntity { Id = 1 });
+        await ctx.SaveChangesAsync();
+
+        await using var readCtx = new CombinedDbContext(optionsBuilder.Options, CollectionName);
+        var entity = await readCtx.Entities.SingleAsync(e => e.Id == 1);
+
+        // This asserts the CURRENT, CONFIRMED-BUGGY server behavior -- Flags reads back as 0 here
+        // even though the document's real flags value is nonzero (proven separately in
+        // CouchbaseMetaFlagsTypeTests, which never combines Flags with Expiration in one query).
+        Assert.Equal(0u, entity.DocFlags);
+    }
+
+    public async Task DisposeAsync()
+    {
+        try
+        {
+            var clusterOptions = new global::Couchbase.ClusterOptions()
+                .WithConnectionString(fixture.Host)
+                .WithCredentials(fixture.Username, fixture.Password);
+            using var cluster = await global::Couchbase.Cluster.ConnectAsync(clusterOptions);
+            var bucket = await cluster.BucketAsync(fixture.BucketName);
+            await bucket.Collections.DropCollectionAsync(fixture.ScopeName, CollectionName);
+        }
+        catch (global::Couchbase.Management.Collections.CollectionNotFoundException)
+        {
+        }
+    }
+
+    public class CombinedEntity
+    {
+        public int Id { get; set; }
+
+        [CouchbaseMeta(CouchbaseMetaField.Flags)]
+        public uint DocFlags { get; set; }
+
+        [CouchbaseMeta(CouchbaseMetaField.Expiration)]
+        public long Expiration { get; set; }
+    }
+
+    public class CombinedDbContext(DbContextOptions<CombinedDbContext> options, string collectionName)
+        : DbContext(options)
+    {
+        public DbSet<CombinedEntity> Entities { get; set; } = null!;
+
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            base.OnModelCreating(modelBuilder);
+            modelBuilder.Entity<CombinedEntity>(b => b.ToCouchbaseCollection(this, collectionName));
         }
     }
 }

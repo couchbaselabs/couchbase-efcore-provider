@@ -827,6 +827,56 @@ public class CouchbasePropertyBuilderExtensionsTests
         Assert.Contains("ulong", exception.Message);
     }
 
+    [Fact]
+    public void HasCouchbaseMeta_FlagsOnUintProperty_SetsAnnotation()
+    {
+        var modelBuilder = new ModelBuilder();
+        var entityBuilder = modelBuilder.Entity<MetaEntity>();
+
+        entityBuilder.Property(e => e.DocFlags).HasCouchbaseMeta(CouchbaseMetaField.Flags);
+
+        var property = modelBuilder.Model.FindEntityType(typeof(MetaEntity))!.FindProperty(nameof(MetaEntity.DocFlags));
+        Assert.Equal("Flags", property!.FindAnnotation(CouchbaseMetaAnnotationNames.MetaField)?.Value);
+    }
+
+    [Fact]
+    public void HasCouchbaseMeta_TypeOnStringProperty_SetsAnnotation()
+    {
+        var modelBuilder = new ModelBuilder();
+        var entityBuilder = modelBuilder.Entity<MetaEntity>();
+
+        entityBuilder.Property(e => e.DocType).HasCouchbaseMeta(CouchbaseMetaField.Type);
+
+        var property = modelBuilder.Model.FindEntityType(typeof(MetaEntity))!.FindProperty(nameof(MetaEntity.DocType));
+        Assert.Equal("Type", property!.FindAnnotation(CouchbaseMetaAnnotationNames.MetaField)?.Value);
+    }
+
+    [Fact]
+    public void HasCouchbaseMeta_FlagsOnNonUintProperty_ThrowsInvalidOperationException()
+    {
+        var modelBuilder = new ModelBuilder();
+        var entityBuilder = modelBuilder.Entity<MetaEntity>();
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            entityBuilder.Property(e => e.Id).HasCouchbaseMeta(CouchbaseMetaField.Flags));
+
+        Assert.Contains("HasCouchbaseMeta(Flags)", exception.Message);
+        Assert.Contains("uint", exception.Message);
+    }
+
+    [Fact]
+    public void HasCouchbaseMeta_TypeOnNonStringProperty_ThrowsInvalidOperationException()
+    {
+        var modelBuilder = new ModelBuilder();
+        var entityBuilder = modelBuilder.Entity<MetaEntity>();
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            entityBuilder.Property(e => e.Id).HasCouchbaseMeta(CouchbaseMetaField.Type));
+
+        Assert.Contains("HasCouchbaseMeta(Type)", exception.Message);
+        Assert.Contains("string", exception.Message);
+    }
+
     #endregion
 
     private class DateTimeEntity
@@ -841,6 +891,8 @@ public class CouchbasePropertyBuilderExtensionsTests
         public long Id { get; set; }
         public ulong Cas { get; set; }
         public string DocId { get; set; } = string.Empty;
+        public uint DocFlags { get; set; }
+        public string DocType { get; set; } = string.Empty;
     }
 
     private class TestEntity

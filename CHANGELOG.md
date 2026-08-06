@@ -9,6 +9,18 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ### Added
 
+- **`[CouchbaseMeta(CouchbaseMetaField.Flags)]`/`[CouchbaseMeta(CouchbaseMetaField.Type)]`.**
+  Extends the existing `META()` mechanism (see [Optimistic concurrency and document
+  metadata](docs/concurrency.md)) with two more read-only fields: `Flags` (a `uint` property
+  sourced from `META(alias).flags`, the SDK's KV-layer datatype marker) and `Type` (a `string`
+  property sourced from `META(alias).type`, e.g. `"json"`). No new SQL generation or read-path
+  machinery was needed — the existing `Couchbase:MetaField` annotation/`VisitColumn` rendering is
+  fully generic over the field name. **Known limitation found during this work:** projecting
+  `META(alias).flags` together with `META(alias).expiration` in the same query makes the
+  Couchbase Server query engine itself return `0` for `flags` — confirmed as a server-side bug
+  (the wrong value is already present in the raw N1QL response, bypassing this provider's code
+  entirely), not something fixable client-side. See [Optimistic concurrency and document
+  metadata](docs/concurrency.md#reading-other-meta-fields) and [Limitations](docs/limitations.md).
 - **`EF.Functions.IsMissing`/`IsNotMissing`/`IsValued`/`IsNotValued`.** Exposes N1QL's postfix
   `IS [NOT] MISSING`/`IS [NOT] VALUED` operators, letting a query distinguish a field that's
   genuinely *missing* (absent from the JSON entirely) from one that's present with an explicit
