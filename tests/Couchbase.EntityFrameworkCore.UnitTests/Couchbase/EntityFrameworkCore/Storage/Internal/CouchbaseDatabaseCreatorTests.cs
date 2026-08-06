@@ -1315,21 +1315,41 @@ public class CouchbaseDatabaseCreatorTests
     #region EnsureCreatedAsync Tests - TimeProvider-driven Deadlines and Retries
 
     /// <summary>
-    /// Repeatedly advances <paramref name="fakeTime"/> by <paramref name="step"/>, yielding after
-    /// each advance so any woken continuation gets a chance to run, until <paramref name="task"/>
-    /// completes. Lets a test exercise a 60-second deadline or a multi-attempt retry-with-delay
-    /// loop without an equivalent real-time wait -- <see cref="FakeTimeProvider.Advance"/> only
-    /// wakes timers that are due relative to whatever the simulated clock already is at the moment
-    /// it's called, so a single large jump can't skip over a chain of sequential delays; each one
-    /// needs its own advance.
+    /// Repeatedly advances <paramref name="fakeTime"/> by <paramref name="step"/>, pausing briefly
+    /// after each advance so any woken continuation gets a chance to run, until
+    /// <paramref name="task"/> completes. Lets a test exercise a 60-second deadline or a
+    /// multi-attempt retry-with-delay loop without an equivalent real-time wait --
+    /// <see cref="FakeTimeProvider.Advance"/> only wakes timers that are due relative to whatever
+    /// the simulated clock already is at the moment it's called, so a single large jump can't skip
+    /// over a chain of sequential delays; each one needs its own advance.
     /// </summary>
+    /// <remarks>
+    /// The pause between advances is a genuine (if tiny) real-time <c>Task.Delay(1)</c>, not
+    /// <c>Task.Yield()</c> -- empirically, <c>Task.Yield()</c> was not reliably enough for the code
+    /// under test's next <c>Task.Delay(_, fakeTime, _)</c> continuation to actually resume and
+    /// register its own timer before this loop's next <see cref="FakeTimeProvider.Advance"/> call,
+    /// which could otherwise land before that timer existed and be missed entirely (surfaced as
+    /// this method's own fail-fast assertion below, not a silent hang, since it was added
+    /// specifically to catch this class of timing gap). A 1ms real delay costs nothing observable
+    /// against the seconds/minutes of real waiting this helper exists to avoid.
+    /// </remarks>
     private static async Task AdvanceUntilCompleteAsync(FakeTimeProvider fakeTime, Task task, TimeSpan step, int maxIterations = 500)
     {
         for (var i = 0; i < maxIterations && !task.IsCompleted; i++)
         {
             fakeTime.Advance(step);
-            await Task.Yield();
+            await Task.Delay(1);
         }
+
+        // Fail fast here instead of letting the caller's next `await task`/`Assert.ThrowsAsync`
+        // hang indefinitely: if the code under test stopped scheduling FakeTimeProvider timers (a
+        // bug, or `step`/`maxIterations` too small for how it actually waits), the task never
+        // completes no matter how long a real wait ran -- so a hang here means "genuinely broken",
+        // not "just needs more real time," and should be reported as a normal assertion failure.
+        Assert.True(task.IsCompleted,
+            $"Task did not complete after advancing the fake clock by {step} x {maxIterations} " +
+            "iterations. The code under test may have stopped scheduling timers, or maxIterations/" +
+            "step is too small for how long it actually waits.");
     }
 
     [Fact]
