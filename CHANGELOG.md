@@ -195,6 +195,19 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
   `AutoCreateIndexes` under concurrent load; fixed by including all of these in both methods, and
   `SerializerOptions` via reference equality.
 
+### Changed
+
+- **`CouchbaseDatabaseCreator`'s retry/online-wait deadlines and delays now run on an injectable
+  `TimeProvider`** instead of raw `DateTime.UtcNow`/`Task.Delay`. Purely an internal testability
+  improvement — behavior is unchanged (defaults to `TimeProvider.System` when nothing is injected,
+  which nothing needs to register explicitly: an unregistered `TimeProvider` falls back to the
+  constructor's optional-parameter default via the standard DI resolution rules). Lets the 60-second
+  primary/secondary index online-wait deadlines and the 10-attempt DDL/bucket-retrieval retry delays
+  be exercised deterministically in unit tests (via `Microsoft.Extensions.TimeProvider.Testing`'s
+  `FakeTimeProvider`, advancing simulated time instead of waiting in real time) — closing a
+  previously undocumented gap where the timeout-wrapping fixes from the `AutoCreateIndexes` work had
+  no automated regression coverage at all.
+
 ## [2.0.0-beta.2] - 2026-07-15
 
 ### Added
