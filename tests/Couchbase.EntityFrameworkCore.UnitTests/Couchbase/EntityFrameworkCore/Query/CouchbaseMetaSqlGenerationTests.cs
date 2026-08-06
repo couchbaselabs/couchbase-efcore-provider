@@ -64,6 +64,28 @@ public class CouchbaseMetaSqlGenerationTests(ITestOutputHelper output)
         Assert.Contains(").cas", sql, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public void Select_FlagsProperty_ProjectsAsMetaFlagsWithExplicitAlias()
+    {
+        using var ctx = CreateContext();
+        var sql = ctx.Entities.Select(e => new { e.Id, e.DocFlags }).ToQueryString();
+        output.WriteLine("SQL: " + sql);
+
+        Assert.Contains("META(", sql);
+        Assert.Matches(@"META\([^)]+\)\.flags\s+AS\s+`DocFlags`", sql);
+    }
+
+    [Fact]
+    public void Select_TypeProperty_ProjectsAsMetaTypeWithExplicitAlias()
+    {
+        using var ctx = CreateContext();
+        var sql = ctx.Entities.Select(e => new { e.Id, e.DocType }).ToQueryString();
+        output.WriteLine("SQL: " + sql);
+
+        Assert.Contains("META(", sql);
+        Assert.Matches(@"META\([^)]+\)\.type\s+AS\s+`DocType`", sql);
+    }
+
     private static MetaContext CreateContext()
     {
         var clusterOptions = new ClusterOptions()
@@ -83,6 +105,12 @@ public class CouchbaseMetaSqlGenerationTests(ITestOutputHelper output)
 
         [CouchbaseMeta(CouchbaseMetaField.Id)]
         public string DocumentKey { get; set; } = string.Empty;
+
+        [CouchbaseMeta(CouchbaseMetaField.Flags)]
+        public uint DocFlags { get; set; }
+
+        [CouchbaseMeta(CouchbaseMetaField.Type)]
+        public string DocType { get; set; } = string.Empty;
     }
 
     private class MetaContext(DbContextOptions<MetaContext> options) : DbContext(options)

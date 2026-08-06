@@ -60,10 +60,13 @@ catch (DbUpdateConcurrencyException)
 
 ## Reading other META() fields
 
-`[CouchbaseMeta(CouchbaseMetaField.Id)]` (a `string` property) and
+`[CouchbaseMeta(CouchbaseMetaField.Id)]` (a `string` property),
 `[CouchbaseMeta(CouchbaseMetaField.Expiration)]` (a `long` property, Unix epoch seconds — `0`
-means no expiration) work the same way, but are read-only: the provider has no API for setting a
-document's key or TTL on write.
+means no expiration), `[CouchbaseMeta(CouchbaseMetaField.Flags)]` (a `uint` property — an opaque
+value the SDK's KV layer uses to record the document's datatype), and
+`[CouchbaseMeta(CouchbaseMetaField.Type)]` (a `string` property — e.g. `"json"`) all work the same
+way, but are read-only: the provider has no API for setting a document's key, TTL, flags, or type
+on write.
 
 ```
 public class Order
@@ -79,8 +82,18 @@ public class Order
 ```
 
 A `[CouchbaseMeta]` property must be the exact CLR type its field requires (`ulong` for `Cas`,
-`string` for `Id`, `long` for `Expiration`) — applying it to any other type throws
-`InvalidOperationException` at model-build time, and the fluent `HasCouchbaseMeta(...)` form
-throws the same way.
+`string` for `Id`/`Type`, `long` for `Expiration`, `uint` for `Flags`) — applying it to any other
+type throws `InvalidOperationException` at model-build time, and the fluent
+`HasCouchbaseMeta(...)` form throws the same way.
+
+> [!WARNING]
+> **Known Couchbase Server limitation:** don't put both `[CouchbaseMeta(CouchbaseMetaField.Flags)]`
+> and `[CouchbaseMeta(CouchbaseMetaField.Expiration)]` on the same queried entity. Projecting
+> `META(alias).flags` together with `META(alias).expiration` in one `SELECT` makes the Couchbase
+> Server query engine itself return `0` for `flags`, regardless of the document's real value —
+> confirmed by issuing the exact SQL directly via the SDK and observing the wrong value already
+> present in the raw N1QL response, so this is not something this provider's SQL generation or
+> materialization causes or can work around. `Flags` reads back correctly alone, or combined with
+> `Cas`/`Id`/`Type` — only the combination with `Expiration` is affected.
 
 Not supported: `META().xattrs` (extended attributes).
