@@ -23,17 +23,26 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
     private readonly IServiceProvider _serviceProvider;
     private readonly ICouchbaseDbContextOptionsBuilder _couchbaseDbContextOptionsBuilder;
     private readonly ISqlGenerationHelper _sqlGenerationHelper;
+    private readonly TimeProvider _timeProvider;
     // Lazily initialized by InitializeAsync before any use; null-forgiving avoids cascading
     // nullable warnings at the (guaranteed-initialized) deref sites.
     private ICluster _cluster = null!;
 
+    /// <param name="timeProvider">
+    /// Source of time for the retry/online-wait deadlines and delays below. Optional and defaults
+    /// to <see cref="TimeProvider.System"/> — nothing needs to register <see cref="TimeProvider"/>
+    /// in DI for normal use; tests can pass a <c>FakeTimeProvider</c> (from
+    /// <c>Microsoft.Extensions.TimeProvider.Testing</c>) directly to make the 60s/1s/500ms
+    /// constants advance deterministically instead of requiring a real wait.
+    /// </param>
     public CouchbaseDatabaseCreator(RelationalDatabaseCreatorDependencies dependencies,
         IDatabase database,
         IServiceProvider serviceProvider,
         IDesignTimeModel designTimeModel,
         ILogger<CouchbaseDatabaseCreator> logger,
         ICouchbaseDbContextOptionsBuilder couchbaseDbContextOptionsBuilder,
-        ISqlGenerationHelper sqlGenerationHelper) : base(dependencies)
+        ISqlGenerationHelper sqlGenerationHelper,
+        TimeProvider? timeProvider = null) : base(dependencies)
     {
         _database = database;
         _designTimeModel = designTimeModel;
@@ -41,6 +50,7 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
         _serviceProvider = serviceProvider;
         _couchbaseDbContextOptionsBuilder = couchbaseDbContextOptionsBuilder;
         _sqlGenerationHelper = sqlGenerationHelper;
+        _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     private async Task InitializeAsync(CancellationToken cancellationToken = default)
@@ -60,7 +70,7 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
     private async Task<IBucket> GetBucketAsync(string bucketName, CancellationToken cancellationToken = default)
     {
         const int maxRetries = 10;
-        const int delayMs = 500;
+        var delay = TimeSpan.FromMilliseconds(500);
 
         for (var attempt = 1; attempt <= maxRetries; attempt++)
         {
@@ -82,7 +92,7 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
                 _logger.LogWarning(e, "Couchbase bucket '{BucketName}' could not be retrieved (attempt {Attempt}/{MaxRetries}). Retrying...",
                     bucketName, attempt, maxRetries);
 
-                await Task.Delay(delayMs, cancellationToken);
+                await Task.Delay(delay, _timeProvider, cancellationToken);
             }
         }
 
@@ -603,7 +613,7 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
                 _logger.LogDebug(ex,
                     "DDL execution for {Keyspace} failed (attempt {Attempt}/{MaxAttempts}); retrying...",
                     keyspace.ToSqlString(), attempt, maxAttempts);
-                await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
+                await Task.Delay(TimeSpan.FromSeconds(1), _timeProvider, cancellationToken);
             }
         }
     }
@@ -612,7 +622,7 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
     {
         // Per-keyspace deadline: a shared deadline would let time spent waiting on earlier
         // keyspaces eat into the budget for later ones, causing spurious timeouts.
-        var onlineDeadline = DateTime.UtcNow + TimeSpan.FromSeconds(60);
+        var onlineDeadline = _timeProvider.GetUtcNow() + TimeSpan.FromSeconds(60);
         Exception? lastError = null;
 
         while (true)
@@ -652,19 +662,19 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
                 return;
             }
 
-            if (DateTime.UtcNow > onlineDeadline)
+            if (_timeProvider.GetUtcNow() > onlineDeadline)
             {
                 throw new TimeoutException(
                     $"Primary index for {keyspace.ToSqlString()} did not come online within 60 seconds.", lastError);
             }
 
-            await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
+            await Task.Delay(TimeSpan.FromSeconds(1), _timeProvider, cancellationToken);
         }
     }
 
     private async Task WaitForSecondaryIndexOnlineAsync(CouchbaseKeyspace keyspace, string indexName, CancellationToken cancellationToken)
     {
-        var onlineDeadline = DateTime.UtcNow + TimeSpan.FromSeconds(60);
+        var onlineDeadline = _timeProvider.GetUtcNow() + TimeSpan.FromSeconds(60);
         Exception? lastError = null;
 
         while (true)
@@ -706,14 +716,14 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
                 return;
             }
 
-            if (DateTime.UtcNow > onlineDeadline)
+            if (_timeProvider.GetUtcNow() > onlineDeadline)
             {
                 throw new TimeoutException(
                     $"Secondary index '{indexName}' for {keyspace.ToSqlString()} did not come online within 60 seconds.",
                     lastError);
             }
 
-            await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
+            await Task.Delay(TimeSpan.FromSeconds(1), _timeProvider, cancellationToken);
         }
     }
 

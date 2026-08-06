@@ -14,6 +14,7 @@ using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Time.Testing;
 using Moq;
 using Xunit;
 
@@ -78,7 +79,7 @@ public class CouchbaseDatabaseCreatorTests
             .Returns<string>(s => $"`{s}`");
     }
 
-    private CouchbaseDatabaseCreator CreateCreator()
+    private CouchbaseDatabaseCreator CreateCreator(TimeProvider? timeProvider = null)
     {
         // Create minimal dependencies - we'll use reflection or make methods testable
         var dependencies = CreateMockDependencies();
@@ -89,7 +90,8 @@ public class CouchbaseDatabaseCreatorTests
             _mockDesignTimeModel.Object,
             _mockLogger.Object,
             _mockOptions.Object,
-            _mockSqlGenerationHelper.Object);
+            _mockSqlGenerationHelper.Object,
+            timeProvider);
     }
 
     private static IQueryResult<T> CreateFakeQueryResult<T>(List<T> rows)
@@ -1306,6 +1308,184 @@ public class CouchbaseDatabaseCreatorTests
                 It.Is<string>(sql => sql.StartsWith("CREATE INDEX `ix_shared_score` IF NOT EXISTS")),
                 It.IsAny<QueryOptions>()),
             Times.Once);
+    }
+
+    #endregion
+
+    #region EnsureCreatedAsync Tests - TimeProvider-driven Deadlines and Retries
+
+    /// <summary>
+    /// Repeatedly advances <paramref name="fakeTime"/> by <paramref name="step"/>, pausing briefly
+    /// after each advance so any woken continuation gets a chance to run, until
+    /// <paramref name="task"/> completes. Lets a test exercise a 60-second deadline or a
+    /// multi-attempt retry-with-delay loop without an equivalent real-time wait --
+    /// <see cref="FakeTimeProvider.Advance"/> only wakes timers that are due relative to whatever
+    /// the simulated clock already is at the moment it's called, so a single large jump can't skip
+    /// over a chain of sequential delays; each one needs its own advance.
+    /// </summary>
+    /// <remarks>
+    /// The pause between advances is a genuine (if tiny) real-time <c>Task.Delay(1)</c>, not
+    /// <c>Task.Yield()</c> -- empirically, <c>Task.Yield()</c> was not reliably enough for the code
+    /// under test's next <c>Task.Delay(_, fakeTime, _)</c> continuation to actually resume and
+    /// register its own timer before this loop's next <see cref="FakeTimeProvider.Advance"/> call,
+    /// which could otherwise land before that timer existed and be missed entirely (surfaced as
+    /// this method's own fail-fast assertion below, not a silent hang, since it was added
+    /// specifically to catch this class of timing gap). A 1ms real delay costs nothing observable
+    /// against the seconds/minutes of real waiting this helper exists to avoid.
+    /// </remarks>
+    private static async Task AdvanceUntilCompleteAsync(FakeTimeProvider fakeTime, Task task, TimeSpan step, int maxIterations = 500)
+    {
+        for (var i = 0; i < maxIterations && !task.IsCompleted; i++)
+        {
+            fakeTime.Advance(step);
+            await Task.Delay(1);
+        }
+
+        // Fail fast here instead of letting the caller's next `await task`/`Assert.ThrowsAsync`
+        // hang indefinitely: if the code under test stopped scheduling FakeTimeProvider timers (a
+        // bug, or `step`/`maxIterations` too small for how it actually waits), the task never
+        // completes no matter how long a real wait ran -- so a hang here means "genuinely broken",
+        // not "just needs more real time," and should be reported as a normal assertion failure.
+        Assert.True(task.IsCompleted,
+            $"Task did not complete after advancing the fake clock by {step} x {maxIterations} " +
+            "iterations. The code under test may have stopped scheduling timers, or maxIterations/" +
+            "step is too small for how long it actually waits.");
+    }
+
+    [Fact]
+    public async Task EnsureCreatedAsync_WithAutoCreateIndexesEnabled_PrimaryIndexNeverComesOnline_ThrowsTimeoutExceptionWithoutRealWait()
+    {
+        // Arrange
+        _mockOptions.Setup(o => o.Bucket).Returns("my-bucket");
+        _mockOptions.Setup(o => o.Scope).Returns("my-scope");
+        _mockOptions.Setup(o => o.AutoCreateIndexes).Returns(true);
+
+        _mockBucketManager.Setup(m => m.GetBucketAsync("my-bucket", It.IsAny<GetBucketOptions>()))
+            .ReturnsAsync(new BucketSettings { Name = "my-bucket" });
+        _mockCluster.Setup(c => c.BucketAsync("my-bucket")).ReturnsAsync(_mockBucket.Object);
+        _mockCollectionManager.Setup(m => m.GetAllScopesAsync(It.IsAny<GetAllScopesOptions>()))
+            .ReturnsAsync(new List<ScopeSpec> { new ScopeSpec("my-scope") });
+
+        // Override the constructor's default (always online) so the primary index never reports online.
+        _mockCluster.Setup(c => c.QueryAsync<int>(It.IsAny<string>(), It.IsAny<QueryOptions>()))
+            .ReturnsAsync(CreateFakeQueryResult(new List<int> { 0 }));
+
+        var mockEntityType = new Mock<IEntityType>();
+        var mockTableNameAnnotation = new Mock<IAnnotation>();
+        mockTableNameAnnotation.Setup(a => a.Value).Returns("TestCollection");
+        mockEntityType.Setup(e => e.FindAnnotation("Relational:TableName")).Returns(mockTableNameAnnotation.Object);
+        mockEntityType.Setup(e => e.ClrType).Returns(typeof(TestEntity));
+        mockEntityType.Setup(e => e.GetProperties()).Returns(Array.Empty<IProperty>());
+        _mockModel.Setup(m => m.GetEntityTypes()).Returns(new[] { mockEntityType.Object });
+
+        var fakeTime = new FakeTimeProvider();
+        var creator = CreateCreator(fakeTime);
+
+        // Act - advancing the simulated clock past the 60-second deadline, not waiting for real
+        // wall-clock time to pass.
+        var task = creator.EnsureCreatedAsync();
+        await AdvanceUntilCompleteAsync(fakeTime, task, TimeSpan.FromSeconds(5));
+
+        // Assert
+        var ex = await Assert.ThrowsAsync<TimeoutException>(() => task);
+        Assert.Contains("Primary index", ex.Message);
+        Assert.Contains("did not come online within 60 seconds", ex.Message);
+    }
+
+    [Fact]
+    public async Task EnsureCreatedAsync_WithAutoCreateIndexesEnabled_SecondaryIndexNeverComesOnline_ThrowsTimeoutExceptionWithoutRealWait()
+    {
+        // Arrange
+        _mockOptions.Setup(o => o.Bucket).Returns("my-bucket");
+        _mockOptions.Setup(o => o.Scope).Returns("my-scope");
+        _mockOptions.Setup(o => o.AutoCreateIndexes).Returns(true);
+
+        _mockBucketManager.Setup(m => m.GetBucketAsync("my-bucket", It.IsAny<GetBucketOptions>()))
+            .ReturnsAsync(new BucketSettings { Name = "my-bucket" });
+        _mockCluster.Setup(c => c.BucketAsync("my-bucket")).ReturnsAsync(_mockBucket.Object);
+        _mockCollectionManager.Setup(m => m.GetAllScopesAsync(It.IsAny<GetAllScopesOptions>()))
+            .ReturnsAsync(new List<ScopeSpec> { new ScopeSpec("my-scope") });
+
+        // Primary index: online immediately (the constructor's default -- any QueryAsync<int> call
+        // returns count=1 -- covers both the online-check and ConfirmQueryableAsync's trial query).
+        // Secondary index: never reports online -- overridden specifically for its name-scoped query
+        // shape, which is more specific than the constructor's blanket setup and so takes precedence
+        // for matching calls.
+        _mockCluster.Setup(c => c.QueryAsync<int>(
+                It.Is<string>(sql => sql.Contains("AND name = $name")), It.IsAny<QueryOptions>()))
+            .ReturnsAsync(CreateFakeQueryResult(new List<int> { 0 }));
+
+        var mockEntityType = new Mock<IEntityType>();
+        var mockTableNameAnnotation = new Mock<IAnnotation>();
+        mockTableNameAnnotation.Setup(a => a.Value).Returns("TestCollection");
+        mockEntityType.Setup(e => e.FindAnnotation("Relational:TableName")).Returns(mockTableNameAnnotation.Object);
+        mockEntityType.Setup(e => e.ClrType).Returns(typeof(TestEntity));
+        mockEntityType.Setup(e => e.GetProperties()).Returns(Array.Empty<IProperty>());
+
+        var mockScoreProperty = CreateMockProperty("Score", mockEntityType.Object);
+        var mockIndex = CreateMockIndex(mockEntityType.Object, new[] { mockScoreProperty.Object }, "ix_score");
+        mockEntityType.Setup(e => e.GetIndexes()).Returns(new[] { mockIndex.Object });
+
+        _mockModel.Setup(m => m.GetEntityTypes()).Returns(new[] { mockEntityType.Object });
+
+        var fakeTime = new FakeTimeProvider();
+        var creator = CreateCreator(fakeTime);
+
+        // Act
+        var task = creator.EnsureCreatedAsync();
+        await AdvanceUntilCompleteAsync(fakeTime, task, TimeSpan.FromSeconds(5));
+
+        // Assert
+        var ex = await Assert.ThrowsAsync<TimeoutException>(() => task);
+        Assert.Contains("Secondary index", ex.Message);
+        Assert.Contains("did not come online within 60 seconds", ex.Message);
+    }
+
+    [Fact]
+    public async Task EnsureCreatedAsync_WithAutoCreateIndexesEnabled_TransientDdlFailures_RetriesUsingSimulatedTimeAndSucceeds()
+    {
+        // Arrange
+        _mockOptions.Setup(o => o.Bucket).Returns("my-bucket");
+        _mockOptions.Setup(o => o.Scope).Returns("my-scope");
+        _mockOptions.Setup(o => o.AutoCreateIndexes).Returns(true);
+
+        _mockBucketManager.Setup(m => m.GetBucketAsync("my-bucket", It.IsAny<GetBucketOptions>()))
+            .ReturnsAsync(new BucketSettings { Name = "my-bucket" });
+        _mockCluster.Setup(c => c.BucketAsync("my-bucket")).ReturnsAsync(_mockBucket.Object);
+        _mockCollectionManager.Setup(m => m.GetAllScopesAsync(It.IsAny<GetAllScopesOptions>()))
+            .ReturnsAsync(new List<ScopeSpec> { new ScopeSpec("my-scope") });
+
+        // The CREATE PRIMARY INDEX statement (issued via ExecuteDdlWithRetryAsync) fails
+        // transiently on the first two attempts before succeeding on the third.
+        var attempt = 0;
+        _mockScope.Setup(s => s.QueryAsync<dynamic>(It.IsAny<string>(), It.IsAny<QueryOptions>()))
+            .Returns(() =>
+            {
+                attempt++;
+                return attempt <= 2
+                    ? Task.FromException<IQueryResult<dynamic>>(new Exception($"transient failure {attempt}"))
+                    : Task.FromResult<IQueryResult<dynamic>>(CreateFakeQueryResult(new List<dynamic>()));
+            });
+
+        var mockEntityType = new Mock<IEntityType>();
+        var mockTableNameAnnotation = new Mock<IAnnotation>();
+        mockTableNameAnnotation.Setup(a => a.Value).Returns("TestCollection");
+        mockEntityType.Setup(e => e.FindAnnotation("Relational:TableName")).Returns(mockTableNameAnnotation.Object);
+        mockEntityType.Setup(e => e.ClrType).Returns(typeof(TestEntity));
+        mockEntityType.Setup(e => e.GetProperties()).Returns(Array.Empty<IProperty>());
+        _mockModel.Setup(m => m.GetEntityTypes()).Returns(new[] { mockEntityType.Object });
+
+        var fakeTime = new FakeTimeProvider();
+        var creator = CreateCreator(fakeTime);
+
+        // Act - each of the two 1-second retry delays is advanced past using simulated time.
+        var task = creator.EnsureCreatedAsync();
+        await AdvanceUntilCompleteAsync(fakeTime, task, TimeSpan.FromSeconds(1));
+
+        // Assert - succeeds once the transient failures stop, having actually reached the 3rd
+        // attempt (proving the retry loop, not just a lucky first success).
+        await task;
+        Assert.Equal(3, attempt);
     }
 
     #endregion
