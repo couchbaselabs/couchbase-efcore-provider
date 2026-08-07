@@ -7,6 +7,7 @@ using System.Reflection;
 using System.Reflection.Emit;
 using System.Reflection.Metadata;
 using System.Text;
+using Couchbase.EntityFrameworkCore.Extensions;
 using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.EntityFrameworkCore.Metadata;
 using Couchbase.EntityFrameworkCore.Query.Internal.Translators;
@@ -1248,7 +1249,69 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
             .Append(AliasSeparator)
             .Append(Dependencies.SqlGenerationHelper.DelimitIdentifier(tableExpression.Alias));
 
+        AppendUseIndexHint(tableExpression);
+        AppendUseHashHint(tableExpression);
+
         return tableExpression;
+    }
+
+    /// <summary>
+    /// Renders a <c>UseIndex</c> hint (see <see cref="CouchbaseQueryHintAnnotationNames.UseIndex"/>)
+    /// stashed on <paramref name="table"/> as N1QL's <c>USE INDEX(name USING GSI|FTS)</c>, right
+    /// after the table's alias -- the exact placement N1QL requires
+    /// (<see href="https://docs.couchbase.com/server/current/n1ql/n1ql-language-reference/from.html"/>).
+    /// No-op if the table carries no such annotation.
+    /// </summary>
+    private void AppendUseIndexHint(TableExpressionBase table)
+    {
+        // A type pattern like "string indexName" never matches a null first element, so a
+        // no-name hint (legitimate -- broadens to "any index of the given type") would silently
+        // fail to match here and never render. "var" always matches regardless of nullness.
+        if (table.FindAnnotation(CouchbaseQueryHintAnnotationNames.UseIndex)?.Value is not
+            (var indexNameObj, CouchbaseIndexType indexType))
+        {
+            return;
+        }
+
+        var indexName = (string?)indexNameObj;
+        var indexTypeText = indexType switch
+        {
+            CouchbaseIndexType.Gsi => "GSI",
+            CouchbaseIndexType.Fts => "FTS",
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(indexType), indexType, $"Unsupported {nameof(CouchbaseIndexType)} value."),
+        };
+
+        Sql.Append(" USE INDEX(");
+        if (indexName != null)
+        {
+            Sql.Append(Dependencies.SqlGenerationHelper.DelimitIdentifier(indexName)).Append(" ");
+        }
+
+        Sql.Append("USING ").Append(indexTypeText).Append(")");
+    }
+
+    /// <summary>
+    /// Renders a <c>UseHash</c> hint (see <see cref="CouchbaseQueryHintAnnotationNames.UseHash"/>)
+    /// stashed on <paramref name="table"/> as N1QL's <c>USE HASH(BUILD|PROBE)</c>, right after the
+    /// joined table's alias, before the join's <c>ON</c> clause.
+    /// </summary>
+    private void AppendUseHashHint(TableExpressionBase table)
+    {
+        if (table.FindAnnotation(CouchbaseQueryHintAnnotationNames.UseHash)?.Value is not CouchbaseHashHintType hashType)
+        {
+            return;
+        }
+
+        var hashTypeText = hashType switch
+        {
+            CouchbaseHashHintType.Build => "BUILD",
+            CouchbaseHashHintType.Probe => "PROBE",
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(hashType), hashType, $"Unsupported {nameof(CouchbaseHashHintType)} value."),
+        };
+
+        Sql.Append(" USE HASH(").Append(hashTypeText).Append(")");
     }
 
     private static readonly HashSet<string> DateTimeStrFunctionNames =
