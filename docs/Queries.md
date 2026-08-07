@@ -38,6 +38,51 @@ FROM `Blogging`.`MyBlog`.`PersonPhoto` AS `p`
 INNER JOIN `Blogging`.`MyBlog`.`Person` AS `p0` ON `p`.`PersonPhotoId` = `p0`.`PhotoId`
 ```
 
+## Query hints (USE INDEX / USE HASH)
+
+N1QL lets a query nudge the optimizer per keyspace reference — force a specific secondary index
+instead of letting the planner choose (`USE INDEX`), or force a hash-join strategy for a specific
+join and pick which side builds the hash table vs. probes it (`USE HASH`), instead of the default
+nested-loop join
+([reference](https://docs.couchbase.com/server/current/n1ql/n1ql-language-reference/hints.html)).
+Both are exposed as `IQueryable<T>` extension methods, mirroring N1QL's own per-FROM-term
+placement:
+
+```
+using Couchbase.EntityFrameworkCore.Extensions;
+
+// USE INDEX -- only valid on the root (primary) keyspace of a query, not after a join.
+var highScores = await context.Posts
+    .UseIndex("post_score_idx")
+    .Where(p => p.Score >= 20)
+    .ToListAsync();
+
+// A null name broadens the hint to "any index of the given type" (USE INDEX(USING GSI) with no name).
+var anyGsi = await context.Posts.UseIndex(null).ToListAsync();
+
+// USE HASH -- apply to the inner (right-hand) sequence of a join, before the join itself.
+var query = context.Posts.Join(
+    context.Authors.UseHash(CouchbaseHashHintType.Build),
+    p => p.AuthorId,
+    a => a.Id,
+    (p, a) => new { p.Title, a.Name });
+```
+
+This generates:
+
+```
+SELECT `p`.`Title`, `a`.`Name`
+FROM `Blogging`.`MyBlog`.`Post` AS `p`
+INNER JOIN `Blogging`.`MyBlog`.`Author` AS `a` USE HASH(BUILD) ON `p`.`AuthorId` = `a`.`Id`
+```
+
+`UseIndex`'s second parameter is a `CouchbaseIndexType` (`Gsi` — the default — or `Fts`), and
+`UseHash`'s parameter is a `CouchbaseHashHintType` (`Build` or `Probe`).
+
+Both are optimizer nudges, not correctness requirements — a query returns identical results
+whether or not the hint is honored. Calling either method on a non-Couchbase (e.g. in-memory)
+queryable is a silent, benign no-op.
+
 ## FirstAsync
 
 ```

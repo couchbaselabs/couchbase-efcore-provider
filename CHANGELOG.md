@@ -9,6 +9,15 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ### Added
 
+- **`UseIndex`/`UseHash` query hints.** New `IQueryable<T>` extension methods
+  (`Couchbase.EntityFrameworkCore.Extensions.CouchbaseQueryableExtensions`) exposing N1QL's
+  per-keyspace-reference optimizer hints: `UseIndex(name, CouchbaseIndexType)` forces a specific
+  secondary index (GSI or FTS) on the query's root keyspace instead of letting the planner choose,
+  and `UseHash(CouchbaseHashHintType)` forces a hash-join strategy (picking the BUILD/PROBE side)
+  for a specific join's inner sequence instead of the default nested-loop join. Implemented via a
+  new `VisitMethodCall` override in `CouchbaseQueryableMethodTranslatingExpressionVisitor` that
+  stashes the hint as a query-tree annotation on the relevant `TableExpression`, and a matching
+  render step in `CouchbaseQuerySqlGenerator`. See [Query hints](docs/Queries.md#query-hints-use-index--use-hash).
 - **`[CouchbaseMeta(CouchbaseMetaField.Flags)]`/`[CouchbaseMeta(CouchbaseMetaField.Type)]`.**
   Extends the existing `META()` mechanism (see [Optimistic concurrency and document
   metadata](docs/concurrency.md)) with two more read-only fields: `Flags` (a `uint` property
