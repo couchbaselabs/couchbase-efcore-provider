@@ -8,7 +8,7 @@
         <!-- EF1001 flags use of EF Core internal APIs. A database provider must use these by
              design, so suppress it project-wide (keeping the warning would bury real warnings). -->
         <NoWarn>$(NoWarn);EF1001</NoWarn>
-        <Version>2.0.0-beta.2</Version>
+        <Version>2.0.0-beta.3</Version>
         <Title>EF Core Couchbase DB Provider</Title>
         <Authors>Couchbase, Inc.</Authors>
         <Copyright>Couchbase, Inc. (c) 2026</Copyright>
@@ -66,18 +66,32 @@
              - CouchbaseQueryEnumerable.Create and CouchbaseQueryEnumerable<T>'s constructor
                (2026-07-14, multi-bucket DI work) gained parameters, which shows up as CP0002 only
                (the old signature no longer exists) since it's a concrete class, not an interface.
-             ICouchbaseClientWrapper, CouchbaseClientWrapper, and CouchbaseQueryEnumerable all live
-             under a ".Storage.Internal"/".Query.Internal" namespace and are provider-plumbing, not
-             part of the supported public surface — the same spirit as the project-wide EF1001
-             suppression above.
+             - CouchbaseFromSqlQueryingEnumerable.Create and its constructor (added 2026-08-10,
+               per-query RYOW work): same CP0002 shape as CouchbaseQueryEnumerable above, gained a
+               consistentWithParameterName parameter.
+             ICouchbaseClientWrapper, CouchbaseClientWrapper, CouchbaseQueryEnumerable, and
+             CouchbaseFromSqlQueryingEnumerable all live under a ".Storage.Internal"/".Query.Internal"
+             namespace and are provider-plumbing, not part of the supported public surface — the
+             same spirit as the project-wide EF1001 suppression above.
 
              CP0003 (strong-name difference) previously needed suppressing because the release
              assembly used to be signed manually *after* compilation, so the in-build assembly
              ApiCompat saw was unsigned. Removed 2026-07-14 now that SignRelease=true signs
              in-process — verified locally that a signed build produces the same strong name as the
-             baseline, so ApiCompat sees no difference there anymore. -->
+             baseline, so ApiCompat sees no difference there anymore.
+
+             PackageValidationBaselineVersion was left at 2.0.0-beta.1 through the entire 2.0.0-beta.2
+             development cycle instead of being bumped when beta.2 shipped (2026-07-15) as this
+             comment already instructed — several features landed in that window (AutoCreateIndexes,
+             DateTimeFormat/GoDateTimeFormat, a sealed-modifier fix, and a handful of internal ctor
+             signature changes) with no corresponding suppression entries, since nobody was running
+             this check against the actual just-shipped baseline to catch them. Bumped to 2.0.0-beta.2
+             now, for the beta.3 cut, and the accumulated gap was reconciled in CompatibilitySuppressions.xml
+             at the same time (all in the ".Storage.Internal"/".Query.Internal" provider-plumbing
+             namespaces, or new interface members, matching the existing precedent above — no
+             suppression covers a change to genuinely public, user-facing API). -->
         <EnablePackageValidation Condition="'$(ValidateApiCompat)' == 'true'">true</EnablePackageValidation>
-        <PackageValidationBaselineVersion>2.0.0-beta.1</PackageValidationBaselineVersion>
+        <PackageValidationBaselineVersion>2.0.0-beta.2</PackageValidationBaselineVersion>
     </PropertyGroup>
 
     <ItemGroup>
