@@ -98,6 +98,9 @@ public static class CouchbaseServiceCollectionExtensions
                 .TryAddScoped<IRelationalCommandBuilder, RelationalCommandBuilder>()
                 .TryAddScoped<ICouchbaseDbContextOptionsBuilder,
                     CouchbaseDbContextOptionsBuilder>(b=>optionsExtension.DbContextOptionsBuilder)
+                // Accumulates this DbContext's own write results into a MutationState for
+                // read-your-own-writes (ConsistentWith) queries -- see its own doc comments.
+                .TryAddScoped<CouchbaseMutationStateTracker, CouchbaseMutationStateTracker>()
             );
 
         builder.TryAddCoreServices();

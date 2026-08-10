@@ -17,6 +17,20 @@
   </Suppression>
   <Suppression>
     <DiagnosticId>CP0002</DiagnosticId>
+    <Target>M:Couchbase.EntityFrameworkCore.Query.Internal.CouchbaseFromSqlQueryingEnumerable.Create``1(Microsoft.EntityFrameworkCore.Query.RelationalQueryContext,Microsoft.EntityFrameworkCore.Query.Internal.RelationalCommandResolver,System.Collections.Generic.IReadOnlyList{Microsoft.EntityFrameworkCore.Storage.ReaderColumn},System.Collections.Generic.IReadOnlyList{System.String},System.Func{Microsoft.EntityFrameworkCore.Query.QueryContext,System.Data.Common.DbDataReader,System.Int32[],``0},System.Type,System.Boolean,System.Boolean,System.Boolean,Couchbase.Extensions.DependencyInjection.IBucketProvider,Couchbase.EntityFrameworkCore.Infrastructure.ICouchbaseDbContextOptionsBuilder)</Target>
+    <Left>lib/net10.0/Couchbase.EntityFrameworkCore.dll</Left>
+    <Right>lib/net10.0/Couchbase.EntityFrameworkCore.dll</Right>
+    <IsBaselineSuppression>true</IsBaselineSuppression>
+  </Suppression>
+  <Suppression>
+    <DiagnosticId>CP0002</DiagnosticId>
+    <Target>M:Couchbase.EntityFrameworkCore.Query.Internal.CouchbaseFromSqlQueryingEnumerable`1.#ctor(Microsoft.EntityFrameworkCore.Query.RelationalQueryContext,Microsoft.EntityFrameworkCore.Query.Internal.RelationalCommandResolver,System.Collections.Generic.IReadOnlyList{Microsoft.EntityFrameworkCore.Storage.ReaderColumn},System.Collections.Generic.IReadOnlyList{System.String},System.Func{Microsoft.EntityFrameworkCore.Query.QueryContext,System.Data.Common.DbDataReader,System.Int32[],`0},System.Type,System.Boolean,System.Boolean,System.Boolean,Couchbase.Extensions.DependencyInjection.IBucketProvider,Couchbase.EntityFrameworkCore.Infrastructure.ICouchbaseDbContextOptionsBuilder)</Target>
+    <Left>lib/net10.0/Couchbase.EntityFrameworkCore.dll</Left>
+    <Right>lib/net10.0/Couchbase.EntityFrameworkCore.dll</Right>
+    <IsBaselineSuppression>true</IsBaselineSuppression>
+  </Suppression>
+  <Suppression>
+    <DiagnosticId>CP0002</DiagnosticId>
     <Target>M:Couchbase.EntityFrameworkCore.Storage.Internal.CouchbaseClientWrapper.CreateDocument``1(System.String,System.String,``0)</Target>
     <Left>lib/net10.0/Couchbase.EntityFrameworkCore.dll</Left>
     <Right>lib/net10.0/Couchbase.EntityFrameworkCore.dll</Right>

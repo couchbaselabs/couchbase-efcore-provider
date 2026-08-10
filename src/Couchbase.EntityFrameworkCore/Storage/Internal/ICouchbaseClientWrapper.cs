@@ -10,21 +10,35 @@ public interface ICouchbaseClientWrapper
     /// <see cref="Couchbase.Core.Exceptions.CasMismatchException"/> if the document was modified
     /// since that CAS was read; when <see langword="null"/>, the delete is unconditional.
     /// </summary>
+    /// <remarks>
+    /// Unlike <see cref="CreateDocument{TEntity}"/>/<see cref="UpdateDocument{TEntity}"/>, this
+    /// cannot return a <see cref="Couchbase.Core.MutationToken"/>: the underlying SDK's
+    /// <c>ICouchbaseCollection.RemoveAsync</c> computes one internally but its public API never
+    /// surfaces it (confirmed against the SDK's own source -- <c>CouchbaseCollection.RemoveAsync</c>
+    /// discards <c>removeOp.MutationToken</c> after the call, unlike its <c>ReplaceAsync</c> sibling,
+    /// which wraps the equivalent value in a returned <c>IMutationResult</c>). A deleted document
+    /// therefore cannot contribute to a <see cref="Couchbase.Query.MutationState"/> for
+    /// read-your-own-writes purposes -- a real SDK limitation, not a gap in this provider.
+    /// </remarks>
     Task<bool> DeleteDocument(string id, string keyspace, ulong? cas = null, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Inserts a new document and returns its resulting CAS.
+    /// Inserts a new document, returning the SDK's own mutation result (its <c>Cas</c> and
+    /// <c>MutationToken</c> -- the latter needed to later build a <see cref="Couchbase.Query.MutationState"/>
+    /// for read-your-own-writes).
     /// </summary>
-    Task<ulong> CreateDocument<TEntity>(string id, string keyspace, TEntity entity, CancellationToken cancellationToken = default);
+    Task<IMutationResult> CreateDocument<TEntity>(string id, string keyspace, TEntity entity, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Writes a document and returns its resulting CAS. If <paramref name="cas"/> is supplied, this
-    /// uses a CAS-checked replace (via the SDK's <c>ReplaceOptions.Cas</c>) and throws
+    /// Writes a document, returning the SDK's own mutation result (its <c>Cas</c> and
+    /// <c>MutationToken</c> -- the latter needed to later build a <see cref="Couchbase.Query.MutationState"/>
+    /// for read-your-own-writes). If <paramref name="cas"/> is supplied, this uses a CAS-checked
+    /// replace (via the SDK's <c>ReplaceOptions.Cas</c>) and throws
     /// <see cref="Couchbase.Core.Exceptions.CasMismatchException"/> if the document was modified
     /// since that CAS was read; when <see langword="null"/>, this is an unconditional upsert
     /// (create-or-replace), matching this method's original behavior.
     /// </summary>
-    Task<ulong> UpdateDocument<TEntity>(string id, string keyspace, TEntity entity, ulong? cas = null, CancellationToken cancellationToken = default);
+    Task<IMutationResult> UpdateDocument<TEntity>(string id, string keyspace, TEntity entity, ulong? cas = null, CancellationToken cancellationToken = default);
 
     string BucketName { get; }
 

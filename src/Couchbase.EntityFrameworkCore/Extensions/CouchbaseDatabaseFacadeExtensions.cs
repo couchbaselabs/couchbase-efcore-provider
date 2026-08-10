@@ -2,6 +2,7 @@ using System.Data;
 using Couchbase.EntityFrameworkCore.Storage.Internal;
 using Couchbase.Extensions.DependencyInjection;
 using Couchbase.KeyValue;
+using Couchbase.Query;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -149,6 +150,29 @@ public static class CouchbaseDatabaseFacadeExtensions
             await couchbaseClient.Buckets.FlushBucketAsync(bucketName.ToString()!).ConfigureAwait(false);
         }
     }
+
+    /// <summary>
+    /// Returns a <see cref="MutationState"/> reflecting every write made through this
+    /// <see cref="DbContext"/> so far (across every <c>SaveChangesAsync</c> call, not just the most
+    /// recent one), for use with
+    /// <see cref="Couchbase.EntityFrameworkCore.Extensions.CouchbaseQueryableExtensions.ConsistentWith{TEntity}"/>
+    /// to guarantee a subsequent query sees those exact writes (read-your-own-writes / RYOW).
+    /// </summary>
+    /// <remarks>
+    /// Deleted documents do not contribute to this state -- see
+    /// <see cref="ICouchbaseClientWrapper.DeleteDocument"/>'s remarks for why (a Couchbase SDK
+    /// limitation, not a gap in this provider). Call <see cref="ClearMutationState"/> to reset
+    /// accumulation, e.g. to bound growth in a long-lived context.
+    /// </remarks>
+    public static MutationState GetMutationState(this DatabaseFacade databaseFacade)
+        => databaseFacade.GetService<CouchbaseMutationStateTracker>().GetMutationState();
+
+    /// <summary>
+    /// Discards every write recorded so far by <see cref="GetMutationState"/>, so the next call
+    /// reflects only writes made afterward.
+    /// </summary>
+    public static void ClearMutationState(this DatabaseFacade databaseFacade)
+        => databaseFacade.GetService<CouchbaseMutationStateTracker>().Clear();
 
     /// <summary>
     /// Gets the number of operations committed in a Couchbase transaction.

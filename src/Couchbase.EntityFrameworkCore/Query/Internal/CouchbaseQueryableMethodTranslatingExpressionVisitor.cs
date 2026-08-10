@@ -14,6 +14,7 @@ public class CouchbaseQueryableMethodTranslatingExpressionVisitor : RelationalQu
 {
     private static readonly MethodInfo UseIndexMethodInfo = CouchbaseQueryableExtensions.UseIndexMethodInfo;
     private static readonly MethodInfo UseHashMethodInfo = CouchbaseQueryableExtensions.UseHashMethodInfo;
+    private static readonly MethodInfo ConsistentWithMethodInfo = CouchbaseQueryableExtensions.ConsistentWithMethodInfo;
 
     private readonly IRelationalTypeMappingSource _typeMappingSource;
     private readonly SqlAliasManager _sqlAliasManager;
@@ -59,6 +60,11 @@ public class CouchbaseQueryableMethodTranslatingExpressionVisitor : RelationalQu
             if (genericMethod == UseHashMethodInfo)
             {
                 return TranslateUseHash(methodCallExpression);
+            }
+
+            if (genericMethod == ConsistentWithMethodInfo)
+            {
+                return TranslateConsistentWith(methodCallExpression);
             }
         }
 
@@ -112,6 +118,40 @@ public class CouchbaseQueryableMethodTranslatingExpressionVisitor : RelationalQu
             var annotatedTable = SetHintAnnotation(table, CouchbaseQueryHintAnnotationNames.UseHash, hashType);
             var newSelectExpression = (SelectExpression)new TableSwapExpressionVisitor(table, annotatedTable).Visit(selectExpression);
             return shapedQueryExpression.UpdateQueryExpression(newSelectExpression);
+        }
+
+        return source!;
+    }
+
+    /// <summary>
+    /// Wraps a <c>ConsistentWith</c> call's source shaper expression in a
+    /// <see cref="CouchbaseConsistentWithMarkerExpression"/> carrying the generated query-parameter
+    /// name, for <see cref="CouchbaseShapedQueryCompilingExpressionVisitor"/> to strip back off
+    /// (as the very first thing it does) once translation finishes, threading the name into
+    /// <see cref="CouchbaseQueryEnumerable{T}"/>'s execution-time <c>QueryOptions</c> construction.
+    /// See <see cref="CouchbaseConsistentWithMarkerExpression"/>'s own doc comments for why this
+    /// shaper-wrapping design replaced an earlier attempt to annotate the root
+    /// <see cref="SelectExpression"/> the way <see cref="TranslateUseIndex"/>/<see cref="TranslateUseHash"/>
+    /// annotate a child <see cref="TableExpression"/> -- <c>SelectExpression.WithAnnotations</c> is
+    /// unimplemented in EF Core 10 and throws unconditionally, confirmed by a failing unit test
+    /// before this design was adopted.
+    /// <para>
+    /// <paramref name="methodCallExpression"/>'s <c>MutationState</c> argument is deliberately NOT
+    /// <see cref="NotParameterizedAttribute"/> (see
+    /// <see cref="CouchbaseQueryableExtensions.ConsistentWith{TEntity}"/>'s remarks), so by this
+    /// point it has already been rewritten into a <see cref="QueryParameterExpression"/> by EF
+    /// Core's own parameter extraction -- this method only needs to capture that parameter's NAME,
+    /// never its value.
+    /// </para>
+    /// </summary>
+    private Expression TranslateConsistentWith(MethodCallExpression methodCallExpression)
+    {
+        var source = Visit(methodCallExpression.Arguments[0]);
+        if (source is ShapedQueryExpression shapedQueryExpression
+            && methodCallExpression.Arguments[1] is QueryParameterExpression { Name: var parameterName })
+        {
+            var markerShaper = new CouchbaseConsistentWithMarkerExpression(shapedQueryExpression.ShaperExpression, parameterName);
+            return shapedQueryExpression.UpdateShaperExpression(markerShaper);
         }
 
         return source!;

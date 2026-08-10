@@ -9,6 +9,19 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ### Added
 
+- **Per-query read-your-own-writes (`ConsistentWith`/`MutationState`).** `SaveChangesAsync` now
+  automatically accumulates a `Couchbase.Query.MutationState` on the `DbContext` from every
+  document it writes, retrievable via `context.Database.GetMutationState()`
+  (`CouchbaseDatabaseFacadeExtensions`) and resettable via `context.Database.ClearMutationState()`.
+  A new `IQueryable<TEntity>.ConsistentWith(MutationState)` extension
+  (`CouchbaseQueryableExtensions`) scopes N1QL's `AT_PLUS` scan consistency to that specific set of
+  prior writes for a single query — narrower and cheaper than a context-wide `RequestPlus` when
+  the read-after-write need is "this write I just made," not "the whole collection." Supported
+  across all three query execution paths: LINQ (`.ConsistentWith(...)` composed last —
+  translated via a new shaper-wrapping `CouchbaseConsistentWithMarkerExpression`, since composing
+  any further LINQ operator after it throws `InvalidOperationException` rather than being silently
+  ignored), `FromSqlRaw`/`FromSql`, and raw ADO.NET (`((CouchbaseCommand)connection.CreateCommand()).ConsistentWith = mutationState`).
+  See [Read-your-own-writes](docs/concurrency.md#read-your-own-writes-consistentwith).
 - **`UseIndex`/`UseHash` query hints.** New `IQueryable<T>` extension methods
   (`Couchbase.EntityFrameworkCore.Extensions.CouchbaseQueryableExtensions`) exposing N1QL's
   per-keyspace-reference optimizer hints: `UseIndex(name, CouchbaseIndexType)` forces a specific

@@ -19,17 +19,20 @@ public class CouchbaseDatabaseWrapper : Database
     private readonly ICouchbaseClientWrapper _couchbaseClient;
     private readonly IRelationalConnection _relationalConnection;
     private readonly JsonNamingPolicy? _fieldNamingPolicy;
+    private readonly CouchbaseMutationStateTracker _mutationStateTracker;
 
     public CouchbaseDatabaseWrapper(
         DatabaseDependencies dependencies,
         ICouchbaseClientWrapper couchbaseClient,
         IRelationalConnection relationalConnection,
-        ICouchbaseDbContextOptionsBuilder couchbaseDbContextOptionsBuilder)
+        ICouchbaseDbContextOptionsBuilder couchbaseDbContextOptionsBuilder,
+        CouchbaseMutationStateTracker mutationStateTracker)
         : base(dependencies)
     {
         _couchbaseClient = couchbaseClient ?? throw new ArgumentNullException(nameof(couchbaseClient));
         _relationalConnection = relationalConnection ?? throw new ArgumentNullException(nameof(relationalConnection));
         _fieldNamingPolicy = couchbaseDbContextOptionsBuilder.FieldNamingPolicy;
+        _mutationStateTracker = mutationStateTracker ?? throw new ArgumentNullException(nameof(mutationStateTracker));
     }
 
     public override int SaveChanges(IList<IUpdateEntry> entries)
@@ -298,15 +301,17 @@ public class CouchbaseDatabaseWrapper : Database
 
                         case CouchbaseWriteKind.Upsert:
                         {
-                            var newCas = await _couchbaseClient.UpdateDocument(write.Key, write.Keyspace, write.Document!, write.Cas, cancellationToken).ConfigureAwait(false);
-                            RefreshCasProperty(write, newCas);
+                            var result = await _couchbaseClient.UpdateDocument(write.Key, write.Keyspace, write.Document!, write.Cas, cancellationToken).ConfigureAwait(false);
+                            RefreshCasProperty(write, result.Cas);
+                            _mutationStateTracker.Add(result);
                             break;
                         }
 
                         case CouchbaseWriteKind.Insert:
                         {
-                            var newCas = await _couchbaseClient.CreateDocument(write.Key, write.Keyspace, write.Document!, cancellationToken).ConfigureAwait(false);
-                            RefreshCasProperty(write, newCas);
+                            var result = await _couchbaseClient.CreateDocument(write.Key, write.Keyspace, write.Document!, cancellationToken).ConfigureAwait(false);
+                            RefreshCasProperty(write, result.Cas);
+                            _mutationStateTracker.Add(result);
                             break;
                         }
                     }

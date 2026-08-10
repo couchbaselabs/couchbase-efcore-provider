@@ -22,6 +22,14 @@ public class CouchbaseCommand : DbCommand
     // defaults to NotBounded to match the SDK default.
     internal QueryScanConsistency ScanConsistency { get; set; } = QueryScanConsistency.NotBounded;
 
+    // Per-command read-your-own-writes constraint. Unlike the LINQ path's .ConsistentWith(...),
+    // ADO.NET has no LINQ expression tree to intercept a marker call on, so this is a plain
+    // settable property the caller sets directly on the command before executing it -- e.g.
+    // ((CouchbaseCommand)connection.CreateCommand()).ConsistentWith = context.Database.GetMutationState().
+    // Overrides ScanConsistency to AtPlus internally when non-null (the SDK's own
+    // QueryOptions.ConsistentWith behavior) -- see BuildQueryOptions.
+    public MutationState? ConsistentWith { get; set; }
+
     [AllowNull]
     public override string CommandText
     {
@@ -255,6 +263,11 @@ public class CouchbaseCommand : DbCommand
     {
         var options = new QueryOptions().CancellationToken(cancellationToken);
         options.ScanConsistency(ScanConsistency);
+
+        if (ConsistentWith != null)
+        {
+            options.ConsistentWith(ConsistentWith);
+        }
 
         if (CommandTimeout > 0)
         {
