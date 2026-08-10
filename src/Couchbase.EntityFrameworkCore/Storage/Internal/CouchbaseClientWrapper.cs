@@ -65,13 +65,12 @@ public class CouchbaseClientWrapper : ICouchbaseClientWrapper
         }
     }
 
-    public async Task<ulong> CreateDocument<TEntity>(string id, string keyspace, TEntity entity, CancellationToken cancellationToken = default)
+    public async Task<IMutationResult> CreateDocument<TEntity>(string id, string keyspace, TEntity entity, CancellationToken cancellationToken = default)
     {
         try
         {
             var collection = await GetCollection(keyspace, cancellationToken).ConfigureAwait(false);
-            var result = await collection.InsertAsync(id, entity, new InsertOptions().CancellationToken(cancellationToken)).ConfigureAwait(false);
-            return result.Cas;
+            return await collection.InsertAsync(id, entity, new InsertOptions().CancellationToken(cancellationToken)).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -87,7 +86,7 @@ public class CouchbaseClientWrapper : ICouchbaseClientWrapper
         }
     }
 
-    public async Task<ulong> UpdateDocument<TEntity>(string id, string keyspace, TEntity entity, ulong? cas = null, CancellationToken cancellationToken = default)
+    public async Task<IMutationResult> UpdateDocument<TEntity>(string id, string keyspace, TEntity entity, ulong? cas = null, CancellationToken cancellationToken = default)
     {
         try
         {
@@ -99,13 +98,11 @@ public class CouchbaseClientWrapper : ICouchbaseClientWrapper
             // to keep today's unconditional-upsert behavior unchanged for everyone else.
             if (cas.HasValue)
             {
-                var replaceResult = await collection.ReplaceAsync(
+                return await collection.ReplaceAsync(
                     id, entity, new ReplaceOptions().Cas(cas.Value).CancellationToken(cancellationToken)).ConfigureAwait(false);
-                return replaceResult.Cas;
             }
 
-            var upsertResult = await collection.UpsertAsync(id, entity, new UpsertOptions().CancellationToken(cancellationToken)).ConfigureAwait(false);
-            return upsertResult.Cas;
+            return await collection.UpsertAsync(id, entity, new UpsertOptions().CancellationToken(cancellationToken)).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {

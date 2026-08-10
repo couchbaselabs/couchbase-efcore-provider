@@ -29,7 +29,8 @@ public static class CouchbaseFromSqlQueryingEnumerable
         bool detailedErrorsEnabled,
         bool threadSafetyChecksEnabled,
         IBucketProvider bucketProvider,
-        ICouchbaseDbContextOptionsBuilder couchbaseDbContextOptionsBuilder)
+        ICouchbaseDbContextOptionsBuilder couchbaseDbContextOptionsBuilder,
+        string? consistentWithParameterName)
         => new(
             relationalQueryContext,
             relationalCommandResolver,
@@ -41,7 +42,8 @@ public static class CouchbaseFromSqlQueryingEnumerable
             detailedErrorsEnabled,
             threadSafetyChecksEnabled,
             bucketProvider,
-            couchbaseDbContextOptionsBuilder);
+            couchbaseDbContextOptionsBuilder,
+            consistentWithParameterName);
 }
 
 
@@ -60,6 +62,8 @@ public class CouchbaseFromSqlQueryingEnumerable<T> : IEnumerable<T>, IAsyncEnume
     private readonly IDiagnosticsLogger<DbLoggerCategory.Query> _queryLogger;
     private readonly bool _detailedErrorsEnabled;
     private readonly bool _threadSafetyChecksEnabled;
+    // See CouchbaseQueryEnumerable<T>'s identical field for what this is.
+    private readonly string? _consistentWithParameterName;
 
     public CouchbaseFromSqlQueryingEnumerable(
         RelationalQueryContext relationalQueryContext,
@@ -72,9 +76,10 @@ public class CouchbaseFromSqlQueryingEnumerable<T> : IEnumerable<T>, IAsyncEnume
         bool detailedErrorsEnabled,
         bool threadSafetyChecksEnabled,
         IBucketProvider bucketProvider,
-        ICouchbaseDbContextOptionsBuilder couchbaseDbContextOptionsBuilder)
+        ICouchbaseDbContextOptionsBuilder couchbaseDbContextOptionsBuilder,
+        string? consistentWithParameterName)
     {
-
+        _consistentWithParameterName = consistentWithParameterName;
         _relationalQueryContext = relationalQueryContext;
         _relationalCommandResolver = relationalCommandResolver;
         _readerColumns = readerColumns;
@@ -146,13 +151,22 @@ public class CouchbaseFromSqlQueryingEnumerable<T> : IEnumerable<T>, IAsyncEnume
         }
     }
     
-    private QueryOptions GetParameters(DbCommand command)
+    internal QueryOptions GetParameters(DbCommand command)
     {
         var queryOptions = new QueryOptions();
         queryOptions.ScanConsistency(_couchbaseDbContextOptionsBuilder.ScanConsistency);
         foreach (CouchbaseParameter parameter in command.Parameters)
         {
             queryOptions.Parameter(parameter.ParameterName, parameter.Value!);
+        }
+
+        // See CouchbaseQueryEnumerable<T>.GetParameters' identical block for why this is looked up
+        // fresh here rather than baked in at compile time.
+        if (_consistentWithParameterName != null
+            && _relationalQueryContext.Parameters.TryGetValue(_consistentWithParameterName, out var consistentWithValue)
+            && consistentWithValue is MutationState mutationState)
+        {
+            queryOptions.ConsistentWith(mutationState);
         }
 
         return queryOptions;

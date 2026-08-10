@@ -36,7 +36,8 @@ public static class CouchbaseQueryEnumerable
         bool detailedErrorsEnabled,
         bool threadSafetyChecksEnabled,
         IBucketProvider bucketProvider,
-        ICouchbaseDbContextOptionsBuilder couchbaseDbContextOptionsBuilder)
+        ICouchbaseDbContextOptionsBuilder couchbaseDbContextOptionsBuilder,
+        string? consistentWithParameterName)
         => new(
             relationalQueryContext,
             relationalCommandResolver,
@@ -51,7 +52,8 @@ public static class CouchbaseQueryEnumerable
             detailedErrorsEnabled,
             threadSafetyChecksEnabled,
             bucketProvider,
-            couchbaseDbContextOptionsBuilder);
+            couchbaseDbContextOptionsBuilder,
+            consistentWithParameterName);
 }
 
 public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, IRelationalQueryingEnumerable
@@ -86,6 +88,10 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
     private readonly Dictionary<string, string> _ownedNavigationAliases;
     private readonly CouchbaseOwnedCollectionMaterializer _materializer = new();
     private readonly CouchbaseCollectionSnapshot _snapshot = new();
+    // The generated query-parameter name holding a .ConsistentWith(...) MutationState, if this
+    // compiled query used it -- see CouchbaseQueryHintAnnotationNames.ConsistentWith's doc comment.
+    // Null for every query that doesn't call .ConsistentWith().
+    private readonly string? _consistentWithParameterName;
 
     public CouchbaseQueryEnumerable(
         RelationalQueryContext relationalQueryContext,
@@ -101,8 +107,10 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
         bool detailedErrorsEnabled,
         bool threadSafetyChecksEnabled,
         IBucketProvider bucketProvider,
-        ICouchbaseDbContextOptionsBuilder couchbaseDbContextOptionsBuilder)
+        ICouchbaseDbContextOptionsBuilder couchbaseDbContextOptionsBuilder,
+        string? consistentWithParameterName)
     {
+        _consistentWithParameterName = consistentWithParameterName;
         _relationalQueryContext = relationalQueryContext;
         _relationalCommandResolver = relationalCommandResolver;
         _readerColumns = readerColumns;
@@ -406,13 +414,25 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
                 Guid.Empty,
                 (DbCommandMethod)(-1));
 
-    private QueryOptions GetParameters(DbCommand command)
+    internal QueryOptions GetParameters(DbCommand command)
     {
         var queryOptions = new QueryOptions();
         queryOptions.ScanConsistency(_couchbaseDbContextOptionsBuilder.ScanConsistency);
         foreach (CouchbaseParameter parameter in command.Parameters)
         {
             queryOptions.Parameter(parameter.ParameterName, parameter.Value!);
+        }
+
+        // .ConsistentWith(...)'s value is looked up fresh here, from THIS execution's
+        // QueryContext.Parameters, rather than baked in at compile time -- see
+        // CouchbaseQueryHintAnnotationNames.ConsistentWith's doc comment for why. Overrides the
+        // ScanConsistency call above to AtPlus internally (the SDK's own QueryOptions.ConsistentWith
+        // behavior) only when a non-null MutationState was actually supplied.
+        if (_consistentWithParameterName != null
+            && _relationalQueryContext.Parameters.TryGetValue(_consistentWithParameterName, out var consistentWithValue)
+            && consistentWithValue is MutationState mutationState)
+        {
+            queryOptions.ConsistentWith(mutationState);
         }
 
         return queryOptions;

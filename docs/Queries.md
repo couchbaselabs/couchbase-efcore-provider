@@ -83,6 +83,30 @@ Both are optimizer nudges, not correctness requirements — a query returns iden
 whether or not the hint is honored. Calling either method on a non-Couchbase (e.g. in-memory)
 queryable is a silent, benign no-op.
 
+## Read-your-own-writes (ConsistentWith)
+
+By default, queries use `NotBounded` scan consistency, so a document written a moment ago may not
+yet be visible to a subsequent query (see [Limitations](limitations.md#querying-and-consistency)).
+`.ConsistentWith(mutationState)` scopes a read-after-write guarantee to one query, for a specific
+prior write, instead of switching the whole context to `RequestPlus`:
+
+```
+using Couchbase.EntityFrameworkCore.Extensions;
+
+await context.SaveChangesAsync();
+var mutationState = context.Database.GetMutationState();
+
+// Must be the LAST operator in the chain -- composing anything after it throws.
+var order = await context.Orders
+    .Where(o => o.CustomerName == "Ada")
+    .ConsistentWith(mutationState)
+    .SingleOrDefaultAsync();
+```
+
+Also supported on `FromSqlRaw`/`FromSql` and raw ADO.NET commands. See
+[Read-your-own-writes](concurrency.md#read-your-own-writes-consistentwith) for the full
+explanation, including why the operator must come last.
+
 ## FirstAsync
 
 ```

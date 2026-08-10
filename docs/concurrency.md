@@ -97,3 +97,68 @@ type throws `InvalidOperationException` at model-build time, and the fluent
 > `Cas`/`Id`/`Type` — only the combination with `Expiration` is affected.
 
 Not supported: `META().xattrs` (extended attributes).
+
+## Read-your-own-writes (`ConsistentWith`)
+
+By default, queries use `NotBounded` scan consistency (see [Limitations — Query scan
+consistency](limitations.md#querying-and-consistency)): a document written a moment ago may not
+yet be visible to a subsequent SQL++ query, because secondary (GSI) indexes update
+asynchronously. Setting `ScanConsistency = RequestPlus` on the options builder fixes this for
+*every* query on that context, but that's an all-or-nothing, context-wide switch — every query
+pays the extra latency of waiting for the index to catch up, even ones that don't need read-your-
+own-writes at all.
+
+`ConsistentWith` scopes that guarantee to a specific write instead: it makes one query (or one
+`FromSqlRaw`/`FromSql`/ADO.NET command) wait only until the index reflects a *specific* prior
+mutation, not the whole collection's latest state. This is EF Core's provider-level surface over
+the Couchbase SDK's own `MutationState`
+([reference](https://docs.couchbase.com/dotnet-sdk/current/concept-docs/durability-replication-failure-considerations.html#at_plus)),
+which the SDK internally represents as a set of `MutationToken`s (one per document write) and
+resolves against by forcing `AT_PLUS` scan consistency.
+
+`SaveChangesAsync` automatically accumulates a `MutationState` on the `DbContext` from every
+document it writes — there's nothing to opt into on the write side:
+
+```
+context.Add(new Order { CustomerName = "Ada" });
+await context.SaveChangesAsync();
+
+var mutationState = context.Database.GetMutationState();
+```
+
+Pass that `MutationState` to `ConsistentWith` on the read side, across any of the three query
+execution paths:
+
+```
+// LINQ -- ConsistentWith must be the LAST operator in the chain (see below).
+var order = await context.Orders
+    .Where(o => o.CustomerName == "Ada")
+    .ConsistentWith(mutationState)
+    .SingleOrDefaultAsync();
+
+// FromSqlRaw / FromSql
+var orders = await context.Orders
+    .FromSqlRaw("SELECT o.* FROM `bucket`.`scope`.`orders` AS o WHERE o.customerName = {0}", "Ada")
+    .ConsistentWith(mutationState)
+    .ToListAsync();
+
+// Raw ADO.NET
+using var command = (CouchbaseCommand)connection.CreateCommand();
+command.ConsistentWith = mutationState;
+command.CommandText = "SELECT o.* FROM `bucket`.`scope`.`orders` AS o WHERE o.customerName = $name";
+```
+
+`context.Database.ClearMutationState()` resets the accumulated state (e.g. between logically
+unrelated units of work sharing one long-lived context).
+
+> [!WARNING]
+> On the LINQ path, `ConsistentWith(...)` must be the **last** operator in the query — composing
+> any further LINQ operator after it (`.Where(...)`, `.OrderBy(...)`, another `.Select(...)`, etc.)
+> throws `InvalidOperationException` at query-translation time (a clear, immediate failure, not a
+> silently-ignored hint). Apply every other operator first, then call `.ConsistentWith(...)` last:
+> `context.Orders.Where(...).OrderBy(...).ConsistentWith(mutationState)`, not the reverse.
+
+`MutationState` only ever grows narrower guarantees than `RequestPlus` — it says "wait for *these*
+writes to be indexed," not "wait for the whole collection to be caught up" — so prefer it over a
+context-wide `RequestPlus` whenever the read-after-write need is scoped to a specific prior write
+rather than the collection as a whole.

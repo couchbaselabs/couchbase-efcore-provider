@@ -1,5 +1,6 @@
 using System.Linq.Expressions;
 using System.Reflection;
+using Couchbase.Query;
 using Microsoft.EntityFrameworkCore.Query;
 using Microsoft.EntityFrameworkCore.Query.Internal;
 
@@ -108,11 +109,65 @@ public static class CouchbaseQueryableExtensions
                     Expression.Constant(type)))
             : source;
 
+    /// <summary>
+    /// Constrains this query to a snapshot at least as recent as every write recorded in
+    /// <paramref name="mutationState"/> — N1QL's <c>AtPlus</c> scan consistency, driven by a
+    /// <see cref="MutationState"/> built from prior writes' <c>MutationToken</c>s (see
+    /// <see cref="Couchbase.EntityFrameworkCore.Extensions.CouchbaseDatabaseFacadeExtensions.GetMutationState"/>
+    /// for the common case of "see my own recent writes through this <c>DbContext</c>" --
+    /// read-your-own-writes / RYOW). A <see langword="null"/> <paramref name="mutationState"/>
+    /// leaves the query's consistency at whatever the context-wide
+    /// <see cref="Couchbase.EntityFrameworkCore.Infrastructure.CouchbaseDbContextOptionsBuilder.ScanConsistency"/>
+    /// setting already provides.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Unlike <see cref="UseIndex{TEntity}"/>/<see cref="UseHash{TEntity}"/>, <paramref name="mutationState"/>
+    /// is deliberately NOT marked <see cref="NotParameterizedAttribute"/> -- it must flow through EF
+    /// Core's normal parameter extraction into a genuine query parameter, refreshed on every
+    /// execution of a cached compiled query, rather than being baked into the query's cached SQL
+    /// plan the way a <c>UseIndex</c>/<c>UseHash</c> hint safely can be. A <see cref="MutationState"/>
+    /// is inherently per-call and would silently go stale if treated as a plan-level constant.
+    /// </para>
+    /// <para>
+    /// Apply this as the LAST operator before enumeration (immediately before
+    /// <c>ToListAsync()</c>/<c>FirstOrDefaultAsync()</c>/etc.), after any <c>.Where()</c>/<c>.OrderBy()</c>/
+    /// <c>.Select()</c>. This is enforced by construction, not just convention: internally, this
+    /// method wraps the query's shaper (materialization) expression in a marker that carries the
+    /// <paramref name="mutationState"/> parameter's name forward to execution time, and composing
+    /// ANY further operator afterward that needs to re-inspect that shaper's shape --
+    /// <c>.Where()</c>, <c>.OrderBy()</c>, <c>.Select()</c>, or anything else -- fails with EF
+    /// Core's standard "could not be translated" <see cref="InvalidOperationException"/> (confirmed
+    /// by a regression test), rather than silently ignoring the hint or misapplying it. This is a
+    /// deliberately loud failure mode for what is a correctness-affecting option, not merely an
+    /// optimizer nudge the way <c>UseIndex</c>/<c>UseHash</c> are.
+    /// </para>
+    /// </remarks>
+    /// <param name="source">The query to constrain.</param>
+    /// <param name="mutationState">
+    /// The mutations this query must be consistent with, or <see langword="null"/> for no
+    /// per-query constraint.
+    /// </param>
+    public static IQueryable<TEntity> ConsistentWith<TEntity>(
+        this IQueryable<TEntity> source, MutationState? mutationState)
+        where TEntity : class
+        => source.Provider is EntityQueryProvider
+            ? source.Provider.CreateQuery<TEntity>(
+                Expression.Call(
+                    null,
+                    ConsistentWithMethodInfo.MakeGenericMethod(typeof(TEntity)),
+                    source.Expression,
+                    Expression.Constant(mutationState, typeof(MutationState))))
+            : source;
+
     internal static readonly MethodInfo UseIndexMethodInfo
         = typeof(CouchbaseQueryableExtensions).GetMethod(nameof(UseIndex))!;
 
     internal static readonly MethodInfo UseHashMethodInfo
         = typeof(CouchbaseQueryableExtensions).GetMethod(nameof(UseHash))!;
+
+    internal static readonly MethodInfo ConsistentWithMethodInfo
+        = typeof(CouchbaseQueryableExtensions).GetMethod(nameof(ConsistentWith))!;
 }
 
 /* ************************************************************
