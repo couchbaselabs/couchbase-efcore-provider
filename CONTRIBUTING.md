@@ -34,9 +34,9 @@ mode to risk — a sibling Couchbase repo, `couchbase-jvm-clients`, sidesteps th
 same way.) To cut a release:
 
 ```sh
-git tag 2.0.0-beta.2
-git push origin 2.0.0-beta.2   # substitute your remote name for the upstream repo if not "origin"
-gh workflow run release.yml --repo couchbaselabs/couchbase-efcore-provider -f tag=2.0.0-beta.2
+git tag 2.0.0-beta.3
+git push origin 2.0.0-beta.3   # substitute your remote name for the upstream repo if not "origin"
+gh workflow run release.yml --repo couchbaselabs/couchbase-efcore-provider -f tag=2.0.0-beta.3
 ```
 
 (Or via the GitHub UI: Actions → Release → Run workflow, entering the tag name.) The workflow
