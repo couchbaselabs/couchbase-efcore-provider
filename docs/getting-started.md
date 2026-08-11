@@ -31,7 +31,7 @@ dotnet new console
 ```
 * Once you have created the console application add the dependency on Couchbase.EntityFrameworkCore:
 ```
-dotnet add package Couchbase.EntityFrameworkCore --version 2.0.0-beta.2
+dotnet add package Couchbase.EntityFrameworkCore --version 2.0.0-beta.3
 ```
 * Add the dependency on `EFCore.NamingConventions`:
 ```
