@@ -7,6 +7,8 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ## [Unreleased]
 
+## [2.0.0-beta.3] - 2026-08-10
+
 ### Added
 
 - **Per-query read-your-own-writes (`ConsistentWith`/`MutationState`).** `SaveChangesAsync` now
@@ -355,5 +357,6 @@ See [`docs/limitations.md`](docs/limitations.md). Highlights: EF Core Migrations
 supported (use `EnsureCreatedAsync`); synchronous query/save APIs are not supported;
 TPT/TPC inheritance is not supported; nested data must be modeled as owned types.
 
+[2.0.0-beta.3]: https://github.com/couchbaselabs/couchbase-efcore-provider/releases/tag/2.0.0-beta.3
 [2.0.0-beta.2]: https://github.com/couchbaselabs/couchbase-efcore-provider/releases/tag/2.0.0-beta.2
 [2.0.0-beta.1]: https://github.com/couchbaselabs/couchbase-efcore-provider/releases/tag/2.0.0-beta.1

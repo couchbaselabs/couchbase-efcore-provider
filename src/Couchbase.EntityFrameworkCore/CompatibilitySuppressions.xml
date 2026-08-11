@@ -3,20 +3,6 @@
 <Suppressions xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
   <Suppression>
     <DiagnosticId>CP0002</DiagnosticId>
-    <Target>M:Couchbase.EntityFrameworkCore.Query.Internal.CouchbaseQueryEnumerable.Create``1(Microsoft.EntityFrameworkCore.Query.RelationalQueryContext,Microsoft.EntityFrameworkCore.Query.Internal.RelationalCommandResolver,System.Collections.Generic.IReadOnlyList{Microsoft.EntityFrameworkCore.Storage.ReaderColumn},System.String[],System.Func{Microsoft.EntityFrameworkCore.Query.QueryContext,System.Data.Common.DbDataReader,Microsoft.EntityFrameworkCore.Query.Internal.ResultContext,Microsoft.EntityFrameworkCore.Query.Internal.SingleQueryResultCoordinator,``0},System.Type,System.Boolean,System.Boolean,System.Boolean,System.Boolean,Couchbase.Extensions.DependencyInjection.IBucketProvider,Couchbase.EntityFrameworkCore.Infrastructure.ICouchbaseDbContextOptionsBuilder)</Target>
-    <Left>lib/net10.0/Couchbase.EntityFrameworkCore.dll</Left>
-    <Right>lib/net10.0/Couchbase.EntityFrameworkCore.dll</Right>
-    <IsBaselineSuppression>true</IsBaselineSuppression>
-  </Suppression>
-  <Suppression>
-    <DiagnosticId>CP0002</DiagnosticId>
-    <Target>M:Couchbase.EntityFrameworkCore.Query.Internal.CouchbaseQueryEnumerable`1.#ctor(Microsoft.EntityFrameworkCore.Query.RelationalQueryContext,Microsoft.EntityFrameworkCore.Query.Internal.RelationalCommandResolver,System.Collections.Generic.IReadOnlyList{Microsoft.EntityFrameworkCore.Storage.ReaderColumn},System.String[],System.Func{Microsoft.EntityFrameworkCore.Query.QueryContext,System.Data.Common.DbDataReader,Microsoft.EntityFrameworkCore.Query.Internal.ResultContext,Microsoft.EntityFrameworkCore.Query.Internal.SingleQueryResultCoordinator,`0},System.Type,System.Boolean,System.Boolean,System.Boolean,System.Boolean,Couchbase.Extensions.DependencyInjection.IBucketProvider,Couchbase.EntityFrameworkCore.Infrastructure.ICouchbaseDbContextOptionsBuilder)</Target>
-    <Left>lib/net10.0/Couchbase.EntityFrameworkCore.dll</Left>
-    <Right>lib/net10.0/Couchbase.EntityFrameworkCore.dll</Right>
-    <IsBaselineSuppression>true</IsBaselineSuppression>
-  </Suppression>
-  <Suppression>
-    <DiagnosticId>CP0002</DiagnosticId>
     <Target>M:Couchbase.EntityFrameworkCore.Query.Internal.CouchbaseFromSqlQueryingEnumerable.Create``1(Microsoft.EntityFrameworkCore.Query.RelationalQueryContext,Microsoft.EntityFrameworkCore.Query.Internal.RelationalCommandResolver,System.Collections.Generic.IReadOnlyList{Microsoft.EntityFrameworkCore.Storage.ReaderColumn},System.Collections.Generic.IReadOnlyList{System.String},System.Func{Microsoft.EntityFrameworkCore.Query.QueryContext,System.Data.Common.DbDataReader,System.Int32[],``0},System.Type,System.Boolean,System.Boolean,System.Boolean,Couchbase.Extensions.DependencyInjection.IBucketProvider,Couchbase.EntityFrameworkCore.Infrastructure.ICouchbaseDbContextOptionsBuilder)</Target>
     <Left>lib/net10.0/Couchbase.EntityFrameworkCore.dll</Left>
     <Right>lib/net10.0/Couchbase.EntityFrameworkCore.dll</Right>
@@ -31,98 +17,91 @@
   </Suppression>
   <Suppression>
     <DiagnosticId>CP0002</DiagnosticId>
-    <Target>M:Couchbase.EntityFrameworkCore.Storage.Internal.CouchbaseClientWrapper.CreateDocument``1(System.String,System.String,``0)</Target>
+    <Target>M:Couchbase.EntityFrameworkCore.Query.Internal.CouchbaseQueryEnumerable.Create``1(Microsoft.EntityFrameworkCore.Query.RelationalQueryContext,Microsoft.EntityFrameworkCore.Query.Internal.RelationalCommandResolver,System.Collections.Generic.IReadOnlyList{Microsoft.EntityFrameworkCore.Storage.ReaderColumn},System.String[],System.String[],System.String[],System.Func{Microsoft.EntityFrameworkCore.Query.QueryContext,System.Data.Common.DbDataReader,Microsoft.EntityFrameworkCore.Query.Internal.ResultContext,Microsoft.EntityFrameworkCore.Query.Internal.SingleQueryResultCoordinator,``0},System.Type,System.Boolean,System.Boolean,System.Boolean,System.Boolean,Couchbase.Extensions.DependencyInjection.IBucketProvider,Couchbase.EntityFrameworkCore.Infrastructure.ICouchbaseDbContextOptionsBuilder)</Target>
     <Left>lib/net10.0/Couchbase.EntityFrameworkCore.dll</Left>
     <Right>lib/net10.0/Couchbase.EntityFrameworkCore.dll</Right>
     <IsBaselineSuppression>true</IsBaselineSuppression>
   </Suppression>
   <Suppression>
     <DiagnosticId>CP0002</DiagnosticId>
-    <Target>M:Couchbase.EntityFrameworkCore.Storage.Internal.CouchbaseClientWrapper.DeleteDocument(System.String,System.String)</Target>
+    <Target>M:Couchbase.EntityFrameworkCore.Query.Internal.CouchbaseQueryEnumerable`1.#ctor(Microsoft.EntityFrameworkCore.Query.RelationalQueryContext,Microsoft.EntityFrameworkCore.Query.Internal.RelationalCommandResolver,System.Collections.Generic.IReadOnlyList{Microsoft.EntityFrameworkCore.Storage.ReaderColumn},System.String[],System.String[],System.String[],System.Func{Microsoft.EntityFrameworkCore.Query.QueryContext,System.Data.Common.DbDataReader,Microsoft.EntityFrameworkCore.Query.Internal.ResultContext,Microsoft.EntityFrameworkCore.Query.Internal.SingleQueryResultCoordinator,`0},System.Type,System.Boolean,System.Boolean,System.Boolean,System.Boolean,Couchbase.Extensions.DependencyInjection.IBucketProvider,Couchbase.EntityFrameworkCore.Infrastructure.ICouchbaseDbContextOptionsBuilder)</Target>
     <Left>lib/net10.0/Couchbase.EntityFrameworkCore.dll</Left>
     <Right>lib/net10.0/Couchbase.EntityFrameworkCore.dll</Right>
     <IsBaselineSuppression>true</IsBaselineSuppression>
   </Suppression>
   <Suppression>
     <DiagnosticId>CP0002</DiagnosticId>
-    <Target>M:Couchbase.EntityFrameworkCore.Storage.Internal.CouchbaseClientWrapper.EnqueueTransactionalInsert``1(Couchbase.EntityFrameworkCore.Storage.Internal.CouchbaseDbTransaction,System.String,System.String,``0)</Target>
+    <Target>M:Couchbase.EntityFrameworkCore.Query.Internal.CouchbaseQuerySqlGenerator.#ctor(Microsoft.EntityFrameworkCore.Query.QuerySqlGeneratorDependencies)</Target>
     <Left>lib/net10.0/Couchbase.EntityFrameworkCore.dll</Left>
     <Right>lib/net10.0/Couchbase.EntityFrameworkCore.dll</Right>
     <IsBaselineSuppression>true</IsBaselineSuppression>
   </Suppression>
   <Suppression>
     <DiagnosticId>CP0002</DiagnosticId>
-    <Target>M:Couchbase.EntityFrameworkCore.Storage.Internal.CouchbaseClientWrapper.EnqueueTransactionalRemove(Couchbase.EntityFrameworkCore.Storage.Internal.CouchbaseDbTransaction,System.String,System.String)</Target>
+    <Target>M:Couchbase.EntityFrameworkCore.Query.Internal.CouchbaseQuerySqlGeneratorFactory.#ctor(Microsoft.EntityFrameworkCore.Query.QuerySqlGeneratorDependencies)</Target>
     <Left>lib/net10.0/Couchbase.EntityFrameworkCore.dll</Left>
     <Right>lib/net10.0/Couchbase.EntityFrameworkCore.dll</Right>
     <IsBaselineSuppression>true</IsBaselineSuppression>
   </Suppression>
   <Suppression>
     <DiagnosticId>CP0002</DiagnosticId>
-    <Target>M:Couchbase.EntityFrameworkCore.Storage.Internal.CouchbaseClientWrapper.EnqueueTransactionalUpsert``1(Couchbase.EntityFrameworkCore.Storage.Internal.CouchbaseDbTransaction,System.String,System.String,``0)</Target>
+    <Target>M:Couchbase.EntityFrameworkCore.Storage.Internal.CouchbaseClientWrapper.CreateDocument``1(System.String,System.String,``0,System.Threading.CancellationToken)</Target>
     <Left>lib/net10.0/Couchbase.EntityFrameworkCore.dll</Left>
     <Right>lib/net10.0/Couchbase.EntityFrameworkCore.dll</Right>
     <IsBaselineSuppression>true</IsBaselineSuppression>
   </Suppression>
   <Suppression>
     <DiagnosticId>CP0002</DiagnosticId>
-    <Target>M:Couchbase.EntityFrameworkCore.Storage.Internal.CouchbaseClientWrapper.GetCollectionAsync(System.String)</Target>
+    <Target>M:Couchbase.EntityFrameworkCore.Storage.Internal.CouchbaseClientWrapper.DeleteDocument(System.String,System.String,System.Threading.CancellationToken)</Target>
     <Left>lib/net10.0/Couchbase.EntityFrameworkCore.dll</Left>
     <Right>lib/net10.0/Couchbase.EntityFrameworkCore.dll</Right>
     <IsBaselineSuppression>true</IsBaselineSuppression>
   </Suppression>
   <Suppression>
     <DiagnosticId>CP0002</DiagnosticId>
-    <Target>M:Couchbase.EntityFrameworkCore.Storage.Internal.CouchbaseClientWrapper.UpdateDocument``1(System.String,System.String,``0)</Target>
+    <Target>M:Couchbase.EntityFrameworkCore.Storage.Internal.CouchbaseClientWrapper.UpdateDocument``1(System.String,System.String,``0,System.Threading.CancellationToken)</Target>
     <Left>lib/net10.0/Couchbase.EntityFrameworkCore.dll</Left>
     <Right>lib/net10.0/Couchbase.EntityFrameworkCore.dll</Right>
     <IsBaselineSuppression>true</IsBaselineSuppression>
   </Suppression>
   <Suppression>
     <DiagnosticId>CP0002</DiagnosticId>
-    <Target>M:Couchbase.EntityFrameworkCore.Storage.Internal.ICouchbaseClientWrapper.CreateDocument``1(System.String,System.String,``0)</Target>
+    <Target>M:Couchbase.EntityFrameworkCore.Storage.Internal.CouchbaseDatabaseCreator.#ctor(Microsoft.EntityFrameworkCore.Storage.RelationalDatabaseCreatorDependencies,Microsoft.EntityFrameworkCore.Storage.IDatabase,System.IServiceProvider,Microsoft.EntityFrameworkCore.Metadata.IDesignTimeModel,Microsoft.Extensions.Logging.ILogger{Couchbase.EntityFrameworkCore.Storage.Internal.CouchbaseDatabaseCreator},Couchbase.EntityFrameworkCore.Infrastructure.ICouchbaseDbContextOptionsBuilder,Microsoft.EntityFrameworkCore.Storage.ISqlGenerationHelper)</Target>
     <Left>lib/net10.0/Couchbase.EntityFrameworkCore.dll</Left>
     <Right>lib/net10.0/Couchbase.EntityFrameworkCore.dll</Right>
     <IsBaselineSuppression>true</IsBaselineSuppression>
   </Suppression>
   <Suppression>
     <DiagnosticId>CP0002</DiagnosticId>
-    <Target>M:Couchbase.EntityFrameworkCore.Storage.Internal.ICouchbaseClientWrapper.DeleteDocument(System.String,System.String)</Target>
+    <Target>M:Couchbase.EntityFrameworkCore.Storage.Internal.CouchbaseDatabaseWrapper.#ctor(Microsoft.EntityFrameworkCore.Storage.DatabaseDependencies,Couchbase.EntityFrameworkCore.Storage.Internal.ICouchbaseClientWrapper,Microsoft.EntityFrameworkCore.Storage.IRelationalConnection,Couchbase.EntityFrameworkCore.Infrastructure.ICouchbaseDbContextOptionsBuilder)</Target>
     <Left>lib/net10.0/Couchbase.EntityFrameworkCore.dll</Left>
     <Right>lib/net10.0/Couchbase.EntityFrameworkCore.dll</Right>
     <IsBaselineSuppression>true</IsBaselineSuppression>
   </Suppression>
   <Suppression>
     <DiagnosticId>CP0002</DiagnosticId>
-    <Target>M:Couchbase.EntityFrameworkCore.Storage.Internal.ICouchbaseClientWrapper.EnqueueTransactionalInsert``1(Couchbase.EntityFrameworkCore.Storage.Internal.CouchbaseDbTransaction,System.String,System.String,``0)</Target>
+    <Target>M:Couchbase.EntityFrameworkCore.Storage.Internal.CouchbaseTypeMappingSource.#ctor(Microsoft.EntityFrameworkCore.Storage.TypeMappingSourceDependencies,Microsoft.EntityFrameworkCore.Storage.RelationalTypeMappingSourceDependencies)</Target>
     <Left>lib/net10.0/Couchbase.EntityFrameworkCore.dll</Left>
     <Right>lib/net10.0/Couchbase.EntityFrameworkCore.dll</Right>
     <IsBaselineSuppression>true</IsBaselineSuppression>
   </Suppression>
   <Suppression>
     <DiagnosticId>CP0002</DiagnosticId>
-    <Target>M:Couchbase.EntityFrameworkCore.Storage.Internal.ICouchbaseClientWrapper.EnqueueTransactionalRemove(Couchbase.EntityFrameworkCore.Storage.Internal.CouchbaseDbTransaction,System.String,System.String)</Target>
+    <Target>M:Couchbase.EntityFrameworkCore.Storage.Internal.ICouchbaseClientWrapper.CreateDocument``1(System.String,System.String,``0,System.Threading.CancellationToken)</Target>
     <Left>lib/net10.0/Couchbase.EntityFrameworkCore.dll</Left>
     <Right>lib/net10.0/Couchbase.EntityFrameworkCore.dll</Right>
     <IsBaselineSuppression>true</IsBaselineSuppression>
   </Suppression>
   <Suppression>
     <DiagnosticId>CP0002</DiagnosticId>
-    <Target>M:Couchbase.EntityFrameworkCore.Storage.Internal.ICouchbaseClientWrapper.EnqueueTransactionalUpsert``1(Couchbase.EntityFrameworkCore.Storage.Internal.CouchbaseDbTransaction,System.String,System.String,``0)</Target>
+    <Target>M:Couchbase.EntityFrameworkCore.Storage.Internal.ICouchbaseClientWrapper.DeleteDocument(System.String,System.String,System.Threading.CancellationToken)</Target>
     <Left>lib/net10.0/Couchbase.EntityFrameworkCore.dll</Left>
     <Right>lib/net10.0/Couchbase.EntityFrameworkCore.dll</Right>
     <IsBaselineSuppression>true</IsBaselineSuppression>
   </Suppression>
   <Suppression>
     <DiagnosticId>CP0002</DiagnosticId>
-    <Target>M:Couchbase.EntityFrameworkCore.Storage.Internal.ICouchbaseClientWrapper.GetCollectionAsync(System.String)</Target>
-    <Left>lib/net10.0/Couchbase.EntityFrameworkCore.dll</Left>
-    <Right>lib/net10.0/Couchbase.EntityFrameworkCore.dll</Right>
-    <IsBaselineSuppression>true</IsBaselineSuppression>
-  </Suppression>
-  <Suppression>
-    <DiagnosticId>CP0002</DiagnosticId>
-    <Target>M:Couchbase.EntityFrameworkCore.Storage.Internal.ICouchbaseClientWrapper.UpdateDocument``1(System.String,System.String,``0)</Target>
+    <Target>M:Couchbase.EntityFrameworkCore.Storage.Internal.ICouchbaseClientWrapper.UpdateDocument``1(System.String,System.String,``0,System.Threading.CancellationToken)</Target>
     <Left>lib/net10.0/Couchbase.EntityFrameworkCore.dll</Left>
     <Right>lib/net10.0/Couchbase.EntityFrameworkCore.dll</Right>
     <IsBaselineSuppression>true</IsBaselineSuppression>
@@ -136,49 +115,42 @@
   </Suppression>
   <Suppression>
     <DiagnosticId>CP0006</DiagnosticId>
-    <Target>M:Couchbase.EntityFrameworkCore.Storage.Internal.ICouchbaseClientWrapper.DeleteDocument(System.String,System.String,System.Threading.CancellationToken)</Target>
+    <Target>M:Couchbase.EntityFrameworkCore.Storage.Internal.ICouchbaseClientWrapper.DeleteDocument(System.String,System.String,System.Nullable{System.UInt64},System.Threading.CancellationToken)</Target>
     <Left>lib/net10.0/Couchbase.EntityFrameworkCore.dll</Left>
     <Right>lib/net10.0/Couchbase.EntityFrameworkCore.dll</Right>
     <IsBaselineSuppression>true</IsBaselineSuppression>
   </Suppression>
   <Suppression>
     <DiagnosticId>CP0006</DiagnosticId>
-    <Target>M:Couchbase.EntityFrameworkCore.Storage.Internal.ICouchbaseClientWrapper.EnqueueTransactionalInsert``1(Couchbase.EntityFrameworkCore.Storage.Internal.CouchbaseDbTransaction,System.String,System.String,``0,System.Threading.CancellationToken)</Target>
+    <Target>M:Couchbase.EntityFrameworkCore.Storage.Internal.ICouchbaseClientWrapper.UpdateDocument``1(System.String,System.String,``0,System.Nullable{System.UInt64},System.Threading.CancellationToken)</Target>
     <Left>lib/net10.0/Couchbase.EntityFrameworkCore.dll</Left>
     <Right>lib/net10.0/Couchbase.EntityFrameworkCore.dll</Right>
     <IsBaselineSuppression>true</IsBaselineSuppression>
   </Suppression>
   <Suppression>
     <DiagnosticId>CP0006</DiagnosticId>
-    <Target>M:Couchbase.EntityFrameworkCore.Storage.Internal.ICouchbaseClientWrapper.EnqueueTransactionalRemove(Couchbase.EntityFrameworkCore.Storage.Internal.CouchbaseDbTransaction,System.String,System.String,System.Threading.CancellationToken)</Target>
+    <Target>P:Couchbase.EntityFrameworkCore.Infrastructure.ICouchbaseDbContextOptionsBuilder.AutoCreateIndexes</Target>
     <Left>lib/net10.0/Couchbase.EntityFrameworkCore.dll</Left>
     <Right>lib/net10.0/Couchbase.EntityFrameworkCore.dll</Right>
     <IsBaselineSuppression>true</IsBaselineSuppression>
   </Suppression>
   <Suppression>
     <DiagnosticId>CP0006</DiagnosticId>
-    <Target>M:Couchbase.EntityFrameworkCore.Storage.Internal.ICouchbaseClientWrapper.EnqueueTransactionalUpsert``1(Couchbase.EntityFrameworkCore.Storage.Internal.CouchbaseDbTransaction,System.String,System.String,``0,System.Threading.CancellationToken)</Target>
+    <Target>P:Couchbase.EntityFrameworkCore.Infrastructure.ICouchbaseDbContextOptionsBuilder.DateTimeFormat</Target>
     <Left>lib/net10.0/Couchbase.EntityFrameworkCore.dll</Left>
     <Right>lib/net10.0/Couchbase.EntityFrameworkCore.dll</Right>
     <IsBaselineSuppression>true</IsBaselineSuppression>
   </Suppression>
   <Suppression>
     <DiagnosticId>CP0006</DiagnosticId>
-    <Target>M:Couchbase.EntityFrameworkCore.Storage.Internal.ICouchbaseClientWrapper.GetCollectionAsync(System.String,System.Threading.CancellationToken)</Target>
+    <Target>P:Couchbase.EntityFrameworkCore.Infrastructure.ICouchbaseDbContextOptionsBuilder.GoDateTimeFormat</Target>
     <Left>lib/net10.0/Couchbase.EntityFrameworkCore.dll</Left>
     <Right>lib/net10.0/Couchbase.EntityFrameworkCore.dll</Right>
     <IsBaselineSuppression>true</IsBaselineSuppression>
   </Suppression>
   <Suppression>
-    <DiagnosticId>CP0006</DiagnosticId>
-    <Target>M:Couchbase.EntityFrameworkCore.Storage.Internal.ICouchbaseClientWrapper.UpdateDocument``1(System.String,System.String,``0,System.Threading.CancellationToken)</Target>
-    <Left>lib/net10.0/Couchbase.EntityFrameworkCore.dll</Left>
-    <Right>lib/net10.0/Couchbase.EntityFrameworkCore.dll</Right>
-    <IsBaselineSuppression>true</IsBaselineSuppression>
-  </Suppression>
-  <Suppression>
-    <DiagnosticId>CP0006</DiagnosticId>
-    <Target>P:Couchbase.EntityFrameworkCore.Infrastructure.ICouchbaseDbContextOptionsBuilder.ServiceKey</Target>
+    <DiagnosticId>CP0009</DiagnosticId>
+    <Target>T:Couchbase.EntityFrameworkCore.Query.Internal.Translators.CouchbaseMethodCallTranslatorProvider</Target>
     <Left>lib/net10.0/Couchbase.EntityFrameworkCore.dll</Left>
     <Right>lib/net10.0/Couchbase.EntityFrameworkCore.dll</Right>
     <IsBaselineSuppression>true</IsBaselineSuppression>
