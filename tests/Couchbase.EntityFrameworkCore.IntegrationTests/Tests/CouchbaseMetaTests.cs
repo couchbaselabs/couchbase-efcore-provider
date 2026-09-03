@@ -180,27 +180,41 @@ public class CouchbaseMetaTests(BloggingFixture fixture) : IAsyncLifetime
         var bucket = await cluster.BucketAsync(fixture.BucketName);
         var scope = await bucket.ScopeAsync(fixture.ScopeName);
         var collection = scope.Collection(CollectionName);
-        var beforeInsert = DateTimeOffset.UtcNow;
+
+        // The expiration is computed from the *server's* clock at the moment it processes the
+        // write, not the client's. Bracket the insert with two N1QL NOW_MILLIS() reads on that
+        // same server clock rather than DateTimeOffset.UtcNow on the client -- host-vs-container
+        // clock skew under a containerized cluster (e.g. a VM whose clock hasn't resynced after a
+        // host suspend/resume) can be tens of seconds to minutes, dwarfing normal network latency,
+        // and comparing the server's own answer against itself makes the assertion immune to that
+        // entirely rather than just budgeting a few seconds of slack for it.
+        async Task<long> ServerNowSecondsAsync()
+        {
+            using var result = await cluster.QueryAsync<long>("SELECT RAW NOW_MILLIS()");
+            var millis = 0L;
+            await foreach (var row in result.Rows) { millis = row; }
+            return millis / 1000;
+        }
+
+        var serverBefore = await ServerNowSecondsAsync();
         await collection.InsertAsync("6", new Dictionary<string, object>
         {
             ["Id"] = 6,
             ["Name"] = "with-ttl",
         }, new global::Couchbase.KeyValue.InsertOptions().Expiry(TimeSpan.FromMinutes(30)));
+        var serverAfter = await ServerNowSecondsAsync();
 
         await using var readCtx = CreateContext();
         var entity = await readCtx.Entities.SingleAsync(e => e.Id == 6);
 
         Assert.True(entity.Expiration > 0, "Expiration should be a nonzero epoch-seconds value when a TTL is set.");
 
-        // The expiration is computed from the *server's* clock at the moment it processes the
-        // write, not the client's -- ToUnixTimeSeconds() floors to whole seconds, and even small
-        // client/server clock skew (routine under Aspire's containerized cluster) can put the
-        // server's floored second one tick below the client's, independent of network latency.
-        // A few seconds of slack on the lower bound absorbs that without weakening the assertion's
-        // actual purpose (proving a real ~30-minute TTL was read back, not an exact-second match).
-        const int clockSkewSlack = 5;
-        var expectedNoEarlierThan = beforeInsert.AddMinutes(30).AddSeconds(-clockSkewSlack).ToUnixTimeSeconds();
-        var expectedNoLaterThan = DateTimeOffset.UtcNow.AddMinutes(30).AddMinutes(1).ToUnixTimeSeconds();
+        // A couple of seconds of slack absorbs floored-second rounding and the (now sub-second in
+        // practice) gap between each NOW_MILLIS() read and the insert actually processing.
+        const long slack = 2;
+        const long ttlSeconds = 30 * 60;
+        var expectedNoEarlierThan = serverBefore + ttlSeconds - slack;
+        var expectedNoLaterThan = serverAfter + ttlSeconds + slack;
         Assert.InRange(entity.Expiration, expectedNoEarlierThan, expectedNoLaterThan);
     }
 

@@ -12,11 +12,16 @@
   <ItemGroup>
     <PackageReference Include="Aspire.Hosting.Testing" />
     <PackageReference Include="Couchbase.Aspire.Client" />
+    <PackageReference Include="Couchbase.Extensions.DependencyInjection" />
+    <PackageReference Include="Couchbase.Extensions.OpenTelemetry" />
+    <PackageReference Include="CouchbaseNetClient" />
     <PackageReference Include="coverlet.collector" PrivateAssets="all" />
     <PackageReference Include="EFCore.NamingConventions" />
     <PackageReference Include="JetBrains.Annotations" />
     <PackageReference Include="Microsoft.EntityFrameworkCore" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
     <PackageReference Include="Serilog.Extensions.Logging.File" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" PrivateAssets="all" />
