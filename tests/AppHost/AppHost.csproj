@@ -11,7 +11,10 @@
     <ItemGroup>
       <PackageReference Include="Aspire.Hosting.AppHost" />
       <PackageReference Include="Couchbase.Aspire.Hosting" />
+      <PackageReference Include="Couchbase.Extensions.DependencyInjection" />
       <PackageReference Include="CouchbaseNetClient" />
+      <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" />
+      <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
     </ItemGroup>
 
 </Project>

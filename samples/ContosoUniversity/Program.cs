@@ -1,3 +1,4 @@
+#nullable enable
 using ContosoUniversity.Data;
 using Couchbase;
 using Couchbase.EntityFrameworkCore;

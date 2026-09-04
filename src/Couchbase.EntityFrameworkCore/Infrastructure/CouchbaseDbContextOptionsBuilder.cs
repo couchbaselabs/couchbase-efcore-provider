@@ -21,8 +21,19 @@ public class CouchbaseDbContextOptionsBuilder : ICouchbaseDbContextOptionsBuilde
         ClusterOptions = clusterOptions;
     }
 
-    //TODO temp
-    public string ConnectionString => ClusterOptions.ConnectionString! + $"?bucket={Bucket}";
+    // ClusterOptions.ConnectionString may already carry a query string (e.g. Couchbase's Aspire
+    // client injects "?network=auto"), so a literal "?" here would produce a second, unparseable
+    // "?" instead of appending a parameter -- GetCouchbaseClientAsync's TryGetRawParameter("bucket")
+    // would then silently fail to find it. Append with "&" when a query string is already present.
+    public string ConnectionString
+    {
+        get
+        {
+            var baseConnectionString = ClusterOptions.ConnectionString!;
+            var separator = baseConnectionString.Contains('?') ? '&' : '?';
+            return $"{baseConnectionString}{separator}bucket={Bucket}";
+        }
+    }
 
     public DbContextOptionsBuilder OptionsBuilder { get; }
 
