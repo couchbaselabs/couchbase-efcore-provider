@@ -111,6 +111,53 @@ public class CouchbaseDbContextOptionsBuilderTests
     }
 
     [Fact]
+    public void ConnectionString_WithNoExistingQueryString_AppendsBucketWithQuestionMark()
+    {
+        // Arrange
+        var dbContextOptionsBuilder = new DbContextOptionsBuilder();
+        var clusterOptions = new ClusterOptions().WithConnectionString("couchbase://localhost");
+        var builder = new CouchbaseDbContextOptionsBuilder(dbContextOptionsBuilder, clusterOptions)
+        {
+            Bucket = "Universities"
+        };
+
+        // Act
+        var connectionString = builder.ConnectionString;
+
+        // Assert
+        Assert.Equal("couchbase://localhost?bucket=Universities", connectionString);
+    }
+
+    [Fact]
+    public void ConnectionString_WithExistingQueryString_AppendsBucketWithAmpersand()
+    {
+        // Regression test: Couchbase's Aspire client (from 1.0.0-beta.5) injects a connection
+        // string that already carries its own query string, e.g. "?network=auto". Appending a
+        // second "?bucket=..." instead of "&bucket=..." produces a malformed, unparseable
+        // connection string -- GetCouchbaseClientAsync's TryGetRawParameter("bucket") then fails
+        // to find the bucket and throws, which crashed the ContosoUniversity sample app on startup.
+        // Arrange
+        var dbContextOptionsBuilder = new DbContextOptionsBuilder();
+        var clusterOptions = new ClusterOptions().WithConnectionString("couchbase://localhost?network=auto");
+        var builder = new CouchbaseDbContextOptionsBuilder(dbContextOptionsBuilder, clusterOptions)
+        {
+            Bucket = "Universities"
+        };
+
+        // Act
+        var connectionString = builder.ConnectionString;
+
+        // Assert
+        Assert.Equal("couchbase://localhost?network=auto&bucket=Universities", connectionString);
+
+        // And, concretely: the bucket parameter must be recoverable the same way
+        // GetCouchbaseClientAsync recovers it, from a fresh ClusterOptions parse.
+        var reparsed = new ClusterOptions().WithConnectionString(connectionString);
+        Assert.True(reparsed.TryGetRawParameter("bucket", out var bucketName));
+        Assert.Equal("Universities", bucketName?.ToString());
+    }
+
+    [Fact]
     public void Scope_CanBeSet()
     {
         // Arrange
