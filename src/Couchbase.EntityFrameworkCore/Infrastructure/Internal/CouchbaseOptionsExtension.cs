@@ -147,7 +147,7 @@ public class CouchbaseOptionsExtension: RelationalOptionsExtension
 
         public override bool IsDatabaseProvider => true;
 
-        public override string LogFragment => $"Using Custom Couchbase Provider - ConnectionString: {ConnectionString}";
+        public override string LogFragment => $"Using Custom Couchbase Provider - ConnectionString: {RedactConnectionString(ConnectionString)}";
 
         // A stable identity for the application's DI container, or null when configured outside DI
         // (plain UseCouchbase). ApplyServices can bind an application-registered shared cluster into
@@ -214,7 +214,7 @@ public class CouchbaseOptionsExtension: RelationalOptionsExtension
 
         public override void PopulateDebugInfo(IDictionary<string, string> debugInfo)
         {
-            debugInfo["Couchbase:ConnectionString"] = ConnectionString ?? string.Empty;
+            debugInfo["Couchbase:ConnectionString"] = RedactConnectionString(ConnectionString);
         }
 
         public override CouchbaseOptionsExtension Extension => (CouchbaseOptionsExtension)base.Extension;
@@ -222,6 +222,37 @@ public class CouchbaseOptionsExtension: RelationalOptionsExtension
         private string? ConnectionString => Extension.Connection == null ?
             Extension.ConnectionString :
             Extension.Connection.ConnectionString;
+
+        // Couchbase credentials are normally supplied out-of-band via ClusterOptions/Authenticator,
+        // never via the connection string itself, but this strips a userinfo component
+        // (scheme://user:pass@host) and drops all query-string parameters defensively, in case a
+        // future caller embeds a secret in either place. This is surfaced at EF's Information log
+        // level (LogFragment) and in debug views (PopulateDebugInfo), so it must never echo secrets.
+        private static string RedactConnectionString(string? connectionString)
+        {
+            if (string.IsNullOrEmpty(connectionString))
+            {
+                return string.Empty;
+            }
+
+            var value = connectionString;
+
+            var queryIndex = value.IndexOf('?');
+            if (queryIndex >= 0)
+            {
+                value = value[..queryIndex];
+            }
+
+            var schemeSeparator = value.IndexOf("://", StringComparison.Ordinal);
+            var hostStart = schemeSeparator >= 0 ? schemeSeparator + 3 : 0;
+            var atIndex = value.IndexOf('@', hostStart);
+            if (atIndex >= 0)
+            {
+                value = string.Concat(value.AsSpan(0, hostStart), value.AsSpan(atIndex + 1));
+            }
+
+            return value;
+        }
     }
 }
 
