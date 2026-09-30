@@ -24,9 +24,32 @@ jobs:
 
       # --locked-mode fails restore instead of silently re-resolving if any project's
       # packages.lock.json no longer matches what NuGet would resolve (a transitive package
-      # updated upstream, or a lock file that's out of sync with Directory.Packages.props).
+      # updated upstream, or a lock file that's out of sync with Directory.Packages.props). It
+      # can only be passed for the five projects that actually commit a lock file
+      # (RestorePackagesWithLockFile=true, the Directory.Build.props default) — --locked-mode
+      # sets RestoreLockedMode=true for the whole restore invocation, and NuGet fails a project
+      # under that mode if it has no lock file to check against (NU1004 MissingLockFile), so a
+      # single solution-wide --locked-mode restore would fail on AppHost, Contoso.AppHost, and
+      # the integration tests project, which opt out of the lock file (see CONTRIBUTING.md) because
+      # Aspire.AppHost.Sdk's dashboard/DCP package references are host-platform-specific. Restore
+      # those three separately, without --locked-mode, in the same step.
       - name: Restore
-        run: dotnet restore couchbase-dotnet-ef.sln --locked-mode
+        run: |
+          set -e
+          for proj in \
+            src/Couchbase.EntityFrameworkCore/Couchbase.EntityFrameworkCore.csproj \
+            tests/Couchbase.EntityFrameworkCore.UnitTests/Couchbase.EntityFrameworkCore.UnitTests.csproj \
+            samples/ContosoUniversity/ContosoUniversity.csproj \
+            samples/CouchbaseGettingStarted/CouchbaseGettingStarted.csproj \
+            couchbase-dotnet-ef.ServiceDefaults/couchbase-dotnet-ef.ServiceDefaults.csproj; do
+            dotnet restore "$proj" --locked-mode
+          done
+          for proj in \
+            tests/AppHost/AppHost.csproj \
+            samples/Contoso.AppHost/Contoso.AppHost.csproj \
+            tests/Couchbase.EntityFrameworkCore.IntegrationTests/Couchbase.EntityFrameworkCore.IntegrationTests.csproj; do
+            dotnet restore "$proj"
+          done
 
       # Builds the whole solution (provider, samples, unit + integration test projects) so a
       # build break anywhere in the repo fails CI, even though only the unit tests are run below —
