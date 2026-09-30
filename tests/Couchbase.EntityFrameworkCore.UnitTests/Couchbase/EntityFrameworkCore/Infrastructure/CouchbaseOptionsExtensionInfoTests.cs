@@ -268,4 +268,48 @@ public class CouchbaseOptionsExtensionInfoTests
         };
         return new CouchbaseOptionsExtension(builder);
     }
+
+    // LogFragment is emitted by EF Core at Information log level, and PopulateDebugInfo feeds
+    // DbContextOptions debug views -- both surface the connection string outside the provider's own
+    // control, so neither may ever leak a userinfo (user:pass@) component or query-string values a
+    // caller could embed a secret in. A regression here would silently put credentials back into
+    // logs/debug output. All four cases redact down to the same bare "couchbase://localhost" -- see
+    // CouchbaseOptionsExtensionInfo.RedactConnectionString.
+    [Theory]
+    [InlineData("couchbase://localhost")]
+    [InlineData("couchbase://admin:s3cr3t@localhost")]
+    [InlineData("couchbase://localhost?username=admin&password=s3cr3t")]
+    [InlineData("couchbase://admin:s3cr3t@localhost?password=s3cr3t")]
+    public void LogFragment_RedactsCredentialsAndQueryValues(string connectionString)
+    {
+        var info = Extension(connectionString: connectionString).Info;
+
+        Assert.Contains("ConnectionString: couchbase://localhost", info.LogFragment);
+        AssertNoCredentialsExposed(info.LogFragment);
+    }
+
+    [Theory]
+    [InlineData("couchbase://localhost")]
+    [InlineData("couchbase://admin:s3cr3t@localhost")]
+    [InlineData("couchbase://localhost?username=admin&password=s3cr3t")]
+    [InlineData("couchbase://admin:s3cr3t@localhost?password=s3cr3t")]
+    public void PopulateDebugInfo_RedactsCredentialsAndQueryValues(string connectionString)
+    {
+        var info = Extension(connectionString: connectionString).Info;
+        var debugInfo = new Dictionary<string, string>();
+
+        info.PopulateDebugInfo(debugInfo);
+
+        Assert.Equal("couchbase://localhost", debugInfo["Couchbase:ConnectionString"]);
+        AssertNoCredentialsExposed(debugInfo["Couchbase:ConnectionString"]);
+    }
+
+    private static void AssertNoCredentialsExposed(string value)
+    {
+        Assert.Contains("localhost", value);
+        Assert.DoesNotContain("admin", value, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("s3cr3t", value, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("username", value, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("password", value, StringComparison.OrdinalIgnoreCase);
+    }
 }
