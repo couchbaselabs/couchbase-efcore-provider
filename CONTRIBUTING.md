@@ -17,6 +17,23 @@ require Docker to be running:
 dotnet test tests/Couchbase.EntityFrameworkCore.IntegrationTests/Couchbase.EntityFrameworkCore.IntegrationTests.csproj --configuration Release --no-build
 ```
 
+### Updating `packages.lock.json` after a version bump
+
+Every project restores with `RestorePackagesWithLockFile=true` (set in `Directory.Build.props`),
+which pins the full resolved dependency graph — including transitive packages — in a committed
+`packages.lock.json` per project. CI restores with `--locked-mode`, so it fails the build if a
+project's lock file doesn't match what NuGet would resolve.
+
+Whenever you bump a version in `Directory.Packages.props` (or add/remove a `PackageReference`),
+regenerate the affected lock file(s) and commit them alongside the change:
+
+```sh
+dotnet restore couchbase-dotnet-ef.sln --force-evaluate
+```
+
+`--force-evaluate` is required — a plain `dotnet restore` no-ops once a lock file already exists
+and matches the last-restored graph, so it won't pick up your version change on its own.
+
 ## Continuous integration
 
 `.github/workflows/ci.yml` runs on every push/PR to `main`: it builds the whole solution in

@@ -22,8 +22,11 @@ jobs:
         with:
           global-json-file: global.json
 
+      # --locked-mode fails restore instead of silently re-resolving if any project's
+      # packages.lock.json no longer matches what NuGet would resolve (a transitive package
+      # updated upstream, or a lock file that's out of sync with Directory.Packages.props).
       - name: Restore
-        run: dotnet restore couchbase-dotnet-ef.sln
+        run: dotnet restore couchbase-dotnet-ef.sln --locked-mode
 
       # Builds the whole solution (provider, samples, unit + integration test projects) so a
       # build break anywhere in the repo fails CI, even though only the unit tests are run below —
