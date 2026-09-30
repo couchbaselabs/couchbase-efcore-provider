@@ -92,6 +92,21 @@ bucket, matching how collections and indexes already resolve per-entity — not 
 configured bucket. Two sequences with the same name and scope in different buckets are distinct,
 not a naming conflict, since a sequence's true identity is `bucket.scope.name`.
 
+## Security note: sequences produce guessable IDs
+
+Sequence values are monotonic and increment by a fixed, predictable amount — that's what makes
+them cheap and useful as primary keys, but it also means they're a poor choice for any identifier
+an application exposes externally (a URL path segment, an API response, an email link, etc.). An
+attacker who can see one sequence-generated ID can trivially guess adjacent ones (`/orders/1042`,
+`/orders/1043`, ...) and enumerate other records — a classic IDOR (Insecure Direct Object
+Reference) risk. This is inherent to sequential IDs in general, not specific to this provider's
+implementation.
+
+If an entity's key (or any sequence-backed property) will ever be visible to or guessable by an
+untrusted client, prefer `UseGuid()`/`UseGuidString()` below for that property instead, and rely
+on proper authorization checks rather than the key's unguessability as a security boundary either
+way.
+
 ## Generated GUIDs
 
 For distributed-ID scenarios where a server round-trip per insert isn't worth it, `UseGuid()`
