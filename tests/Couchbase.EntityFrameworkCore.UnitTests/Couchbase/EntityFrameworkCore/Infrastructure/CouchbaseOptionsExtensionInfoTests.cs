@@ -273,13 +273,17 @@ public class CouchbaseOptionsExtensionInfoTests
     // DbContextOptions debug views -- both surface the connection string outside the provider's own
     // control, so neither may ever leak a userinfo (user:pass@) component or query-string values a
     // caller could embed a secret in. A regression here would silently put credentials back into
-    // logs/debug output. All four cases redact down to the same bare "couchbase://localhost" -- see
+    // logs/debug output. All cases redact down to the same bare "couchbase://localhost" -- see
     // CouchbaseOptionsExtensionInfo.RedactConnectionString.
     [Theory]
     [InlineData("couchbase://localhost")]
     [InlineData("couchbase://admin:s3cr3t@localhost")]
     [InlineData("couchbase://localhost?username=admin&password=s3cr3t")]
     [InlineData("couchbase://admin:s3cr3t@localhost?password=s3cr3t")]
+    // A password containing '@' (e.g. "p@ss") means the userinfo/host delimiter is the LAST '@',
+    // not the first -- splitting on the first would leave "ss@localhost" in the redacted output,
+    // still exposing part of the password.
+    [InlineData("couchbase://user:p@ss@localhost")]
     public void LogFragment_RedactsCredentialsAndQueryValues(string connectionString)
     {
         var info = Extension(connectionString: connectionString).Info;
@@ -293,6 +297,7 @@ public class CouchbaseOptionsExtensionInfoTests
     [InlineData("couchbase://admin:s3cr3t@localhost")]
     [InlineData("couchbase://localhost?username=admin&password=s3cr3t")]
     [InlineData("couchbase://admin:s3cr3t@localhost?password=s3cr3t")]
+    [InlineData("couchbase://user:p@ss@localhost")]
     public void PopulateDebugInfo_RedactsCredentialsAndQueryValues(string connectionString)
     {
         var info = Extension(connectionString: connectionString).Info;

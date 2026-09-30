@@ -245,8 +245,13 @@ public class CouchbaseOptionsExtension: RelationalOptionsExtension
 
             var schemeSeparator = value.IndexOf("://", StringComparison.Ordinal);
             var hostStart = schemeSeparator >= 0 ? schemeSeparator + 3 : 0;
-            var atIndex = value.IndexOf('@', hostStart);
-            if (atIndex >= 0)
+
+            // The LAST '@' (not the first) is the userinfo/host delimiter: a password containing
+            // '@' (e.g. "user:p@ss@host") means everything up to the final '@' is credential
+            // material. Splitting on the first '@' instead would leave a credential fragment
+            // ("ss@host") in the redacted output -- exactly what this method must never do.
+            var atIndex = value.LastIndexOf('@');
+            if (atIndex >= hostStart)
             {
                 value = string.Concat(value.AsSpan(0, hostStart), value.AsSpan(atIndex + 1));
             }
