@@ -1,9 +1,12 @@
 using System;
+using System.Data;
+using System.Data.Common;
 using System.Text.Json;
 using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.EntityFrameworkCore.Infrastructure.Internal;
 using Couchbase.Query;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
@@ -267,5 +270,110 @@ public class CouchbaseOptionsExtensionInfoTests
             ApplicationServiceProvider = applicationServiceProvider
         };
         return new CouchbaseOptionsExtension(builder);
+    }
+
+    // LogFragment is emitted by EF Core at Information log level, and PopulateDebugInfo feeds
+    // DbContextOptions debug views -- both surface the connection string outside the provider's own
+    // control, so neither may ever leak a userinfo (user:pass@) component or query-string values a
+    // caller could embed a secret in. A regression here would silently put credentials back into
+    // logs/debug output. All cases redact down to the same bare "couchbase://localhost" -- see
+    // CouchbaseOptionsExtensionInfo.RedactConnectionString.
+    [Theory]
+    [InlineData("couchbase://localhost")]
+    [InlineData("couchbase://admin:s3cr3t@localhost")]
+    [InlineData("couchbase://localhost?username=admin&password=s3cr3t")]
+    [InlineData("couchbase://admin:s3cr3t@localhost?password=s3cr3t")]
+    // A password containing '@' (e.g. "p@ss") means the userinfo/host delimiter is the LAST '@',
+    // not the first -- splitting on the first would leave "ss@localhost" in the redacted output,
+    // still exposing part of the password.
+    [InlineData("couchbase://user:p@ss@localhost")]
+    public void LogFragment_RedactsCredentialsAndQueryValues(string connectionString)
+    {
+        var info = Extension(connectionString: connectionString).Info;
+
+        Assert.Contains("ConnectionString: couchbase://localhost", info.LogFragment);
+        AssertNoCredentialsExposed(info.LogFragment);
+    }
+
+    [Theory]
+    [InlineData("couchbase://localhost")]
+    [InlineData("couchbase://admin:s3cr3t@localhost")]
+    [InlineData("couchbase://localhost?username=admin&password=s3cr3t")]
+    [InlineData("couchbase://admin:s3cr3t@localhost?password=s3cr3t")]
+    [InlineData("couchbase://user:p@ss@localhost")]
+    public void PopulateDebugInfo_RedactsCredentialsAndQueryValues(string connectionString)
+    {
+        var info = Extension(connectionString: connectionString).Info;
+        var debugInfo = new Dictionary<string, string>();
+
+        info.PopulateDebugInfo(debugInfo);
+
+        Assert.Equal("couchbase://localhost", debugInfo["Couchbase:ConnectionString"]);
+        AssertNoCredentialsExposed(debugInfo["Couchbase:ConnectionString"]);
+    }
+
+    // A literal '?' before the final '@' (e.g. an unescaped '?' inside a password) means the value
+    // can't be parsed as a clean scheme://[userinfo@]host[?query] shape -- truncating at the first
+    // '?' would cut off the '@' delimiter along with it ("user:p?ss@localhost" would truncate to
+    // "user:p", still leaking a credential fragment). Rather than guess where userinfo ends and the
+    // query begins, the whole value is redacted instead of just the host being retained.
+    //
+    // This can't be exercised through the Extension() helper's connection-string constructor:
+    // ClusterOptions.WithConnectionString percent-encodes ':' and '?' found in userinfo before
+    // RedactConnectionString ever sees them, which would silently neutralize the very input this
+    // test needs to send. Going through WithConnection(DbConnection) instead -- a real, public EF
+    // Core relational-provider configuration path -- uses the raw ADO.NET ConnectionString
+    // untouched by the Couchbase SDK, so the literal '?' actually reaches the method under test.
+    [Fact]
+    public void LogFragment_RedactsWholeValue_WhenQuestionMarkPrecedesFinalAt()
+    {
+        var info = ExtensionWithConnection("couchbase://user:p?ss@localhost").Info;
+
+        Assert.Contains("ConnectionString: [redacted]", info.LogFragment);
+        Assert.DoesNotContain("user", info.LogFragment, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("ss@localhost", info.LogFragment, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void PopulateDebugInfo_RedactsWholeValue_WhenQuestionMarkPrecedesFinalAt()
+    {
+        var info = ExtensionWithConnection("couchbase://user:p?ss@localhost").Info;
+        var debugInfo = new Dictionary<string, string>();
+
+        info.PopulateDebugInfo(debugInfo);
+
+        Assert.Equal("[redacted]", debugInfo["Couchbase:ConnectionString"]);
+    }
+
+    private static CouchbaseOptionsExtension ExtensionWithConnection(string rawConnectionString)
+    {
+        var withConnection = ((RelationalOptionsExtension)Extension())
+            .WithConnection(new FakeDbConnection { ConnectionString = rawConnectionString });
+        return (CouchbaseOptionsExtension)withConnection;
+    }
+
+    // Minimal stub: only ConnectionString is read by RedactConnectionString. Every other member
+    // is unused by this test and left unimplemented.
+    private sealed class FakeDbConnection : DbConnection
+    {
+        public override string ConnectionString { get; set; } = "";
+        public override string Database => "";
+        public override string DataSource => "";
+        public override string ServerVersion => "";
+        public override ConnectionState State => ConnectionState.Closed;
+        public override void ChangeDatabase(string databaseName) => throw new NotSupportedException();
+        public override void Close() { }
+        public override void Open() => throw new NotSupportedException();
+        protected override DbTransaction BeginDbTransaction(IsolationLevel isolationLevel) => throw new NotSupportedException();
+        protected override DbCommand CreateDbCommand() => throw new NotSupportedException();
+    }
+
+    private static void AssertNoCredentialsExposed(string value)
+    {
+        Assert.Contains("localhost", value);
+        Assert.DoesNotContain("admin", value, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("s3cr3t", value, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("username", value, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("password", value, StringComparison.OrdinalIgnoreCase);
     }
 }

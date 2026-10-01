@@ -6,6 +6,14 @@
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
         <UserSecretsId>d147d6ad-0fb5-48d3-bc00-69ef713e1067</UserSecretsId>
+        <!-- Aspire.AppHost.Sdk dynamically adds a PackageReference to Aspire.Dashboard.Sdk.<RID> and
+             Aspire.Hosting.Orchestration.<RID> for whichever platform is doing the restore, so the
+             resolved graph (and therefore packages.lock.json) is inherently host-specific, not
+             reproducible across OS/arch. Opt this project out of the repo-wide lock file
+             (Directory.Build.props) instead of committing a lock file that only matches one
+             platform and breaks locked-mode restore everywhere else (e.g. CI's ubuntu-latest vs.
+             a macOS/arm64 contributor machine). -->
+        <RestorePackagesWithLockFile>false</RestorePackagesWithLockFile>
     </PropertyGroup>
 
     <ItemGroup>

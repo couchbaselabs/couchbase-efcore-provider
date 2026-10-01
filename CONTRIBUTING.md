@@ -17,6 +17,37 @@ require Docker to be running:
 dotnet test tests/Couchbase.EntityFrameworkCore.IntegrationTests/Couchbase.EntityFrameworkCore.IntegrationTests.csproj --configuration Release --no-build
 ```
 
+### Updating `packages.lock.json` after a version bump
+
+Every project restores with `RestorePackagesWithLockFile=true` (set in `Directory.Build.props`),
+which pins the full resolved dependency graph — including transitive packages — in a committed
+`packages.lock.json` per project. CI restores with `--locked-mode`, so it fails the build if a
+project's lock file doesn't match what NuGet would resolve.
+
+Whenever you bump a version in `Directory.Packages.props` (or add/remove a `PackageReference`),
+regenerate the affected lock file(s) and commit them alongside the change:
+
+```sh
+dotnet restore couchbase-dotnet-ef.sln --force-evaluate
+```
+
+`--force-evaluate` is required — a plain `dotnet restore` no-ops once a lock file already exists
+and matches the last-restored graph, so it won't pick up your version change on its own.
+
+**Exception:** `tests/AppHost`, `samples/Contoso.AppHost`, and (via its project reference to
+`AppHost`) `tests/Couchbase.EntityFrameworkCore.IntegrationTests` opt out of the lock file
+(`RestorePackagesWithLockFile=false` in each `.csproj`) and have no `packages.lock.json`. Their
+`Aspire.AppHost.Sdk` build dynamically adds a `PackageReference` to
+`Aspire.Dashboard.Sdk.<RID>`/`Aspire.Hosting.Orchestration.<RID>` for whichever platform is doing
+the restore, so the resolved graph — and any lock file generated from it — is tied to one OS/arch
+and would break locked-mode restore on every other platform (e.g. CI's `ubuntu-latest` vs. a
+macOS/arm64 contributor machine). Don't regenerate a lock file for these three projects.
+
+Because `--locked-mode` sets `RestoreLockedMode=true` for the whole restore invocation, and NuGet
+fails any project restored under that mode with no lock file to check (`NU1004`), CI restores the
+five locked projects and the three opted-out ones in two separate `dotnet restore` invocations —
+see `.github/workflows/ci.yml` — rather than one `--locked-mode` restore of the whole solution.
+
 ## Continuous integration
 
 `.github/workflows/ci.yml` runs on every push/PR to `main`: it builds the whole solution in

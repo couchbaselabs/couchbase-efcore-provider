@@ -147,7 +147,7 @@ public class CouchbaseOptionsExtension: RelationalOptionsExtension
 
         public override bool IsDatabaseProvider => true;
 
-        public override string LogFragment => $"Using Custom Couchbase Provider - ConnectionString: {ConnectionString}";
+        public override string LogFragment => $"Using Custom Couchbase Provider - ConnectionString: {RedactConnectionString(ConnectionString)}";
 
         // A stable identity for the application's DI container, or null when configured outside DI
         // (plain UseCouchbase). ApplyServices can bind an application-registered shared cluster into
@@ -214,7 +214,7 @@ public class CouchbaseOptionsExtension: RelationalOptionsExtension
 
         public override void PopulateDebugInfo(IDictionary<string, string> debugInfo)
         {
-            debugInfo["Couchbase:ConnectionString"] = ConnectionString ?? string.Empty;
+            debugInfo["Couchbase:ConnectionString"] = RedactConnectionString(ConnectionString);
         }
 
         public override CouchbaseOptionsExtension Extension => (CouchbaseOptionsExtension)base.Extension;
@@ -222,6 +222,54 @@ public class CouchbaseOptionsExtension: RelationalOptionsExtension
         private string? ConnectionString => Extension.Connection == null ?
             Extension.ConnectionString :
             Extension.Connection.ConnectionString;
+
+        // Couchbase credentials are normally supplied out-of-band via ClusterOptions/Authenticator,
+        // never via the connection string itself, but this strips a userinfo component
+        // (scheme://user:pass@host) and drops all query-string parameters defensively, in case a
+        // future caller embeds a secret in either place. This is surfaced at EF's Information log
+        // level (LogFragment) and in debug views (PopulateDebugInfo), so it must never echo secrets.
+        private static string RedactConnectionString(string? connectionString)
+        {
+            if (string.IsNullOrEmpty(connectionString))
+            {
+                return string.Empty;
+            }
+
+            var value = connectionString;
+
+            var queryIndex = value.IndexOf('?');
+
+            // The LAST '@' (not the first) is the userinfo/host delimiter: a password containing
+            // '@' (e.g. "user:p@ss@host") means everything up to the final '@' is credential
+            // material. Splitting on the first '@' instead would leave a credential fragment
+            // ("ss@host") in the redacted output -- exactly what this method must never do.
+            var atIndex = value.LastIndexOf('@');
+
+            // A literal, unescaped '?' before that final '@' means the value doesn't parse as a
+            // clean scheme://[userinfo@]host[?query] shape -- truncating at the first '?' would cut
+            // off the '@' delimiter along with it (e.g. "user:p?ss@host" truncates to "user:p",
+            // still leaking a credential fragment, and dropping the host too). Rather than guess
+            // where userinfo ends and the query begins, redact the whole value.
+            if (queryIndex >= 0 && atIndex >= 0 && queryIndex < atIndex)
+            {
+                return "[redacted]";
+            }
+
+            if (queryIndex >= 0)
+            {
+                value = value[..queryIndex];
+            }
+
+            var schemeSeparator = value.IndexOf("://", StringComparison.Ordinal);
+            var hostStart = schemeSeparator >= 0 ? schemeSeparator + 3 : 0;
+
+            if (atIndex >= hostStart)
+            {
+                value = string.Concat(value.AsSpan(0, hostStart), value.AsSpan(atIndex + 1));
+            }
+
+            return value;
+        }
     }
 }
 

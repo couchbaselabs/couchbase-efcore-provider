@@ -10,7 +10,6 @@ using Couchbase.KeyValue;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Newtonsoft.Json;
 
 // ReSharper disable MethodHasAsyncOverload
 
