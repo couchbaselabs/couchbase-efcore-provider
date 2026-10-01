@@ -238,6 +238,23 @@ public class CouchbaseOptionsExtension: RelationalOptionsExtension
             var value = connectionString;
 
             var queryIndex = value.IndexOf('?');
+
+            // The LAST '@' (not the first) is the userinfo/host delimiter: a password containing
+            // '@' (e.g. "user:p@ss@host") means everything up to the final '@' is credential
+            // material. Splitting on the first '@' instead would leave a credential fragment
+            // ("ss@host") in the redacted output -- exactly what this method must never do.
+            var atIndex = value.LastIndexOf('@');
+
+            // A literal, unescaped '?' before that final '@' means the value doesn't parse as a
+            // clean scheme://[userinfo@]host[?query] shape -- truncating at the first '?' would cut
+            // off the '@' delimiter along with it (e.g. "user:p?ss@host" truncates to "user:p",
+            // still leaking a credential fragment, and dropping the host too). Rather than guess
+            // where userinfo ends and the query begins, redact the whole value.
+            if (queryIndex >= 0 && atIndex >= 0 && queryIndex < atIndex)
+            {
+                return "[redacted]";
+            }
+
             if (queryIndex >= 0)
             {
                 value = value[..queryIndex];
@@ -246,11 +263,6 @@ public class CouchbaseOptionsExtension: RelationalOptionsExtension
             var schemeSeparator = value.IndexOf("://", StringComparison.Ordinal);
             var hostStart = schemeSeparator >= 0 ? schemeSeparator + 3 : 0;
 
-            // The LAST '@' (not the first) is the userinfo/host delimiter: a password containing
-            // '@' (e.g. "user:p@ss@host") means everything up to the final '@' is credential
-            // material. Splitting on the first '@' instead would leave a credential fragment
-            // ("ss@host") in the redacted output -- exactly what this method must never do.
-            var atIndex = value.LastIndexOf('@');
             if (atIndex >= hostStart)
             {
                 value = string.Concat(value.AsSpan(0, hostStart), value.AsSpan(atIndex + 1));
