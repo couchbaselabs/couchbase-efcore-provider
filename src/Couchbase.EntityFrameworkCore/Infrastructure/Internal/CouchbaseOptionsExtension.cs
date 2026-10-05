@@ -223,6 +223,11 @@ public class CouchbaseOptionsExtension: RelationalOptionsExtension
             Extension.ConnectionString :
             Extension.Connection.ConnectionString;
 
+        // Shared sentinel for every "can't safely redact just the credential, so redact
+        // everything" branch below -- a single constant so the branches can't drift to different
+        // placeholder text, and so tests assert against one source of truth.
+        internal const string RedactedConnectionStringPlaceholder = "[redacted]";
+
         // Couchbase credentials are normally supplied out-of-band via ClusterOptions/Authenticator,
         // never via the connection string itself, but this strips a userinfo component
         // (scheme://user:pass@host) and drops all query-string parameters defensively, in case a
@@ -257,7 +262,7 @@ public class CouchbaseOptionsExtension: RelationalOptionsExtension
             }
             else
             {
-                return "[redacted]";
+                return RedactedConnectionStringPlaceholder;
             }
 
             var hostStart = scheme.Length;
@@ -277,7 +282,7 @@ public class CouchbaseOptionsExtension: RelationalOptionsExtension
             // where userinfo ends and the query begins, redact the whole value.
             if (queryIndex >= 0 && atIndex >= 0 && queryIndex < atIndex)
             {
-                return "[redacted]";
+                return RedactedConnectionStringPlaceholder;
             }
 
             if (queryIndex >= 0)

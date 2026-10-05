@@ -44,9 +44,11 @@ and would break locked-mode restore on every other platform (e.g. CI's `ubuntu-l
 macOS/arm64 contributor machine). Don't regenerate a lock file for these three projects.
 
 Because `--locked-mode` sets `RestoreLockedMode=true` for the whole restore invocation, and NuGet
-fails any project restored under that mode with no lock file to check (`NU1004`), CI restores the
-five locked projects and the three opted-out ones in two separate `dotnet restore` invocations —
-see `.github/workflows/ci.yml` — rather than one `--locked-mode` restore of the whole solution.
+fails any project restored under that mode with no lock file to check (`NU1004`), and because
+`dotnet restore` only accepts a single project or solution argument, CI restores each of the five
+locked projects individually with `--locked-mode`, then each of the three opted-out projects
+individually without it — two groups of per-project restores, not one `--locked-mode` restore of
+the whole solution. See `.github/workflows/ci.yml`.
 
 ## Continuous integration
 

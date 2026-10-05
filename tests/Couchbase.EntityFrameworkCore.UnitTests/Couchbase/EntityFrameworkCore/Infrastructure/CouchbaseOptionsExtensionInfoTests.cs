@@ -329,7 +329,7 @@ public class CouchbaseOptionsExtensionInfoTests
     {
         var info = ExtensionWithConnection("couchbase://user:p?ss@localhost").Info;
 
-        Assert.Contains("ConnectionString: [redacted]", info.LogFragment);
+        Assert.Contains($"ConnectionString: {CouchbaseOptionsExtension.CouchbaseOptionsExtensionInfo.RedactedConnectionStringPlaceholder}", info.LogFragment);
         Assert.DoesNotContain("user", info.LogFragment, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("ss@localhost", info.LogFragment, StringComparison.OrdinalIgnoreCase);
     }
@@ -342,7 +342,7 @@ public class CouchbaseOptionsExtensionInfoTests
 
         info.PopulateDebugInfo(debugInfo);
 
-        Assert.Equal("[redacted]", debugInfo["Couchbase:ConnectionString"]);
+        Assert.Equal(CouchbaseOptionsExtension.CouchbaseOptionsExtensionInfo.RedactedConnectionStringPlaceholder, debugInfo["Couchbase:ConnectionString"]);
     }
 
     // A raw connection string reaching this method via WithConnection(DbConnection) is not
@@ -356,7 +356,7 @@ public class CouchbaseOptionsExtensionInfoTests
     {
         var info = ExtensionWithConnection("user:p://ss@localhost").Info;
 
-        Assert.Contains("ConnectionString: [redacted]", info.LogFragment);
+        Assert.Contains($"ConnectionString: {CouchbaseOptionsExtension.CouchbaseOptionsExtensionInfo.RedactedConnectionStringPlaceholder}", info.LogFragment);
         Assert.DoesNotContain("user", info.LogFragment, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -368,7 +368,7 @@ public class CouchbaseOptionsExtensionInfoTests
 
         info.PopulateDebugInfo(debugInfo);
 
-        Assert.Equal("[redacted]", debugInfo["Couchbase:ConnectionString"]);
+        Assert.Equal(CouchbaseOptionsExtension.CouchbaseOptionsExtensionInfo.RedactedConnectionStringPlaceholder, debugInfo["Couchbase:ConnectionString"]);
     }
 
     // A raw connection string reaching this method via WithConnection(DbConnection) need not look
@@ -381,7 +381,7 @@ public class CouchbaseOptionsExtensionInfoTests
     {
         var info = ExtensionWithConnection("Server=localhost;User ID=admin;Password=s3cr3t").Info;
 
-        Assert.Contains("ConnectionString: [redacted]", info.LogFragment);
+        Assert.Contains($"ConnectionString: {CouchbaseOptionsExtension.CouchbaseOptionsExtensionInfo.RedactedConnectionStringPlaceholder}", info.LogFragment);
         Assert.DoesNotContain("s3cr3t", info.LogFragment, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -393,7 +393,7 @@ public class CouchbaseOptionsExtensionInfoTests
 
         info.PopulateDebugInfo(debugInfo);
 
-        Assert.Equal("[redacted]", debugInfo["Couchbase:ConnectionString"]);
+        Assert.Equal(CouchbaseOptionsExtension.CouchbaseOptionsExtensionInfo.RedactedConnectionStringPlaceholder, debugInfo["Couchbase:ConnectionString"]);
     }
 
     private static CouchbaseOptionsExtension ExtensionWithConnection(string rawConnectionString)
