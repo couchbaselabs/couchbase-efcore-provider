@@ -237,6 +237,31 @@ public class CouchbaseOptionsExtension: RelationalOptionsExtension
 
             var value = connectionString;
 
+            // Only a recognized Couchbase scheme establishes a known, safely-parseable
+            // scheme://[userinfo@]host[?query] shape for the logic below to act on. A raw
+            // connection string can reach this method via WithConnection(DbConnection) without
+            // ever having gone through ClusterOptions, so it is NOT guaranteed to look like a
+            // Couchbase connection string at all -- it could be an arbitrary ADO.NET-style string
+            // such as "Server=localhost;User ID=admin;Password=s3cr3t", which contains none of
+            // '?', '@', or "://" for the rest of this method to act on and would otherwise be
+            // returned completely unredacted. There is no safe way to locate credential material
+            // in an unrecognized format, so redact the whole value up front instead of guessing.
+            string scheme;
+            if (value.StartsWith("couchbase://", StringComparison.OrdinalIgnoreCase))
+            {
+                scheme = "couchbase://";
+            }
+            else if (value.StartsWith("couchbases://", StringComparison.OrdinalIgnoreCase))
+            {
+                scheme = "couchbases://";
+            }
+            else
+            {
+                return "[redacted]";
+            }
+
+            var hostStart = scheme.Length;
+
             var queryIndex = value.IndexOf('?');
 
             // The LAST '@' (not the first) is the userinfo/host delimiter: a password containing
@@ -258,34 +283,6 @@ public class CouchbaseOptionsExtension: RelationalOptionsExtension
             if (queryIndex >= 0)
             {
                 value = value[..queryIndex];
-            }
-
-            // Only a recognized Couchbase scheme establishes where the authority (and therefore
-            // the userinfo/host split) actually starts. A generic IndexOf("://") is unsafe here:
-            // a raw connection string can reach this method via WithConnection(DbConnection)
-            // without ever having gone through ClusterOptions, so it is NOT guaranteed to start
-            // with a real scheme. A password containing "://" (e.g. "user:p://ss@host") would
-            // otherwise make that embedded "://" look like the scheme separator, treating the
-            // actual credential prefix ("user:p") as if it were a harmless scheme and retaining it
-            // in the output ("user:p://host"). If an unrecognized "://" shows up anywhere, there is
-            // no safe way to tell host from credential, so redact the whole value instead of
-            // guessing.
-            int hostStart;
-            if (value.StartsWith("couchbase://", StringComparison.OrdinalIgnoreCase))
-            {
-                hostStart = "couchbase://".Length;
-            }
-            else if (value.StartsWith("couchbases://", StringComparison.OrdinalIgnoreCase))
-            {
-                hostStart = "couchbases://".Length;
-            }
-            else if (value.Contains("://", StringComparison.Ordinal))
-            {
-                return "[redacted]";
-            }
-            else
-            {
-                hostStart = 0;
             }
 
             if (atIndex >= hostStart)

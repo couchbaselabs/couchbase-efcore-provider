@@ -371,6 +371,31 @@ public class CouchbaseOptionsExtensionInfoTests
         Assert.Equal("[redacted]", debugInfo["Couchbase:ConnectionString"]);
     }
 
+    // A raw connection string reaching this method via WithConnection(DbConnection) need not look
+    // like a URI at all -- an ADO.NET-style string such as "Server=localhost;User ID=admin;
+    // Password=s3cr3t" contains none of '?', '@', or "://", so without an up-front allow-list for
+    // recognized Couchbase schemes, none of the query/userinfo stripping logic would ever trigger
+    // and the password would be returned completely unredacted.
+    [Fact]
+    public void LogFragment_RedactsWholeValue_WhenConnectionStringIsNotUriShaped()
+    {
+        var info = ExtensionWithConnection("Server=localhost;User ID=admin;Password=s3cr3t").Info;
+
+        Assert.Contains("ConnectionString: [redacted]", info.LogFragment);
+        Assert.DoesNotContain("s3cr3t", info.LogFragment, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void PopulateDebugInfo_RedactsWholeValue_WhenConnectionStringIsNotUriShaped()
+    {
+        var info = ExtensionWithConnection("Server=localhost;User ID=admin;Password=s3cr3t").Info;
+        var debugInfo = new Dictionary<string, string>();
+
+        info.PopulateDebugInfo(debugInfo);
+
+        Assert.Equal("[redacted]", debugInfo["Couchbase:ConnectionString"]);
+    }
+
     private static CouchbaseOptionsExtension ExtensionWithConnection(string rawConnectionString)
     {
         var withConnection = ((RelationalOptionsExtension)Extension())
