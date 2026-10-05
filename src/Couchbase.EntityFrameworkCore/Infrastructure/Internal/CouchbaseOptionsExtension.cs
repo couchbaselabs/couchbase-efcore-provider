@@ -260,8 +260,33 @@ public class CouchbaseOptionsExtension: RelationalOptionsExtension
                 value = value[..queryIndex];
             }
 
-            var schemeSeparator = value.IndexOf("://", StringComparison.Ordinal);
-            var hostStart = schemeSeparator >= 0 ? schemeSeparator + 3 : 0;
+            // Only a recognized Couchbase scheme establishes where the authority (and therefore
+            // the userinfo/host split) actually starts. A generic IndexOf("://") is unsafe here:
+            // a raw connection string can reach this method via WithConnection(DbConnection)
+            // without ever having gone through ClusterOptions, so it is NOT guaranteed to start
+            // with a real scheme. A password containing "://" (e.g. "user:p://ss@host") would
+            // otherwise make that embedded "://" look like the scheme separator, treating the
+            // actual credential prefix ("user:p") as if it were a harmless scheme and retaining it
+            // in the output ("user:p://host"). If an unrecognized "://" shows up anywhere, there is
+            // no safe way to tell host from credential, so redact the whole value instead of
+            // guessing.
+            int hostStart;
+            if (value.StartsWith("couchbase://", StringComparison.OrdinalIgnoreCase))
+            {
+                hostStart = "couchbase://".Length;
+            }
+            else if (value.StartsWith("couchbases://", StringComparison.OrdinalIgnoreCase))
+            {
+                hostStart = "couchbases://".Length;
+            }
+            else if (value.Contains("://", StringComparison.Ordinal))
+            {
+                return "[redacted]";
+            }
+            else
+            {
+                hostStart = 0;
+            }
 
             if (atIndex >= hostStart)
             {

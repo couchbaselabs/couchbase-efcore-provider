@@ -345,6 +345,32 @@ public class CouchbaseOptionsExtensionInfoTests
         Assert.Equal("[redacted]", debugInfo["Couchbase:ConnectionString"]);
     }
 
+    // A raw connection string reaching this method via WithConnection(DbConnection) is not
+    // guaranteed to start with a real "couchbase://"/"couchbases://" scheme. If a credential
+    // happens to contain "://" (e.g. "user:p://ss@localhost"), blindly treating the FIRST "://" in
+    // the value as the scheme separator mistakes that embedded "://" for one, and the actual
+    // credential prefix ("user:p") gets treated as a harmless scheme and retained verbatim
+    // ("user:p://localhost") instead of being redacted.
+    [Fact]
+    public void LogFragment_RedactsWholeValue_WhenSchemeIsNotRecognizedAndSlashSlashIsAmbiguous()
+    {
+        var info = ExtensionWithConnection("user:p://ss@localhost").Info;
+
+        Assert.Contains("ConnectionString: [redacted]", info.LogFragment);
+        Assert.DoesNotContain("user", info.LogFragment, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void PopulateDebugInfo_RedactsWholeValue_WhenSchemeIsNotRecognizedAndSlashSlashIsAmbiguous()
+    {
+        var info = ExtensionWithConnection("user:p://ss@localhost").Info;
+        var debugInfo = new Dictionary<string, string>();
+
+        info.PopulateDebugInfo(debugInfo);
+
+        Assert.Equal("[redacted]", debugInfo["Couchbase:ConnectionString"]);
+    }
+
     private static CouchbaseOptionsExtension ExtensionWithConnection(string rawConnectionString)
     {
         var withConnection = ((RelationalOptionsExtension)Extension())
