@@ -1,0 +1,11 @@
+<Project>
+
+  <PropertyGroup>
+    <!-- Pins the fully-resolved dependency graph (including transitive packages) per project via a
+         committed packages.lock.json, so a compromised or unexpectedly-updated transitive package
+         shows up as a reviewable diff instead of silently changing what gets restored. CI restores
+         in locked mode, which fails the build if the graph would differ from the lock file. -->
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+  </PropertyGroup>
+
+</Project>

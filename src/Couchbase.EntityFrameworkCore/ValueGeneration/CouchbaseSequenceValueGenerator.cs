@@ -12,6 +12,13 @@ namespace Couchbase.EntityFrameworkCore.ValueGeneration;
 /// This generator executes <c>SELECT NEXT VALUE FOR `bucket`.`scope`.`sequence_name`</c>
 /// to obtain the next value from a Couchbase sequence. Sequences must be created
 /// in the database before use.
+///
+/// <para>
+/// Generated values are monotonic and predictable, so avoid using them for any identifier
+/// exposed to untrusted clients (a URL, an API response, etc.) — an attacker who sees one value
+/// can guess adjacent ones and enumerate other records (IDOR). Prefer a GUID-based generator for
+/// externally-visible keys instead.
+/// </para>
 /// </remarks>
 public class CouchbaseSequenceValueGenerator<T> : ValueGenerator<T>
     where T : struct

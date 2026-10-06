@@ -7,6 +7,13 @@
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
     <RootNamespace>Couchbase.EntityFrameworkCode.IntegrationTests</RootNamespace>
+    <!-- This project references AppHost.csproj (Aspire.AppHost.Sdk), which dynamically adds a
+         PackageReference to Aspire.Dashboard.Sdk.<RID> and Aspire.Hosting.Orchestration.<RID> for
+         whichever platform is doing the restore, making the resolved graph host-specific. That
+         propagates here transitively, so this project needs the same opt-out from the repo-wide
+         lock file (Directory.Build.props) as AppHost.csproj itself — otherwise a lock file
+         committed from one OS/arch breaks locked-mode restore on any other. -->
+    <RestorePackagesWithLockFile>false</RestorePackagesWithLockFile>
   </PropertyGroup>
 
   <ItemGroup>

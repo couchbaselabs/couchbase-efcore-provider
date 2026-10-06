@@ -59,7 +59,7 @@ jobs:
       # for it in ~/.nuget/packages — confirmed by reproducing this exact failure locally against a
       # clean NuGet cache (this bug was masked in earlier local testing by an already-warm cache).
       - name: Restore
-        run: dotnet restore src/Couchbase.EntityFrameworkCore/Couchbase.EntityFrameworkCore.csproj -p:ValidateApiCompat=true
+        run: dotnet restore src/Couchbase.EntityFrameworkCore/Couchbase.EntityFrameworkCore.csproj -p:ValidateApiCompat=true --locked-mode
 
       - name: Build (signed)
         run: >

@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices.ComTypes;
+using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Couchbase;
@@ -147,7 +148,7 @@ public class CouchbaseOptionsExtension: RelationalOptionsExtension
 
         public override bool IsDatabaseProvider => true;
 
-        public override string LogFragment => $"Using Custom Couchbase Provider - ConnectionString: {ConnectionString}";
+        public override string LogFragment => $"Using Custom Couchbase Provider - ConnectionString: {RedactConnectionString(ConnectionString)}";
 
         // A stable identity for the application's DI container, or null when configured outside DI
         // (plain UseCouchbase). ApplyServices can bind an application-registered shared cluster into
@@ -214,7 +215,7 @@ public class CouchbaseOptionsExtension: RelationalOptionsExtension
 
         public override void PopulateDebugInfo(IDictionary<string, string> debugInfo)
         {
-            debugInfo["Couchbase:ConnectionString"] = ConnectionString ?? string.Empty;
+            debugInfo["Couchbase:ConnectionString"] = RedactConnectionString(ConnectionString);
         }
 
         public override CouchbaseOptionsExtension Extension => (CouchbaseOptionsExtension)base.Extension;
@@ -222,6 +223,100 @@ public class CouchbaseOptionsExtension: RelationalOptionsExtension
         private string? ConnectionString => Extension.Connection == null ?
             Extension.ConnectionString :
             Extension.Connection.ConnectionString;
+
+        // Shared sentinel for every "can't safely redact just the credential, so redact
+        // everything" branch below -- a single constant so the branches can't drift to different
+        // placeholder text, and so tests assert against one source of truth.
+        internal const string RedactedConnectionStringPlaceholder = "[redacted]";
+
+        // Matches a Couchbase connection string's host/authority portion once any userinfo and
+        // query string have been stripped: one or more comma-separated hosts (bootstrap list),
+        // each either a bracketed IPv6 literal ("[::1]") or a hostname/IPv4 literal, each
+        // optionally suffixed with ":<port>" -- e.g. "host1,host2:8091" or "[::1]:8091,host2".
+        // An allowed scheme alone does not make whatever follows it safe to echo: a raw
+        // DbConnection.ConnectionString reaching this method via WithConnection(DbConnection) can
+        // legally start with "couchbase://" and still smuggle credentials in an ADO.NET-style tail
+        // after the host (e.g. "couchbase://localhost;User ID=alice;Password=..."), which contains
+        // neither '?' nor '@' for the logic above to act on. Anything that doesn't look like a
+        // clean host list after stripping is redacted rather than echoed as-is.
+        private static readonly Regex HostListPattern = new(
+            @"^(?:\[[0-9A-Fa-f:]+\]|[A-Za-z0-9.-]+)(?::\d+)?(?:,(?:\[[0-9A-Fa-f:]+\]|[A-Za-z0-9.-]+)(?::\d+)?)*$",
+            RegexOptions.Compiled);
+
+        // Couchbase credentials are normally supplied out-of-band via ClusterOptions/Authenticator,
+        // never via the connection string itself, but this strips a userinfo component
+        // (scheme://user:pass@host) and drops all query-string parameters defensively, in case a
+        // future caller embeds a secret in either place. This is surfaced at EF's Information log
+        // level (LogFragment) and in debug views (PopulateDebugInfo), so it must never echo secrets.
+        private static string RedactConnectionString(string? connectionString)
+        {
+            if (string.IsNullOrEmpty(connectionString))
+            {
+                return string.Empty;
+            }
+
+            var value = connectionString;
+
+            // Only a recognized Couchbase scheme establishes a known, safely-parseable
+            // scheme://[userinfo@]host[?query] shape for the logic below to act on. A raw
+            // connection string can reach this method via WithConnection(DbConnection) without
+            // ever having gone through ClusterOptions, so it is NOT guaranteed to look like a
+            // Couchbase connection string at all -- it could be an arbitrary ADO.NET-style string
+            // such as "Server=localhost;User ID=admin;Password=s3cr3t", which contains none of
+            // '?', '@', or "://" for the rest of this method to act on and would otherwise be
+            // returned completely unredacted. There is no safe way to locate credential material
+            // in an unrecognized format, so redact the whole value up front instead of guessing.
+            string scheme;
+            if (value.StartsWith("couchbase://", StringComparison.OrdinalIgnoreCase))
+            {
+                scheme = "couchbase://";
+            }
+            else if (value.StartsWith("couchbases://", StringComparison.OrdinalIgnoreCase))
+            {
+                scheme = "couchbases://";
+            }
+            else
+            {
+                return RedactedConnectionStringPlaceholder;
+            }
+
+            var hostStart = scheme.Length;
+
+            var queryIndex = value.IndexOf('?');
+
+            // The LAST '@' (not the first) is the userinfo/host delimiter: a password containing
+            // '@' (e.g. "user:p@ss@host") means everything up to the final '@' is credential
+            // material. Splitting on the first '@' instead would leave a credential fragment
+            // ("ss@host") in the redacted output -- exactly what this method must never do.
+            var atIndex = value.LastIndexOf('@');
+
+            // A literal, unescaped '?' before that final '@' means the value doesn't parse as a
+            // clean scheme://[userinfo@]host[?query] shape -- truncating at the first '?' would cut
+            // off the '@' delimiter along with it (e.g. "user:p?ss@host" truncates to "user:p",
+            // still leaking a credential fragment, and dropping the host too). Rather than guess
+            // where userinfo ends and the query begins, redact the whole value.
+            if (queryIndex >= 0 && atIndex >= 0 && queryIndex < atIndex)
+            {
+                return RedactedConnectionStringPlaceholder;
+            }
+
+            if (queryIndex >= 0)
+            {
+                value = value[..queryIndex];
+            }
+
+            if (atIndex >= hostStart)
+            {
+                value = string.Concat(value.AsSpan(0, hostStart), value.AsSpan(atIndex + 1));
+            }
+
+            if (!HostListPattern.IsMatch(value[hostStart..]))
+            {
+                return RedactedConnectionStringPlaceholder;
+            }
+
+            return value;
+        }
     }
 }
 
