@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices.ComTypes;
+using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Couchbase;
@@ -228,6 +229,20 @@ public class CouchbaseOptionsExtension: RelationalOptionsExtension
         // placeholder text, and so tests assert against one source of truth.
         internal const string RedactedConnectionStringPlaceholder = "[redacted]";
 
+        // Matches a Couchbase connection string's host/authority portion once any userinfo and
+        // query string have been stripped: one or more comma-separated hosts (bootstrap list),
+        // each either a bracketed IPv6 literal ("[::1]") or a hostname/IPv4 literal, each
+        // optionally suffixed with ":<port>" -- e.g. "host1,host2:8091" or "[::1]:8091,host2".
+        // An allowed scheme alone does not make whatever follows it safe to echo: a raw
+        // DbConnection.ConnectionString reaching this method via WithConnection(DbConnection) can
+        // legally start with "couchbase://" and still smuggle credentials in an ADO.NET-style tail
+        // after the host (e.g. "couchbase://localhost;User ID=alice;Password=..."), which contains
+        // neither '?' nor '@' for the logic above to act on. Anything that doesn't look like a
+        // clean host list after stripping is redacted rather than echoed as-is.
+        private static readonly Regex HostListPattern = new(
+            @"^(?:\[[0-9A-Fa-f:]+\]|[A-Za-z0-9.-]+)(?::\d+)?(?:,(?:\[[0-9A-Fa-f:]+\]|[A-Za-z0-9.-]+)(?::\d+)?)*$",
+            RegexOptions.Compiled);
+
         // Couchbase credentials are normally supplied out-of-band via ClusterOptions/Authenticator,
         // never via the connection string itself, but this strips a userinfo component
         // (scheme://user:pass@host) and drops all query-string parameters defensively, in case a
@@ -293,6 +308,11 @@ public class CouchbaseOptionsExtension: RelationalOptionsExtension
             if (atIndex >= hostStart)
             {
                 value = string.Concat(value.AsSpan(0, hostStart), value.AsSpan(atIndex + 1));
+            }
+
+            if (!HostListPattern.IsMatch(value[hostStart..]))
+            {
+                return RedactedConnectionStringPlaceholder;
             }
 
             return value;

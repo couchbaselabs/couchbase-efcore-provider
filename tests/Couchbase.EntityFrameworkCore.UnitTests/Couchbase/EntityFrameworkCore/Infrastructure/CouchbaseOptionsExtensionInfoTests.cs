@@ -396,6 +396,46 @@ public class CouchbaseOptionsExtensionInfoTests
         Assert.Equal(CouchbaseOptionsExtension.CouchbaseOptionsExtensionInfo.RedactedConnectionStringPlaceholder, debugInfo["Couchbase:ConnectionString"]);
     }
 
+    // An allowed scheme alone doesn't make what follows it safe: a raw DbConnection.ConnectionString
+    // reaching this method via WithConnection(DbConnection) can legally start with "couchbase://"
+    // and still smuggle credentials in an ADO.NET-style tail after the host. This contains neither
+    // '?' nor '@', so without host/authority validation it would be returned completely unredacted.
+    [Fact]
+    public void LogFragment_RedactsWholeValue_WhenHostPortionIsMalformed()
+    {
+        var info = ExtensionWithConnection("couchbase://localhost;User ID=alice;Password=review-marker").Info;
+
+        Assert.Contains($"ConnectionString: {CouchbaseOptionsExtension.CouchbaseOptionsExtensionInfo.RedactedConnectionStringPlaceholder}", info.LogFragment);
+        Assert.DoesNotContain("review-marker", info.LogFragment, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void PopulateDebugInfo_RedactsWholeValue_WhenHostPortionIsMalformed()
+    {
+        var info = ExtensionWithConnection("couchbase://localhost;User ID=alice;Password=review-marker").Info;
+        var debugInfo = new Dictionary<string, string>();
+
+        info.PopulateDebugInfo(debugInfo);
+
+        Assert.Equal(CouchbaseOptionsExtension.CouchbaseOptionsExtensionInfo.RedactedConnectionStringPlaceholder, debugInfo["Couchbase:ConnectionString"]);
+        Assert.DoesNotContain("review-marker", debugInfo["Couchbase:ConnectionString"], StringComparison.OrdinalIgnoreCase);
+    }
+
+    // Host-list validation must not reject the legitimate multi-host bootstrap and IPv6 formats
+    // the Couchbase SDK itself accepts, or this would be a functional regression disguised as a
+    // security fix.
+    [Theory]
+    [InlineData("couchbase://host1,host2:8091", "couchbase://host1,host2:8091")]
+    [InlineData("couchbase://[::1]:8091,host2", "couchbase://[::1]:8091,host2")]
+    [InlineData("couchbase://[2001:db8::1]", "couchbase://[2001:db8::1]")]
+    [InlineData("couchbase://admin:s3cr3t@host1,host2:8091", "couchbase://host1,host2:8091")]
+    public void LogFragment_PreservesSupportedMultiHostAndIPv6Formats(string connectionString, string expected)
+    {
+        var info = ExtensionWithConnection(connectionString).Info;
+
+        Assert.Contains($"ConnectionString: {expected}", info.LogFragment);
+    }
+
     private static CouchbaseOptionsExtension ExtensionWithConnection(string rawConnectionString)
     {
         var withConnection = ((RelationalOptionsExtension)Extension())
