@@ -359,4 +359,65 @@ public class TransactionTests(
             await context.SaveChangesAsync();
         }
     }
+
+    [Fact]
+    public async Task Savepoint_RollbackTo_Commit_PersistsOnlyWorkBeforeTheSavepoint()
+    {
+        await using var context = bloggingFixture.GetDbContext();
+        var kept = new BloggingFixture.Blog { BlogId = 9101, Url = "http://savepoint-kept.com", Rating = 5 };
+        var discarded = new BloggingFixture.Blog { BlogId = 9102, Url = "http://savepoint-discarded.com", Rating = 1 };
+
+        try
+        {
+            await using var transaction = await context.Database.BeginCouchbaseTransactionAsync(DurabilityLevel.None);
+
+            context.Blogs.Add(kept);
+            await context.SaveChangesAsync();
+
+            await transaction.CreateSavepointAsync("before_discarded");
+
+            // Note: entity state is deferred until commit, so this second SaveChanges re-queues
+            // `kept` as well. Rolling back to the savepoint truncates the queue back to just the
+            // first insert, which is why this scenario works; a second SaveChanges that is NOT
+            // rolled back would fail with DocumentExistsException (independent of savepoints).
+
+            context.Blogs.Add(discarded);
+            await context.SaveChangesAsync();
+
+            await transaction.RollbackToSavepointAsync("before_discarded");
+            await transaction.CommitAsync();
+
+            var savedBlog = await PollingHelper.PollForResultAsync(
+                async () =>
+                {
+                    await using var verifyContext = bloggingFixture.GetDbContext();
+                    return await verifyContext.Blogs.FindAsync(kept.BlogId);
+                },
+                result => result != null,
+                TimeSpan.FromSeconds(5));
+            Assert.NotNull(savedBlog);
+
+            // Same "poll briefly for it to ever appear" approach as the rollback test above.
+            await using var leakContext = bloggingFixture.GetDbContext();
+            var leakedBlog = await PollingHelper.PollForResultAsync(
+                () => leakContext.Blogs.FindAsync(discarded.BlogId).AsTask(),
+                result => result != null,
+                TimeSpan.FromSeconds(2));
+            Assert.Null(leakedBlog);
+        }
+        finally
+        {
+            await using var cleanupContext = bloggingFixture.GetDbContext();
+            foreach (var id in new[] { kept.BlogId, discarded.BlogId })
+            {
+                var persisted = await cleanupContext.Blogs.FindAsync(id);
+                if (persisted != null)
+                {
+                    cleanupContext.Remove(persisted);
+                }
+            }
+
+            await cleanupContext.SaveChangesAsync();
+        }
+    }
 }

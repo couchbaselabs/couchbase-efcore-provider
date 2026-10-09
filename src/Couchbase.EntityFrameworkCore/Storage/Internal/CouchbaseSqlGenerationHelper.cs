@@ -100,6 +100,16 @@ public class CouchbaseSqlGenerationHelper : RelationalSqlGenerationHelper
         }
     }
 
+    // See CouchbaseSavepointStatements for why savepoints are not plain server-side statements.
+    public override string GenerateCreateSavepointStatement(string name)
+        => CouchbaseSavepointStatements.Create(DelimitIdentifier(name));
+
+    public override string GenerateRollbackToSavepointStatement(string name)
+        => CouchbaseSavepointStatements.RollbackTo(DelimitIdentifier(name));
+
+    public override string GenerateReleaseSavepointStatement(string name)
+        => CouchbaseSavepointStatements.Release(DelimitIdentifier(name));
+
    public override string GenerateParameterName(string name) =>
        name.StartsWith("$", StringComparison.Ordinal)
        ? name : "$" + name;

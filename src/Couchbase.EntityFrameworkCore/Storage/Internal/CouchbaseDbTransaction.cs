@@ -18,6 +18,8 @@ public class CouchbaseDbTransaction : DbTransaction
     private readonly ILogger? _logger;
     private readonly DurabilityLevel _durabilityLevel;
     private readonly List<TransactionOperation> _pendingOperations = new();
+    // Savepoint name -> number of pending operations when it was created, in creation order.
+    private readonly List<(string Name, int OperationCount)> _savepoints = new();
     private bool _disposed;
     private bool _completed;
     private int _committedCount;
@@ -88,6 +90,60 @@ public class CouchbaseDbTransaction : DbTransaction
         _pendingOperations.Add(new TransactionOperation(TransactionOperationType.Remove, collection, id, null));
     }
 
+    /// <summary>
+    /// Marks the current end of the buffered operations under <paramref name="name"/>. Creating a
+    /// savepoint with an existing name replaces it, as in SQL.
+    /// </summary>
+    internal void CreateSavepoint(string name)
+    {
+        ThrowIfCompleted();
+        var existing = IndexOfSavepoint(name);
+        if (existing >= 0)
+        {
+            _savepoints.RemoveAt(existing);
+        }
+
+        _savepoints.Add((name, _pendingOperations.Count));
+    }
+
+    /// <summary>
+    /// Discards every operation buffered since the savepoint and any savepoints created after it.
+    /// The savepoint itself remains, so it can be rolled back to again.
+    /// </summary>
+    internal void RollbackToSavepoint(string name)
+    {
+        ThrowIfCompleted();
+        var index = RequireSavepoint(name);
+        var operationCount = _savepoints[index].OperationCount;
+
+        _pendingOperations.RemoveRange(operationCount, _pendingOperations.Count - operationCount);
+        _savepoints.RemoveRange(index + 1, _savepoints.Count - index - 1);
+    }
+
+    /// <summary>
+    /// Forgets the savepoint and any created after it, keeping the buffered operations.
+    /// </summary>
+    internal void ReleaseSavepoint(string name)
+    {
+        ThrowIfCompleted();
+        var index = RequireSavepoint(name);
+        _savepoints.RemoveRange(index, _savepoints.Count - index);
+    }
+
+    private int IndexOfSavepoint(string name)
+        => _savepoints.FindLastIndex(s => string.Equals(s.Name, name, StringComparison.Ordinal));
+
+    private int RequireSavepoint(string name)
+    {
+        var index = IndexOfSavepoint(name);
+        if (index < 0)
+        {
+            throw new InvalidOperationException($"Savepoint '{name}' does not exist in this transaction.");
+        }
+
+        return index;
+    }
+
     public override void Commit()
     {
         CommitAsync().GetAwaiter().GetResult();
@@ -154,6 +210,7 @@ public class CouchbaseDbTransaction : DbTransaction
             _committedCount = _pendingOperations.Count;
             _completed = true;
             _pendingOperations.Clear();
+            _savepoints.Clear();
             _connection.ClearCurrentTransaction();
         }
         catch (Couchbase.Client.Transactions.Error.TransactionFailedException ex)
@@ -175,6 +232,7 @@ public class CouchbaseDbTransaction : DbTransaction
     {
         ThrowIfCompleted();
         _pendingOperations.Clear();
+        _savepoints.Clear();
         _completed = true;
         _connection.ClearCurrentTransaction();
     }
@@ -201,6 +259,7 @@ public class CouchbaseDbTransaction : DbTransaction
             if (disposing && !_completed)
             {
                 _pendingOperations.Clear();
+                _savepoints.Clear();
             }
             _disposed = true;
             _completed = true;
@@ -216,6 +275,7 @@ public class CouchbaseDbTransaction : DbTransaction
             if (!_completed)
             {
                 _pendingOperations.Clear();
+                _savepoints.Clear();
             }
             _disposed = true;
             _completed = true;

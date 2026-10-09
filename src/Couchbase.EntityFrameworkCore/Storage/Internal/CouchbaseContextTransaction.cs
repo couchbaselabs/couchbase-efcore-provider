@@ -84,6 +84,26 @@ internal sealed class CouchbaseContextTransaction : ICouchbaseDbContextTransacti
 
     public DbTransaction GetDbTransaction() => _inner.GetDbTransaction();
 
+    // IDbContextTransaction's savepoint members are default interface methods that throw
+    // NotSupportedException, so they must be forwarded explicitly or savepoints would work on
+    // Database.BeginTransaction() but not on BeginCouchbaseTransaction().
+    public bool SupportsSavepoints => _inner.SupportsSavepoints;
+
+    public void CreateSavepoint(string name) => _inner.CreateSavepoint(name);
+
+    public Task CreateSavepointAsync(string name, CancellationToken cancellationToken = default)
+        => _inner.CreateSavepointAsync(name, cancellationToken);
+
+    public void RollbackToSavepoint(string name) => _inner.RollbackToSavepoint(name);
+
+    public Task RollbackToSavepointAsync(string name, CancellationToken cancellationToken = default)
+        => _inner.RollbackToSavepointAsync(name, cancellationToken);
+
+    public void ReleaseSavepoint(string name) => _inner.ReleaseSavepoint(name);
+
+    public Task ReleaseSavepointAsync(string name, CancellationToken cancellationToken = default)
+        => _inner.ReleaseSavepointAsync(name, cancellationToken);
+
     public void Dispose()
     {
         CouchbaseSaveChangesInterceptor.EndTracking(_context);

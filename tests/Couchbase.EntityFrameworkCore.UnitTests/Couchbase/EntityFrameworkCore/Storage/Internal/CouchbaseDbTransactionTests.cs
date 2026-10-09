@@ -62,6 +62,128 @@ public class CouchbaseDbTransactionTests
         Assert.Equal(IsolationLevel.Serializable, transaction.IsolationLevel);
     }
 
+    private void Enqueue(CouchbaseDbTransaction transaction, params string[] ids)
+    {
+        foreach (var id in ids)
+        {
+            transaction.EnqueueInsert(_mockCollection.Object, id, new { Id = id });
+        }
+    }
+
+    private static string[] PendingIds(CouchbaseDbTransaction transaction)
+        => transaction.PendingOperations.Select(o => o.Id).ToArray();
+
+    [Fact]
+    public async Task RollbackToSavepoint_DiscardsOperationsBufferedAfterIt()
+    {
+        var transaction = await CreateTransactionAsync();
+        Enqueue(transaction, "a");
+        transaction.CreateSavepoint("sp");
+        Enqueue(transaction, "b", "c");
+
+        transaction.RollbackToSavepoint("sp");
+
+        Assert.Equal(["a"], PendingIds(transaction));
+    }
+
+    [Fact]
+    public async Task RollbackToSavepoint_KeepsTheSavepointSoItCanBeUsedAgain()
+    {
+        var transaction = await CreateTransactionAsync();
+        transaction.CreateSavepoint("sp");
+        Enqueue(transaction, "a");
+        transaction.RollbackToSavepoint("sp");
+        Enqueue(transaction, "b");
+
+        transaction.RollbackToSavepoint("sp");
+
+        Assert.Empty(transaction.PendingOperations);
+    }
+
+    [Fact]
+    public async Task RollbackToSavepoint_DropsLaterSavepoints()
+    {
+        var transaction = await CreateTransactionAsync();
+        transaction.CreateSavepoint("outer");
+        Enqueue(transaction, "a");
+        transaction.CreateSavepoint("inner");
+        Enqueue(transaction, "b");
+
+        transaction.RollbackToSavepoint("outer");
+
+        Assert.Throws<InvalidOperationException>(() => transaction.RollbackToSavepoint("inner"));
+    }
+
+    [Fact]
+    public async Task ReleaseSavepoint_KeepsBufferedOperations()
+    {
+        var transaction = await CreateTransactionAsync();
+        Enqueue(transaction, "a");
+        transaction.CreateSavepoint("sp");
+        Enqueue(transaction, "b");
+
+        transaction.ReleaseSavepoint("sp");
+
+        Assert.Equal(["a", "b"], PendingIds(transaction));
+        Assert.Throws<InvalidOperationException>(() => transaction.RollbackToSavepoint("sp"));
+    }
+
+    [Fact]
+    public async Task ReleaseSavepoint_AlsoReleasesLaterSavepoints()
+    {
+        var transaction = await CreateTransactionAsync();
+        transaction.CreateSavepoint("outer");
+        transaction.CreateSavepoint("inner");
+
+        transaction.ReleaseSavepoint("outer");
+
+        Assert.Throws<InvalidOperationException>(() => transaction.RollbackToSavepoint("inner"));
+    }
+
+    [Fact]
+    public async Task CreateSavepoint_WithExistingName_MovesTheSavepoint()
+    {
+        var transaction = await CreateTransactionAsync();
+        Enqueue(transaction, "a");
+        transaction.CreateSavepoint("sp");
+        Enqueue(transaction, "b");
+        transaction.CreateSavepoint("sp");
+        Enqueue(transaction, "c");
+
+        transaction.RollbackToSavepoint("sp");
+
+        Assert.Equal(["a", "b"], PendingIds(transaction));
+    }
+
+    [Fact]
+    public async Task UnknownSavepoint_Throws()
+    {
+        var transaction = await CreateTransactionAsync();
+
+        Assert.Throws<InvalidOperationException>(() => transaction.RollbackToSavepoint("missing"));
+        Assert.Throws<InvalidOperationException>(() => transaction.ReleaseSavepoint("missing"));
+    }
+
+    [Fact]
+    public async Task Savepoints_AreClearedWhenTheTransactionEnds()
+    {
+        var transaction = await CreateTransactionAsync();
+        transaction.CreateSavepoint("sp");
+
+        transaction.Rollback();
+
+        Assert.Throws<InvalidOperationException>(() => transaction.RollbackToSavepoint("sp"));
+    }
+
+    [Fact]
+    public async Task Savepoint_OnCompletedTransaction_Throws()
+    {
+        var transaction = await CreateTransactionAsync();
+        transaction.Rollback();
+
+        Assert.Throws<InvalidOperationException>(() => transaction.CreateSavepoint("sp"));
+    }
+
     [Fact]
     public async Task Connection_ReturnsParentConnection()
     {
