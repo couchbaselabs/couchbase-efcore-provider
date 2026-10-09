@@ -47,7 +47,8 @@ jobs:
           for proj in \
             tests/AppHost/AppHost.csproj \
             samples/Contoso.AppHost/Contoso.AppHost.csproj \
-            tests/Couchbase.EntityFrameworkCore.IntegrationTests/Couchbase.EntityFrameworkCore.IntegrationTests.csproj; do
+            tests/Couchbase.EntityFrameworkCore.IntegrationTests/Couchbase.EntityFrameworkCore.IntegrationTests.csproj \
+            tests/Couchbase.EntityFrameworkCore.Specification.Tests/Couchbase.EntityFrameworkCore.Specification.Tests.csproj; do
             dotnet restore "$proj"
           done
 
