@@ -156,7 +156,7 @@ public class CouchbaseDbTransaction : DbTransaction
         if (_pendingOperations.Count == 0)
         {
             _completed = true;
-            _connection.ClearCurrentTransaction();
+            _connection.ClearCurrentTransaction(this);
             return;
         }
 
@@ -211,7 +211,7 @@ public class CouchbaseDbTransaction : DbTransaction
             _completed = true;
             _pendingOperations.Clear();
             _savepoints.Clear();
-            _connection.ClearCurrentTransaction();
+            _connection.ClearCurrentTransaction(this);
         }
         catch (Couchbase.Client.Transactions.Error.TransactionFailedException ex)
         {
@@ -234,7 +234,7 @@ public class CouchbaseDbTransaction : DbTransaction
         _pendingOperations.Clear();
         _savepoints.Clear();
         _completed = true;
-        _connection.ClearCurrentTransaction();
+        _connection.ClearCurrentTransaction(this);
     }
 
     public override Task RollbackAsync(CancellationToken cancellationToken = default)
@@ -263,7 +263,7 @@ public class CouchbaseDbTransaction : DbTransaction
             }
             _disposed = true;
             _completed = true;
-            _connection.ClearCurrentTransaction();
+            _connection.ClearCurrentTransaction(this);
         }
         base.Dispose(disposing);
     }
@@ -279,7 +279,7 @@ public class CouchbaseDbTransaction : DbTransaction
             }
             _disposed = true;
             _completed = true;
-            _connection.ClearCurrentTransaction();
+            _connection.ClearCurrentTransaction(this);
         }
         await base.DisposeAsync().ConfigureAwait(false);
     }

@@ -185,6 +185,56 @@ public class CouchbaseDbTransactionTests
     }
 
     [Fact]
+    public async Task Close_AbandonsTheActiveTransaction()
+    {
+        var transaction = await CreateTransactionAsync();
+
+        _connection.Close();
+
+        Assert.Throws<ObjectDisposedException>(() => transaction.EnqueueInsert(_mockCollection.Object, "a", new { }));
+    }
+
+    [Fact]
+    public async Task CloseDetachingTransaction_LeavesTheTransactionUsable()
+    {
+        // EF closes the connection after an interceptor suppressed its Commit/Rollback; the
+        // DbTransaction must still be completable by whoever suppressed it.
+        var transaction = await CreateTransactionAsync();
+
+        _connection.CloseDetachingTransaction();
+
+        transaction.EnqueueInsert(_mockCollection.Object, "a", new { });
+        transaction.Rollback();
+        Assert.True(transaction.IsCompleted);
+    }
+
+    [Fact]
+    public async Task CloseDetachingTransaction_AllowsANewTransactionToBegin()
+    {
+        await CreateTransactionAsync();
+        _connection.CloseDetachingTransaction();
+        await _connection.OpenAsync();
+
+        var second = _connection.BeginTransaction();
+
+        Assert.NotNull(second);
+    }
+
+    [Fact]
+    public async Task DetachedTransaction_Completing_DoesNotClearANewerTransaction()
+    {
+        var detached = await CreateTransactionAsync();
+        _connection.CloseDetachingTransaction();
+        await _connection.OpenAsync();
+        _connection.BeginTransaction();
+
+        detached.Rollback();
+
+        // The newer transaction must still be the connection's current one.
+        Assert.Throws<InvalidOperationException>(() => _connection.BeginTransaction());
+    }
+
+    [Fact]
     public async Task Connection_ReturnsParentConnection()
     {
         var transaction = await CreateTransactionAsync();

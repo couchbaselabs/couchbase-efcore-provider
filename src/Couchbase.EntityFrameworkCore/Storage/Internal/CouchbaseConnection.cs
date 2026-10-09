@@ -140,7 +140,19 @@ public class CouchbaseConnection : DbConnection
         throw new NotSupportedException("Couchbase does not support changing the database after connection is established.");
     }
 
-    public override void Close()
+    public override void Close() => CloseCore(disposeTransaction: true);
+
+    /// <summary>
+    /// Closes the connection but leaves any uncompleted transaction usable, detached from this
+    /// connection. EF Core closes the connection after it has finished with a transaction; if an
+    /// interceptor suppressed EF's Commit/Rollback, that transaction is still the application's (or
+    /// the interceptor's) to complete. A Couchbase transaction is only a client-side buffer applied
+    /// through the SDK at commit, so it doesn't depend on the connection staying open. Plain
+    /// ADO.NET callers use <see cref="Close"/>, which still abandons the transaction.
+    /// </summary>
+    internal void CloseDetachingTransaction() => CloseCore(disposeTransaction: false);
+
+    private void CloseCore(bool disposeTransaction)
     {
         if (_state == ConnectionState.Closed)
         {
@@ -148,7 +160,11 @@ public class CouchbaseConnection : DbConnection
         }
 
         _state = ConnectionState.Closed;
-        _currentTransaction?.Dispose();
+        if (disposeTransaction)
+        {
+            _currentTransaction?.Dispose();
+        }
+
         _currentTransaction = null;
         _logger?.LogDebug("Couchbase connection closed");
     }
@@ -202,9 +218,14 @@ public class CouchbaseConnection : DbConnection
         };
     }
 
-    internal void ClearCurrentTransaction()
+    // Only clears if the caller is still the current transaction: a transaction detached by
+    // CloseDetachingTransaction may complete later, after a newer one has begun.
+    internal void ClearCurrentTransaction(CouchbaseDbTransaction transaction)
     {
-        _currentTransaction = null;
+        if (ReferenceEquals(_currentTransaction, transaction))
+        {
+            _currentTransaction = null;
+        }
     }
 
     private string ExtractDataSource()
