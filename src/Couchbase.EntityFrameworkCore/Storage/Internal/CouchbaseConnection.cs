@@ -108,6 +108,14 @@ public class CouchbaseConnection : DbConnection
             throw new InvalidOperationException("Connection must be open to begin a transaction.");
         }
 
+        // Couchbase transactions provide read-committed semantics and the isolation level isn't
+        // configurable, so — as ADO.NET providers do for Unspecified — report the level that is
+        // actually in effect rather than echoing "Unspecified" back.
+        if (isolationLevel == IsolationLevel.Unspecified)
+        {
+            isolationLevel = IsolationLevel.ReadCommitted;
+        }
+
         if (_currentTransaction != null && !_currentTransaction.IsCompleted)
         {
             throw new InvalidOperationException("A transaction is already in progress.");

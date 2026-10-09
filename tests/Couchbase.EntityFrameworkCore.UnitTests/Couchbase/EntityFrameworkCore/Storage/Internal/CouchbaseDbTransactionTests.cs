@@ -42,11 +42,24 @@ public class CouchbaseDbTransactionTests
     }
 
     [Fact]
-    public async Task IsolationLevel_ReturnsExpectedValue()
+    public async Task IsolationLevel_DefaultsToReadCommitted()
     {
+        // Unspecified is reported as the level actually in effect (Couchbase is read-committed),
+        // matching ADO.NET providers.
         var transaction = await CreateTransactionAsync();
 
-        Assert.Equal(IsolationLevel.Unspecified, transaction.IsolationLevel);
+        Assert.Equal(IsolationLevel.ReadCommitted, transaction.IsolationLevel);
+    }
+
+    [Fact]
+    public async Task IsolationLevel_ExplicitLevelIsPreserved()
+    {
+        _connection = new CouchbaseConnection(_mockBucketProvider.Object, _mockOptions.Object);
+        await _connection.OpenAsync();
+
+        var transaction = _connection.BeginTransaction(IsolationLevel.Serializable);
+
+        Assert.Equal(IsolationLevel.Serializable, transaction.IsolationLevel);
     }
 
     [Fact]
