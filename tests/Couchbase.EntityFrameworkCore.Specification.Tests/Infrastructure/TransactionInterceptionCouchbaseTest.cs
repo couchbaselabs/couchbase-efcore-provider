@@ -32,17 +32,44 @@ public abstract class TransactionInterceptionCouchbaseTestBase(
     {
         public class InterceptionCouchbaseFixture : InterceptionCouchbaseFixtureBase;
 
-        private const string UseTransactionSkip =
-            "The test calls DbConnection.BeginTransaction() on the still-closed connection; CouchbaseConnection requires it to be open first, and EF doesn't open it here.";
+        // The UseTransaction tests call context.Database.GetDbConnection().BeginTransaction()
+        // directly. The upstream providers hand EF a DbConnection that the test store has already
+        // opened, so that works there; Couchbase's connection is created by EF and starts closed,
+        // and, like SqlConnection or NpgsqlConnection, refuses to begin a transaction until it
+        // is open. Open it as the tests' precondition, but only for these tests: the others must
+        // keep seeing EF open and close the connection itself.
+        private bool _openConnectionWhenSeeding;
 
-        [Theory(Skip = UseTransactionSkip), InlineData(false), InlineData(true)]
-        public override Task UseTransaction_without_interceptor(bool async) => base.UseTransaction_without_interceptor(async);
+        public override async Task<UniverseContext> SeedAsync(UniverseContext context)
+        {
+            if (_openConnectionWhenSeeding)
+            {
+                await context.Database.OpenConnectionAsync();
+            }
 
-        [Theory(Skip = UseTransactionSkip), InlineData(false), InlineData(true)]
-        public override Task Intercept_UseTransaction_to_wrap(bool async) => base.Intercept_UseTransaction_to_wrap(async);
+            return await base.SeedAsync(context);
+        }
 
-        [Theory(Skip = UseTransactionSkip), InlineData(false), InlineData(true)]
-        public override Task Intercept_UseTransaction(bool async) => base.Intercept_UseTransaction(async);
+        [Theory, InlineData(false), InlineData(true)]
+        public override Task UseTransaction_without_interceptor(bool async)
+        {
+            _openConnectionWhenSeeding = true;
+            return base.UseTransaction_without_interceptor(async);
+        }
+
+        [Theory, InlineData(false), InlineData(true)]
+        public override Task Intercept_UseTransaction_to_wrap(bool async)
+        {
+            _openConnectionWhenSeeding = true;
+            return base.Intercept_UseTransaction_to_wrap(async);
+        }
+
+        [Theory, InlineData(false), InlineData(true)]
+        public override Task Intercept_UseTransaction(bool async)
+        {
+            _openConnectionWhenSeeding = true;
+            return base.Intercept_UseTransaction(async);
+        }
 
     }
 }
