@@ -100,6 +100,20 @@ public class CouchbaseSqlGenerationHelper : RelationalSqlGenerationHelper
         }
     }
 
+    // See CouchbaseSavepointStatements for why savepoints are not plain server-side statements.
+    // A savepoint name is a single identifier, so it is quoted as one: DelimitIdentifier would
+    // treat a '.' as a keyspace separator and turn "step.1" into `step`.`1`.
+    public override string GenerateCreateSavepointStatement(string name)
+        => CouchbaseSavepointStatements.Create(DelimitSavepointName(name));
+
+    public override string GenerateRollbackToSavepointStatement(string name)
+        => CouchbaseSavepointStatements.RollbackTo(DelimitSavepointName(name));
+
+    public override string GenerateReleaseSavepointStatement(string name)
+        => CouchbaseSavepointStatements.Release(DelimitSavepointName(name));
+
+    private string DelimitSavepointName(string name) => $"`{EscapeIdentifier(name)}`";
+
    public override string GenerateParameterName(string name) =>
        name.StartsWith("$", StringComparison.Ordinal)
        ? name : "$" + name;

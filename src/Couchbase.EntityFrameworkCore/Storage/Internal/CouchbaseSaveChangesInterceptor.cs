@@ -12,12 +12,19 @@ using Microsoft.EntityFrameworkCore.ValueGeneration;
 namespace Couchbase.EntityFrameworkCore.Storage.Internal;
 
 /// <summary>
-/// Interceptor that defers AcceptAllChanges when a Couchbase transaction is active.
-/// Entity states are restored after SaveChanges and only accepted when the transaction commits successfully.
-/// 
+/// Interceptor that records, per <c>SaveChanges</c> call, the entity states that were saved while a
+/// Couchbase transaction is active.
+/// </summary>
+/// <remarks>
+/// Within the transaction each save leaves its entities in the state EF Core gives them (accepted),
+/// so a later <c>SaveChanges</c> only sends new changes instead of re-queuing earlier work. The
+/// recorded batches are used to put entities back to their pending state when that work is not
+/// persisted — a failed commit, a rollback, a transaction disposed without committing, or a
+/// rollback to a savepoint — so the change tracker never claims something was saved that wasn't.
+///
 /// This interceptor uses a ConditionalWeakTable to store per-DbContext state, making it safe to share
 /// a single interceptor instance across multiple DbContext instances (as happens with cached DbContextOptions).
-/// </summary>
+/// </remarks>
 public class CouchbaseSaveChangesInterceptor : SaveChangesInterceptor
 {
     // Per-DbContext state, keyed by the DbContext instance.
@@ -25,13 +32,14 @@ public class CouchbaseSaveChangesInterceptor : SaveChangesInterceptor
     private static readonly ConditionalWeakTable<DbContext, ContextTrackingState> _contextStates = new();
 
     /// <summary>
-    /// Signals that a transaction has started and entity states should be preserved for the given context.
+    /// Signals that a transaction has started and saves should be recorded for the given context.
     /// </summary>
     internal static void BeginTracking(DbContext context)
     {
         var state = _contextStates.GetOrCreateValue(context);
         state.IsTransactionActive = true;
-        state.TrackedEntities.Clear();
+        state.Batches.Clear();
+        state.PendingBatch = null;
     }
 
     /// <summary>
@@ -42,37 +50,49 @@ public class CouchbaseSaveChangesInterceptor : SaveChangesInterceptor
         if (_contextStates.TryGetValue(context, out var state))
         {
             state.IsTransactionActive = false;
-            state.TrackedEntities.Clear();
+            state.Batches.Clear();
+            state.PendingBatch = null;
         }
     }
 
     /// <summary>
-    /// Accepts all tracked changes after a successful commit for the given context.
+    /// The number of saves recorded so far in the active transaction. A savepoint remembers this so
+    /// rolling back to it can restore exactly the saves made after it.
+    /// </summary>
+    internal static int BatchCount(DbContext context)
+        => _contextStates.TryGetValue(context, out var state) ? state.Batches.Count : 0;
+
+    /// <summary>
+    /// The transaction committed: the entities were already accepted as each save completed, so
+    /// there is nothing to restore — just stop remembering them.
     /// </summary>
     internal static void AcceptTrackedChanges(DbContext context)
+    {
+        if (_contextStates.TryGetValue(context, out var state))
+        {
+            state.Batches.Clear();
+        }
+    }
+
+    /// <summary>
+    /// Puts the entities of every save from <paramref name="firstBatchToRestore"/> onwards back to
+    /// the state they had before that save (Added/Modified/Deleted — "pending"), newest save first
+    /// so an entity saved more than once ends up in the state it had before its earliest restored
+    /// save. Used when that work was not persisted, leaving the tracker as it would be after a
+    /// failed <c>SaveChanges</c>.
+    /// </summary>
+    internal static void RestoreTrackedChanges(DbContext context, int firstBatchToRestore = 0)
     {
         if (!_contextStates.TryGetValue(context, out var state))
         {
             return;
         }
 
-        foreach (var tracked in state.TrackedEntities)
+        for (var i = state.Batches.Count - 1; i >= firstBatchToRestore; i--)
         {
-            var entry = context.Entry(tracked.Entity);
-            
-            if (tracked.OriginalState == EntityState.Deleted)
-            {
-                entry.State = EntityState.Detached;
-            }
-            else
-            {
-                entry.State = EntityState.Unchanged;
-            }
+            RestoreEntityStates(context, state.Batches[i]);
+            state.Batches.RemoveAt(i);
         }
-        state.TrackedEntities.Clear();
-
-        // Transaction committed — refresh snapshots for all tracked entities
-        RefreshOwnedCollectionSnapshots(context);
     }
 
     public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(
@@ -180,13 +200,12 @@ public class CouchbaseSaveChangesInterceptor : SaveChangesInterceptor
         {
             if (IsTransactionActive(eventData.Context))
             {
-                RestoreEntityStates(eventData.Context);
+                CompleteBatch(eventData.Context);
             }
-            else
-            {
-                // Non-transactional save succeeded — refresh snapshots now
-                RefreshOwnedCollectionSnapshots(eventData.Context);
-            }
+
+            // Saved entities are accepted now (inside a transaction too) — refresh snapshots so
+            // later saves don't see a stale mismatch from the just-written state.
+            RefreshOwnedCollectionSnapshots(eventData.Context);
         }
 
         return await base.SavedChangesAsync(eventData, result, cancellationToken);
@@ -200,13 +219,12 @@ public class CouchbaseSaveChangesInterceptor : SaveChangesInterceptor
         {
             if (IsTransactionActive(eventData.Context))
             {
-                RestoreEntityStates(eventData.Context);
+                CompleteBatch(eventData.Context);
             }
-            else
-            {
-                // Non-transactional save succeeded — refresh snapshots now
-                RefreshOwnedCollectionSnapshots(eventData.Context);
-            }
+
+            // Saved entities are accepted now (inside a transaction too) — refresh snapshots so
+            // later saves don't see a stale mismatch from the just-written state.
+            RefreshOwnedCollectionSnapshots(eventData.Context);
         }
 
         return base.SavedChanges(eventData, result);
@@ -352,35 +370,47 @@ public class CouchbaseSaveChangesInterceptor : SaveChangesInterceptor
         return _contextStates.TryGetValue(context, out var state) && state.IsTransactionActive;
     }
 
+    // Records what is about to be saved as a pending batch. It only becomes a recorded batch once
+    // the save completes (CompleteBatch); a save that throws never reaches SavedChanges, and EF
+    // leaves those entities pending itself.
     private static void CaptureEntityStates(DbContext context)
     {
         var state = _contextStates.GetOrCreateValue(context);
+        var batch = new List<TrackedEntityState>();
 
         foreach (var entry in context.ChangeTracker.Entries())
         {
             if (entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
             {
-                var tracked = new TrackedEntityState
+                batch.Add(new TrackedEntityState
                 {
                     Entity = entry.Entity,
                     OriginalState = entry.State,
                     OriginalValues = entry.State == EntityState.Modified
                         ? CaptureOriginalValues(entry)
                         : null
-                };
-                state.TrackedEntities.Add(tracked);
+                });
+            }
+        }
+
+        state.PendingBatch = batch;
+    }
+
+    private static void CompleteBatch(DbContext context)
+    {
+        if (_contextStates.TryGetValue(context, out var state) && state.PendingBatch is { } batch)
+        {
+            state.PendingBatch = null;
+            if (batch.Count > 0)
+            {
+                state.Batches.Add(batch);
             }
         }
     }
 
-    private static void RestoreEntityStates(DbContext context)
+    private static void RestoreEntityStates(DbContext context, List<TrackedEntityState> batch)
     {
-        if (!_contextStates.TryGetValue(context, out var state))
-        {
-            return;
-        }
-
-        foreach (var tracked in state.TrackedEntities)
+        foreach (var tracked in batch)
         {
             var entry = context.Entry(tracked.Entity);
 
@@ -428,7 +458,12 @@ public class CouchbaseSaveChangesInterceptor : SaveChangesInterceptor
     private class ContextTrackingState
     {
         public bool IsTransactionActive { get; set; }
-        public List<TrackedEntityState> TrackedEntities { get; } = new();
+
+        // One entry per completed SaveChanges in the active transaction, oldest first.
+        public List<List<TrackedEntityState>> Batches { get; } = new();
+
+        // The SaveChanges currently in flight; becomes a Batch when it completes.
+        public List<TrackedEntityState>? PendingBatch { get; set; }
     }
 
     internal class TrackedEntityState

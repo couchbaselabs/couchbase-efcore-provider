@@ -216,6 +216,12 @@ public class CrossBucketTransactionTests(BloggingFixture fixture)
             await Assert.ThrowsAsync<global::Couchbase.Client.Transactions.Error.TransactionFailedException>(
                 () => transaction.CommitAsync());
 
+            // Nothing was persisted, so the saved entities are pending again and the same context
+            // could retry.
+            Assert.All(
+                context.ChangeTracker.Entries(),
+                entry => Assert.Equal(EntityState.Added, entry.State));
+
             await using var verifyScope = provider.CreateAsyncScope();
             var verifyContext = verifyScope.ServiceProvider.GetRequiredService<SpanningContext>();
 
