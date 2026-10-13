@@ -8,6 +8,7 @@ using Couchbase.Management.Buckets;
 using Couchbase.Management.Collections;
 using Couchbase.Query;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
@@ -158,8 +159,10 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
     private CouchbaseKeyspace ResolveEntityKeyspace(string tableName)
         => CouchbaseKeyspace.Resolve(tableName, _couchbaseDbContextOptionsBuilder.Bucket, _couchbaseDbContextOptionsBuilder.Scope);
 
-    private async Task CreateCollectionsAsync(CancellationToken cancellationToken)
+    // Returns true if any scope or collection was actually created (as opposed to already existing).
+    private async Task<bool> CreateCollectionsAsync(CancellationToken cancellationToken)
     {
+        var anyCreated = false;
         var configuredScope = _couchbaseDbContextOptionsBuilder.Scope;
         var byBucket = GetEntityKeyspacesByBucket();
 
@@ -194,6 +197,7 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
                 try
                 {
                     await manager.CreateScopeAsync(scope, new CreateScopeOptions().CancellationToken(cancellationToken));
+                    anyCreated = true;
                     _logger.LogDebug("Created scope {ScopeName} in bucket {BucketName}", scope, bucketName);
                 }
                 catch (ScopeExistsException)
@@ -219,6 +223,7 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
                 {
                     await manager.CreateCollectionAsync(scopeName, collectionName, new CreateCollectionSettings(),
                         new CreateCollectionOptions().CancellationToken(cancellationToken));
+                    anyCreated = true;
                 }
                 catch (CollectionExistsException)
                 {
@@ -227,6 +232,8 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
                 }
             }
         }
+
+        return anyCreated;
     }
 
     private async Task CreateSequencesAsync(CancellationToken cancellationToken)
@@ -914,12 +921,43 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
         // ensures the required scopes per bucket before creating collections. CreateIndexesAsync/
         // CreateSecondaryIndexesAsync run last since they need the collections they index to
         // already exist, and are both no-ops unless AutoCreateIndexes is enabled.
-        await CreateCollectionsAsync(cancellationToken);
+        var schemaCreated = await CreateCollectionsAsync(cancellationToken);
         await CreateSequencesAsync(cancellationToken);
         await CreateIndexesAsync(cancellationToken);
         await CreateSecondaryIndexesAsync(cancellationToken);
 
+        await SeedAsync(created || schemaCreated, cancellationToken);
+
         return created;
+    }
+
+    /// <summary>
+    /// Runs the seeding configured with <c>UseAsyncSeeding</c>, as EF Core's own
+    /// <c>EnsureCreatedAsync</c> does. The callback's <c>created</c> argument is true when the bucket,
+    /// or any scope or collection, was actually created by this call.
+    /// </summary>
+    /// <remarks>
+    /// Unlike EF Core's relational implementation this does not wrap the seeding in a transaction:
+    /// a Couchbase transaction buffers every write until commit and is subject to the transaction
+    /// timeout, so seeding a large data set in one would fail. Seeding delegates should therefore be
+    /// idempotent (check for existing data), as EF Core's seeding guidance already recommends.
+    /// </remarks>
+    private async Task SeedAsync(bool created, CancellationToken cancellationToken)
+    {
+        var coreOptions = Dependencies.ContextOptions.FindExtension<CoreOptionsExtension>()
+            ?? new CoreOptionsExtension();
+
+        if (coreOptions.AsyncSeeder is { } seedAsync)
+        {
+            await seedAsync(Dependencies.CurrentContext.Context, created, cancellationToken).ConfigureAwait(false);
+        }
+        else if (coreOptions.Seeder != null)
+        {
+            // Same rule as EF Core: the async creation path needs the async seeding delegate.
+            throw new InvalidOperationException(
+                "Seeding was configured with 'UseSeeding' but not 'UseAsyncSeeding'. " +
+                "Configure both, because EnsureCreatedAsync runs the asynchronous delegate.");
+        }
     }
 
     /// <summary>

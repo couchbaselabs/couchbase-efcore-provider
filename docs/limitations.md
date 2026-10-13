@@ -21,6 +21,16 @@ have no Couchbase equivalent.
   procedures have no Couchbase counterpart. Attempting to map an entity DML operation
   to a stored procedure throws `NotSupportedException`.
 
+* **`EnsureCreatedAsync` runs seeding configured with `UseAsyncSeeding`, but not in a
+  transaction.** As in other EF Core providers, the delegate runs on every
+  `EnsureCreatedAsync` call after the schema exists, with `created` set to `true` only when the
+  bucket, or a scope or collection, was actually created by that call. Unlike EF Core's relational
+  providers it is not wrapped in a transaction, because a Couchbase transaction buffers every write
+  until commit and is subject to the transaction timeout, so seeding a large data set in one would
+  fail. Make the delegate idempotent (check whether the data already exists). If you configure
+  `UseSeeding`, configure `UseAsyncSeeding` too — `EnsureCreatedAsync` throws otherwise. The
+  synchronous `EnsureCreated()` is not supported (the provider is async-only).
+
 * **`EnsureCreatedAsync` does not create any index by default.** It always creates the bucket's
   scopes and collections (and any configured sequences — see [Sequences](sequences.md)). LINQ,
   `FromSqlRaw`/`FromSql`, and `ExecuteUpdate`/`ExecuteDelete` all run as SQL++ (N1QL) queries
