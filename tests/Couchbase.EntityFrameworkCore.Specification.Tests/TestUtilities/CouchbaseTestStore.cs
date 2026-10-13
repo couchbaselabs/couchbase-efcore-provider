@@ -1,3 +1,4 @@
+using Couchbase.Core.Exceptions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.TestUtilities;
@@ -17,6 +18,57 @@ public class CouchbaseTestStore : TestStore
     public static CouchbaseTestStore GetOrCreate(string name) => new(name, shared: true);
 
     public static CouchbaseTestStore Create(string name) => new(name, shared: false);
+
+    protected override async Task InitializeAsync(
+        Func<DbContext> createContext,
+        Func<DbContext, Task>? seed,
+        Func<DbContext, Task>? clean)
+    {
+        await using var context = createContext();
+        if (clean != null)
+        {
+            await clean(context);
+        }
+
+        await CleanAsync(context);
+
+        if (seed != null)
+        {
+            await seed(context);
+        }
+    }
+
+    /// <summary>
+    /// Leaves the store's scope empty but with its collections created. Deliberately does not use
+    /// <c>Database.EnsureDeleted()</c>: the provider implements that by dropping the whole bucket,
+    /// which would take every other scope in the shared test bucket with it.
+    /// </summary>
+    public override async Task CleanAsync(DbContext context)
+    {
+        await DropScopeAsync();
+        await context.Database.EnsureCreatedAsync();
+    }
+
+    private async Task DropScopeAsync()
+    {
+        var cluster = await Cluster.ConnectAsync(
+            CouchbaseTestEnvironment.ConnectionString,
+            CouchbaseTestEnvironment.Username,
+            CouchbaseTestEnvironment.Password);
+        try
+        {
+            var bucket = await cluster.BucketAsync(CouchbaseTestEnvironment.Bucket);
+            await bucket.Collections.DropScopeAsync(Name);
+        }
+        catch (ScopeNotFoundException)
+        {
+            // Nothing to drop on a first run.
+        }
+        finally
+        {
+            await cluster.DisposeAsync();
+        }
+    }
 
     public override DbContextOptionsBuilder AddProviderOptions(DbContextOptionsBuilder builder)
         => builder.UseCouchbase(
