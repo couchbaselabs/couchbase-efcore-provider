@@ -77,6 +77,27 @@ public class CouchbaseCommand : DbCommand
 
     public override async Task<int> ExecuteNonQueryAsync(CancellationToken cancellationToken)
     {
+        // Savepoints are resolved client-side against the transaction's buffered operations; see
+        // CouchbaseSavepointStatements for why they can't be sent to the server.
+        if (DbTransaction is CouchbaseDbTransaction transaction
+            && CouchbaseSavepointStatements.TryParse(CommandText, out var savepointOperation, out var savepointName))
+        {
+            switch (savepointOperation)
+            {
+                case SavepointOperation.Create:
+                    transaction.CreateSavepoint(savepointName);
+                    break;
+                case SavepointOperation.RollbackTo:
+                    transaction.RollbackToSavepoint(savepointName);
+                    break;
+                case SavepointOperation.Release:
+                    transaction.ReleaseSavepoint(savepointName);
+                    break;
+            }
+
+            return -1;
+        }
+
         using var linkedCts = CreateLinkedTokenSource(cancellationToken);
         var options = BuildQueryOptions(linkedCts.Token);
 

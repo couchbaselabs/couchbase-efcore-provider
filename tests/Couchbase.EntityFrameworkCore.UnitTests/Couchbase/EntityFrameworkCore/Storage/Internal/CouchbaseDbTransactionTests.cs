@@ -42,11 +42,196 @@ public class CouchbaseDbTransactionTests
     }
 
     [Fact]
-    public async Task IsolationLevel_ReturnsExpectedValue()
+    public async Task IsolationLevel_DefaultsToReadCommitted()
+    {
+        // Unspecified is reported as the level actually in effect (Couchbase is read-committed),
+        // matching ADO.NET providers.
+        var transaction = await CreateTransactionAsync();
+
+        Assert.Equal(IsolationLevel.ReadCommitted, transaction.IsolationLevel);
+    }
+
+    [Fact]
+    public async Task IsolationLevel_ExplicitLevelIsPreserved()
+    {
+        _connection = new CouchbaseConnection(_mockBucketProvider.Object, _mockOptions.Object);
+        await _connection.OpenAsync();
+
+        var transaction = _connection.BeginTransaction(IsolationLevel.Serializable);
+
+        Assert.Equal(IsolationLevel.Serializable, transaction.IsolationLevel);
+    }
+
+    private void Enqueue(CouchbaseDbTransaction transaction, params string[] ids)
+    {
+        foreach (var id in ids)
+        {
+            transaction.EnqueueInsert(_mockCollection.Object, id, new { Id = id });
+        }
+    }
+
+    private static string[] PendingIds(CouchbaseDbTransaction transaction)
+        => transaction.PendingOperations.Select(o => o.Id).ToArray();
+
+    [Fact]
+    public async Task RollbackToSavepoint_DiscardsOperationsBufferedAfterIt()
+    {
+        var transaction = await CreateTransactionAsync();
+        Enqueue(transaction, "a");
+        transaction.CreateSavepoint("sp");
+        Enqueue(transaction, "b", "c");
+
+        transaction.RollbackToSavepoint("sp");
+
+        Assert.Equal(["a"], PendingIds(transaction));
+    }
+
+    [Fact]
+    public async Task RollbackToSavepoint_KeepsTheSavepointSoItCanBeUsedAgain()
+    {
+        var transaction = await CreateTransactionAsync();
+        transaction.CreateSavepoint("sp");
+        Enqueue(transaction, "a");
+        transaction.RollbackToSavepoint("sp");
+        Enqueue(transaction, "b");
+
+        transaction.RollbackToSavepoint("sp");
+
+        Assert.Empty(transaction.PendingOperations);
+    }
+
+    [Fact]
+    public async Task RollbackToSavepoint_DropsLaterSavepoints()
+    {
+        var transaction = await CreateTransactionAsync();
+        transaction.CreateSavepoint("outer");
+        Enqueue(transaction, "a");
+        transaction.CreateSavepoint("inner");
+        Enqueue(transaction, "b");
+
+        transaction.RollbackToSavepoint("outer");
+
+        Assert.Throws<InvalidOperationException>(() => transaction.RollbackToSavepoint("inner"));
+    }
+
+    [Fact]
+    public async Task ReleaseSavepoint_KeepsBufferedOperations()
+    {
+        var transaction = await CreateTransactionAsync();
+        Enqueue(transaction, "a");
+        transaction.CreateSavepoint("sp");
+        Enqueue(transaction, "b");
+
+        transaction.ReleaseSavepoint("sp");
+
+        Assert.Equal(["a", "b"], PendingIds(transaction));
+        Assert.Throws<InvalidOperationException>(() => transaction.RollbackToSavepoint("sp"));
+    }
+
+    [Fact]
+    public async Task ReleaseSavepoint_AlsoReleasesLaterSavepoints()
+    {
+        var transaction = await CreateTransactionAsync();
+        transaction.CreateSavepoint("outer");
+        transaction.CreateSavepoint("inner");
+
+        transaction.ReleaseSavepoint("outer");
+
+        Assert.Throws<InvalidOperationException>(() => transaction.RollbackToSavepoint("inner"));
+    }
+
+    [Fact]
+    public async Task CreateSavepoint_WithExistingName_MovesTheSavepoint()
+    {
+        var transaction = await CreateTransactionAsync();
+        Enqueue(transaction, "a");
+        transaction.CreateSavepoint("sp");
+        Enqueue(transaction, "b");
+        transaction.CreateSavepoint("sp");
+        Enqueue(transaction, "c");
+
+        transaction.RollbackToSavepoint("sp");
+
+        Assert.Equal(["a", "b"], PendingIds(transaction));
+    }
+
+    [Fact]
+    public async Task UnknownSavepoint_Throws()
     {
         var transaction = await CreateTransactionAsync();
 
-        Assert.Equal(IsolationLevel.Unspecified, transaction.IsolationLevel);
+        Assert.Throws<InvalidOperationException>(() => transaction.RollbackToSavepoint("missing"));
+        Assert.Throws<InvalidOperationException>(() => transaction.ReleaseSavepoint("missing"));
+    }
+
+    [Fact]
+    public async Task Savepoints_AreClearedWhenTheTransactionEnds()
+    {
+        var transaction = await CreateTransactionAsync();
+        transaction.CreateSavepoint("sp");
+
+        transaction.Rollback();
+
+        Assert.Throws<InvalidOperationException>(() => transaction.RollbackToSavepoint("sp"));
+    }
+
+    [Fact]
+    public async Task Savepoint_OnCompletedTransaction_Throws()
+    {
+        var transaction = await CreateTransactionAsync();
+        transaction.Rollback();
+
+        Assert.Throws<InvalidOperationException>(() => transaction.CreateSavepoint("sp"));
+    }
+
+    [Fact]
+    public async Task Close_AbandonsTheActiveTransaction()
+    {
+        var transaction = await CreateTransactionAsync();
+
+        _connection.Close();
+
+        Assert.Throws<ObjectDisposedException>(() => transaction.EnqueueInsert(_mockCollection.Object, "a", new { }));
+    }
+
+    [Fact]
+    public async Task CloseDetachingTransaction_LeavesTheTransactionUsable()
+    {
+        // EF closes the connection after an interceptor suppressed its Commit/Rollback; the
+        // DbTransaction must still be completable by whoever suppressed it.
+        var transaction = await CreateTransactionAsync();
+
+        _connection.CloseDetachingTransaction();
+
+        transaction.EnqueueInsert(_mockCollection.Object, "a", new { });
+        transaction.Rollback();
+        Assert.True(transaction.IsCompleted);
+    }
+
+    [Fact]
+    public async Task CloseDetachingTransaction_AllowsANewTransactionToBegin()
+    {
+        await CreateTransactionAsync();
+        _connection.CloseDetachingTransaction();
+        await _connection.OpenAsync();
+
+        var second = _connection.BeginTransaction();
+
+        Assert.NotNull(second);
+    }
+
+    [Fact]
+    public async Task DetachedTransaction_Completing_DoesNotClearANewerTransaction()
+    {
+        var detached = await CreateTransactionAsync();
+        _connection.CloseDetachingTransaction();
+        await _connection.OpenAsync();
+        _connection.BeginTransaction();
+
+        detached.Rollback();
+
+        // The newer transaction must still be the connection's current one.
+        Assert.Throws<InvalidOperationException>(() => _connection.BeginTransaction());
     }
 
     [Fact]

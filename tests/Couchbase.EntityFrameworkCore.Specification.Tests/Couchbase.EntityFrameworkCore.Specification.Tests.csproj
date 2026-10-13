@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <RootNamespace>Couchbase.EntityFrameworkCore.SpecificationTests</RootNamespace>
+    <!-- The EF Core specification suite exercises provider/EF internals by design. -->
+    <NoWarn>$(NoWarn);EF1001;xUnit1000;xUnit1013</NoWarn>
+    <!-- References AppHost.csproj (Aspire.AppHost.Sdk), whose host-platform-specific package
+         references make a committed lock file non-portable; same opt-out as the integration tests. -->
+    <RestorePackagesWithLockFile>false</RestorePackagesWithLockFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Aspire.Hosting.Testing" />
+    <PackageReference Include="coverlet.collector" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational.Specification.Tests" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Couchbase.EntityFrameworkCore\Couchbase.EntityFrameworkCore.csproj" />
+    <ProjectReference Include="..\AppHost\AppHost.csproj" />
+  </ItemGroup>
+
+</Project>

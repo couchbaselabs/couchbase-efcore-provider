@@ -120,6 +120,31 @@ public class CouchbaseRelationalConnection : RelationalConnection
         return wasOpened;
     }
 
+    // EF closes the connection once it has finished with a transaction (RelationalTransaction.Commit
+    // -> ClearTransaction -> Close), even when an interceptor suppressed the commit/rollback and the
+    // DbTransaction is therefore still live. Detach rather than dispose it so it stays completable.
+    protected override void CloseDbConnection()
+    {
+        if (DbConnection is CouchbaseConnection couchbaseConnection)
+        {
+            couchbaseConnection.CloseDetachingTransaction();
+            return;
+        }
+
+        base.CloseDbConnection();
+    }
+
+    protected override Task CloseDbConnectionAsync()
+    {
+        if (DbConnection is CouchbaseConnection couchbaseConnection)
+        {
+            couchbaseConnection.CloseDetachingTransaction();
+            return Task.CompletedTask;
+        }
+
+        return base.CloseDbConnectionAsync();
+    }
+
     /// <summary>
     /// Closes the connection to Couchbase.
     /// </summary>

@@ -78,6 +78,44 @@ the *other* bucket is rolled back too. Both buckets must share one physical clus
 transaction cannot span buckets on different clusters (use `ServiceKey` with a separate context
 per cluster instead — see [Multiple clusters](configuration.md#multiple-clusters)).
 
+## Several saves, and savepoints
+
+A transaction can span any number of `SaveChanges` calls. Each save queues only its own new
+changes, and entities are left in the state EF Core gives them after a save (`Unchanged`), so
+saving again never re-sends earlier work.
+
+Savepoints work as in other EF Core providers:
+
+```
+await using var transaction = await context.Database.BeginCouchbaseTransactionAsync(DurabilityLevel.Majority);
+
+context.Add(order);
+await context.SaveChangesAsync();
+
+await transaction.CreateSavepointAsync("before_extras");
+
+context.Add(extras);
+await context.SaveChangesAsync();
+
+await transaction.RollbackToSavepointAsync("before_extras");   // discards `extras`
+await transaction.CommitAsync();                                // persists only `order`
+```
+
+Rolling back to a savepoint discards the writes queued after it, and any savepoints created after
+it; the savepoint itself remains and can be rolled back to again. `ReleaseSavepointAsync` forgets
+the savepoint and keeps the writes.
+
+The entities saved after the savepoint go back to the state they had before that save (`Added`,
+`Modified` or `Deleted`) — exactly as after a failed `SaveChanges` — because their changes were
+not persisted. The same applies to every entity saved in the transaction if the commit fails, you
+roll back, or you dispose the transaction without committing, so the same context can retry. A
+later `SaveChanges` will therefore save those entities again; detach them (or reload them) first
+if you want to drop that work.
+
+> [!NOTE]
+> Couchbase savepoints are resolved client-side against the writes the transaction has queued;
+> they are not server-side `SAVEPOINT` statements.
+
 ## Other transaction helpers
 
 - **`transaction.GetCommittedCount()`** — an extension method on `IDbContextTransaction` returning

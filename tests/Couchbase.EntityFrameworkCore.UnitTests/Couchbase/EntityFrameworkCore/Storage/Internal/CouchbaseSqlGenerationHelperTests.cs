@@ -255,4 +255,38 @@ public class CouchbaseSqlGenerationHelperTests
 
         Assert.Equal("`bucket`.`scope`.`collection`", result);
     }
+
+    [Theory]
+    [InlineData("sp")]
+    [InlineData("step.1")]
+    [InlineData("a.b.c")]
+    [InlineData("with space")]
+    [InlineData("back`tick")]
+    public void SavepointStatements_QuoteTheNameAsOneIdentifier_AndRoundTripThroughTheParser(string name)
+    {
+        var statements = new (string Sql, string Kind)[]
+        {
+            (_helper.GenerateCreateSavepointStatement(name), "create"),
+            (_helper.GenerateRollbackToSavepointStatement(name), "rollback"),
+            (_helper.GenerateReleaseSavepointStatement(name), "release")
+        };
+
+        foreach (var (sql, kind) in statements)
+        {
+            Assert.True(CouchbaseSavepointStatements.TryParse(sql, out var operation, out var parsedName), sql);
+            Assert.Equal(name, parsedName);
+            Assert.Equal(
+                kind switch
+                {
+                    "create" => SavepointOperation.Create,
+                    "rollback" => SavepointOperation.RollbackTo,
+                    _ => SavepointOperation.Release
+                },
+                operation);
+        }
+    }
+
+    [Fact]
+    public void SavepointStatements_DottedName_IsNotSplitIntoKeyspaceParts()
+        => Assert.Equal("SAVEPOINT `step.1`", _helper.GenerateCreateSavepointStatement("step.1"));
 }
