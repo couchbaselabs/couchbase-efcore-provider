@@ -542,6 +542,79 @@ public class CouchbaseDbDataReaderTests
         Assert.Equal(42L, reader.GetFieldValue<long>(0));
     }
 
+    // A JSON string field reaches GetFieldValue<T> as a .NET string. For targets that aren't
+    // IConvertible, Convert.ChangeType can't produce the value (InvalidCastException), so they must
+    // be deserialized the same way the JsonElement path does. These came up as the provider type of
+    // value converters such as StringToDateTimeOffset, StringToTimeSpan and StringToGuid.
+    [Fact]
+    public async Task GetFieldValue_Generic_DateTimeOffsetFromJsonString()
+    {
+        var reader = CreateReader([ParseElement("{\"v\": \"1973-09-03T12:10:00+07:00\"}")]);
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Equal(
+            new DateTimeOffset(1973, 9, 3, 12, 10, 0, TimeSpan.FromHours(7)),
+            reader.GetFieldValue<DateTimeOffset>(0));
+    }
+
+    [Fact]
+    public async Task GetFieldValue_Generic_NullableDateTimeOffsetFromJsonString()
+    {
+        var reader = CreateReader([ParseElement("{\"v\": \"1973-09-03T12:10:00+07:00\"}")]);
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Equal(
+            new DateTimeOffset(1973, 9, 3, 12, 10, 0, TimeSpan.FromHours(7)),
+            reader.GetFieldValue<DateTimeOffset?>(0));
+    }
+
+    [Fact]
+    public async Task GetFieldValue_Generic_TimeSpanFromJsonString()
+    {
+        var reader = CreateReader([ParseElement("{\"v\": \"07:00:00\"}")]);
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Equal(TimeSpan.FromHours(7), reader.GetFieldValue<TimeSpan>(0));
+    }
+
+    [Fact]
+    public async Task GetFieldValue_Generic_GuidFromJsonString()
+    {
+        var guid = Guid.Parse("3f2504e0-4f89-11d3-9a0c-0305e82c3301");
+        var reader = CreateReader([ParseElement($"{{\"v\": \"{guid}\"}}")]);
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Equal(guid, reader.GetFieldValue<Guid>(0));
+    }
+
+    [Fact]
+    public async Task GetFieldValue_Generic_DateOnlyFromJsonString()
+    {
+        var reader = CreateReader([ParseElement("{\"v\": \"1973-09-03\"}")]);
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Equal(new DateOnly(1973, 9, 3), reader.GetFieldValue<DateOnly>(0));
+    }
+
+    [Fact]
+    public async Task GetFieldValue_Generic_ByteArrayFromBase64JsonString()
+    {
+        var reader = CreateReader([ParseElement("{\"v\": \"AQID\"}")]);
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Equal(new byte[] { 1, 2, 3 }, reader.GetFieldValue<byte[]>(0));
+    }
+
+    [Fact]
+    public async Task GetFieldValue_Generic_StillConvertsNumericStringToInt()
+    {
+        // IConvertible targets keep going through Convert.ChangeType, which accepts numeric strings.
+        var reader = CreateReader([ParseElement("{\"v\": \"42\"}")]);
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Equal(42, reader.GetFieldValue<int>(0));
+    }
+
     [Fact]
     public async Task GetChar_ReturnsFirstChar()
     {

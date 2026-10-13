@@ -983,6 +983,15 @@ public class CouchbaseDbDataReader<T> : DbDataReader
         if (value is JsonElement je)
             return je.Deserialize<T1>()!;
 
+        // A JSON string that has already been materialised as a .NET string (rather than left as a
+        // JsonElement) can't go through Convert.ChangeType when the target isn't IConvertible
+        // (DateTimeOffset, TimeSpan, Guid, DateOnly, TimeOnly, Uri, byte[] ...). Deserialize it the
+        // same way the JsonElement branch above would, so the formats match how it was written.
+        // IConvertible targets (int, bool, ...) keep the existing Convert path, which also accepts
+        // numeric strings.
+        if (value is string text && !typeof(IConvertible).IsAssignableFrom(Nullable.GetUnderlyingType(typeof(T1)) ?? typeof(T1)))
+            return JsonSerializer.Deserialize<T1>(JsonSerializer.Serialize(text))!;
+
         return (T1)Convert.ChangeType(value, typeof(T1))!;
     }
 
