@@ -11,7 +11,7 @@ public class ValueConvertersEndToEndCouchbaseTest(
 {
     public class ValueConvertersEndToEndCouchbaseFixture : ValueConvertersEndToEndFixtureBase
     {
-        protected override ITestStoreFactory TestStoreFactory => CouchbaseTestStoreFactory.Instance;
+        protected override ITestStoreFactory TestStoreFactory => CouchbaseTestStoreFactory.ForStore(StoreName);
 
         protected override void OnModelCreating(ModelBuilder modelBuilder, DbContext context)
         {
