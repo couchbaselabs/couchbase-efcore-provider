@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RunSettings>
+  <RunConfiguration>
+    <EnvironmentVariables>
+      <!-- Several EF Core specification tests compare DateTime values using DateTime.Parse(...) and
+           ToUniversalTime(), which only agree when the process runs in UTC (as EF Core's own CI
+           does). Without this they fail on any developer machine that isn't set to UTC. -->
+      <TZ>UTC</TZ>
+    </EnvironmentVariables>
+  </RunConfiguration>
+</RunSettings>

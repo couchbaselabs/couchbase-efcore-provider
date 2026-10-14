@@ -9,6 +9,8 @@
     <RootNamespace>Couchbase.EntityFrameworkCore.SpecificationTests</RootNamespace>
     <!-- The EF Core specification suite exercises provider/EF internals by design. -->
     <NoWarn>$(NoWarn);EF1001;xUnit1000;xUnit1013</NoWarn>
+    <!-- Runs the tests in UTC; see test.runsettings. -->
+    <RunSettingsFilePath>$(MSBuildProjectDirectory)\test.runsettings</RunSettingsFilePath>
     <!-- References AppHost.csproj (Aspire.AppHost.Sdk), whose host-platform-specific package
          references make a committed lock file non-portable; same opt-out as the integration tests. -->
     <RestorePackagesWithLockFile>false</RestorePackagesWithLockFile>
