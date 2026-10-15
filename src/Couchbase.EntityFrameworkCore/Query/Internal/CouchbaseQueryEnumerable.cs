@@ -418,6 +418,9 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
     {
         var queryOptions = new QueryOptions();
         queryOptions.ScanConsistency(_couchbaseDbContextOptionsBuilder.ScanConsistency);
+
+        // Rows are read as JsonElement; don't depend on the cluster's serializer for that.
+        queryOptions.Serializer = CouchbaseResultRowSerializer.Instance;
         foreach (CouchbaseParameter parameter in command.Parameters)
         {
             queryOptions.Parameter(parameter.ParameterName, parameter.Value!);
