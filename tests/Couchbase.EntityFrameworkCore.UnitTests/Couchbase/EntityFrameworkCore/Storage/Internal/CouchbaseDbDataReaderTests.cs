@@ -1,4 +1,5 @@
 using System.Data;
+using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Couchbase.EntityFrameworkCore.Storage.Internal;
@@ -276,6 +277,71 @@ public class CouchbaseDbDataReaderTests
         Assert.Equal(2025, result.Year);
         Assert.Equal(1, result.Month);
         Assert.Equal(15, result.Day);
+    }
+
+    // The write format ends in K, so a UTC DateTime is stored with a "Z" suffix. Reading it back must
+    // give the same UTC value, not the same instant converted to the machine's local clock (which
+    // changes the value's ticks and Kind, so a saved DateTime.UtcNow no longer compares equal).
+    [Fact]
+    public async Task GetDateTime_WithZSuffix_ReturnsUtcValueUnchanged()
+    {
+        var reader = CreateReader([ParseElement("{\"v\": \"2025-01-15T10:30:00Z\"}")]);
+        await reader.ReadAsync(CancellationToken.None);
+
+        var result = reader.GetDateTime(0);
+
+        Assert.Equal(DateTimeKind.Utc, result.Kind);
+        Assert.Equal(new DateTime(2025, 1, 15, 10, 30, 0, DateTimeKind.Utc), result);
+    }
+
+    [Fact]
+    public async Task GetDateTime_WithoutSuffix_ReturnsUnspecifiedValueUnchanged()
+    {
+        var reader = CreateReader([ParseElement("{\"v\": \"2025-01-15T10:30:00\"}")]);
+        await reader.ReadAsync(CancellationToken.None);
+
+        var result = reader.GetDateTime(0);
+
+        Assert.Equal(DateTimeKind.Unspecified, result.Kind);
+        Assert.Equal(new DateTime(2025, 1, 15, 10, 30, 0), result);
+    }
+
+    [Fact]
+    public async Task GetDateTime_WithOffset_PreservesTheInstant()
+    {
+        var reader = CreateReader([ParseElement("{\"v\": \"2025-01-15T10:30:00-08:00\"}")]);
+        await reader.ReadAsync(CancellationToken.None);
+
+        var result = reader.GetDateTime(0);
+
+        Assert.Equal(new DateTime(2025, 1, 15, 18, 30, 0, DateTimeKind.Utc), result.ToUniversalTime());
+    }
+
+    [Fact]
+    public async Task GetDateTime_ParsesInvariantlyWhateverTheCurrentCulture()
+    {
+        // ISO text written by the provider must read back the same under any culture; a Buddhist- or
+        // Hijri-calendar current culture must not reinterpret the year.
+        var original = CultureInfo.CurrentCulture;
+        try
+        {
+            foreach (var name in new[] { "th-TH", "ar-SA", "fa-IR", "tr-TR" })
+            {
+                CultureInfo.CurrentCulture = new CultureInfo(name);
+                var reader = CreateReader([ParseElement("{\"v\": \"2025-01-15T10:30:00.123Z\"}")]);
+                await reader.ReadAsync(CancellationToken.None);
+
+                var result = reader.GetDateTime(0);
+
+                Assert.True(
+                    result == new DateTime(2025, 1, 15, 10, 30, 0, 123, DateTimeKind.Utc),
+                    $"culture {name}: got {result:O}");
+            }
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = original;
+        }
     }
 
     [Fact]

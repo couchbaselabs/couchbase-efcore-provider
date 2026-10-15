@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Data;
+using System.Globalization;
 using System.Data.Common;
 using System.Text.Json;
 using Couchbase.EntityFrameworkCore.Extensions;
@@ -846,11 +847,19 @@ public class CouchbaseDbDataReader<T> : DbDataReader
         {
             DateTime dt => dt,
             DateTimeOffset dto => dto.DateTime,
-            string s => DateTime.Parse(s),
-            JsonElement je when je.ValueKind == JsonValueKind.String => DateTime.Parse(je.GetString()!),
+            string s => ParseDateTime(s),
+            JsonElement je when je.ValueKind == JsonValueKind.String => ParseDateTime(je.GetString()!),
             _ => Convert.ToDateTime(value)
         };
     }
+
+    // The provider writes DateTime as ISO text ending in the kind designator (see DateTimeFormat), so
+    // read it back with the same rules: invariant culture, so the machine's culture and calendar can't
+    // reinterpret the text, and RoundtripKind, so a "Z" suffix gives back the UTC value that was
+    // written instead of converting it to the local clock (which changes both its ticks and its Kind).
+    // Text without a suffix stays Unspecified; text with an offset still converts to local time.
+    private static DateTime ParseDateTime(string text)
+        => DateTime.Parse(text, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind);
 
     /// <summary>Gets the decimal value of the field at the specified ordinal.</summary>
     public override decimal GetDecimal(int ordinal)
