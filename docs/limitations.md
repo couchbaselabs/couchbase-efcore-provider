@@ -77,8 +77,10 @@ The Couchbase SDK is asynchronous, so the synchronous EF Core code paths throw `
   });
   ```
 
-  Stronger consistency increases query latency, so it is opt-in rather than the default. For
-  read-after-write consistency scoped to a *specific* prior write rather than the whole
+  Stronger consistency increases query latency, so it is opt-in rather than the default. To ask
+  for it on only some queries, use `WithScanConsistency(QueryScanConsistency.RequestPlus)` on those
+  queries — see [Per-query scan consistency](concurrency.md#per-query-scan-consistency-withscanconsistency).
+  For read-after-write consistency scoped to a *specific* prior write rather than the whole
   collection, use `ConsistentWith`/`GetMutationState()` instead — see
   [Read-your-own-writes](concurrency.md#read-your-own-writes-consistentwith).
 * **Nested data must be modeled as owned types.** Nested objects and collections are
