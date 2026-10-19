@@ -37,7 +37,8 @@ public static class CouchbaseQueryEnumerable
         bool threadSafetyChecksEnabled,
         IBucketProvider bucketProvider,
         ICouchbaseDbContextOptionsBuilder couchbaseDbContextOptionsBuilder,
-        string? consistentWithParameterName)
+        string? consistentWithParameterName,
+        QueryScanConsistency? scanConsistency)
         => new(
             relationalQueryContext,
             relationalCommandResolver,
@@ -53,7 +54,8 @@ public static class CouchbaseQueryEnumerable
             threadSafetyChecksEnabled,
             bucketProvider,
             couchbaseDbContextOptionsBuilder,
-            consistentWithParameterName);
+            consistentWithParameterName,
+            scanConsistency);
 }
 
 public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, IRelationalQueryingEnumerable
@@ -92,6 +94,9 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
     // compiled query used it -- see CouchbaseQueryHintAnnotationNames.ConsistentWith's doc comment.
     // Null for every query that doesn't call .ConsistentWith().
     private readonly string? _consistentWithParameterName;
+    // The per-query scan consistency a .WithScanConsistency(...) call set, or null to use the
+    // context-wide setting. A .ConsistentWith(...) MutationState, if any, still takes precedence.
+    private readonly QueryScanConsistency? _scanConsistency;
 
     public CouchbaseQueryEnumerable(
         RelationalQueryContext relationalQueryContext,
@@ -108,9 +113,11 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
         bool threadSafetyChecksEnabled,
         IBucketProvider bucketProvider,
         ICouchbaseDbContextOptionsBuilder couchbaseDbContextOptionsBuilder,
-        string? consistentWithParameterName)
+        string? consistentWithParameterName,
+        QueryScanConsistency? scanConsistency = null)
     {
         _consistentWithParameterName = consistentWithParameterName;
+        _scanConsistency = scanConsistency;
         _relationalQueryContext = relationalQueryContext;
         _relationalCommandResolver = relationalCommandResolver;
         _readerColumns = readerColumns;
@@ -418,6 +425,13 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
     {
         var queryOptions = new QueryOptions();
         queryOptions.ScanConsistency(_couchbaseDbContextOptionsBuilder.ScanConsistency);
+
+        // A per-query WithScanConsistency overrides the context-wide default. A ConsistentWith
+        // MutationState (applied below) is stricter and still wins for the query.
+        if (_scanConsistency is { } perQueryScanConsistency)
+        {
+            queryOptions.ScanConsistency(perQueryScanConsistency);
+        }
         foreach (CouchbaseParameter parameter in command.Parameters)
         {
             queryOptions.Parameter(parameter.ParameterName, parameter.Value!);

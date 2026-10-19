@@ -160,6 +160,49 @@ public static class CouchbaseQueryableExtensions
                     Expression.Constant(mutationState, typeof(MutationState))))
             : source;
 
+    /// <summary>
+    /// Sets the scan consistency for this one query, overriding the context-wide
+    /// <see cref="Couchbase.EntityFrameworkCore.Infrastructure.CouchbaseDbContextOptionsBuilder.ScanConsistency"/>
+    /// setting — N1QL's <c>scan_consistency</c> request parameter. Use
+    /// <see cref="QueryScanConsistency.RequestPlus"/> on the queries that must see every write
+    /// already acknowledged (the index waits to catch up), while leaving the context default at
+    /// <see cref="QueryScanConsistency.NotBounded"/> for everything else, which is faster.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// If <see cref="ConsistentWith{TEntity}"/> is also applied with a non-null
+    /// <see cref="MutationState"/>, that wins for the query (it is a stricter, more specific
+    /// guarantee: this query sees at least those writes). With a <see langword="null"/>
+    /// <see cref="MutationState"/> it leaves this setting in force. The two can be chained in
+    /// either order.
+    /// </para>
+    /// <para>
+    /// Like <see cref="ConsistentWith{TEntity}"/>, apply this as the LAST operator before
+    /// enumeration (immediately before <c>ToListAsync()</c>/<c>FirstOrDefaultAsync()</c>/etc.);
+    /// composing a further operator such as <c>.Where()</c>/<c>.OrderBy()</c>/<c>.Select()</c>
+    /// afterward fails with EF Core's standard "could not be translated"
+    /// <see cref="InvalidOperationException"/> rather than silently dropping the setting.
+    /// </para>
+    /// <para>
+    /// <paramref name="scanConsistency"/> is not a query parameter: it is part of the compiled query,
+    /// so queries that differ only in this value are compiled and cached separately, which is
+    /// correct. It does not change the generated SQL++ text, only how the query is executed.
+    /// </para>
+    /// </remarks>
+    /// <param name="source">The query to apply the scan consistency to.</param>
+    /// <param name="scanConsistency">The scan consistency for this query.</param>
+    public static IQueryable<TEntity> WithScanConsistency<TEntity>(
+        this IQueryable<TEntity> source, [NotParameterized] QueryScanConsistency scanConsistency)
+        where TEntity : class
+        => source.Provider is EntityQueryProvider
+            ? source.Provider.CreateQuery<TEntity>(
+                Expression.Call(
+                    null,
+                    WithScanConsistencyMethodInfo.MakeGenericMethod(typeof(TEntity)),
+                    source.Expression,
+                    Expression.Constant(scanConsistency)))
+            : source;
+
     internal static readonly MethodInfo UseIndexMethodInfo
         = typeof(CouchbaseQueryableExtensions).GetMethod(nameof(UseIndex))!;
 
@@ -168,6 +211,9 @@ public static class CouchbaseQueryableExtensions
 
     internal static readonly MethodInfo ConsistentWithMethodInfo
         = typeof(CouchbaseQueryableExtensions).GetMethod(nameof(ConsistentWith))!;
+
+    internal static readonly MethodInfo WithScanConsistencyMethodInfo
+        = typeof(CouchbaseQueryableExtensions).GetMethod(nameof(WithScanConsistency))!;
 }
 
 /* ************************************************************

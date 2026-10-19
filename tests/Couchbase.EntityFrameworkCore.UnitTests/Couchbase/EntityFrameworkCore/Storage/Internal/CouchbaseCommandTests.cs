@@ -4,7 +4,9 @@ using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.EntityFrameworkCore.Storage.Internal;
+using Couchbase.Core;
 using Couchbase.Extensions.DependencyInjection;
+using Couchbase.KeyValue;
 using Couchbase.Query;
 using Moq;
 using Xunit;
@@ -271,6 +273,57 @@ public class CouchbaseCommandTests
         var result = await command.ExecuteNonQueryAsync(CancellationToken.None);
 
         _mockCluster.Verify(c => c.QueryAsync<object>("UPDATE bucket SET x = 1", It.IsAny<QueryOptions>()), Times.Once);
+    }
+
+    // The per-command ScanConsistency is the ADO.NET counterpart of the LINQ WithScanConsistency
+    // operator: whatever it is set to must be what the query is sent with.
+    [Theory]
+    [InlineData(QueryScanConsistency.RequestPlus, "RequestPlus")]
+    [InlineData(QueryScanConsistency.NotBounded, "NotBounded")]
+    public async Task ExecuteScalarAsync_SendsTheCommandsScanConsistency(QueryScanConsistency configured, string expected)
+    {
+        var (scanConsistency, scanVectors) = await ExecuteAndReadScanConsistencyAsync(
+            new CouchbaseCommand { ScanConsistency = configured });
+
+        Assert.Equal(expected, scanConsistency);
+        Assert.Null(scanVectors);
+    }
+
+    [Fact]
+    public async Task ExecuteScalarAsync_ConsistentWithMutationState_WinsOverTheCommandsScanConsistency()
+    {
+        var mutationState = new MutationState().Add(new FakeMutationResult(new MutationToken("test-bucket", 0, 1, 1)));
+
+        var (scanConsistency, scanVectors) = await ExecuteAndReadScanConsistencyAsync(
+            new CouchbaseCommand { ScanConsistency = QueryScanConsistency.RequestPlus, ConsistentWith = mutationState });
+
+        Assert.Equal("AtPlus", scanConsistency);
+        Assert.NotNull(scanVectors);
+    }
+
+    private async Task<(string? ScanConsistency, object? ScanVectors)> ExecuteAndReadScanConsistencyAsync(CouchbaseCommand command)
+    {
+        QueryOptions? captured = null;
+        var rows = new List<JsonElement> { JsonDocument.Parse("{\"n\": 1}").RootElement };
+        _mockCluster.Setup(c => c.QueryAsync<JsonElement>(It.IsAny<string>(), It.IsAny<QueryOptions>()))
+            .Callback<string, QueryOptions>((_, options) => captured = options)
+            .ReturnsAsync(CreateMockQueryResultWithRows(rows));
+
+        command.Cluster = _mockCluster.Object;
+        command.CommandText = "SELECT 1 AS n";
+        await command.ExecuteScalarAsync(CancellationToken.None);
+
+        Assert.NotNull(captured);
+        // QueryOptions keeps these in private fields; its public form-value path needs a statement.
+        var flags = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
+        return (typeof(QueryOptions).GetField("_scanConsistency", flags)!.GetValue(captured)?.ToString(),
+            typeof(QueryOptions).GetField("_scanVectors", flags)!.GetValue(captured));
+    }
+
+    private sealed class FakeMutationResult(MutationToken token) : IMutationResult
+    {
+        public ulong Cas => 1;
+        public MutationToken MutationToken { get; set; } = token;
     }
 
     [Fact]
