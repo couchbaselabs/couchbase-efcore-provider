@@ -356,10 +356,13 @@ optionsBuilder.UseCamelCaseNamingConvention();
 ## Serializers
 
 The provider reads query results with **its own System.Text.Json serializer**, whatever serializer
-the cluster is configured with, so a custom serializer on `ClusterOptions` never affects how rows
-are read.
+the cluster is configured with, so a custom serializer never affects how rows are read. This holds
+whether the provider creates the cluster or the application supplies it.
 
-What the cluster serializer does control:
+What the cluster's serializer does control depends on who creates the cluster.
+
+**When the provider creates the cluster** (the default: you pass `ClusterOptions` to
+`UseCouchbase`/`AddCouchbase<TContext>` and there is no application-registered cluster):
 
 - A serializer you supply with `ClusterOptions.WithSerializer(...)` that is **not** the SDK's
   `DefaultSerializer` (for example your own `ITypeSerializer` built on Newtonsoft.Json) is kept. It
@@ -369,6 +372,15 @@ What the cluster serializer does control:
   System.Text.Json. This includes a `DefaultSerializer` you constructed with your own
   Newtonsoft.Json settings: those settings are **not** applied. To keep custom settings, supply
   your own `ITypeSerializer` instead.
+
+**When the application shares its own cluster** (the recommended setup, see
+[Sharing a single cluster](#sharing-a-single-cluster-recommended), or a keyed cluster selected with
+`ServiceKey`): the provider uses that cluster exactly as the application registered it and does not
+replace its serializer. Configure the serializer on the application's cluster registration (the
+`services.AddCouchbase(...)`/`AddKeyedCouchbase(...)` call); whatever it is, including a
+`DefaultSerializer` with custom settings, stays in force for writes and for `FromSql` results
+materialized into your own types. The serializer on the `ClusterOptions` you pass to
+`UseCouchbase`/`AddCouchbase<TContext>` is ignored in that case.
 
 Entity property values are converted by EF Core's own value converters before they are written, and
 `SerializerOptions` (see the options table above) governs scalar values inside `OwnsMany`

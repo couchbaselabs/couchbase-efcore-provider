@@ -35,6 +35,15 @@ public class CustomSerializerTests(BloggingFixture fixture)
                 o.Scope = fixture.ScopeName;
                 o.ScanConsistency = global::Couchbase.Query.QueryScanConsistency.RequestPlus;
                 o.AutoCreateIndexes = true;
+
+                // EF caches an internal service provider (and with it the provider's Couchbase
+                // cluster) per set of options, and that cache key does not include the cluster's
+                // serializer. Without this, a context here could reuse a provider built by another
+                // test with the same connection/bucket/scope (and therefore a System.Text.Json
+                // cluster), and the serializer assertion below would depend on test order. The
+                // ServiceKey is part of the cache key and is ignored when no application container
+                // is involved, so a unique one gives this test its own provider and cluster.
+                o.ServiceKey = "custom-serializer-" + collectionName;
             });
         optionsBuilder.ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning));
 
