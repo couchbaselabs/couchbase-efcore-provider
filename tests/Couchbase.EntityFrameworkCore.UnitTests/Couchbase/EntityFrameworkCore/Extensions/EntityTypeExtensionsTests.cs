@@ -29,6 +29,12 @@ public class EntityTypeExtensionsTests
         public string Value { get; set; } = "";
     }
 
+    private class BytesKeyEntity
+    {
+        public byte[] Id { get; set; } = [];
+        public string Name { get; set; } = "";
+    }
+
     private class StringKeyEntity
     {
         public string Code { get; set; } = "";
@@ -300,5 +306,53 @@ public class EntityTypeExtensionsTests
         var key2 = entityType.GetPrimaryKey(MockUpdateEntry(entityType, entries2));
 
         Assert.NotEqual(key1, key2);
+    }
+
+    // A byte[] key used to be formatted like any other object, giving the text "System.Byte[]" for
+    // every instance, so every entity keyed by a byte array shared one document and silently
+    // overwrote the others. It is now Base64.
+    private static Microsoft.EntityFrameworkCore.Metadata.IEntityType BuildBytesKeyEntityType()
+        => BuildEntityType<BytesKeyEntity>(mb =>
+        {
+            mb.Entity<BytesKeyEntity>(b =>
+            {
+                b.ToCouchbaseCollection("bucket", "scope", "entity");
+                b.HasKey(e => e.Id);
+            });
+        });
+
+    [Fact]
+    public void GetPrimaryKey_ByteArrayKey_IsBase64_AndDiffersPerValue()
+    {
+        var entityType = BuildBytesKeyEntityType();
+
+        var first = entityType.GetPrimaryKey(new BytesKeyEntity { Id = [1, 2, 3] });
+        var second = entityType.GetPrimaryKey(new BytesKeyEntity { Id = [4, 5] });
+
+        Assert.Equal(Convert.ToBase64String(new byte[] { 1, 2, 3 }), first);
+        Assert.Equal(Convert.ToBase64String(new byte[] { 4, 5 }), second);
+        Assert.NotEqual(first, second);
+        Assert.NotEqual("System.Byte[]", first);
+    }
+
+    [Fact]
+    public void GetPrimaryKey_ByteArrayKey_SameValueGivesSameKey()
+    {
+        var entityType = BuildBytesKeyEntityType();
+
+        Assert.Equal(
+            entityType.GetPrimaryKey(new BytesKeyEntity { Id = [9, 8, 7] }),
+            entityType.GetPrimaryKey(new BytesKeyEntity { Id = [9, 8, 7] }));
+    }
+
+    [Fact]
+    public void GetPrimaryKey_UpdateEntry_ByteArrayKey_MatchesTheEntityOverload()
+    {
+        var entityType = BuildBytesKeyEntityType();
+        byte[] id = [1, 2, 3];
+
+        Assert.Equal(
+            entityType.GetPrimaryKey(new BytesKeyEntity { Id = id }),
+            entityType.GetPrimaryKey(MockUpdateEntry(entityType, ("Id", id))));
     }
 }
