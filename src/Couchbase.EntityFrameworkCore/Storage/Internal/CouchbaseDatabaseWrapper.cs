@@ -19,6 +19,8 @@ public class CouchbaseDatabaseWrapper : Database
     private readonly ICouchbaseClientWrapper _couchbaseClient;
     private readonly IRelationalConnection _relationalConnection;
     private readonly JsonNamingPolicy? _fieldNamingPolicy;
+    private readonly CouchbaseDocumentKeyFormat _documentKeyFormat;
+    private readonly char _documentKeyDelimiter;
     private readonly CouchbaseMutationStateTracker _mutationStateTracker;
 
     public CouchbaseDatabaseWrapper(
@@ -32,7 +34,26 @@ public class CouchbaseDatabaseWrapper : Database
         _couchbaseClient = couchbaseClient ?? throw new ArgumentNullException(nameof(couchbaseClient));
         _relationalConnection = relationalConnection ?? throw new ArgumentNullException(nameof(relationalConnection));
         _fieldNamingPolicy = couchbaseDbContextOptionsBuilder.FieldNamingPolicy;
+        _documentKeyFormat = couchbaseDbContextOptionsBuilder.DocumentKeyFormat;
+        _documentKeyDelimiter = couchbaseDbContextOptionsBuilder.DocumentKeyDelimiter;
         _mutationStateTracker = mutationStateTracker ?? throw new ArgumentNullException(nameof(mutationStateTracker));
+    }
+
+    /// <summary>
+    /// The document key for an entry, in the configured <see cref="CouchbaseDocumentKeyFormat"/>.
+    /// Legacy keys keep their original behavior exactly (shared entity types read the update entry,
+    /// everything else the CLR object); V2 keys always read the update entry.
+    /// </summary>
+    private string GetDocumentKey(IEntityType entityType, IUpdateEntry updateEntry, object entity)
+    {
+        if (_documentKeyFormat == CouchbaseDocumentKeyFormat.V2)
+        {
+            return CouchbaseDocumentKeyBuilder.BuildV2(entityType, updateEntry, _documentKeyDelimiter);
+        }
+
+        return entityType.HasSharedClrType
+            ? entityType.GetPrimaryKey(updateEntry)
+            : entityType.GetPrimaryKey(entity);
     }
 
     public override int SaveChanges(IList<IUpdateEntry> entries)
@@ -97,9 +118,7 @@ public class CouchbaseDatabaseWrapper : Database
             // Shared entity types (e.g. hidden join table from HasMany().WithMany()) have
             // all PK columns as shadow properties — use the IUpdateEntry overload so the
             // values are read from the entry rather than the CLR Dictionary<string,object>.
-            var primaryKey = entityType.HasSharedClrType
-                ? entityType.GetPrimaryKey(updateEntry)
-                : entityType.GetPrimaryKey(entity);
+            var primaryKey = GetDocumentKey(entityType, updateEntry, entity);
             var keyspace = entityType.GetCollectionName()
                 ?? throw new InvalidOperationException(
                     $"Entity type '{entityType.ClrType.Name}' has no mapped table name. " +
@@ -182,7 +201,7 @@ public class CouchbaseDatabaseWrapper : Database
             if (rootInternalEntry == null || rootEntityType == null) continue;
 
             var ownerEntity = rootInternalEntry.Entity;
-            var ownerPrimaryKey = rootEntityType.GetPrimaryKey(ownerEntity);
+            var ownerPrimaryKey = GetDocumentKey(rootEntityType, rootInternalEntry, ownerEntity);
             var rootKey = $"{rootEntityType.ClrType.Name}:{ownerPrimaryKey}";
 
             if (writtenRoots.Contains(rootKey)) continue;

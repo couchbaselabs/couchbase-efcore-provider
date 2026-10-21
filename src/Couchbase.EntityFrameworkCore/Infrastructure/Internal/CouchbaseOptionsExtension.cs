@@ -185,7 +185,10 @@ public class CouchbaseOptionsExtension: RelationalOptionsExtension
                 Extension._couchbaseDbContextOptionsBuilder.ScanConsistency,
                 Extension._couchbaseDbContextOptionsBuilder.FieldNamingPolicy),
             // Nested again: HashCode.Combine caps at 8 arguments, and the group above is already full.
-            Extension._couchbaseDbContextOptionsBuilder.DateTimeFormat,
+            HashCode.Combine(
+                Extension._couchbaseDbContextOptionsBuilder.DateTimeFormat,
+                Extension._couchbaseDbContextOptionsBuilder.DocumentKeyFormat,
+                Extension._couchbaseDbContextOptionsBuilder.DocumentKeyDelimiter),
             // JsonSerializerOptions has no value equality, so this is intentionally reference
             // equality — two contexts built with separate (even if equivalently-configured)
             // instances won't share a provider, which is safe (just slightly less sharing) rather
@@ -210,6 +213,8 @@ public class CouchbaseOptionsExtension: RelationalOptionsExtension
                 && Extension._couchbaseDbContextOptionsBuilder.ScanConsistency == otherInfo.Extension._couchbaseDbContextOptionsBuilder.ScanConsistency
                 && Extension._couchbaseDbContextOptionsBuilder.FieldNamingPolicy == otherInfo.Extension._couchbaseDbContextOptionsBuilder.FieldNamingPolicy
                 && Extension._couchbaseDbContextOptionsBuilder.DateTimeFormat == otherInfo.Extension._couchbaseDbContextOptionsBuilder.DateTimeFormat
+                && Extension._couchbaseDbContextOptionsBuilder.DocumentKeyFormat == otherInfo.Extension._couchbaseDbContextOptionsBuilder.DocumentKeyFormat
+                && Extension._couchbaseDbContextOptionsBuilder.DocumentKeyDelimiter == otherInfo.Extension._couchbaseDbContextOptionsBuilder.DocumentKeyDelimiter
                 && ReferenceEquals(Extension._couchbaseDbContextOptionsBuilder.SerializerOptions, otherInfo.Extension._couchbaseDbContextOptionsBuilder.SerializerOptions)
                 && ReferenceEquals(ApplicationContainerIdentity, otherInfo.ApplicationContainerIdentity);
 
