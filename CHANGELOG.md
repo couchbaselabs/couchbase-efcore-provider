@@ -7,6 +7,13 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ## [Unreleased]
 
+### Fixed
+
+- **`byte[]` primary keys no longer collide on one document.** A `byte[]` key (or key part) was
+  formatted as the text `System.Byte[]`, so every entity of the type shared a single document. It is
+  now written as Base64 (an empty array as `~`). Documents previously saved at `System.Byte[]` are
+  not addressed by the new key; see [Limitations](docs/limitations.md#value-generation-and-keys).
+
 ## [2.0.0-beta.3] - 2026-08-10
 
 ### Added

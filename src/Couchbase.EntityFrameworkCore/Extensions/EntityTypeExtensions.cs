@@ -17,10 +17,13 @@ public static class EntityTypeExtensions
     /// Formats one key value for the document key. A <c>byte[]</c> value is written as Base64:
     /// formatting it like any other object gives the text <c>"System.Byte[]"</c> for every instance,
     /// so every entity keyed by a byte array shared one document and silently overwrote the others.
-    /// Every other type is formatted exactly as before.
+    /// An empty array would be an empty string (an invalid document ID), so it is written as
+    /// <c>"~"</c>, which can never be produced by Base64. Every other type is formatted exactly as before.
     /// </summary>
     private static string? FormatKeyPart(object? value)
-        => value is byte[] bytes ? Convert.ToBase64String(bytes) : value?.ToString();
+        => value is byte[] bytes
+            ? bytes.Length == 0 ? "~" : Convert.ToBase64String(bytes)
+            : value?.ToString();
 
     public static string GetPrimaryKey(this IEntityType entityType, object entity)
     {

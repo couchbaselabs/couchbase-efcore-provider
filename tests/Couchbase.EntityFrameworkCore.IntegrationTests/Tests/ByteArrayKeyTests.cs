@@ -38,6 +38,8 @@ public class ByteArrayKeyTests(BloggingFixture fixture)
                 await writer.Database.EnsureCreatedAsync();
                 writer.Add(new ByteKeyEntity { Id = [1, 2, 3], Name = "first" });
                 writer.Add(new ByteKeyEntity { Id = [4, 5], Name = "second" });
+                // An empty array must still produce a valid (non-empty) document key.
+                writer.Add(new ByteKeyEntity { Id = [], Name = "empty" });
                 await writer.SaveChangesAsync();
             }
 
@@ -45,10 +47,10 @@ public class ByteArrayKeyTests(BloggingFixture fixture)
             {
                 var all = await PollingHelper.PollForResultAsync(
                     () => reader.Set<ByteKeyEntity>().AsNoTracking().ToListAsync(),
-                    result => result.Count >= 2,
+                    result => result.Count >= 3,
                     TimeSpan.FromSeconds(10));
 
-                Assert.Equal(["first", "second"], all.Select(e => e.Name).Order().ToArray());
+                Assert.Equal(["empty", "first", "second"], all.Select(e => e.Name).Order().ToArray());
             }
 
             // Updating one must hit its own document, leaving the other untouched.
@@ -62,7 +64,7 @@ public class ByteArrayKeyTests(BloggingFixture fixture)
             await using (var reader = new ByteKeyDbContext(optionsBuilder.Options, collectionName))
             {
                 var all = await reader.Set<ByteKeyEntity>().AsNoTracking().ToListAsync();
-                Assert.Equal(["first-updated", "second"], all.Select(e => e.Name).Order().ToArray());
+                Assert.Equal(["empty", "first-updated", "second"], all.Select(e => e.Name).Order().ToArray());
             }
         }
         finally

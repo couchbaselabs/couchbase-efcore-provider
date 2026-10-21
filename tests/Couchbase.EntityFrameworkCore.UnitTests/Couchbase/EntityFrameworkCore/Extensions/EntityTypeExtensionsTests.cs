@@ -355,4 +355,18 @@ public class EntityTypeExtensionsTests
             entityType.GetPrimaryKey(new BytesKeyEntity { Id = id }),
             entityType.GetPrimaryKey(MockUpdateEntry(entityType, ("Id", id))));
     }
+
+    [Fact]
+    public void GetPrimaryKey_EmptyByteArrayKey_IsNonEmptyAndDistinct_ForBothOverloads()
+    {
+        var entityType = BuildBytesKeyEntityType();
+        byte[] empty = [];
+
+        var fromEntity = entityType.GetPrimaryKey(new BytesKeyEntity { Id = empty });
+        var fromEntry = entityType.GetPrimaryKey(MockUpdateEntry(entityType, ("Id", empty)));
+
+        Assert.Equal("~", fromEntity);
+        Assert.Equal(fromEntity, fromEntry);
+        Assert.NotEqual(entityType.GetPrimaryKey(new BytesKeyEntity { Id = [0] }), fromEntity);
+    }
 }
