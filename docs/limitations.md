@@ -171,6 +171,12 @@ See also [Querying](Queries.md) and [Configuration](configuration.md).
 * **Sequence-based value generation supports a fixed set of numeric types:** `int`, `long`,
   `short`, `byte`, `uint`, `ulong`, `ushort`, and `decimal`. Other CLR types throw at
   model build / value-generation time. See [Sequences and generated values](sequences.md).
+* **A `byte[]` primary key (or a `byte[]` part of a composite key) is written into the document
+  key as Base64** (an empty array as `~`). Earlier builds formatted it as the text `System.Byte[]`
+  for every value, so all entities of a type shared one document and silently overwrote each other.
+  Documents saved that way sit at the old key and are not found by updates or deletes under the new
+  format; re-save such entities (the old key can only have held one document per collection for a
+  single-property key) or delete the stale `System.Byte[]` document.
 * **Generated `Guid` primary keys are supported via `UseGuid()`/`UseGuidString()`** — see
   [Sequences and generated values](sequences.md#generated-guids) for details.
 
