@@ -17,10 +17,15 @@ public class CouchbaseCommand : DbCommand
 
     internal ICluster? Cluster { get; set; }
 
-    // N1QL scan consistency for queries executed through this command (ExecuteReader/Scalar/
-    // NonQuery). Set from the configured option by CouchbaseConnection.CreateDbCommand;
-    // defaults to NotBounded to match the SDK default.
-    internal QueryScanConsistency ScanConsistency { get; set; } = QueryScanConsistency.NotBounded;
+    /// <summary>
+    /// The N1QL scan consistency for queries executed through this command
+    /// (<c>ExecuteReader</c>/<c>ExecuteScalar</c>/<c>ExecuteNonQuery</c>). It starts as the context's
+    /// configured <c>ScanConsistency</c> option (set by <c>CouchbaseConnection.CreateDbCommand</c>),
+    /// and can be set per command to override it for just that command — the ADO.NET counterpart of
+    /// the LINQ <c>WithScanConsistency</c> operator. A <see cref="ConsistentWith"/> mutation state, if
+    /// set, takes precedence.
+    /// </summary>
+    public QueryScanConsistency ScanConsistency { get; set; } = QueryScanConsistency.NotBounded;
 
     // Per-command read-your-own-writes constraint. Unlike the LINQ path's .ConsistentWith(...),
     // ADO.NET has no LINQ expression tree to intercept a marker call on, so this is a plain

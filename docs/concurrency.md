@@ -106,7 +106,8 @@ yet be visible to a subsequent SQL++ query, because secondary (GSI) indexes upda
 asynchronously. Setting `ScanConsistency = RequestPlus` on the options builder fixes this for
 *every* query on that context, but that's an all-or-nothing, context-wide switch — every query
 pays the extra latency of waiting for the index to catch up, even ones that don't need read-your-
-own-writes at all.
+own-writes at all. (To make a single query wait for the index without tying it to a specific write,
+see [`WithScanConsistency`](#per-query-scan-consistency-withscanconsistency) below.)
 
 `ConsistentWith` scopes that guarantee to a specific write instead: it makes one query (or one
 `FromSqlRaw`/`FromSql`/ADO.NET command) wait only until the index reflects a *specific* prior
@@ -130,7 +131,7 @@ Pass that `MutationState` to `ConsistentWith` on the read side, across any of th
 execution paths:
 
 ```
-// LINQ -- ConsistentWith must be the LAST operator in the chain (see below).
+// LINQ -- ConsistentWith may appear anywhere in the chain.
 var order = await context.Orders
     .Where(o => o.CustomerName == "Ada")
     .ConsistentWith(mutationState)
@@ -151,14 +152,60 @@ command.CommandText = "SELECT o.* FROM `bucket`.`scope`.`orders` AS o WHERE o.cu
 `context.Database.ClearMutationState()` resets the accumulated state (e.g. between logically
 unrelated units of work sharing one long-lived context).
 
-> [!WARNING]
-> On the LINQ path, `ConsistentWith(...)` must be the **last** operator in the query — composing
-> any further LINQ operator after it (`.Where(...)`, `.OrderBy(...)`, another `.Select(...)`, etc.)
-> throws `InvalidOperationException` at query-translation time (a clear, immediate failure, not a
-> silently-ignored hint). Apply every other operator first, then call `.ConsistentWith(...)` last:
-> `context.Orders.Where(...).OrderBy(...).ConsistentWith(mutationState)`, not the reverse.
+> [!NOTE]
+> On the LINQ path, `ConsistentWith(...)` is an option of the whole query, so it can appear anywhere
+> in the chain: before or after `.Where(...)`/`.OrderBy(...)`/`.Select(...)`, and before
+> `Count()`, `LongCount()` or `Any()`. If it is used inside a subquery it applies to the whole
+> request, since a query is sent to Couchbase as one request.
 
 `MutationState` only ever grows narrower guarantees than `RequestPlus` — it says "wait for *these*
 writes to be indexed," not "wait for the whole collection to be caught up" — so prefer it over a
 context-wide `RequestPlus` whenever the read-after-write need is scoped to a specific prior write
 rather than the collection as a whole.
+
+## Per-query scan consistency (`WithScanConsistency`)
+
+`WithScanConsistency` sets the scan consistency for **one query**, overriding the context-wide
+`ScanConsistency` option. Use it to keep the fast `NotBounded` default for most queries and make
+only the ones that must see every acknowledged write wait for the index:
+
+```
+using Couchbase.EntityFrameworkCore.Extensions;
+using Couchbase.Query;
+
+// Waits for the index to catch up with all writes acknowledged before the query started.
+var orders = await context.Orders
+    .Where(o => o.CustomerName == "Ada")
+    .WithScanConsistency(QueryScanConsistency.RequestPlus)
+    .ToListAsync();
+```
+
+It works on LINQ queries and on `FromSqlRaw`/`FromSql`; for a raw ADO.NET command, set
+`CouchbaseCommand.ScanConsistency` instead. It does not change the generated SQL++ text, only how
+the query is executed. `QueryScanConsistency.NotBounded` can likewise be used to opt a single query
+out of a context whose default is `RequestPlus`.
+
+How it combines with the other options:
+
+- **`ConsistentWith`** is a stricter, more specific guarantee, so if you apply it with a non-null
+  `MutationState` it wins for that query (the query waits for those specific writes). With a `null`
+  `MutationState` it leaves the `WithScanConsistency` setting in force. The two can be chained in
+  either order.
+- **Applying it twice**: the last call wins.
+
+> [!NOTE]
+> Like `ConsistentWith`, `WithScanConsistency(...)` applies to the whole query and can appear
+> anywhere in the chain, including before `Count()`, `LongCount()` or `Any()`. If it is used inside a
+> subquery it applies to the whole request.
+
+`RequestPlus` waits for the index to reflect *all* writes made before the query was issued, from any
+client, not just this context's. If you only need to see this context's own recent writes, prefer
+[`ConsistentWith`](#read-your-own-writes-consistentwith), which waits for just those.
+
+> [!NOTE]
+> Observed on Couchbase Server 8.0.1 while testing this provider: a bare `SELECT COUNT(*)` over a
+> whole collection (no predicate) returned a **stale count even with `request_plus`**, from the raw
+> SDK as well, with no provider code involved. Queries that return rows honoured it. If you need an
+> exact count immediately after writes, count the rows a query returns or re-check on your server
+> version; this is server behaviour, not something the provider controls.
+

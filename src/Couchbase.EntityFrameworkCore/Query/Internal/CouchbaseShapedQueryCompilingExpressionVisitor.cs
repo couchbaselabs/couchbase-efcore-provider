@@ -3,6 +3,7 @@
 
 using System.Diagnostics.CodeAnalysis;
 using System.Linq.Expressions;
+using Couchbase.Query;
 using System.Reflection;
 using System.Reflection.Metadata;
 using Couchbase.EntityFrameworkCore.Infrastructure;
@@ -122,18 +123,11 @@ public class CouchbaseShapedQueryCompilingExpressionVisitor : RelationalShapedQu
     [Experimental("EF9100")]
     protected override Expression VisitShapedQuery(ShapedQueryExpression shapedQueryExpression)
     {
-        // Strip a .ConsistentWith(...) marker off the shaper, if present, before any of the
-        // shaper-shape checks below run -- they all pattern-match specific shapes
-        // (RelationalGroupByResultExpression, IncludeExpression chains, ...) that the marker would
-        // otherwise hide. Null if .ConsistentWith(...) was never called, or was called but a later
-        // operator replaced the shaper wholesale (e.g. .Select(...)) and silently dropped it -- see
-        // CouchbaseConsistentWithMarkerExpression's own doc comments.
-        string? consistentWithParameterName = null;
-        if (shapedQueryExpression.ShaperExpression is CouchbaseConsistentWithMarkerExpression consistentWithMarker)
-        {
-            consistentWithParameterName = consistentWithMarker.ParameterName;
-            shapedQueryExpression = shapedQueryExpression.UpdateShaperExpression(consistentWithMarker.Inner);
-        }
+        // The per-query options a .ConsistentWith(...)/.WithScanConsistency(...) call recorded while
+        // the query was translated -- see CouchbaseQueryExecutionOptions. Null if neither was called.
+        var executionOptions = CouchbaseQueryExecutionOptions.Find(QueryCompilationContext);
+        var consistentWithParameterName = executionOptions?.ConsistentWithParameterName;
+        var scanConsistency = executionOptions?.ScanConsistency;
 
         CollectNavigationIncludes(shapedQueryExpression.ShaperExpression);
 
@@ -209,6 +203,7 @@ public class CouchbaseShapedQueryCompilingExpressionVisitor : RelationalShapedQu
 
             var readerColumnsExpression = CreateReaderColumnsExpression(readerColumns, Dependencies.LiftableConstantFactory);
             var consistentWithParameterNameExpression = Expression.Constant(consistentWithParameterName, typeof(string));
+            var scanConsistencyExpression = Expression.Constant(scanConsistency, typeof(QueryScanConsistency?));
 
             if (nonComposedFromSql)
             {
@@ -237,7 +232,8 @@ public class CouchbaseShapedQueryCompilingExpressionVisitor : RelationalShapedQu
                     Expression.Constant(_threadSafetyChecksEnabled),
                     Expression.Constant(_bucketProvider),
                     Expression.Constant(_couchbaseDbContextOptionsBuilder),
-                    consistentWithParameterNameExpression);
+                    consistentWithParameterNameExpression,
+                    scanConsistencyExpression);
             }
 
             // Add OwnsMany/OwnsOne navigation columns to the SELECT projection using the IR so
@@ -293,7 +289,8 @@ public class CouchbaseShapedQueryCompilingExpressionVisitor : RelationalShapedQu
                 Expression.Constant(_threadSafetyChecksEnabled),
                 Expression.Constant(_bucketProvider),
                 Expression.Constant(_couchbaseDbContextOptionsBuilder),
-                consistentWithParameterNameExpression);
+                consistentWithParameterNameExpression,
+                scanConsistencyExpression);
         }
     }
 

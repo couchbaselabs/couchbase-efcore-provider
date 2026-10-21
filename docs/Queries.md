@@ -107,6 +107,27 @@ Also supported on `FromSqlRaw`/`FromSql` and raw ADO.NET commands. See
 [Read-your-own-writes](concurrency.md#read-your-own-writes-consistentwith) for the full
 explanation, including why the operator must come last.
 
+## Per-query scan consistency (WithScanConsistency)
+
+`.WithScanConsistency(...)` overrides the context-wide `ScanConsistency` for one query — for
+example, keep the fast `NotBounded` default but make one query wait until the index has caught up
+with every acknowledged write:
+
+```
+using Couchbase.EntityFrameworkCore.Extensions;
+using Couchbase.Query;
+
+// Like ConsistentWith, this applies to the whole query and can appear anywhere in the chain.
+var orders = await context.Orders
+    .Where(o => o.CustomerName == "Ada")
+    .WithScanConsistency(QueryScanConsistency.RequestPlus)
+    .ToListAsync();
+```
+
+Also supported on `FromSqlRaw`/`FromSql`. A `ConsistentWith` with a non-null `MutationState`
+takes precedence over it. See
+[Per-query scan consistency](concurrency.md#per-query-scan-consistency-withscanconsistency).
+
 ## FirstAsync
 
 ```
