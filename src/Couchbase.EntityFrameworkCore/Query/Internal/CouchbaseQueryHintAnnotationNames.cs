@@ -7,7 +7,7 @@ namespace Couchbase.EntityFrameworkCore.Query.Internal;
 /// <see cref="Microsoft.EntityFrameworkCore.Query.SqlExpressions.TableExpressionBase"/> annotation
 /// during translation) and <see cref="CouchbaseQuerySqlGenerator"/> (which reads it back to decide
 /// what to render). <c>ConsistentWith</c> and <c>WithScanConsistency</c> do NOT use this mechanism -- see
-/// <see cref="CouchbaseQueryOptionsMarkerExpression"/> for why (this class's own
+/// <see cref="CouchbaseQueryExecutionOptions"/> for why (this class's own
 /// <see cref="Microsoft.EntityFrameworkCore.Query.SqlExpressions.SelectExpression"/> annotation
 /// support turned out to be unimplemented in EF Core 10) and what it uses instead.
 /// </summary>

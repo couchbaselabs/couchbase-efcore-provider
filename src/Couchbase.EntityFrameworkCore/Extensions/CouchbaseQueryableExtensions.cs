@@ -130,17 +130,10 @@ public static class CouchbaseQueryableExtensions
     /// is inherently per-call and would silently go stale if treated as a plan-level constant.
     /// </para>
     /// <para>
-    /// Apply this as the LAST operator before enumeration (immediately before
-    /// <c>ToListAsync()</c>/<c>FirstOrDefaultAsync()</c>/etc.), after any <c>.Where()</c>/<c>.OrderBy()</c>/
-    /// <c>.Select()</c>. This is enforced by construction, not just convention: internally, this
-    /// method wraps the query's shaper (materialization) expression in a marker that carries the
-    /// <paramref name="mutationState"/> parameter's name forward to execution time, and composing
-    /// ANY further operator afterward that needs to re-inspect that shaper's shape --
-    /// <c>.Where()</c>, <c>.OrderBy()</c>, <c>.Select()</c>, or anything else -- fails with EF
-    /// Core's standard "could not be translated" <see cref="InvalidOperationException"/> (confirmed
-    /// by a regression test), rather than silently ignoring the hint or misapplying it. This is a
-    /// deliberately loud failure mode for what is a correctness-affecting option, not merely an
-    /// optimizer nudge the way <c>UseIndex</c>/<c>UseHash</c> are.
+    /// This is an option of the whole query, not of a position in the chain, so it can be applied
+    /// anywhere: before or after <c>.Where()</c>/<c>.OrderBy()</c>/<c>.Select()</c>, and before
+    /// <c>Count()</c>, <c>LongCount()</c> or <c>Any()</c>. Used inside a subquery it applies to the
+    /// whole request (a query is sent to Couchbase as one request).
     /// </para>
     /// </remarks>
     /// <param name="source">The query to constrain.</param>
@@ -177,11 +170,9 @@ public static class CouchbaseQueryableExtensions
     /// either order.
     /// </para>
     /// <para>
-    /// Like <see cref="ConsistentWith{TEntity}"/>, apply this as the LAST operator before
-    /// enumeration (immediately before <c>ToListAsync()</c>/<c>FirstOrDefaultAsync()</c>/etc.);
-    /// composing a further operator such as <c>.Where()</c>/<c>.OrderBy()</c>/<c>.Select()</c>
-    /// afterward fails with EF Core's standard "could not be translated"
-    /// <see cref="InvalidOperationException"/> rather than silently dropping the setting.
+    /// Like <see cref="ConsistentWith{TEntity}"/>, this applies to the whole query and can appear
+    /// anywhere in the chain, including before <c>Count()</c>, <c>LongCount()</c> or <c>Any()</c>.
+    /// If it is applied more than once, the last call wins.
     /// </para>
     /// <para>
     /// <paramref name="scanConsistency"/> is not a query parameter: it is part of the compiled query,
@@ -193,7 +184,6 @@ public static class CouchbaseQueryableExtensions
     /// <param name="scanConsistency">The scan consistency for this query.</param>
     public static IQueryable<TEntity> WithScanConsistency<TEntity>(
         this IQueryable<TEntity> source, [NotParameterized] QueryScanConsistency scanConsistency)
-        where TEntity : class
         => source.Provider is EntityQueryProvider
             ? source.Provider.CreateQuery<TEntity>(
                 Expression.Call(

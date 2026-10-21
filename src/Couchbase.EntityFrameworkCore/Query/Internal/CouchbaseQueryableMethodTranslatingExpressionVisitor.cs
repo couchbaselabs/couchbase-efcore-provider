@@ -20,6 +20,7 @@ public class CouchbaseQueryableMethodTranslatingExpressionVisitor : RelationalQu
 
     private readonly IRelationalTypeMappingSource _typeMappingSource;
     private readonly SqlAliasManager _sqlAliasManager;
+    private readonly RelationalQueryCompilationContext _queryCompilationContext;
 
     public CouchbaseQueryableMethodTranslatingExpressionVisitor(
         QueryableMethodTranslatingExpressionVisitorDependencies dependencies,
@@ -29,6 +30,7 @@ public class CouchbaseQueryableMethodTranslatingExpressionVisitor : RelationalQu
     {
         _typeMappingSource = relationalDependencies.TypeMappingSource;
         _sqlAliasManager = queryCompilationContext.SqlAliasManager;
+        _queryCompilationContext = queryCompilationContext;
     }
 
     protected CouchbaseQueryableMethodTranslatingExpressionVisitor(
@@ -37,6 +39,7 @@ public class CouchbaseQueryableMethodTranslatingExpressionVisitor : RelationalQu
     {
         _typeMappingSource = parentVisitor._typeMappingSource;
         _sqlAliasManager = parentVisitor._sqlAliasManager;
+        _queryCompilationContext = parentVisitor._queryCompilationContext;
     }
 
     protected override QueryableMethodTranslatingExpressionVisitor CreateSubqueryVisitor()
@@ -131,17 +134,12 @@ public class CouchbaseQueryableMethodTranslatingExpressionVisitor : RelationalQu
     }
 
     /// <summary>
-    /// Wraps a <c>ConsistentWith</c> call's source shaper expression in a
-    /// <see cref="CouchbaseQueryOptionsMarkerExpression"/> carrying the generated query-parameter
-    /// name, for <see cref="CouchbaseShapedQueryCompilingExpressionVisitor"/> to strip back off
-    /// (as the very first thing it does) once translation finishes, threading the name into
-    /// <see cref="CouchbaseQueryEnumerable{T}"/>'s execution-time <c>QueryOptions</c> construction.
-    /// See <see cref="CouchbaseQueryOptionsMarkerExpression"/>'s own doc comments for why this
-    /// shaper-wrapping design replaced an earlier attempt to annotate the root
-    /// <see cref="SelectExpression"/> the way <see cref="TranslateUseIndex"/>/<see cref="TranslateUseHash"/>
-    /// annotate a child <see cref="TableExpression"/> -- <c>SelectExpression.WithAnnotations</c> is
-    /// unimplemented in EF Core 10 and throws unconditionally, confirmed by a failing unit test
-    /// before this design was adopted.
+    /// Records a <c>ConsistentWith</c> call's generated query-parameter name in the query's
+    /// <see cref="CouchbaseQueryExecutionOptions"/>, for <see cref="CouchbaseShapedQueryCompilingExpressionVisitor"/>
+    /// to thread into <see cref="CouchbaseQueryEnumerable{T}"/>'s execution-time <c>QueryOptions</c>
+    /// construction, and returns the source unchanged. Nothing is attached to the translated query,
+    /// so it is unaffected by whatever operators come before or after this call; see
+    /// <see cref="CouchbaseQueryExecutionOptions"/> for why this replaced wrapping the shaper.
     /// <para>
     /// <paramref name="methodCallExpression"/>'s <c>MutationState</c> argument is deliberately NOT
     /// <see cref="NotParameterizedAttribute"/> (see
@@ -154,34 +152,29 @@ public class CouchbaseQueryableMethodTranslatingExpressionVisitor : RelationalQu
     private Expression TranslateConsistentWith(MethodCallExpression methodCallExpression)
     {
         var source = Visit(methodCallExpression.Arguments[0]);
-        if (source is ShapedQueryExpression shapedQueryExpression
+        if (source is ShapedQueryExpression
             && methodCallExpression.Arguments[1] is QueryParameterExpression { Name: var parameterName })
         {
-            var markerShaper = CouchbaseQueryOptionsMarkerExpression.Merge(
-                shapedQueryExpression.ShaperExpression, parameterName, scanConsistency: null);
-            return shapedQueryExpression.UpdateShaperExpression(markerShaper);
+            CouchbaseQueryExecutionOptions.GetOrCreate(_queryCompilationContext).ConsistentWithParameterName = parameterName;
         }
 
         return source!;
     }
 
     /// <summary>
-    /// Wraps a <c>WithScanConsistency</c> call's source shaper expression in a
-    /// <see cref="CouchbaseQueryOptionsMarkerExpression"/> carrying the per-query scan consistency,
-    /// merging into the marker an earlier <c>ConsistentWith</c>/<c>WithScanConsistency</c> call
-    /// created if there is one. Unlike <c>ConsistentWith</c>'s <c>MutationState</c>, the argument is
-    /// marked <see cref="NotParameterizedAttribute"/>, so it is still a plain
+    /// Records a <c>WithScanConsistency</c> call's scan consistency in the query's
+    /// <see cref="CouchbaseQueryExecutionOptions"/> and returns the source unchanged. Unlike
+    /// <c>ConsistentWith</c>'s <c>MutationState</c>, the argument is marked
+    /// <see cref="NotParameterizedAttribute"/>, so it is still a plain
     /// <see cref="ConstantExpression"/> here and is simply read off.
     /// </summary>
     private Expression TranslateWithScanConsistency(MethodCallExpression methodCallExpression)
     {
         var source = Visit(methodCallExpression.Arguments[0]);
-        if (source is ShapedQueryExpression shapedQueryExpression
+        if (source is ShapedQueryExpression
             && methodCallExpression.Arguments[1] is ConstantExpression { Value: QueryScanConsistency scanConsistency })
         {
-            var markerShaper = CouchbaseQueryOptionsMarkerExpression.Merge(
-                shapedQueryExpression.ShaperExpression, consistentWithParameterName: null, scanConsistency);
-            return shapedQueryExpression.UpdateShaperExpression(markerShaper);
+            CouchbaseQueryExecutionOptions.GetOrCreate(_queryCompilationContext).ScanConsistency = scanConsistency;
         }
 
         return source!;

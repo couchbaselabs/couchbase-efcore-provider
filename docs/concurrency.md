@@ -131,7 +131,7 @@ Pass that `MutationState` to `ConsistentWith` on the read side, across any of th
 execution paths:
 
 ```
-// LINQ -- ConsistentWith must be the LAST operator in the chain (see below).
+// LINQ -- ConsistentWith may appear anywhere in the chain.
 var order = await context.Orders
     .Where(o => o.CustomerName == "Ada")
     .ConsistentWith(mutationState)
@@ -152,12 +152,11 @@ command.CommandText = "SELECT o.* FROM `bucket`.`scope`.`orders` AS o WHERE o.cu
 `context.Database.ClearMutationState()` resets the accumulated state (e.g. between logically
 unrelated units of work sharing one long-lived context).
 
-> [!WARNING]
-> On the LINQ path, `ConsistentWith(...)` must be the **last** operator in the query — composing
-> any further LINQ operator after it (`.Where(...)`, `.OrderBy(...)`, another `.Select(...)`, etc.)
-> throws `InvalidOperationException` at query-translation time (a clear, immediate failure, not a
-> silently-ignored hint). Apply every other operator first, then call `.ConsistentWith(...)` last:
-> `context.Orders.Where(...).OrderBy(...).ConsistentWith(mutationState)`, not the reverse.
+> [!NOTE]
+> On the LINQ path, `ConsistentWith(...)` is an option of the whole query, so it can appear anywhere
+> in the chain: before or after `.Where(...)`/`.OrderBy(...)`/`.Select(...)`, and before
+> `Count()`, `LongCount()` or `Any()`. If it is used inside a subquery it applies to the whole
+> request, since a query is sent to Couchbase as one request.
 
 `MutationState` only ever grows narrower guarantees than `RequestPlus` — it says "wait for *these*
 writes to be indexed," not "wait for the whole collection to be caught up" — so prefer it over a
@@ -194,10 +193,10 @@ How it combines with the other options:
   either order.
 - **Applying it twice**: the last call wins.
 
-> [!WARNING]
-> Like `ConsistentWith`, `WithScanConsistency(...)` must be the **last** operator in the query —
-> composing any further LINQ operator after it throws `InvalidOperationException` at translation
-> time rather than silently dropping the setting. Apply every other operator first.
+> [!NOTE]
+> Like `ConsistentWith`, `WithScanConsistency(...)` applies to the whole query and can appear
+> anywhere in the chain, including before `Count()`, `LongCount()` or `Any()`. If it is used inside a
+> subquery it applies to the whole request.
 
 `RequestPlus` waits for the index to reflect *all* writes made before the query was issued, from any
 client, not just this context's. If you only need to see this context's own recent writes, prefer

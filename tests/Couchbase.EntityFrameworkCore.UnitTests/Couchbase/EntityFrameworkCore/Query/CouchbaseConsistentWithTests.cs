@@ -25,10 +25,7 @@ public class CouchbaseConsistentWithTests(ITestOutputHelper output)
     [Fact]
     public void ConsistentWith_DoesNotAlterGeneratedSql()
     {
-        // .ConsistentWith(...) must be applied LAST (see its own doc remarks) -- composing further
-        // operators afterward that need to re-inspect the shaper's shape (.Where/.OrderBy/.Select)
-        // fails to translate, since the shaper is wrapped in a marker node at that point. Applied
-        // last, it's purely an execution-time option and must leave the generated SQL untouched.
+        // A pure execution-time option: it must leave the generated SQL untouched.
         using var ctx = CreateContext();
         var withoutHint = ctx.Posts.Where(p => p.Title == "x").ToQueryString();
         var withHint = ctx.Posts.Where(p => p.Title == "x").ConsistentWith(new MutationState()).ToQueryString();
@@ -37,17 +34,13 @@ public class CouchbaseConsistentWithTests(ITestOutputHelper output)
     }
 
     [Fact]
-    public void ConsistentWith_ComposedBeforeWhere_ThrowsTranslationException()
+    public void ConsistentWith_ComposedBeforeWhere_TranslatesAndDoesNotAlterSql()
     {
-        // Locks in the actual (not merely theorized) failure mode for the documented "apply last"
-        // requirement: composing .Where(...) AFTER .ConsistentWith(...) throws a clear translation
-        // exception rather than silently dropping the hint -- arguably the safer failure mode for a
-        // correctness-affecting option, and important to pin down since it differs from
-        // UseIndex/UseHash's own "silently ignored" fallback for a shape mismatch.
+        // The option applies to the whole query, so it may appear anywhere in the chain.
         using var ctx = CreateContext();
+        var expected = ctx.Posts.Where(p => p.Title == "x").ToQueryString();
 
-        Assert.Throws<InvalidOperationException>(
-            () => ctx.Posts.ConsistentWith(new MutationState()).Where(p => p.Title == "x").ToQueryString());
+        Assert.Equal(expected, ctx.Posts.ConsistentWith(new MutationState()).Where(p => p.Title == "x").ToQueryString());
     }
 
     [Fact]

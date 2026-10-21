@@ -123,20 +123,11 @@ public class CouchbaseShapedQueryCompilingExpressionVisitor : RelationalShapedQu
     [Experimental("EF9100")]
     protected override Expression VisitShapedQuery(ShapedQueryExpression shapedQueryExpression)
     {
-        // Strip a .ConsistentWith(...) marker off the shaper, if present, before any of the
-        // shaper-shape checks below run -- they all pattern-match specific shapes
-        // (RelationalGroupByResultExpression, IncludeExpression chains, ...) that the marker would
-        // otherwise hide. Null if .ConsistentWith(...) was never called, or was called but a later
-        // operator replaced the shaper wholesale (e.g. .Select(...)) and silently dropped it -- see
-        // CouchbaseQueryOptionsMarkerExpression's own doc comments.
-        string? consistentWithParameterName = null;
-        QueryScanConsistency? scanConsistency = null;
-        if (shapedQueryExpression.ShaperExpression is CouchbaseQueryOptionsMarkerExpression optionsMarker)
-        {
-            consistentWithParameterName = optionsMarker.ConsistentWithParameterName;
-            scanConsistency = optionsMarker.ScanConsistency;
-            shapedQueryExpression = shapedQueryExpression.UpdateShaperExpression(optionsMarker.Inner);
-        }
+        // The per-query options a .ConsistentWith(...)/.WithScanConsistency(...) call recorded while
+        // the query was translated -- see CouchbaseQueryExecutionOptions. Null if neither was called.
+        var executionOptions = CouchbaseQueryExecutionOptions.Find(QueryCompilationContext);
+        var consistentWithParameterName = executionOptions?.ConsistentWithParameterName;
+        var scanConsistency = executionOptions?.ScanConsistency;
 
         CollectNavigationIncludes(shapedQueryExpression.ShaperExpression);
 

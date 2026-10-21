@@ -117,7 +117,7 @@ with every acknowledged write:
 using Couchbase.EntityFrameworkCore.Extensions;
 using Couchbase.Query;
 
-// Like ConsistentWith, this must be the LAST operator in the chain.
+// Like ConsistentWith, this applies to the whole query and can appear anywhere in the chain.
 var orders = await context.Orders
     .Where(o => o.CustomerName == "Ada")
     .WithScanConsistency(QueryScanConsistency.RequestPlus)

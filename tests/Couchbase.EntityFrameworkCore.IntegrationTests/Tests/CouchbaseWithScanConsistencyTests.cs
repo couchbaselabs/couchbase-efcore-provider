@@ -120,6 +120,46 @@ public class CouchbaseWithScanConsistencyTests(BloggingFixture fixture, ITestOut
         }
     }
 
+    [Fact]
+    public async Task Linq_OptionBeforeWhere_AndBeforeCountAndAny_IsStillApplied()
+    {
+        // The option applies to the whole query wherever it sits in the chain. Before this was
+        // position-independent, an operator that replaced the shaper (predicate-free Any()/Count())
+        // silently dropped it and the query ran with the NotBounded context default.
+        var collectionName = "scanpos" + Guid.NewGuid().ToString("N");
+        var optionsBuilder = CreateOptionsBuilder<ScanPositionDbContext>();
+
+        await using var ctx = new ScanPositionDbContext(optionsBuilder.Options, collectionName);
+        try
+        {
+            await ctx.Database.EnsureCreatedAsync();
+            await WriteDocumentsAsync(ctx);
+
+            await using var readCtx = new ScanPositionDbContext(optionsBuilder.Options, collectionName);
+            var listed = await readCtx.Entities
+                .WithScanConsistency(QueryScanConsistency.RequestPlus)
+                .Where(e => e.Content == "doc")
+                .ToListAsync();
+            Assert.Equal(DocumentCount, listed.Count);
+
+            // Predicate-free Any() on a collection whose index is still catching up.
+            await using var anyCtx = new ScanPositionDbContext(optionsBuilder.Options, collectionName);
+            Assert.True(await anyCtx.Entities.WithScanConsistency(QueryScanConsistency.RequestPlus).AnyAsync());
+
+            // A filtered count (a bare COUNT(*) is stale server-side even with request_plus).
+            await using var countCtx = new ScanPositionDbContext(optionsBuilder.Options, collectionName);
+            var count = await countCtx.Entities
+                .Where(e => e.Content == "doc")
+                .WithScanConsistency(QueryScanConsistency.RequestPlus)
+                .CountAsync();
+            Assert.Equal(DocumentCount, count);
+        }
+        finally
+        {
+            await DropCollectionAsync(collectionName);
+        }
+    }
+
     private static async Task WriteDocumentsAsync(DbContext ctx)
     {
         for (var i = 0; i < DocumentCount; i++)
@@ -203,6 +243,21 @@ public class CouchbaseWithScanConsistencyTests(BloggingFixture fixture, ITestOut
     }
 
     public class ScanLinqDbContext(DbContextOptions<ScanLinqDbContext> options, string collectionName) : DbContext(options)
+    {
+        public DbSet<ScanEntity> Entities { get; set; } = null!;
+
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            base.OnModelCreating(modelBuilder);
+            modelBuilder.Entity<ScanEntity>(b =>
+            {
+                b.ToCouchbaseCollection(this, collectionName);
+                b.HasKey(e => e.Id);
+            });
+        }
+    }
+
+    public class ScanPositionDbContext(DbContextOptions<ScanPositionDbContext> options, string collectionName) : DbContext(options)
     {
         public DbSet<ScanEntity> Entities { get; set; } = null!;
 

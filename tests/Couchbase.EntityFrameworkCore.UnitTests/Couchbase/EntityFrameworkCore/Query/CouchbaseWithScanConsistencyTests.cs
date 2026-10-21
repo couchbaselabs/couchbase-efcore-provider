@@ -1,4 +1,3 @@
-using System.Linq.Expressions;
 using Couchbase.Core;
 using Couchbase.EntityFrameworkCore.Extensions;
 using Couchbase.EntityFrameworkCore.Infrastructure;
@@ -33,14 +32,26 @@ public class CouchbaseWithScanConsistencyTests
     }
 
     [Fact]
-    public void WithScanConsistency_ComposedBeforeWhere_ThrowsTranslationException()
+    public void WithScanConsistency_ComposedBeforeWhere_TranslatesAndDoesNotAlterSql()
     {
-        // Same documented "apply last" rule as ConsistentWith: a later operator that re-inspects the
-        // shaper fails to translate rather than silently dropping the setting.
+        // The option applies to the whole query, so it may appear anywhere in the chain.
         using var ctx = CreateContext();
+        var expected = ctx.Posts.Where(p => p.Title == "x").ToQueryString();
 
-        Assert.Throws<InvalidOperationException>(
-            () => ctx.Posts.WithScanConsistency(QueryScanConsistency.RequestPlus).Where(p => p.Title == "x").ToQueryString());
+        Assert.Equal(
+            expected,
+            ctx.Posts.WithScanConsistency(QueryScanConsistency.RequestPlus).Where(p => p.Title == "x").ToQueryString());
+    }
+
+    [Fact]
+    public void WithScanConsistency_AfterValueTypeProjection_Translates()
+    {
+        using var ctx = CreateContext();
+        var expected = ctx.Posts.Select(p => p.Id).ToQueryString();
+
+        Assert.Equal(
+            expected,
+            ctx.Posts.Select(p => p.Id).WithScanConsistency(QueryScanConsistency.RequestPlus).ToQueryString());
     }
 
     [Fact]
@@ -62,30 +73,6 @@ public class CouchbaseWithScanConsistencyTests
         Assert.Equal(
             baseline,
             ctx.Posts.WithScanConsistency(QueryScanConsistency.NotBounded).WithScanConsistency(QueryScanConsistency.RequestPlus).ToQueryString());
-    }
-
-    [Fact]
-    public void Marker_Merge_KeepsBothOptions_AndLastCallWins()
-    {
-        var inner = Expression.Constant(1);
-
-        var scanThenConsistent = CouchbaseQueryOptionsMarkerExpression.Merge(
-            CouchbaseQueryOptionsMarkerExpression.Merge(inner, consistentWithParameterName: null, QueryScanConsistency.RequestPlus),
-            "__p", scanConsistency: null);
-        Assert.Same(inner, scanThenConsistent.Inner);
-        Assert.Equal("__p", scanThenConsistent.ConsistentWithParameterName);
-        Assert.Equal(QueryScanConsistency.RequestPlus, scanThenConsistent.ScanConsistency);
-
-        var consistentThenScan = CouchbaseQueryOptionsMarkerExpression.Merge(
-            CouchbaseQueryOptionsMarkerExpression.Merge(inner, "__p", scanConsistency: null),
-            consistentWithParameterName: null, QueryScanConsistency.RequestPlus);
-        Assert.Equal("__p", consistentThenScan.ConsistentWithParameterName);
-        Assert.Equal(QueryScanConsistency.RequestPlus, consistentThenScan.ScanConsistency);
-
-        var lastWins = CouchbaseQueryOptionsMarkerExpression.Merge(
-            CouchbaseQueryOptionsMarkerExpression.Merge(inner, null, QueryScanConsistency.NotBounded),
-            null, QueryScanConsistency.RequestPlus);
-        Assert.Equal(QueryScanConsistency.RequestPlus, lastWins.ScanConsistency);
     }
 
     [Fact]
