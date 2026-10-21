@@ -71,6 +71,28 @@ public class CouchbaseDbContextOptionsBuilder : ICouchbaseDbContextOptionsBuilde
 
     public JsonSerializerOptions? SerializerOptions { get; set; }
 
+    public CouchbaseDocumentKeyFormat DocumentKeyFormat { get; set; } = CouchbaseDocumentKeyFormat.Legacy;
+
+    private char _documentKeyDelimiter = '_';
+
+    public char DocumentKeyDelimiter
+    {
+        get => _documentKeyDelimiter;
+        set
+        {
+            // The escape character is a backslash; a delimiter equal to it could not be escaped
+            // unambiguously, and a control character makes for a poor, error-prone document key.
+            if (value == '\\' || char.IsControl(value))
+            {
+                throw new ArgumentException(
+                    "The document key delimiter cannot be the escape character '\\' or a control character.",
+                    nameof(value));
+            }
+
+            _documentKeyDelimiter = value;
+        }
+    }
+
     public QueryScanConsistency ScanConsistency { get; set; } = QueryScanConsistency.NotBounded;
 
     public object? ServiceKey { get; set; }
@@ -190,6 +212,22 @@ public interface ICouchbaseDbContextOptionsBuilder
     /// <c>NOW_UTC</c>) expect their <c>fmt</c> argument in this layout language, not .NET's.
     /// </summary>
     public string GoDateTimeFormat { get; }
+
+    /// <summary>
+    /// How an entity's primary key is turned into its Couchbase document key. Defaults to
+    /// <see cref="CouchbaseDocumentKeyFormat.Legacy"/>, so existing data stays addressable; use
+    /// <see cref="CouchbaseDocumentKeyFormat.V2"/> for new collections. See
+    /// <see cref="CouchbaseDocumentKeyFormat"/> for exactly how the two differ.
+    /// </summary>
+    public CouchbaseDocumentKeyFormat DocumentKeyFormat { get; set; }
+
+    /// <summary>
+    /// The character that separates the parts of a composite document key. Defaults to <c>_</c>.
+    /// With <see cref="CouchbaseDocumentKeyFormat.V2"/> a delimiter inside a key part is escaped with
+    /// <c>\</c>; with <see cref="CouchbaseDocumentKeyFormat.Legacy"/> the delimiter is always
+    /// <c>_</c> and this setting is ignored. Cannot be <c>\</c> or a control character.
+    /// </summary>
+    public char DocumentKeyDelimiter { get; set; }
 
     /// <summary>
     /// <see cref="JsonSerializerOptions"/> used when deserializing scalar values inside

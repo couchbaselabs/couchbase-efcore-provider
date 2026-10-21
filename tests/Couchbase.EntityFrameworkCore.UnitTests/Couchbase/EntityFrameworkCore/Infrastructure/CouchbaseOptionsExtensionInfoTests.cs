@@ -195,6 +195,44 @@ public class CouchbaseOptionsExtensionInfoTests
     }
 
     [Fact]
+    public void DifferentDocumentKeyFormat_DoesNotShareServiceProvider()
+    {
+        var aBuilder = new CouchbaseDbContextOptionsBuilder(new DbContextOptionsBuilder(), "couchbase://localhost")
+        {
+            Bucket = "bucketA", Scope = "scopeA", DocumentKeyFormat = CouchbaseDocumentKeyFormat.Legacy
+        };
+        var bBuilder = new CouchbaseDbContextOptionsBuilder(new DbContextOptionsBuilder(), "couchbase://localhost")
+        {
+            Bucket = "bucketA", Scope = "scopeA", DocumentKeyFormat = CouchbaseDocumentKeyFormat.V2
+        };
+
+        var a = new CouchbaseOptionsExtension(aBuilder).Info;
+        var b = new CouchbaseOptionsExtension(bBuilder).Info;
+
+        Assert.False(a.ShouldUseSameServiceProvider(b));
+        Assert.NotEqual(a.GetServiceProviderHashCode(), b.GetServiceProviderHashCode());
+    }
+
+    [Fact]
+    public void DifferentDocumentKeyDelimiter_DoesNotShareServiceProvider()
+    {
+        var aBuilder = new CouchbaseDbContextOptionsBuilder(new DbContextOptionsBuilder(), "couchbase://localhost")
+        {
+            Bucket = "bucketA", Scope = "scopeA", DocumentKeyFormat = CouchbaseDocumentKeyFormat.V2, DocumentKeyDelimiter = '_'
+        };
+        var bBuilder = new CouchbaseDbContextOptionsBuilder(new DbContextOptionsBuilder(), "couchbase://localhost")
+        {
+            Bucket = "bucketA", Scope = "scopeA", DocumentKeyFormat = CouchbaseDocumentKeyFormat.V2, DocumentKeyDelimiter = '|'
+        };
+
+        var a = new CouchbaseOptionsExtension(aBuilder).Info;
+        var b = new CouchbaseOptionsExtension(bBuilder).Info;
+
+        Assert.False(a.ShouldUseSameServiceProvider(b));
+        Assert.NotEqual(a.GetServiceProviderHashCode(), b.GetServiceProviderHashCode());
+    }
+
+    [Fact]
     public void DifferentSerializerOptions_DoesNotShareServiceProvider()
     {
         var aBuilder = new CouchbaseDbContextOptionsBuilder(new DbContextOptionsBuilder(), "couchbase://localhost")
