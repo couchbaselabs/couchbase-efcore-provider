@@ -424,13 +424,19 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
     internal QueryOptions GetParameters(DbCommand command)
     {
         var queryOptions = new QueryOptions();
-        queryOptions.ScanConsistency(_couchbaseDbContextOptionsBuilder.ScanConsistency);
+
+        // Rows are read as JsonElement; don't depend on the cluster's serializer for that.
+        queryOptions.Serializer = CouchbaseResultRowSerializer.Instance;
 
         // A per-query WithScanConsistency overrides the context-wide default. A ConsistentWith
         // MutationState (applied below) is stricter and still wins for the query.
         if (_scanConsistency is { } perQueryScanConsistency)
         {
             queryOptions.ScanConsistency(perQueryScanConsistency);
+        }
+        else
+        {
+            queryOptions.ScanConsistency(_couchbaseDbContextOptionsBuilder.ScanConsistency);
         }
         foreach (CouchbaseParameter parameter in command.Parameters)
         {

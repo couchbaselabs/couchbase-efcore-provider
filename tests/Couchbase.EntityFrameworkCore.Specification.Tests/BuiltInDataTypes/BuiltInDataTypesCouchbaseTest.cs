@@ -48,6 +48,12 @@ public class BuiltInDataTypesCouchbaseTest(BuiltInDataTypesCouchbaseTest.BuiltIn
     public override Task Can_read_back_mapped_enum_from_collection_first_or_default()
         => base.Can_read_back_mapped_enum_from_collection_first_or_default();
 
+    [Fact(Skip = "Flaky by design of the test: it runs two separate queries with no ORDER BY and compares their rows by position "
+        + "(expected[i] vs actual[i]). Couchbase does not guarantee row order, and the order differs between the two queries from "
+        + "run to run, so it passes or fails at random (seen both ways with no code change). Not a provider bug.")]
+    public override Task Optional_datetime_reading_null_from_database()
+        => base.Optional_datetime_reading_null_from_database();
+
     public class BuiltInDataTypesCouchbaseFixture : BuiltInDataTypesFixtureBase
     {
         protected override ITestStoreFactory TestStoreFactory => CouchbaseTestStoreFactory.ForStore(StoreName);

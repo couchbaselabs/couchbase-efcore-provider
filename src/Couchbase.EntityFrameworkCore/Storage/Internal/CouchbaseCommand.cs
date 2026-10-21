@@ -290,6 +290,9 @@ public class CouchbaseCommand : DbCommand
         var options = new QueryOptions().CancellationToken(cancellationToken);
         options.ScanConsistency(ScanConsistency);
 
+        // Rows are read as JsonElement; don't depend on the cluster's serializer for that.
+        options.Serializer = CouchbaseResultRowSerializer.Instance;
+
         if (ConsistentWith != null)
         {
             options.ConsistentWith(ConsistentWith);
