@@ -29,6 +29,18 @@ public class CouchbaseDocumentKeyBuilderTests
         public int TenantId { get; set; }
     }
 
+    private class TimeKeyEntity
+    {
+        public TimeOnly At { get; set; }
+        public DateOnly On { get; set; }
+    }
+
+    private class UnixMillisKeyEntity
+    {
+        public DateTime When { get; set; }
+        public int Part { get; set; }
+    }
+
     private class BlobKeyEntity
     {
         public byte[] Blob { get; set; } = [];
@@ -220,6 +232,52 @@ public class CouchbaseDocumentKeyBuilderTests
         Assert.Equal(
             "2025-01-15T13:45:00.0000000Z#2025-01-15T13:45:00.0000000-08:00#7#AQID#11111111-2222-3333-4444-555555555555",
             key);
+    }
+
+    [Fact]
+    public void V2_TimeOnlyAndDateOnly_KeepSecondsAndFractions_SoDistinctValuesGiveDistinctKeys()
+    {
+        var entityType = BuildEntityType<TimeKeyEntity>(mb =>
+            mb.Entity<TimeKeyEntity>(b =>
+            {
+                b.ToCouchbaseCollection("bucket", "scope", "time");
+                b.HasKey(e => new { e.On, e.At });
+            }));
+        var day = new DateOnly(2025, 1, 15);
+
+        var first = CouchbaseDocumentKeyBuilder.BuildV2(
+            entityType, Entry(entityType, ("On", day), ("At", new TimeOnly(12, 30, 1))), '_');
+        var second = CouchbaseDocumentKeyBuilder.BuildV2(
+            entityType, Entry(entityType, ("On", day), ("At", new TimeOnly(12, 30, 59))), '_');
+        var fractional = CouchbaseDocumentKeyBuilder.BuildV2(
+            entityType, Entry(entityType, ("On", day), ("At", new TimeOnly(12, 30, 1, 500))), '_');
+
+        Assert.Equal("2025-01-15_12:30:01.0000000", first);
+        Assert.Equal("2025-01-15_12:30:59.0000000", second);
+        Assert.Equal("2025-01-15_12:30:01.5000000", fractional);
+    }
+
+    [Fact]
+    public void V2_ConvertedKey_IsFormattedFromTheStoredValue_SoItSurvivesAReload()
+    {
+        var entityType = BuildEntityType<UnixMillisKeyEntity>(mb =>
+            mb.Entity<UnixMillisKeyEntity>(b =>
+            {
+                b.ToCouchbaseCollection("bucket", "scope", "millis");
+                b.Property(e => e.When).HasUnixMillisDateTime();
+                b.HasKey(e => new { e.When, e.Part });
+            }));
+        var inserted = new DateTime(2025, 1, 15, 13, 45, 0, DateTimeKind.Utc).AddTicks(1234);
+        // What reading the stored (millisecond-truncated) value back gives.
+        var reloaded = new DateTime(2025, 1, 15, 13, 45, 0, DateTimeKind.Utc);
+
+        var insertedKey = CouchbaseDocumentKeyBuilder.BuildV2(
+            entityType, Entry(entityType, ("When", inserted), ("Part", 1)), '_');
+        var reloadedKey = CouchbaseDocumentKeyBuilder.BuildV2(
+            entityType, Entry(entityType, ("When", reloaded), ("Part", 1)), '_');
+
+        Assert.Equal(reloadedKey, insertedKey);
+        Assert.Equal(new DateTimeOffset(reloaded).ToUnixTimeMilliseconds() + "_1", insertedKey);
     }
 
     [Fact]
