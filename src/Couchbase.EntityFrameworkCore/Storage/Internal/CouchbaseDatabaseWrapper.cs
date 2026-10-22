@@ -524,7 +524,7 @@ public class CouchbaseDatabaseWrapper : Database
     /// the provider/storage representation before writing to Couchbase.  When no converter
     /// is configured the raw model-side value is returned unchanged.
     /// </summary>
-    private static object? ApplyConverter(IProperty property, object? rawValue)
+    internal static object? ApplyConverter(IProperty property, object? rawValue)
     {
         var explicitConverter = property.GetValueConverter();
         if (explicitConverter is null && property.GetElementType() is not null)

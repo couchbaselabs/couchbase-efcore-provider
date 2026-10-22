@@ -30,10 +30,21 @@ internal static class CouchbaseDocumentKeyBuilder
         var first = true;
         foreach (var property in primaryKey.Properties)
         {
-            var value = updateEntry.GetCurrentValue(property)
+            var rawValue = updateEntry.GetCurrentValue(property)
                 ?? throw new InvalidOperationException(
                     $"The key property '{entityType.DisplayName()}.{property.Name}' is null, so a document key " +
                     "cannot be built for it.");
+
+            // Format the value the way it is STORED (after any value converter), not the CLR value.
+            // The key is rebuilt from the entity every time it is saved or deleted, and the entity is
+            // materialised from the stored form, so a conversion that loses information (for
+            // example HasUnixMillisDateTime() drops sub-millisecond ticks) would otherwise give the
+            // reloaded entity a different key than the one it was inserted under: an update would
+            // upsert a duplicate and a delete would miss.
+            var value = CouchbaseDatabaseWrapper.ApplyConverter(property, rawValue)
+                ?? throw new InvalidOperationException(
+                    $"The value converter of the key property '{entityType.DisplayName()}.{property.Name}' " +
+                    "returned null, so a document key cannot be built for it.");
 
             if (!first)
             {
@@ -42,7 +53,10 @@ internal static class CouchbaseDocumentKeyBuilder
 
             first = false;
 
-            Escape(FormatPart(value), delimiter, documentKey);
+            // An empty byte[] would convert to an empty string, and an empty document id is invalid,
+            // so it is written as "~" (which Base64 never produces).
+            var text = rawValue is byte[] { Length: 0 } ? "~" : FormatPart(value);
+            Escape(text, delimiter, documentKey);
         }
 
         return documentKey.ToString();
@@ -56,6 +70,10 @@ internal static class CouchbaseDocumentKeyBuilder
             string text => text,
             DateTime dateTime => dateTime.ToString("O", CultureInfo.InvariantCulture),
             DateTimeOffset dateTimeOffset => dateTimeOffset.ToString("O", CultureInfo.InvariantCulture),
+            // Explicit: the default TimeOnly pattern is the short "HH:mm", which would drop the seconds
+            // and make distinct keys collide.
+            TimeOnly timeOnly => timeOnly.ToString("O", CultureInfo.InvariantCulture),
+            DateOnly dateOnly => dateOnly.ToString("O", CultureInfo.InvariantCulture),
             Enum enumValue => Convert.ToString(
                 Convert.ChangeType(enumValue, Enum.GetUnderlyingType(enumValue.GetType()), CultureInfo.InvariantCulture),
                 CultureInfo.InvariantCulture)!,

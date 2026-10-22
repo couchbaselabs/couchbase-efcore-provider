@@ -101,13 +101,19 @@ optionsBuilder.UseCouchbase(clusterOptions, o =>
 | Culture | current culture | invariant |
 | Delimiter in a part | not escaped (collisions) | escaped with `\`, as is `\` itself |
 | `byte[]` part | Base64 (`~` for an empty array) | Base64 (`~` for an empty array) |
-| `DateTime` / `DateTimeOffset` part | current-culture text | round-trip (`O`) format |
+| `DateTime` / `DateTimeOffset` / `DateOnly` / `TimeOnly` part | current-culture text (`TimeOnly` loses its seconds) | round-trip (`O`) format |
 | Enum part | its name | its underlying number |
 | `null` part | an empty part | throws `InvalidOperationException` |
-| Shadow / field-mapped key properties | not supported for ordinary entities | supported |
+| Value-converted key (e.g. `HasUnixMillisDateTime()`) | the model value | the **stored** value, so the key is the same after the entity is reloaded |
+| Shadow key properties | empty key for an ordinary entity | the key is built from the shadow value; the shadow value itself is not stored in the document yet (see below) |
 
 For example, with `HasKey(e => new { e.Tenant, e.User })`, tenant `7` and user `1` is `7_1`, and tenant
 `x_y` with user `z` is `x\_y_z`.
+
+> [!NOTE]
+> Shadow properties are not yet written to the document, so an entity whose primary key is a shadow
+> property still cannot be found again after a reload under either format. `V2` builds a correct document
+> key for it, but storing the shadow key column is a separate fix.
 
 > [!WARNING]
 > Changing the format of a collection that already holds documents changes the document key of every
