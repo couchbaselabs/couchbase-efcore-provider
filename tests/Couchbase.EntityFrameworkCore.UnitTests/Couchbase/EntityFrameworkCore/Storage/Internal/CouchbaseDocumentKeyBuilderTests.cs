@@ -41,6 +41,22 @@ public class CouchbaseDocumentKeyBuilderTests
         public int Part { get; set; }
     }
 
+    private class ConvertedBlobKeyEntity
+    {
+        public byte[] Blob { get; set; } = [];
+        public int Part { get; set; }
+    }
+
+    private class LocalTimeKeyEntity
+    {
+        public DateTime When { get; set; }
+    }
+
+    private class EmptyTextKeyEntity
+    {
+        public string Code { get; set; } = "";
+    }
+
     private class BlobKeyEntity
     {
         public byte[] Blob { get; set; } = [];
@@ -278,6 +294,81 @@ public class CouchbaseDocumentKeyBuilderTests
 
         Assert.Equal(reloadedKey, insertedKey);
         Assert.Equal(new DateTimeOffset(reloaded).ToUnixTimeMilliseconds() + "_1", insertedKey);
+    }
+
+    [Fact]
+    public void V2_CustomByteArrayConverter_IsHonored_SoAConvertedTildeDoesNotCollideWithAnEmptyArray()
+    {
+        var entityType = BuildEntityType<ConvertedBlobKeyEntity>(mb =>
+            mb.Entity<ConvertedBlobKeyEntity>(b =>
+            {
+                b.ToCouchbaseCollection("bucket", "scope", "convertedblob");
+                b.Property(e => e.Blob).HasConversion(
+                    v => System.Text.Encoding.UTF8.GetString(v),
+                    v => System.Text.Encoding.UTF8.GetBytes(v));
+                b.HasKey(e => new { e.Blob, e.Part });
+            }));
+
+        var empty = CouchbaseDocumentKeyBuilder.BuildV2(
+            entityType, Entry(entityType, ("Blob", Array.Empty<byte>()), ("Part", 1)), '_');
+        var tilde = CouchbaseDocumentKeyBuilder.BuildV2(
+            entityType, Entry(entityType, ("Blob", new byte[] { 0x7e }), ("Part", 1)), '_');
+
+        Assert.Equal("_1", empty);
+        Assert.Equal("~_1", tilde);
+        Assert.NotEqual(empty, tilde);
+    }
+
+    [Fact]
+    public void V2_LocalDateTime_FormatsAsTheSameInstantAsUtc_RegardlessOfTheMachineTimeZone()
+    {
+        var entityType = BuildEntityType<LocalTimeKeyEntity>(mb =>
+            mb.Entity<LocalTimeKeyEntity>(b =>
+            {
+                b.ToCouchbaseCollection("bucket", "scope", "localtime");
+                b.HasKey(e => e.When);
+            }));
+        var utc = new DateTime(2025, 1, 15, 13, 45, 0, DateTimeKind.Utc);
+
+        var fromUtc = CouchbaseDocumentKeyBuilder.BuildV2(entityType, Entry(entityType, ("When", utc)), '_');
+        var fromLocal = CouchbaseDocumentKeyBuilder.BuildV2(entityType, Entry(entityType, ("When", utc.ToLocalTime())), '_');
+        var unspecified = CouchbaseDocumentKeyBuilder.BuildV2(
+            entityType, Entry(entityType, ("When", new DateTime(2025, 1, 15, 13, 45, 0, DateTimeKind.Unspecified))), '_');
+
+        Assert.Equal("2025-01-15T13:45:00.0000000Z", fromUtc);
+        Assert.Equal(fromUtc, fromLocal);
+        Assert.Equal("2025-01-15T13:45:00.0000000", unspecified);
+    }
+
+    [Fact]
+    public void V2_Decimal_IsCanonical_SoATrailingZeroSurvivesAReload()
+    {
+        var entityType = BuildEntityType<SingleKeyEntity>(mb =>
+            mb.Entity<SingleKeyEntity>(b =>
+            {
+                b.ToCouchbaseCollection("bucket", "scope", "single");
+                b.HasKey(e => e.Amount);
+            }));
+
+        Assert.Equal("1234.5", CouchbaseDocumentKeyBuilder.BuildV2(entityType, Entry(entityType, ("Amount", 1234.50m)), '_'));
+        Assert.Equal("1234.5", CouchbaseDocumentKeyBuilder.BuildV2(entityType, Entry(entityType, ("Amount", 1234.5m)), '_'));
+        Assert.Equal("100", CouchbaseDocumentKeyBuilder.BuildV2(entityType, Entry(entityType, ("Amount", 100m)), '_'));
+    }
+
+    [Fact]
+    public void V2_EmptyDocumentKey_ThrowsAClearError()
+    {
+        var entityType = BuildEntityType<EmptyTextKeyEntity>(mb =>
+            mb.Entity<EmptyTextKeyEntity>(b =>
+            {
+                b.ToCouchbaseCollection("bucket", "scope", "emptytext");
+                b.HasKey(e => e.Code);
+            }));
+
+        var ex = Assert.Throws<InvalidOperationException>(
+            () => CouchbaseDocumentKeyBuilder.BuildV2(entityType, Entry(entityType, ("Code", "")), '_'));
+
+        Assert.Contains("empty", ex.Message);
     }
 
     [Fact]

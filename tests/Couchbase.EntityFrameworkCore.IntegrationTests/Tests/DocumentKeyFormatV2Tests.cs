@@ -134,6 +134,55 @@ public class DocumentKeyFormatV2Tests(BloggingFixture fixture)
         }
     }
 
+    [Fact]
+    public async Task V2_DecimalKeyWithTrailingZero_KeepsTheSameDocumentAcrossAReload()
+    {
+        // 1234.50m is stored as the JSON number 1234.5 and read back as 1234.5m. The key must not
+        // keep the trailing zero, or the reloaded entity would address a different document.
+        var collectionName = "keyv2dec" + Guid.NewGuid().ToString("N");
+        var optionsBuilder = CreateOptionsBuilder<KeyV2DecimalDbContext>();
+
+        try
+        {
+            await using (var writer = new KeyV2DecimalDbContext(optionsBuilder.Options, collectionName))
+            {
+                await writer.Database.EnsureCreatedAsync();
+                writer.Add(new KeyV2DecimalEntity { Amount = 1234.50m, Value = "original" });
+                await writer.SaveChangesAsync();
+            }
+
+            await using (var updater = new KeyV2DecimalDbContext(optionsBuilder.Options, collectionName))
+            {
+                var entity = (await PollingHelper.PollForResultAsync(
+                    () => updater.Set<KeyV2DecimalEntity>().ToListAsync(),
+                    result => result.Count >= 1,
+                    TimeSpan.FromSeconds(10))).Single();
+                entity.Value = "updated";
+                await updater.SaveChangesAsync();
+            }
+
+            await using (var reader = new KeyV2DecimalDbContext(optionsBuilder.Options, collectionName))
+            {
+                Assert.Equal("updated", Assert.Single(await reader.Set<KeyV2DecimalEntity>().AsNoTracking().ToListAsync()).Value);
+            }
+
+            await using (var deleter = new KeyV2DecimalDbContext(optionsBuilder.Options, collectionName))
+            {
+                deleter.Remove((await deleter.Set<KeyV2DecimalEntity>().ToListAsync()).Single());
+                await deleter.SaveChangesAsync();
+            }
+
+            await using (var reader = new KeyV2DecimalDbContext(optionsBuilder.Options, collectionName))
+            {
+                Assert.Empty(await reader.Set<KeyV2DecimalEntity>().AsNoTracking().ToListAsync());
+            }
+        }
+        finally
+        {
+            await DropCollectionAsync(collectionName);
+        }
+    }
+
     private DbContextOptionsBuilder<TContext> CreateOptionsBuilder<TContext>()
         where TContext : DbContext
     {
@@ -238,6 +287,22 @@ public class DocumentKeyFormatV2Tests(BloggingFixture fixture)
                 b.ToCouchbaseCollection(this, collectionName);
                 b.Property(e => e.When).HasUnixMillisDateTime();
                 b.HasKey(e => new { e.When, e.Part });
+            });
+    }
+
+    public class KeyV2DecimalEntity
+    {
+        public decimal Amount { get; set; }
+        public string Value { get; set; } = string.Empty;
+    }
+
+    public class KeyV2DecimalDbContext(DbContextOptions<KeyV2DecimalDbContext> options, string collectionName) : DbContext(options)
+    {
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+            => modelBuilder.Entity<KeyV2DecimalEntity>(b =>
+            {
+                b.ToCouchbaseCollection(this, collectionName);
+                b.HasKey(e => e.Amount);
             });
     }
 }

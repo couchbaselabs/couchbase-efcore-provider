@@ -53,10 +53,21 @@ internal static class CouchbaseDocumentKeyBuilder
 
             first = false;
 
-            // An empty byte[] would convert to an empty string, and an empty document id is invalid,
-            // so it is written as "~" (which Base64 never produces).
-            var text = rawValue is byte[] { Length: 0 } ? "~" : FormatPart(value);
+            // With the default byte[] mapping an empty array is stored as an empty string, and an
+            // empty document id is invalid, so it is written as "~" (which Base64 never produces).
+            // A custom converter's output is honored as is: reserving "~" there could collide with
+            // a converted value that really is "~".
+            var text = rawValue is byte[] { Length: 0 } && property.GetValueConverter() is null
+                ? "~"
+                : FormatPart(value);
             Escape(text, delimiter, documentKey);
+        }
+
+        if (documentKey.Length == 0)
+        {
+            throw new InvalidOperationException(
+                $"The document key for entity type '{entityType.DisplayName()}' is empty, and Couchbase does not " +
+                "allow an empty document id. Give the key property a non-empty value.");
         }
 
         return documentKey.ToString();
@@ -68,12 +79,20 @@ internal static class CouchbaseDocumentKeyBuilder
             byte[] { Length: 0 } => "~",
             byte[] bytes => Convert.ToBase64String(bytes),
             string text => text,
-            DateTime dateTime => dateTime.ToString("O", CultureInfo.InvariantCulture),
+            // A Local DateTime's "O" text carries the saving machine's offset, and a reload converts the
+            // stored offset text to the READING machine's local time, so the same instant would format
+            // differently across time zones. Normalise Local to UTC; Utc ("Z") and Unspecified (no
+            // offset) are already machine independent.
+            DateTime dateTime => (dateTime.Kind == DateTimeKind.Local ? dateTime.ToUniversalTime() : dateTime)
+                .ToString("O", CultureInfo.InvariantCulture),
             DateTimeOffset dateTimeOffset => dateTimeOffset.ToString("O", CultureInfo.InvariantCulture),
             // Explicit: the default TimeOnly pattern is the short "HH:mm", which would drop the seconds
             // and make distinct keys collide.
             TimeOnly timeOnly => timeOnly.ToString("O", CultureInfo.InvariantCulture),
             DateOnly dateOnly => dateOnly.ToString("O", CultureInfo.InvariantCulture),
+            // Canonical form: "G29" drops trailing zeros, so 1234.50m and 1234.5m (what a reload gives
+            // back, since the stored JSON number is read through a double) are the same key.
+            decimal decimalValue => decimalValue.ToString("G29", CultureInfo.InvariantCulture),
             Enum enumValue => Convert.ToString(
                 Convert.ChangeType(enumValue, Enum.GetUnderlyingType(enumValue.GetType()), CultureInfo.InvariantCulture),
                 CultureInfo.InvariantCulture)!,
