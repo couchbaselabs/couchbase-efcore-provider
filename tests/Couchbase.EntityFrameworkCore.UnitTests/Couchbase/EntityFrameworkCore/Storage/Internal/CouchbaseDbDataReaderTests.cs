@@ -241,6 +241,40 @@ public class CouchbaseDbDataReaderTests
         Assert.Equal(123.45m, reader.GetDecimal(0));
     }
 
+    [Theory]
+    [InlineData("1234.567890123456", "1234.567890123456")]
+    [InlineData("1.00000000000001", "1.00000000000001")]
+    [InlineData("0.1234567890123456789", "0.1234567890123456789")]
+    [InlineData("-79228162514264337593543950335", "-79228162514264337593543950335")]
+    [InlineData("12345678901234567", "12345678901234567")]
+    [InlineData("1E+3", "1000")]
+    public async Task GetDecimal_KeepsEveryDigitOfTheJsonNumber(string json, string expected)
+    {
+        var reader = CreateReader(new List<JsonElement> { ParseElement("{\"amount\": " + json + "}") });
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Equal(decimal.Parse(expected, CultureInfo.InvariantCulture), reader.GetDecimal(0));
+    }
+
+    [Fact]
+    public async Task GetFieldValue_Decimal_KeepsEveryDigitOfTheJsonNumber()
+    {
+        var reader = CreateReader(new List<JsonElement> { ParseElement("{\"amount\": 1234.567890123456, \"none\": null}") });
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Equal(1234.567890123456m, reader.GetFieldValue<decimal>(0));
+        Assert.Equal(1234.567890123456m, reader.GetFieldValue<decimal?>(0));
+    }
+
+    [Fact]
+    public async Task GetDecimal_OnScalarRawRow_KeepsEveryDigit()
+    {
+        var reader = CreateReader(new List<JsonElement> { ParseElement("1234.567890123456") });
+        await reader.ReadAsync(CancellationToken.None);
+
+        Assert.Equal(1234.567890123456m, reader.GetDecimal(0));
+    }
+
     [Fact]
     public async Task GetString_ReturnsString()
     {

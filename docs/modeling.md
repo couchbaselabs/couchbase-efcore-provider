@@ -172,6 +172,12 @@ The EF Core Couchbase DB Provider supports most of the standard EF Core key func
 ## Entity Properties
 The EF Core Couchbase DB Provider supports some of the functionality provided by EF Core Relational, however, since Couchbase Server is not a RDBMS, any EF Core feature that is dependent upon a RDBMS feature is not supported unless it exists in Couchbase. Please refer to the [EF Core documentation](https://learn.microsoft.com/en-us/ef/core/modeling/entity-properties?tabs=data-annotations%2Cwithout-nrt) for details.
 
+### Decimal precision
+A `decimal` is written to its JSON document exactly, but Couchbase's SQL++ query engine treats
+numbers as IEEE 754 doubles, so a value read back through a query is accurate to about 17
+significant digits (values with up to 15 digits always round-trip). If you need more precision,
+map the property as text with `HasConversion<string>()`. See [Limitations](limitations.md#querying-and-consistency).
+
 ## Generated Values
 In addition to standard EF Core value generation, the provider supports server-side Couchbase
 sequences and client-side GUID generation — see [Sequences and generated values](sequences.md)

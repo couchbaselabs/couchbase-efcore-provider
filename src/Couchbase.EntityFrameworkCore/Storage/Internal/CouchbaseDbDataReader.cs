@@ -616,8 +616,18 @@ public class CouchbaseDbDataReader<T> : DbDataReader
     /// <exception cref="InvalidOperationException">Thrown when no current row exists (call <see cref="Read"/> first).</exception>
     /// <exception cref="IndexOutOfRangeException">Thrown when <paramref name="ordinal"/> is out of range.</exception>
     public override object GetValue(int ordinal)
+        => TryGetElement(ordinal, out var element) ? ConvertJsonElement(element) : DBNull.Value;
+
+    /// <summary>
+    /// Locates the raw JSON value at <paramref name="ordinal"/>. Returns <c>false</c> for a SQL NULL
+    /// or missing value. Shared by <see cref="GetValue"/> and the typed accessors that need the
+    /// original JSON text rather than the lossy <see cref="ConvertJsonElement"/> projection
+    /// (see <see cref="GetDecimal"/>).
+    /// </summary>
+    private bool TryGetElement(int ordinal, out JsonElement element)
     {
         EnsureCurrentRow();
+        element = default;
 
         if (_columnNames != null)
         {
@@ -629,8 +639,10 @@ public class CouchbaseDbDataReader<T> : DbDataReader
             {
                 // O(1): array read from the per-row cache built in ReadAsync.
                 // _currentValues is guaranteed non-null when _columnNames != null (same constructor branch).
-                var element = _currentValues![ordinal];
-                return element.HasValue ? ConvertJsonElement(element.Value) : DBNull.Value;
+                var cached = _currentValues![ordinal];
+                if (!cached.HasValue) return false;
+                element = cached.Value;
+                return true;
             }
 
             // null slot: positional access from current row
@@ -641,14 +653,17 @@ public class CouchbaseDbDataReader<T> : DbDataReader
                     var i = 0;
                     foreach (var p in jePos.EnumerateObject())
                     {
-                        if (i == ordinal) return ConvertJsonElement(p.Value);
+                        if (i == ordinal) { element = p.Value; return true; }
                         i++;
                     }
                 }
                 else if (ordinal == 0)
-                    return ConvertJsonElement(jePos); // scalar SELECT RAW at null slot 0
+                {
+                    element = jePos; // scalar SELECT RAW at null slot 0
+                    return true;
+                }
             }
-            return DBNull.Value;
+            return false;
         }
 
         // No column names: positional access from current row.
@@ -659,16 +674,19 @@ public class CouchbaseDbDataReader<T> : DbDataReader
                 var i = 0;
                 foreach (var p in jeFallback.EnumerateObject())
                 {
-                    if (i == ordinal) return ConvertJsonElement(p.Value);
+                    if (i == ordinal) { element = p.Value; return true; }
                     i++;
                 }
                 throw new IndexOutOfRangeException($"Ordinal {ordinal} is out of range.");
             }
             if (ordinal == 0)
-                return ConvertJsonElement(jeFallback);
+            {
+                element = jeFallback;
+                return true;
+            }
         }
         else if (_currentRow == null && ordinal == 0)
-            return DBNull.Value; // null row (SELECT RAW null)
+            return false; // null row (SELECT RAW null)
         throw new IndexOutOfRangeException($"Ordinal {ordinal} is out of range.");
     }
 
@@ -864,6 +882,13 @@ public class CouchbaseDbDataReader<T> : DbDataReader
     /// <summary>Gets the decimal value of the field at the specified ordinal.</summary>
     public override decimal GetDecimal(int ordinal)
     {
+        // GetValue() materializes fractional numbers as double, and double -> decimal keeps only ~15
+        // significant digits. Parse the JSON number text directly so every digit the server sent survives.
+        if (TryGetElement(ordinal, out var element)
+            && element.ValueKind == JsonValueKind.Number
+            && element.TryGetDecimal(out var exact))
+            return exact;
+
         var value = GetValue(ordinal);
         return value switch
         {
@@ -984,6 +1009,12 @@ public class CouchbaseDbDataReader<T> : DbDataReader
     /// <summary>Gets the value of the field at the specified ordinal as the specified type.</summary>
     public override T1 GetFieldValue<T1>(int ordinal)
     {
+        if ((typeof(T1) == typeof(decimal) || typeof(T1) == typeof(decimal?))
+            && TryGetElement(ordinal, out var numeric)
+            && numeric.ValueKind == JsonValueKind.Number
+            && numeric.TryGetDecimal(out var exact))
+            return (T1)(object)exact;
+
         var value = GetValue(ordinal);
 
         if (value is T1 typedValue)
