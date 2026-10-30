@@ -26,7 +26,9 @@ public enum CouchbaseDocumentKeyFormat
     /// </summary>
     /// <remarks>
     /// Switching an existing collection from <see cref="Legacy"/> to V2 changes the document key of
-    /// every composite-key document, and there is no automatic migration.
+    /// every composite-key document, and of any single-key document whose key contains the delimiter
+    /// or the escape character or is a culture-, date/time-, decimal- or enum-valued key (for example
+    /// <c>a_b</c> becomes <c>a\_b</c>). There is no automatic migration.
     /// </remarks>
     V2 = 1,
 }

@@ -2,6 +2,7 @@ using Couchbase.EntityFrameworkCode.IntegrationTests.Fixtures;
 using Couchbase.EntityFrameworkCore;
 using Couchbase.EntityFrameworkCore.Extensions;
 using Couchbase.EntityFrameworkCore.Infrastructure;
+using Couchbase.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 
@@ -89,7 +90,7 @@ public class DocumentKeyFormatV2Tests(BloggingFixture fixture)
         // A DateTime key stored as unix millis loses sub-millisecond ticks. The key must be built
         // from the stored value, or the reloaded entity would address a different document.
         var collectionName = "keyv2ms" + Guid.NewGuid().ToString("N");
-        var optionsBuilder = CreateOptionsBuilder<KeyV2MillisDbContext>();
+        var optionsBuilder = CreateOptionsBuilder<KeyV2MillisDbContext>(collectionName);
         var when = new DateTime(2025, 1, 15, 13, 45, 0, DateTimeKind.Utc).AddTicks(1234);
 
         try
@@ -134,20 +135,25 @@ public class DocumentKeyFormatV2Tests(BloggingFixture fixture)
         }
     }
 
-    [Fact]
-    public async Task V2_DecimalKeyWithTrailingZero_KeepsTheSameDocumentAcrossAReload()
+    [Theory]
+    [InlineData("1234.50")]
+    [InlineData("1234.567890123456")]
+    [InlineData("9007199254740993")]
+    public async Task V2_DecimalKey_KeepsTheSameDocumentAcrossAReload(string amountText)
     {
         // 1234.50m is stored as the JSON number 1234.5 and read back as 1234.5m. The key must not
         // keep the trailing zero, or the reloaded entity would address a different document.
+        // A 16-digit value must survive too: the reader keeps every digit the server returns.
+        var amount = decimal.Parse(amountText, System.Globalization.CultureInfo.InvariantCulture);
         var collectionName = "keyv2dec" + Guid.NewGuid().ToString("N");
-        var optionsBuilder = CreateOptionsBuilder<KeyV2DecimalDbContext>();
+        var optionsBuilder = CreateOptionsBuilder<KeyV2DecimalDbContext>(collectionName);
 
         try
         {
             await using (var writer = new KeyV2DecimalDbContext(optionsBuilder.Options, collectionName))
             {
                 await writer.Database.EnsureCreatedAsync();
-                writer.Add(new KeyV2DecimalEntity { Amount = 1234.50m, Value = "original" });
+                writer.Add(new KeyV2DecimalEntity { Amount = amount, Value = "original" });
                 await writer.SaveChangesAsync();
             }
 
@@ -183,7 +189,193 @@ public class DocumentKeyFormatV2Tests(BloggingFixture fixture)
         }
     }
 
-    private DbContextOptionsBuilder<TContext> CreateOptionsBuilder<TContext>()
+    [Fact]
+    public async Task V2_DecimalKeyWithMorePrecisionThanAReloadKeeps_IsRejectedAndNothingIsSaved()
+    {
+        // Such a key reads back rounded (about 17 significant digits), so it would address a
+        // different document after a reload. It is rejected instead of silently saved.
+        var collectionName = "keyv2decp" + Guid.NewGuid().ToString("N");
+        var optionsBuilder = CreateOptionsBuilder<KeyV2DecimalDbContext>(collectionName);
+
+        try
+        {
+            await using (var writer = new KeyV2DecimalDbContext(optionsBuilder.Options, collectionName))
+            {
+                await writer.Database.EnsureCreatedAsync();
+                writer.Add(new KeyV2DecimalEntity { Amount = 1.0000000000000000000000000001m, Value = "precise" });
+
+                var ex = await Assert.ThrowsAnyAsync<InvalidOperationException>(() => writer.SaveChangesAsync());
+                Assert.Contains("precision", ex.Message);
+            }
+
+            await using (var reader = new KeyV2DecimalDbContext(optionsBuilder.Options, collectionName))
+            {
+                Assert.Empty(await reader.Set<KeyV2DecimalEntity>().AsNoTracking().ToListAsync());
+            }
+        }
+        finally
+        {
+            await DropCollectionAsync(collectionName);
+        }
+    }
+
+    [Fact]
+    public async Task V2_DecimalKeyConvertedToDouble_UpdatesAndDeletesItsOwnDocument_AndRejectsALossyValue()
+    {
+        // HasConversion<double>() hides the decimal from the key guard, so the converter round trip
+        // is what protects it: 1234.5 survives a reload, 1234.567890123456 would come back rounded.
+        var collectionName = "keyv2decc" + Guid.NewGuid().ToString("N");
+        var optionsBuilder = CreateOptionsBuilder<KeyV2ConvertedDecimalDbContext>(collectionName);
+
+        try
+        {
+            await using (var writer = new KeyV2ConvertedDecimalDbContext(optionsBuilder.Options, collectionName))
+            {
+                await writer.Database.EnsureCreatedAsync();
+                writer.Add(new KeyV2DecimalEntity { Amount = 1234.5m, Value = "original" });
+                await writer.SaveChangesAsync();
+            }
+
+            await using (var updater = new KeyV2ConvertedDecimalDbContext(optionsBuilder.Options, collectionName))
+            {
+                var entity = (await PollingHelper.PollForResultAsync(
+                    () => updater.Set<KeyV2DecimalEntity>().ToListAsync(),
+                    result => result.Count >= 1,
+                    TimeSpan.FromSeconds(10))).Single();
+                entity.Value = "updated";
+                await updater.SaveChangesAsync();
+            }
+
+            await using (var rejecter = new KeyV2ConvertedDecimalDbContext(optionsBuilder.Options, collectionName))
+            {
+                rejecter.Add(new KeyV2DecimalEntity { Amount = 1234.567890123456m, Value = "lossy" });
+                var ex = await Assert.ThrowsAnyAsync<InvalidOperationException>(() => rejecter.SaveChangesAsync());
+                Assert.Contains("value converter", ex.Message);
+            }
+
+            await using (var deleter = new KeyV2ConvertedDecimalDbContext(optionsBuilder.Options, collectionName))
+            {
+                var entity = Assert.Single(await deleter.Set<KeyV2DecimalEntity>().ToListAsync());
+                Assert.Equal("updated", entity.Value);
+                deleter.Remove(entity);
+                await deleter.SaveChangesAsync();
+            }
+
+            await using (var reader = new KeyV2ConvertedDecimalDbContext(optionsBuilder.Options, collectionName))
+            {
+                Assert.Empty(await reader.Set<KeyV2DecimalEntity>().AsNoTracking().ToListAsync());
+            }
+        }
+        finally
+        {
+            await DropCollectionAsync(collectionName);
+        }
+    }
+
+    // EF caches the model (including the collection name) per internal service provider. A unique
+    // ServiceKey per case gives each its own provider, so a case that generates a new collection
+    // name does not silently use the first case's collection.
+    [Fact]
+    public async Task V2_MetaIdKey_IsNotReEscapedAfterAReload()
+    {
+        var collectionName = "keyv2meta" + Guid.NewGuid().ToString("N");
+        var optionsBuilder = CreateOptionsBuilder<KeyV2MetaIdDbContext>(collectionName);
+
+        try
+        {
+            await using (var writer = new KeyV2MetaIdDbContext(optionsBuilder.Options, collectionName))
+            {
+                await writer.Database.EnsureCreatedAsync();
+                writer.Add(new KeyV2MetaIdEntity { DocId = "a_b", Value = "original" });
+                await writer.SaveChangesAsync();
+            }
+
+            await using (var updater = new KeyV2MetaIdDbContext(optionsBuilder.Options, collectionName))
+            {
+                var entity = (await PollingHelper.PollForResultAsync(
+                    () => updater.Set<KeyV2MetaIdEntity>().ToListAsync(),
+                    result => result.Count >= 1,
+                    TimeSpan.FromSeconds(10))).Single();
+                Assert.Equal("a_b", entity.DocId);
+                entity.Value = "updated";
+                await updater.SaveChangesAsync();
+            }
+
+            await using (var reader = new KeyV2MetaIdDbContext(optionsBuilder.Options, collectionName))
+            {
+                var only = Assert.Single(await reader.Set<KeyV2MetaIdEntity>().AsNoTracking().ToListAsync());
+                Assert.Equal("updated", only.Value);
+                Assert.Equal("a_b", only.DocId);
+            }
+
+            await using (var deleter = new KeyV2MetaIdDbContext(optionsBuilder.Options, collectionName))
+            {
+                deleter.Remove((await deleter.Set<KeyV2MetaIdEntity>().ToListAsync()).Single());
+                await deleter.SaveChangesAsync();
+            }
+
+            await using (var reader = new KeyV2MetaIdDbContext(optionsBuilder.Options, collectionName))
+            {
+                Assert.Empty(await reader.Set<KeyV2MetaIdEntity>().AsNoTracking().ToListAsync());
+            }
+        }
+        finally
+        {
+            await DropCollectionAsync(collectionName);
+        }
+    }
+
+    [Fact]
+    public async Task V2_ConvertedMetaIdKey_UsesTheConvertedIdAndSurvivesAReload()
+    {
+        var collectionName = "keyv2metaconv" + Guid.NewGuid().ToString("N");
+        var optionsBuilder = CreateOptionsBuilder<KeyV2ConvertedMetaIdDbContext>(collectionName);
+
+        try
+        {
+            await using (var writer = new KeyV2ConvertedMetaIdDbContext(optionsBuilder.Options, collectionName))
+            {
+                await writer.Database.EnsureCreatedAsync();
+                writer.Add(new KeyV2ConvertedMetaIdEntity { DocId = "12_345", Value = "original" });
+                await writer.SaveChangesAsync();
+            }
+
+            await using (var updater = new KeyV2ConvertedMetaIdDbContext(optionsBuilder.Options, collectionName))
+            {
+                var entity = (await PollingHelper.PollForResultAsync(
+                    () => updater.Set<KeyV2ConvertedMetaIdEntity>().ToListAsync(),
+                    result => result.Count >= 1,
+                    TimeSpan.FromSeconds(10))).Single();
+                Assert.Equal("12_345", entity.DocId);
+                entity.Value = "updated";
+                await updater.SaveChangesAsync();
+            }
+
+            await using (var reader = new KeyV2ConvertedMetaIdDbContext(optionsBuilder.Options, collectionName))
+            {
+                var only = Assert.Single(await reader.Set<KeyV2ConvertedMetaIdEntity>().AsNoTracking().ToListAsync());
+                Assert.Equal("updated", only.Value);
+                Assert.Equal("12_345", only.DocId);
+            }
+
+            await using (var deleter = new KeyV2ConvertedMetaIdDbContext(optionsBuilder.Options, collectionName))
+            {
+                deleter.Remove((await deleter.Set<KeyV2ConvertedMetaIdEntity>().ToListAsync()).Single());
+                await deleter.SaveChangesAsync();
+            }
+
+            await using (var reader = new KeyV2ConvertedMetaIdDbContext(optionsBuilder.Options, collectionName))
+            {
+                Assert.Empty(await reader.Set<KeyV2ConvertedMetaIdEntity>().AsNoTracking().ToListAsync());
+            }
+        }
+        finally
+        {
+            await DropCollectionAsync(collectionName);
+        }
+    }
+
+    private DbContextOptionsBuilder<TContext> CreateOptionsBuilder<TContext>(string serviceKey)
         where TContext : DbContext
     {
         var optionsBuilder = new DbContextOptionsBuilder<TContext>();
@@ -198,6 +390,7 @@ public class DocumentKeyFormatV2Tests(BloggingFixture fixture)
                 o.ScanConsistency = global::Couchbase.Query.QueryScanConsistency.RequestPlus;
                 o.AutoCreateIndexes = true;
                 o.UseDocumentKeyFormat(CouchbaseDocumentKeyFormat.V2);
+                o.ServiceKey = "keyv2-" + serviceKey;
             });
         optionsBuilder.ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning));
         return optionsBuilder;
@@ -290,10 +483,57 @@ public class DocumentKeyFormatV2Tests(BloggingFixture fixture)
             });
     }
 
-    public class KeyV2DecimalEntity
+    public class KeyV2MetaIdEntity
     {
+        public string DocId { get; set; } = string.Empty;
+        public string Value { get; set; } = string.Empty;
+    }
+
+    public class KeyV2MetaIdDbContext(DbContextOptions<KeyV2MetaIdDbContext> options, string collectionName) : DbContext(options)
+    {
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+            => modelBuilder.Entity<KeyV2MetaIdEntity>(b =>
+            {
+                b.ToCouchbaseCollection(this, collectionName);
+                b.HasKey(e => e.DocId);
+                b.Property(e => e.DocId).HasCouchbaseMeta(CouchbaseMetaField.Id).ValueGeneratedNever();
+            });
+    }
+
+    public class KeyV2ConvertedMetaIdEntity
+    {
+        public string DocId { get; set; } = string.Empty;
+        public string Value { get; set; } = string.Empty;
+    }
+
+    public class KeyV2ConvertedMetaIdDbContext(DbContextOptions<KeyV2ConvertedMetaIdDbContext> options, string collectionName) : DbContext(options)
+    {
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+            => modelBuilder.Entity<KeyV2ConvertedMetaIdEntity>(b =>
+            {
+                b.ToCouchbaseCollection(this, collectionName);
+                b.HasKey(e => e.DocId);
+                b.Property(e => e.DocId)
+                    .HasCouchbaseMeta(CouchbaseMetaField.Id)
+                    .ValueGeneratedNever()
+                    .HasConversion(v => "doc:" + v, v => v.Substring(4));
+            });
+    }
+
+    public class KeyV2DecimalEntity    {
         public decimal Amount { get; set; }
         public string Value { get; set; } = string.Empty;
+    }
+
+    public class KeyV2ConvertedDecimalDbContext(DbContextOptions<KeyV2ConvertedDecimalDbContext> options, string collectionName) : DbContext(options)
+    {
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+            => modelBuilder.Entity<KeyV2DecimalEntity>(b =>
+            {
+                b.ToCouchbaseCollection(this, collectionName);
+                b.Property(e => e.Amount).HasConversion<double>();
+                b.HasKey(e => e.Amount);
+            });
     }
 
     public class KeyV2DecimalDbContext(DbContextOptions<KeyV2DecimalDbContext> options, string collectionName) : DbContext(options)

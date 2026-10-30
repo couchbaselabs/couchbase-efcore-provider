@@ -81,11 +81,13 @@ public class CouchbaseDbContextOptionsBuilder : ICouchbaseDbContextOptionsBuilde
         set
         {
             // The escape character is a backslash; a delimiter equal to it could not be escaped
-            // unambiguously, and a control character makes for a poor, error-prone document key.
-            if (value == '\\' || char.IsControl(value))
+            // unambiguously, and a control character makes for a poor, error-prone document key. A
+            // surrogate is half of a UTF-16 pair: escaping works char by char, so it would split valid
+            // pairs and leave unpaired surrogates, which different keys can collapse to the same bytes.
+            if (value == '\\' || char.IsControl(value) || char.IsSurrogate(value))
             {
                 throw new ArgumentException(
-                    "The document key delimiter cannot be the escape character '\\' or a control character.",
+                    "The document key delimiter cannot be the escape character '\\', a control character or a surrogate character.",
                     nameof(value));
             }
 
@@ -225,7 +227,7 @@ public interface ICouchbaseDbContextOptionsBuilder
     /// The character that separates the parts of a composite document key. Defaults to <c>_</c>.
     /// With <see cref="CouchbaseDocumentKeyFormat.V2"/> a delimiter inside a key part is escaped with
     /// <c>\</c>; with <see cref="CouchbaseDocumentKeyFormat.Legacy"/> the delimiter is always
-    /// <c>_</c> and this setting is ignored. Cannot be <c>\</c> or a control character.
+    /// <c>_</c> and this setting is ignored. Cannot be <c>\</c>, a control character or a surrogate character.
     /// </summary>
     public char DocumentKeyDelimiter { get; set; }
 

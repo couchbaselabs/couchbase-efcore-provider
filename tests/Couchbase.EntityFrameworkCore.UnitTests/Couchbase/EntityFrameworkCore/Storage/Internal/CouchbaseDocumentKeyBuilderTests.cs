@@ -1,6 +1,7 @@
 using System.Globalization;
 using Couchbase.EntityFrameworkCore.Extensions;
 using Couchbase.EntityFrameworkCore.Infrastructure;
+using Couchbase.EntityFrameworkCore.Metadata;
 using Couchbase.EntityFrameworkCore.Storage.Internal;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
@@ -71,6 +72,32 @@ public class CouchbaseDocumentKeyBuilderTests
     private class SingleKeyEntity
     {
         public decimal Amount { get; set; }
+    }
+
+    private class MetaIdKeyEntity
+    {
+        public string DocId { get; set; } = "";
+    }
+
+    private class ConvertedMetaIdKeyEntity
+    {
+        public string DocId { get; set; } = "";
+    }
+
+    private class MetaIdCompositeKeyEntity
+    {
+        public string DocId { get; set; } = "";
+        public int Part { get; set; }
+    }
+
+    private class ConvertedDecimalKeyEntity
+    {
+        public decimal Amount { get; set; }
+    }
+
+    private class UnsignedKeyEntity
+    {
+        public ulong Id { get; set; }
     }
 
     private class MixedKeyEntity
@@ -356,6 +383,140 @@ public class CouchbaseDocumentKeyBuilderTests
     }
 
     [Fact]
+    public void V2_DecimalKeyWithMorePrecisionThanAReloadKeeps_Throws()
+    {
+        var entityType = BuildEntityType<SingleKeyEntity>(mb =>
+            mb.Entity<SingleKeyEntity>(b =>
+            {
+                b.ToCouchbaseCollection("bucket", "scope", "single");
+                b.HasKey(e => e.Amount);
+            }));
+
+        // Read back as 1 and 0.12345678901234568: the key would change on reload.
+        foreach (var value in new[] { 1.0000000000000000000000000001m, 0.12345678901234567m, 79228162514264337593543950335m })
+        {
+            var ex = Assert.Throws<InvalidOperationException>(
+                () => CouchbaseDocumentKeyBuilder.BuildV2(entityType, Entry(entityType, ("Amount", value)), '_'));
+            Assert.Contains("precision", ex.Message);
+        }
+
+        // A scale-zero decimal is a JSON integer, which Couchbase returns exactly even above 2^53.
+        Assert.Equal("9007199254740993", CouchbaseDocumentKeyBuilder.BuildV2(entityType, Entry(entityType, ("Amount", 9007199254740993m)), '_'));
+        Assert.Throws<InvalidOperationException>(
+            () => CouchbaseDocumentKeyBuilder.BuildV2(entityType, Entry(entityType, ("Amount", 9223372036854775808m)), '_'));
+
+        // What the reader gives back unchanged is fine: 16 digits, and trailing zeros.
+        Assert.Equal("1.00000000000001", CouchbaseDocumentKeyBuilder.BuildV2(entityType, Entry(entityType, ("Amount", 1.00000000000001m)), '_'));
+        Assert.Equal("1234.567890123456", CouchbaseDocumentKeyBuilder.BuildV2(entityType, Entry(entityType, ("Amount", 1234.567890123456m)), '_'));
+        Assert.Equal("1234.5", CouchbaseDocumentKeyBuilder.BuildV2(entityType, Entry(entityType, ("Amount", 1234.50m)), '_'));
+    }
+
+    [Fact]
+    public void V2_DecimalKeyConvertedToDouble_RejectsValuesTheConverterDoesNotRoundTrip()
+    {
+        var entityType = BuildEntityType<ConvertedDecimalKeyEntity>(mb =>
+            mb.Entity<ConvertedDecimalKeyEntity>(b =>
+            {
+                b.ToCouchbaseCollection("bucket", "scope", "converteddecimal");
+                b.Property(e => e.Amount).HasConversion<double>();
+                b.HasKey(e => e.Amount);
+            }));
+
+        // Stored as the double 1234.567890123456, read back as 1234.56789012346m (15 digits), which
+        // converts forward to a different double: the key would change on reload.
+        var ex = Assert.Throws<InvalidOperationException>(
+            () => CouchbaseDocumentKeyBuilder.BuildV2(entityType, Entry(entityType, ("Amount", 1234.567890123456m)), '_'));
+        Assert.Contains("value converter", ex.Message);
+
+        Assert.Equal("1234.5", CouchbaseDocumentKeyBuilder.BuildV2(entityType, Entry(entityType, ("Amount", 1234.50m)), '_'));
+    }
+
+    [Fact]
+    public void V2_UnsignedKeyThatCannotBeReadBackExactly_Throws()
+    {
+        var entityType = BuildEntityType<UnsignedKeyEntity>(mb =>
+            mb.Entity<UnsignedKeyEntity>(b =>
+            {
+                b.ToCouchbaseCollection("bucket", "scope", "unsigned");
+                b.HasKey(e => e.Id);
+            }));
+
+        // Above long.MaxValue the reader goes through a double: 9223372036854775809 reloads as ...808.
+        foreach (var value in new[] { 9223372036854775809UL, 18446744073709551615UL })
+        {
+            var ex = Assert.Throws<InvalidOperationException>(
+                () => CouchbaseDocumentKeyBuilder.BuildV2(entityType, Entry(entityType, ("Id", value)), '_'));
+            Assert.Contains("read back", ex.Message);
+        }
+
+        // Up to long.MaxValue, and values a double holds exactly, are fine.
+        Assert.Equal("9223372036854775807", CouchbaseDocumentKeyBuilder.BuildV2(entityType, Entry(entityType, ("Id", 9223372036854775807UL)), '_'));
+        Assert.Equal("9223372036854775808", CouchbaseDocumentKeyBuilder.BuildV2(entityType, Entry(entityType, ("Id", 9223372036854775808UL)), '_'));
+    }
+
+    [Fact]
+    public void V2_MetaIdKey_IsUsedVerbatimAsTheDocumentId()
+    {
+        var entityType = BuildEntityType<MetaIdKeyEntity>(mb =>
+            mb.Entity<MetaIdKeyEntity>(b =>
+            {
+                b.ToCouchbaseCollection("bucket", "scope", "metaid");
+                b.HasKey(e => e.DocId);
+                b.Property(e => e.DocId).HasCouchbaseMeta(CouchbaseMetaField.Id).ValueGeneratedNever();
+            }));
+
+        // META().id comes back exactly as stored, so escaping it would change it on every reload.
+        Assert.Equal("a_b", CouchbaseDocumentKeyBuilder.BuildV2(entityType, Entry(entityType, ("DocId", "a_b")), '_'));
+        Assert.Equal("a\\b", CouchbaseDocumentKeyBuilder.BuildV2(entityType, Entry(entityType, ("DocId", "a\\b")), '_'));
+        Assert.Throws<InvalidOperationException>(
+            () => CouchbaseDocumentKeyBuilder.BuildV2(entityType, Entry(entityType, ("DocId", "")), '_'));
+    }
+
+    [Fact]
+    public void V2_MetaIdKeyWithAValueConverter_UsesTheConvertedValueVerbatim()
+    {
+        var entityType = BuildEntityType<ConvertedMetaIdKeyEntity>(mb =>
+            mb.Entity<ConvertedMetaIdKeyEntity>(b =>
+            {
+                b.ToCouchbaseCollection("bucket", "scope", "convertedmetaid");
+                b.HasKey(e => e.DocId);
+                b.Property(e => e.DocId)
+                    .HasCouchbaseMeta(CouchbaseMetaField.Id)
+                    .ValueGeneratedNever()
+                    .HasConversion(v => "doc:" + v, v => v.Substring(4));
+            }));
+
+        // The document id is the converted value, which EF converts back when it reads META().id.
+        Assert.Equal("doc:12_345", CouchbaseDocumentKeyBuilder.BuildV2(entityType, Entry(entityType, ("DocId", "12_345")), '_'));
+    }
+
+    [Fact]
+    public void V2_MetaIdInACompositeKey_IsRejected()
+    {
+        var entityType = BuildEntityType<MetaIdCompositeKeyEntity>(mb =>
+            mb.Entity<MetaIdCompositeKeyEntity>(b =>
+            {
+                b.ToCouchbaseCollection("bucket", "scope", "metaidcomposite");
+                b.HasKey(e => new { e.DocId, e.Part });
+                b.Property(e => e.DocId).HasCouchbaseMeta(CouchbaseMetaField.Id).ValueGeneratedNever();
+            }));
+
+        Assert.Throws<NotSupportedException>(
+            () => CouchbaseDocumentKeyBuilder.BuildV2(entityType, Entry(entityType, ("DocId", "a"), ("Part", 1)), '_'));
+    }
+
+    [Fact]
+    public void V2_NegativeZeroKeyPart_FormatsAsZero()
+    {
+        // The JSON number -0 is read back as the integer 0, so both zeros must give the same key.
+        Assert.Equal("0", CouchbaseDocumentKeyBuilder.FormatPart(-0.0));
+        Assert.Equal("0", CouchbaseDocumentKeyBuilder.FormatPart(0.0));
+        Assert.Equal("0", CouchbaseDocumentKeyBuilder.FormatPart(-0.0f));
+        Assert.Equal("0", CouchbaseDocumentKeyBuilder.FormatPart(0.0f));
+        Assert.Equal("-1.5", CouchbaseDocumentKeyBuilder.FormatPart(-1.5));
+    }
+
+    [Fact]
     public void V2_EmptyDocumentKey_ThrowsAClearError()
     {
         var entityType = BuildEntityType<EmptyTextKeyEntity>(mb =>
@@ -419,7 +580,9 @@ public class CouchbaseDocumentKeyBuilderTests
     [InlineData('\\')]
     [InlineData('\n')]
     [InlineData('\0')]
-    public void DocumentKeyDelimiter_RejectsTheEscapeAndControlCharacters(char delimiter)
+    [InlineData('\uD83D')] // high surrogate
+    [InlineData('\uDE00')] // low surrogate
+    public void DocumentKeyDelimiter_RejectsTheEscapeControlAndSurrogateCharacters(char delimiter)
     {
         var builder = new CouchbaseDbContextOptionsBuilder(new DbContextOptionsBuilder(), "couchbase://localhost");
 

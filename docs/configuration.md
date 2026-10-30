@@ -57,7 +57,7 @@ The [CouchbaseDbContextOptionsBuilder](https://github.com/couchbaselabs/couchbas
 | `SerializerOptions` | `null` (uses `JsonSerializerDefaults.Web`) | `JsonSerializerOptions` used when deserializing scalar values inside `OwnsMany` collections. Supply a custom instance to match a non-default serializer configured on the Couchbase SDK (custom converters, different enum handling, etc.). |
 | `DateTimeFormat` | `"yyyy-MM-ddTHH:mm:ss.FFFK"` | The .NET custom `DateTime` format string this provider assumes when generating or comparing against `DateTime` string values in SQL++ — used by the LINQ `DateTime` function translators (`.Date`, `.Now`, `.UtcNow`, `.Today`) and for inline `DateTime` literals. See [DateTime string format](#datetime-string-format) below. |
 | `DocumentKeyFormat` | `Legacy` | How an entity's primary key becomes its Couchbase document key. `V2` fixes the key-ordering, delimiter-collision and culture problems of the legacy format — see [Document keys](#document-keys). Set with `UseDocumentKeyFormat(...)`. |
-| `DocumentKeyDelimiter` | `_` | The character between the parts of a composite document key (`V2` only). Cannot be `\` or a control character. |
+| `DocumentKeyDelimiter` | `_` | The character between the parts of a composite document key (`V2` only). Cannot be `\`, a control character or a surrogate character. |
 | `ServiceKey` | `null` | Selects which application-registered, keyed Couchbase cluster this context uses — see [Multiple clusters](#multiple-clusters). |
 
 > [!NOTE]
@@ -102,14 +102,20 @@ optionsBuilder.UseCouchbase(clusterOptions, o =>
 | Delimiter in a part | not escaped (collisions) | escaped with `\`, as is `\` itself |
 | `byte[]` part | Base64 (`~` for an empty array) | Base64 (`~` for an empty array); a custom value converter's output is used as is |
 | `DateTime` / `DateTimeOffset` / `DateOnly` / `TimeOnly` part | current-culture text (`TimeOnly` loses its seconds) | round-trip (`O`) format; a `Local` `DateTime` is converted to UTC first so the key does not depend on the machine's time zone |
-| `decimal` part | current-culture text, trailing zeros kept | canonical (`1234.50` and `1234.5` are the same key) |
+| `decimal` part | current-culture text, trailing zeros kept | canonical (`1234.50` and `1234.5` are the same key); a value with more than about 17 significant digits throws, because Couchbase returns it rounded and its key would change on reload |
 | Enum part | its name | its underlying number |
 | `null` part, or a document key that is empty overall | an empty part / empty key | throws `InvalidOperationException` |
-| Value-converted key (e.g. `HasUnixMillisDateTime()`) | the model value | the **stored** value, so the key is the same after the entity is reloaded |
+| Value-converted key (e.g. `HasUnixMillisDateTime()`) | the model value | the **stored** value, so the key is the same after the entity is reloaded; a value the converter does not round-trip exactly (for example a `decimal` stored through `HasConversion<double>()`) throws |
 | Shadow key properties | empty key for an ordinary entity | the key is built from the shadow value; the shadow value itself is not stored in the document yet (see below) |
 
 For example, with `HasKey(e => new { e.Tenant, e.User })`, tenant `7` and user `1` is `7_1`, and tenant
 `x_y` with user `z` is `x\_y_z`.
+
+> [!NOTE]
+> `V2` guards the key values it knows can change on reload (high-precision `decimal`, `ulong` above
+> `long.MaxValue`, lossy value converters). It does not check the document id length: Couchbase rejects ids
+> longer than 250 bytes, so a composite key whose parts add up to more than that fails on save with the
+> server's error rather than being truncated. Keep key parts short.
 
 > [!NOTE]
 > Shadow properties are not yet written to the document, so an entity whose primary key is a shadow
@@ -118,8 +124,10 @@ For example, with `HasKey(e => new { e.Tenant, e.User })`, tenant `7` and user `
 
 > [!WARNING]
 > Changing the format of a collection that already holds documents changes the document key of every
-> composite-key document, and there is **no automatic migration**: updates and deletes would no longer
-> find the old documents. Use `V2` for new collections, or rewrite the existing documents under their
+> composite-key document, and of any single-key document whose key contains the delimiter or `\`
+> (`a_b` becomes `a\_b`) or is a culture-, date/time-, decimal- or enum-valued key. There is **no
+> automatic migration**: updates and deletes would no longer find the old documents. Use `V2` for new
+> collections, or rewrite the existing documents under their
 > new keys first. Legacy keeps working unchanged, and `V2` is intended to become the default at GA.
 
 ### DateTime string format
