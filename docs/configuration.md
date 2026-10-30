@@ -56,6 +56,8 @@ The [CouchbaseDbContextOptionsBuilder](https://github.com/couchbaselabs/couchbas
 | `FieldNamingPolicy` | `JsonNamingPolicy.CamelCase` | Controls how CLR navigation names are converted to JSON field names when reading/writing `OwnsMany` embedded collections. Set to `null` to use the CLR name verbatim (PascalCase), or supply a different policy such as `JsonNamingPolicy.SnakeCaseLower`. |
 | `SerializerOptions` | `null` (uses `JsonSerializerDefaults.Web`) | `JsonSerializerOptions` used when deserializing scalar values inside `OwnsMany` collections. Supply a custom instance to match a non-default serializer configured on the Couchbase SDK (custom converters, different enum handling, etc.). |
 | `DateTimeFormat` | `"yyyy-MM-ddTHH:mm:ss.FFFK"` | The .NET custom `DateTime` format string this provider assumes when generating or comparing against `DateTime` string values in SQL++ — used by the LINQ `DateTime` function translators (`.Date`, `.Now`, `.UtcNow`, `.Today`) and for inline `DateTime` literals. See [DateTime string format](#datetime-string-format) below. |
+| `DocumentKeyFormat` | `Legacy` | How an entity's primary key becomes its Couchbase document key. `V2` fixes the key-ordering, delimiter-collision and culture problems of the legacy format — see [Document keys](#document-keys). Set with `UseDocumentKeyFormat(...)`. |
+| `DocumentKeyDelimiter` | `_` | The character between the parts of a composite document key (`V2` only). Cannot be `\` or a control character. |
 | `ServiceKey` | `null` | Selects which application-registered, keyed Couchbase cluster this context uses — see [Multiple clusters](#multiple-clusters). |
 
 > [!NOTE]
@@ -64,6 +66,61 @@ The [CouchbaseDbContextOptionsBuilder](https://github.com/couchbaselabs/couchbas
 > handled by [EFCore.NamingConventions](#controlling-querying-casing). If you change one, make sure
 > it still matches the other (and your actual document casing), or fields will silently come back
 > with default values instead of an error — see [Controlling Querying Casing](#controlling-querying-casing).
+
+### Document keys
+
+Every entity is stored as one document, and its document key is built from the entity's primary key.
+Reads never use it (queries match the key *columns*), but inserts, replaces, upserts and deletes
+address a document by it, as do other applications that read your documents by key.
+
+The default `Legacy` format is kept so existing data stays addressable, but it has problems for
+composite keys:
+
+- the parts follow the **reverse of the CLR declaration order** of the key properties, not the order in
+  `HasKey(...)`, so moving a property in the class changes every document's key;
+- the `_` delimiter is not escaped, so `("x_y", "z")` and `("y", "z_x")` both give `z_x_y` and silently
+  overwrite each other;
+- values are formatted with the **current culture**, so `1234.5` is `1234,5` under `de-DE`, and the same
+  `DateTime` key gives different documents under different cultures.
+
+`V2` fixes all three:
+
+```csharp
+optionsBuilder.UseCouchbase(clusterOptions, o =>
+{
+    o.Bucket = "MyBucket";
+    o.Scope = "MyScope";
+    o.UseDocumentKeyFormat(CouchbaseDocumentKeyFormat.V2);      // delimiter defaults to '_'
+    // o.UseDocumentKeyFormat(CouchbaseDocumentKeyFormat.V2, '|');
+});
+```
+
+| | `Legacy` | `V2` |
+|---|---|---|
+| Part order | reverse CLR declaration order | the order in `HasKey(...)` |
+| Culture | current culture | invariant |
+| Delimiter in a part | not escaped (collisions) | escaped with `\`, as is `\` itself |
+| `byte[]` part | Base64 (`~` for an empty array) | Base64 (`~` for an empty array); a custom value converter's output is used as is |
+| `DateTime` / `DateTimeOffset` / `DateOnly` / `TimeOnly` part | current-culture text (`TimeOnly` loses its seconds) | round-trip (`O`) format; a `Local` `DateTime` is converted to UTC first so the key does not depend on the machine's time zone |
+| `decimal` part | current-culture text, trailing zeros kept | canonical (`1234.50` and `1234.5` are the same key); a value with more than about 17 significant digits throws, because Couchbase returns it rounded and its key would change on reload |
+| Enum part | its name | its underlying number |
+| `null` part, or a document key that is empty overall | an empty part / empty key | throws `InvalidOperationException` |
+| Value-converted key (e.g. `HasUnixMillisDateTime()`) | the model value | the **stored** value, so the key is the same after the entity is reloaded |
+| Shadow key properties | empty key for an ordinary entity | the key is built from the shadow value; the shadow value itself is not stored in the document yet (see below) |
+
+For example, with `HasKey(e => new { e.Tenant, e.User })`, tenant `7` and user `1` is `7_1`, and tenant
+`x_y` with user `z` is `x\_y_z`.
+
+> [!NOTE]
+> Shadow properties are not yet written to the document, so an entity whose primary key is a shadow
+> property still cannot be found again after a reload under either format. `V2` builds a correct document
+> key for it, but storing the shadow key column is a separate fix.
+
+> [!WARNING]
+> Changing the format of a collection that already holds documents changes the document key of every
+> composite-key document, and there is **no automatic migration**: updates and deletes would no longer
+> find the old documents. Use `V2` for new collections, or rewrite the existing documents under their
+> new keys first. Legacy keeps working unchanged, and `V2` is intended to become the default at GA.
 
 ### DateTime string format
 
