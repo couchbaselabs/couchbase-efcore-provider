@@ -46,6 +46,20 @@ internal static class CouchbaseDocumentKeyBuilder
                     $"The value converter of the key property '{entityType.DisplayName()}.{property.Name}' " +
                     "returned null, so a document key cannot be built for it.");
 
+            // Couchbase's query engine returns numbers as doubles, so a decimal comes back as the
+            // shortest text of its double (about 17 significant digits). A decimal key with more
+            // precision than that would be rebuilt from the reloaded entity as a different key: an
+            // update would upsert a duplicate and a delete would miss. Rounding the key to match
+            // would instead make distinct values collide and overwrite each other, so refuse it.
+            if (value is decimal decimalKey && !DecimalSurvivesReload(decimalKey))
+            {
+                throw new InvalidOperationException(
+                    $"The decimal key property '{entityType.DisplayName()}.{property.Name}' has the value {decimalKey}, " +
+                    "which has more precision than Couchbase returns when the document is read back (about 17 " +
+                    "significant digits), so its document key would change on reload. Use a key with fewer " +
+                    "significant digits, or a different key type.");
+            }
+
             if (!first)
             {
                 documentKey.Append(delimiter);
@@ -72,6 +86,19 @@ internal static class CouchbaseDocumentKeyBuilder
 
         return documentKey.ToString();
     }
+
+    /// <summary>
+    /// True if <paramref name="value"/> comes back unchanged after being stored and read back: the
+    /// query engine hands back the shortest text of the value's double, and
+    /// <c>CouchbaseDbDataReader.GetDecimal</c> parses that text as a decimal.
+    /// </summary>
+    internal static bool DecimalSurvivesReload(decimal value)
+        => decimal.TryParse(
+               ((double)value).ToString("R", CultureInfo.InvariantCulture),
+               NumberStyles.Float,
+               CultureInfo.InvariantCulture,
+               out var reloaded)
+           && reloaded == value;
 
     internal static string FormatPart(object value)
         => value switch

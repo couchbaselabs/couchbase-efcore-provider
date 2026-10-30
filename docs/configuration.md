@@ -102,7 +102,7 @@ optionsBuilder.UseCouchbase(clusterOptions, o =>
 | Delimiter in a part | not escaped (collisions) | escaped with `\`, as is `\` itself |
 | `byte[]` part | Base64 (`~` for an empty array) | Base64 (`~` for an empty array); a custom value converter's output is used as is |
 | `DateTime` / `DateTimeOffset` / `DateOnly` / `TimeOnly` part | current-culture text (`TimeOnly` loses its seconds) | round-trip (`O`) format; a `Local` `DateTime` is converted to UTC first so the key does not depend on the machine's time zone |
-| `decimal` part | current-culture text, trailing zeros kept | canonical (`1234.50` and `1234.5` are the same key) |
+| `decimal` part | current-culture text, trailing zeros kept | canonical (`1234.50` and `1234.5` are the same key); a value with more than about 17 significant digits throws, because Couchbase returns it rounded and its key would change on reload |
 | Enum part | its name | its underlying number |
 | `null` part, or a document key that is empty overall | an empty part / empty key | throws `InvalidOperationException` |
 | Value-converted key (e.g. `HasUnixMillisDateTime()`) | the model value | the **stored** value, so the key is the same after the entity is reloaded |

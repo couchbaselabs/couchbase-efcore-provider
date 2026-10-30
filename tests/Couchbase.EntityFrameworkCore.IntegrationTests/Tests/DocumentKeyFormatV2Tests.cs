@@ -134,11 +134,15 @@ public class DocumentKeyFormatV2Tests(BloggingFixture fixture)
         }
     }
 
-    [Fact]
-    public async Task V2_DecimalKeyWithTrailingZero_KeepsTheSameDocumentAcrossAReload()
+    [Theory]
+    [InlineData("1234.50")]
+    [InlineData("1234.567890123456")]
+    public async Task V2_DecimalKey_KeepsTheSameDocumentAcrossAReload(string amountText)
     {
         // 1234.50m is stored as the JSON number 1234.5 and read back as 1234.5m. The key must not
         // keep the trailing zero, or the reloaded entity would address a different document.
+        // A 16-digit value must survive too: the reader keeps every digit the server returns.
+        var amount = decimal.Parse(amountText, System.Globalization.CultureInfo.InvariantCulture);
         var collectionName = "keyv2dec" + Guid.NewGuid().ToString("N");
         var optionsBuilder = CreateOptionsBuilder<KeyV2DecimalDbContext>();
 
@@ -147,7 +151,7 @@ public class DocumentKeyFormatV2Tests(BloggingFixture fixture)
             await using (var writer = new KeyV2DecimalDbContext(optionsBuilder.Options, collectionName))
             {
                 await writer.Database.EnsureCreatedAsync();
-                writer.Add(new KeyV2DecimalEntity { Amount = 1234.50m, Value = "original" });
+                writer.Add(new KeyV2DecimalEntity { Amount = amount, Value = "original" });
                 await writer.SaveChangesAsync();
             }
 
@@ -170,6 +174,36 @@ public class DocumentKeyFormatV2Tests(BloggingFixture fixture)
             {
                 deleter.Remove((await deleter.Set<KeyV2DecimalEntity>().ToListAsync()).Single());
                 await deleter.SaveChangesAsync();
+            }
+
+            await using (var reader = new KeyV2DecimalDbContext(optionsBuilder.Options, collectionName))
+            {
+                Assert.Empty(await reader.Set<KeyV2DecimalEntity>().AsNoTracking().ToListAsync());
+            }
+        }
+        finally
+        {
+            await DropCollectionAsync(collectionName);
+        }
+    }
+
+    [Fact]
+    public async Task V2_DecimalKeyWithMorePrecisionThanAReloadKeeps_IsRejectedAndNothingIsSaved()
+    {
+        // Such a key reads back rounded (about 17 significant digits), so it would address a
+        // different document after a reload. It is rejected instead of silently saved.
+        var collectionName = "keyv2decp" + Guid.NewGuid().ToString("N");
+        var optionsBuilder = CreateOptionsBuilder<KeyV2DecimalDbContext>();
+
+        try
+        {
+            await using (var writer = new KeyV2DecimalDbContext(optionsBuilder.Options, collectionName))
+            {
+                await writer.Database.EnsureCreatedAsync();
+                writer.Add(new KeyV2DecimalEntity { Amount = 1.0000000000000000000000000001m, Value = "precise" });
+
+                var ex = await Assert.ThrowsAnyAsync<InvalidOperationException>(() => writer.SaveChangesAsync());
+                Assert.Contains("precision", ex.Message);
             }
 
             await using (var reader = new KeyV2DecimalDbContext(optionsBuilder.Options, collectionName))

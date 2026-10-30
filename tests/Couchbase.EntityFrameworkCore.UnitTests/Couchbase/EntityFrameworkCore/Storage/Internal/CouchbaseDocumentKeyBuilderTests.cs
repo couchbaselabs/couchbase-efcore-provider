@@ -356,6 +356,30 @@ public class CouchbaseDocumentKeyBuilderTests
     }
 
     [Fact]
+    public void V2_DecimalKeyWithMorePrecisionThanAReloadKeeps_Throws()
+    {
+        var entityType = BuildEntityType<SingleKeyEntity>(mb =>
+            mb.Entity<SingleKeyEntity>(b =>
+            {
+                b.ToCouchbaseCollection("bucket", "scope", "single");
+                b.HasKey(e => e.Amount);
+            }));
+
+        // Read back as 1 and 0.12345678901234568: the key would change on reload.
+        foreach (var value in new[] { 1.0000000000000000000000000001m, 0.12345678901234567m, 79228162514264337593543950335m })
+        {
+            var ex = Assert.Throws<InvalidOperationException>(
+                () => CouchbaseDocumentKeyBuilder.BuildV2(entityType, Entry(entityType, ("Amount", value)), '_'));
+            Assert.Contains("precision", ex.Message);
+        }
+
+        // What the reader gives back unchanged is fine: 16 digits, and trailing zeros.
+        Assert.Equal("1.00000000000001", CouchbaseDocumentKeyBuilder.BuildV2(entityType, Entry(entityType, ("Amount", 1.00000000000001m)), '_'));
+        Assert.Equal("1234.567890123456", CouchbaseDocumentKeyBuilder.BuildV2(entityType, Entry(entityType, ("Amount", 1234.567890123456m)), '_'));
+        Assert.Equal("1234.5", CouchbaseDocumentKeyBuilder.BuildV2(entityType, Entry(entityType, ("Amount", 1234.50m)), '_'));
+    }
+
+    [Fact]
     public void V2_EmptyDocumentKey_ThrowsAClearError()
     {
         var entityType = BuildEntityType<EmptyTextKeyEntity>(mb =>
