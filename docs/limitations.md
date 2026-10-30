@@ -126,6 +126,15 @@ The Couchbase SDK is asynchronous, so the synchronous EF Core code paths throw `
   matches your queries' access patterns is, as with any index, your own responsibility. See
   [Unix-millis DateTime storage](configuration.md#unix-millis-datetime-storage).
 
+* **`decimal` values keep about 17 significant digits when read back through a query.** Couchbase
+  stores a decimal exactly (the JSON document holds every digit), but the SQL++ query engine
+  handles numbers as IEEE 754 doubles, so a projected value is rounded to double precision before it
+  reaches the provider. The provider reads back every digit the engine returns (for example
+  `1234.567890123456m` round-trips), but a value such as `1.0000000000000000000000000001m` comes back
+  as `1`. A KV `GetAsync` of the document returns the exact value. Values with up to 15 significant
+  digits are always safe; if you need more, store the value as text with a value converter
+  (`HasConversion<string>()`).
+
 See also [Querying](Queries.md) and [Configuration](configuration.md).
 
 ## Buckets and contexts

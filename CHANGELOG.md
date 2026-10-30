@@ -9,6 +9,11 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ### Fixed
 
+- **`decimal` values are no longer rounded to 15 significant digits when materialized.** The data
+  reader converted every fractional JSON number to `double` before widening it to `decimal`; it now
+  parses the number text directly, so `1234.567890123456m` round-trips. The query engine itself
+  returns numbers as IEEE doubles, so values beyond ~17 significant digits are still rounded
+  server-side; see [Limitations](docs/limitations.md#querying-and-consistency).
 - **`byte[]` primary keys no longer collide on one document.** A `byte[]` key (or key part) was
   formatted as the text `System.Byte[]`, so every entity of the type shared a single document. It is
   now written as Base64 (an empty array as `~`). Documents previously saved at `System.Byte[]` are
