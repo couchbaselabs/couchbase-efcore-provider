@@ -18,6 +18,10 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ### Fixed
 
+- **Shadow properties are now written to the document.** An entity's shadow properties, including the
+  shadow foreign key EF Core creates for a relationship with no FK property, were left out of the stored
+  document, so a reloaded entity lost them (and the relationship) or failed to materialize. They are now
+  stored under their column names like any other property.
 - **`decimal` values are no longer rounded to 15 significant digits when materialized.** The data
   reader converted every fractional JSON number to `double` before widening it to `decimal`; it now
   parses the number text directly, so `1234.567890123456m` round-trips. The query engine itself

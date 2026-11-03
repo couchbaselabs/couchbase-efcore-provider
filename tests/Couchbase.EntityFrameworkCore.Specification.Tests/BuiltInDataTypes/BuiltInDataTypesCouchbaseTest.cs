@@ -30,18 +30,6 @@ public class BuiltInDataTypesCouchbaseTest(BuiltInDataTypesCouchbaseTest.BuiltIn
     public override Task Can_query_using_any_nullable_data_type_as_literal()
         => base.Can_query_using_any_nullable_data_type_as_literal();
 
-    private const string ShadowPropertySkip =
-        "Bug: shadow properties are not persisted. An entity with shadow properties set is stored as just {\"Id\": ...}, "
-        + "so reading them back fails (DBNull cast). This also affects shadow foreign keys.";
-
-    [Fact(Skip = ShadowPropertySkip)]
-    public override Task Can_query_using_any_data_type_shadow()
-        => base.Can_query_using_any_data_type_shadow();
-
-    [Fact(Skip = ShadowPropertySkip)]
-    public override Task Can_query_using_any_data_type_nullable_shadow()
-        => base.Can_query_using_any_data_type_nullable_shadow();
-
     [Fact(Skip = "Bug: a FirstOrDefault() over a collection, projected as a scalar, is translated to "
         + "(SELECT d0.Method ... LIMIT 1)[0], which yields the whole row object instead of the Method value, "
         + "so reading it as an enum fails (JsonElement of kind Object to Int32).")]

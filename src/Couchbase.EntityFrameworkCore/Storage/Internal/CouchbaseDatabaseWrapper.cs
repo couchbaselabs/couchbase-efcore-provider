@@ -406,10 +406,9 @@ public class CouchbaseDatabaseWrapper : Database
     {
         var entityType = updateEntry.EntityType;
 
-        // For TPH inheritance the discriminator is a shadow property by default. It must
-        // still be persisted so the query path (e.g. OfType<TDerived>() / Include on a
-        // derived navigation) can filter documents to the correct CLR type.
-        var discriminator = entityType.FindDiscriminatorProperty();
+        // Every property of the entity is written, shadow properties included: the TPH discriminator,
+        // scalar shadow properties and shadow foreign keys are all real data that the query path reads
+        // back. Only META()-backed properties have no field in the document body.
 
         var ownedNavs = entityType.GetNavigations()
             .Where(n => n.TargetEntityType.IsOwned() && n.PropertyInfo != null)
@@ -450,7 +449,6 @@ public class CouchbaseDatabaseWrapper : Database
             var regularDoc = new Dictionary<string, object?>();
             foreach (var property in entityType.GetProperties())
             {
-                if (property.IsShadowProperty() && property != discriminator) continue;
                 if (IsMetaBacked(property)) continue;
                 var rawValue = updateEntry.GetCurrentValue(property);
                 regularDoc[property.GetColumnName()] = ApplyConverter(property, rawValue);
@@ -477,7 +475,6 @@ public class CouchbaseDatabaseWrapper : Database
         var doc = new Dictionary<string, object?>();
         foreach (var property in entityType.GetProperties())
         {
-            if (property.IsShadowProperty() && property != discriminator) continue;
             if (IsMetaBacked(property)) continue;
             var rawDocValue = updateEntry.GetCurrentValue(property);
             doc[property.GetColumnName()] = ApplyConverter(property, rawDocValue);

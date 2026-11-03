@@ -106,7 +106,7 @@ optionsBuilder.UseCouchbase(clusterOptions, o =>
 | Enum part | its name | its underlying number |
 | `null` part, or a document key that is empty overall | an empty part / empty key | throws `InvalidOperationException` |
 | Value-converted key (e.g. `HasUnixMillisDateTime()`) | the model value | the **stored** value, so the key is the same after the entity is reloaded; a value the converter does not round-trip exactly (for example a `decimal` stored through `HasConversion<double>()`) throws |
-| Shadow key properties | empty key for an ordinary entity | the key is built from the shadow value; the shadow value itself is not stored in the document yet (see below) |
+| Shadow key properties | empty key for an ordinary entity | the key is built from the shadow value, which is stored in the document like any other property |
 
 For example, with `HasKey(e => new { e.Tenant, e.User })`, tenant `7` and user `1` is `7_1`, and tenant
 `x_y` with user `z` is `x\_y_z`.
@@ -116,11 +116,6 @@ For example, with `HasKey(e => new { e.Tenant, e.User })`, tenant `7` and user `
 > `long.MaxValue`, lossy value converters). It does not check the document id length: Couchbase rejects ids
 > longer than 250 bytes, so a composite key whose parts add up to more than that fails on save with the
 > server's error rather than being truncated. Keep key parts short.
-
-> [!NOTE]
-> Shadow properties are not yet written to the document, so an entity whose primary key is a shadow
-> property still cannot be found again after a reload under either format. `V2` builds a correct document
-> key for it, but storing the shadow key column is a separate fix.
 
 > [!WARNING]
 > Changing the format of a collection that already holds documents changes the document key of every
