@@ -149,6 +149,20 @@
     <IsBaselineSuppression>true</IsBaselineSuppression>
   </Suppression>
   <Suppression>
+    <DiagnosticId>CP0006</DiagnosticId>
+    <Target>P:Couchbase.EntityFrameworkCore.Infrastructure.ICouchbaseDbContextOptionsBuilder.DocumentKeyFormat</Target>
+    <Left>lib/net10.0/Couchbase.EntityFrameworkCore.dll</Left>
+    <Right>lib/net10.0/Couchbase.EntityFrameworkCore.dll</Right>
+    <IsBaselineSuppression>true</IsBaselineSuppression>
+  </Suppression>
+  <Suppression>
+    <DiagnosticId>CP0006</DiagnosticId>
+    <Target>P:Couchbase.EntityFrameworkCore.Infrastructure.ICouchbaseDbContextOptionsBuilder.DocumentKeyDelimiter</Target>
+    <Left>lib/net10.0/Couchbase.EntityFrameworkCore.dll</Left>
+    <Right>lib/net10.0/Couchbase.EntityFrameworkCore.dll</Right>
+    <IsBaselineSuppression>true</IsBaselineSuppression>
+  </Suppression>
+  <Suppression>
     <DiagnosticId>CP0009</DiagnosticId>
     <Target>T:Couchbase.EntityFrameworkCore.Query.Internal.Translators.CouchbaseMethodCallTranslatorProvider</Target>
     <Left>lib/net10.0/Couchbase.EntityFrameworkCore.dll</Left>

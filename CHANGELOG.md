@@ -7,6 +7,15 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ## [Unreleased]
 
+### Added
+
+- **Opt-in `V2` document key format for composite primary keys** (`UseDocumentKeyFormat`,
+  `CouchbaseDocumentKeyFormat`, `DocumentKeyFormat`/`DocumentKeyDelimiter`). `V2` orders key parts by
+  `HasKey(...)` instead of the reverse CLR declaration order, formats them with the invariant culture,
+  escapes the delimiter so distinct keys cannot collide, and rejects `null` parts. The default stays
+  `Legacy`, so existing documents keep their keys; switching an existing collection is not migrated
+  automatically. See [Configuration](docs/configuration.md#document-keys).
+
 ### Fixed
 
 - **`decimal` values are no longer rounded to 15 significant digits when materialized.** The data
