@@ -341,6 +341,57 @@ public class IndexCreationTests(BloggingFixture fixture, ITestOutputHelper outpu
         }
     }
 
+    [Fact]
+    public async Task EnsureCreatedAsync_WithAutoCreateIndexes_ConventionForeignKeyIndexInQualifiedKeyspace_Succeeds()
+    {
+        // EF Core adds a convention index on the FK and names it IX_<tableName>_<columns>. With
+        // ToCouchbaseCollection(this, name) the table name is the qualified keyspace
+        // ("bucket.scope.collection"), so the convention name contains dots, which the query
+        // service rejects as an index identifier unless the provider sanitizes it.
+        var suffix = Guid.NewGuid().ToString("N");
+        var parentCollection = "idxfkparent" + suffix;
+        var childCollection = "idxfkchild" + suffix;
+
+        var optionsBuilder = new DbContextOptionsBuilder<ForeignKeyIndexDbContext>();
+        optionsBuilder.UseCouchbase(
+            new global::Couchbase.ClusterOptions()
+                .WithConnectionString(fixture.Host)
+                .WithPasswordAuthentication(fixture.Username, fixture.Password),
+            o =>
+            {
+                o.Bucket = fixture.BucketName;
+                o.Scope = fixture.ScopeName;
+                o.AutoCreateIndexes = true;
+            });
+        optionsBuilder.ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning));
+
+        await using var context = new ForeignKeyIndexDbContext(optionsBuilder.Options, parentCollection, childCollection);
+
+        try
+        {
+            await context.Database.EnsureCreatedAsync();
+
+            // The convention FK index must actually exist and be online under its sanitized name.
+            // An unfiltered query alone proves nothing: the primary index can serve it even if the
+            // secondary index was skipped.
+            var fkIndex = context.Model.FindEntityType(typeof(FkChildEntity))!.GetIndexes().Single();
+            var expectedName = fkIndex.GetDatabaseName()!.Replace('.', '_');
+            Assert.Equal(1, await CountOnlineSecondaryIndexesAsync(
+                fixture.BucketName, fixture.ScopeName, childCollection, expectedName));
+
+            var results = await context.Children.ToListAsync();
+            Assert.Empty(results);
+
+            // Idempotent on re-run.
+            await context.Database.EnsureCreatedAsync();
+        }
+        finally
+        {
+            await DropCollectionAsync(parentCollection);
+            await DropCollectionAsync(childCollection);
+        }
+    }
+
     private async Task DropCollectionAsync(string collectionName, string? bucketName = null, string? scopeName = null)
     {
         try
@@ -481,6 +532,38 @@ public class IndexCreationTests(BloggingFixture fixture, ITestOutputHelper outpu
             {
                 b.ToCouchbaseCollection(this, collectionName);
                 b.HasIndex(e => e.Score).HasDatabaseName("ix_filtered_score").HasFilter("`Score` > 0");
+            });
+        }
+    }
+
+    public class FkParentEntity
+    {
+        public long Id { get; set; }
+        public string Name { get; set; } = string.Empty;
+    }
+
+    public class FkChildEntity
+    {
+        public long Id { get; set; }
+        public long ParentId { get; set; }
+        public FkParentEntity? Parent { get; set; }
+    }
+
+    public class ForeignKeyIndexDbContext(
+        DbContextOptions<ForeignKeyIndexDbContext> options, string parentCollection, string childCollection)
+        : DbContext(options)
+    {
+        public DbSet<FkParentEntity> Parents { get; set; } = null!;
+        public DbSet<FkChildEntity> Children { get; set; } = null!;
+
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            base.OnModelCreating(modelBuilder);
+            modelBuilder.Entity<FkParentEntity>().ToCouchbaseCollection(this, parentCollection);
+            modelBuilder.Entity<FkChildEntity>(b =>
+            {
+                b.ToCouchbaseCollection(this, childCollection);
+                b.HasOne(c => c.Parent).WithMany().HasForeignKey(c => c.ParentId);
             });
         }
     }
