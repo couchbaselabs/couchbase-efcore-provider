@@ -154,9 +154,6 @@ public class ShadowPropertyTests(BloggingFixture fixture) : IAsyncLifetime
                 b.Property(x => x.Id).ValueGeneratedNever();
                 b.Property<int>("Rating");
                 b.HasOne(x => x.Author).WithMany(a => a.Books);
-                // The convention-named FK index embeds the dotted keyspace (IX_default.<scope>.<collection>_AuthorId),
-                // which is not a valid index identifier, so the index is named explicitly.
-                b.HasIndex("AuthorId").HasDatabaseName("ix_shadowbooks_authorid");
             });
         }
     }
