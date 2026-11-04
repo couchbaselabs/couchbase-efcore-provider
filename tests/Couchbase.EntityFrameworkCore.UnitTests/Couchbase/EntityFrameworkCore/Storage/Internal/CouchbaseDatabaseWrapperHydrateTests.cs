@@ -168,32 +168,32 @@ public class CouchbaseDatabaseWrapperHydrateTests
     }
 
     // -----------------------------------------------------------------------
-    // Shadow property (PropertyInfo == null) — must be skipped
-    // IsShadowProperty() returns true when PropertyInfo is null.
+    // Shadow property (PropertyInfo == null) — must be written to the document
+    // IsShadowProperty() returns true when PropertyInfo is null. Shadow properties are real data
+    // (scalar shadow properties, shadow foreign keys), so dropping them loses data on reload.
     // -----------------------------------------------------------------------
 
     [Fact]
-    public void Hydrate_ShadowProperty_IsSkipped_NoException()
+    public void Hydrate_ShadowProperty_IsWrittenToTheDocument()
     {
         var entry = new Mock<IUpdateEntry>();
         var entityType = new Mock<IEntityType>();
         entityType.Setup(t => t.ClrType).Returns(typeof(EntityWithSetter));
 
         // Shadow property: both PropertyInfo and FieldInfo are null →
-        // IsShadowProperty() returns true → the property must be omitted from the document.
+        // IsShadowProperty() returns true → the value is still read from the change tracker and written.
         var shadowProp = MakeProperty(
             propertyInfo: null,
             fieldInfo: null,
-            value: "ignored",
+            value: "shadow-value",
             entry);
 
         entityType.Setup(t => t.GetProperties()).Returns([shadowProp.Object]);
         entry.Setup(e => e.EntityType).Returns(entityType.Object);
 
-        // Must not throw and the shadow value must not appear in the document.
         var result = (Dictionary<string, object?>)Hydrate(entry.Object);
 
-        Assert.Empty(result);
+        Assert.Equal("shadow-value", Assert.Single(result).Value);
     }
 
     // -----------------------------------------------------------------------
@@ -298,7 +298,7 @@ public class CouchbaseDatabaseWrapperHydrateTests
     }
 
     [Fact]
-    public void Hydrate_MixedProperties_StoresNonShadowOmitsShadow()
+    public void Hydrate_MixedProperties_StoresBothShadowAndNonShadow()
     {
         var entry = new Mock<IUpdateEntry>();
         var entityType = new Mock<IEntityType>();
@@ -323,8 +323,9 @@ public class CouchbaseDatabaseWrapperHydrateTests
 
         Assert.True(result.ContainsKey("Name"));
         Assert.Equal("real", result["Name"]);
-        // Shadow property (PropertyInfo == null && FieldInfo == null) must be omitted.
-        Assert.Single(result);
+        // The shadow property (PropertyInfo == null && FieldInfo == null) is written too, under its column name.
+        Assert.Equal("shadow", result["Prop"]);
+        Assert.Equal(2, result.Count);
     }
 
     // -----------------------------------------------------------------------
