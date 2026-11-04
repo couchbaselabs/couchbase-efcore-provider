@@ -478,6 +478,14 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
                     continue;
                 }
 
+                // EF names convention indexes IX_<tableName>_<columns>, and a qualified keyspace
+                // table name ("bucket.scope.collection") puts dots in that name. The query service
+                // rejects dots in an index identifier even when delimited, so replace them. The
+                // sanitized name is what keys indexesToCreate, so two distinct definitions that
+                // only differ by "." vs "_" still hit the conflict check below instead of
+                // silently colliding.
+                indexName = indexName.Replace('.', '_');
+
                 if (index.IsUnique)
                 {
                     _logger.LogWarning(
