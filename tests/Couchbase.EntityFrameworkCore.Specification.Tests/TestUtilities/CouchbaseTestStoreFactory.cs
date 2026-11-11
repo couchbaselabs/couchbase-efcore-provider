@@ -1,6 +1,7 @@
 using Couchbase.EntityFrameworkCore.Infrastructure.Internal;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.TestUtilities;
+using Microsoft.EntityFrameworkCore.Metadata.Conventions.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Couchbase.EntityFrameworkCore.SpecificationTests.TestUtilities;
@@ -36,6 +37,12 @@ public class CouchbaseTestStoreFactory : ITestStoreFactory
         var extension = (CouchbaseOptionsExtension)new CouchbaseTestStore(_scope, shared: true)
             .AddProviderOptions(new DbContextOptionsBuilder())
             .Options.Extensions.Single(e => e is CouchbaseOptionsExtension);
+        var scope = _scope;
+        serviceCollection.AddScoped<IProviderConventionSetBuilder>(sp => new QualifyingCouchbaseConventionSetBuilder(
+            sp.GetRequiredService<ProviderConventionSetBuilderDependencies>(),
+            sp.GetRequiredService<RelationalConventionSetBuilderDependencies>(),
+            CouchbaseTestEnvironment.Bucket,
+            scope));
         extension.ApplyServices(serviceCollection);
         return serviceCollection;
     }
