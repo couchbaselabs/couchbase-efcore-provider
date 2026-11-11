@@ -45,21 +45,26 @@ public class CouchbaseTestStore : TestStore
     /// </summary>
     public override async Task CleanAsync(DbContext context)
     {
-        // First clean of a scope in this run: drop and recreate it. Later cleans (reseeds between
-        // tests) only delete the documents, which is much faster than recreating collections/indexes.
+        // Creating a scope's collections and indexes is slow (minutes for the larger models), and
+        // every suite usually runs in its own test process. So an existing scope is reused: its
+        // documents are deleted and EnsureCreated adds whatever the model needs that is missing.
+        // Set COUCHBASE_SPEC_RESET_SCOPES=1 to drop and recreate each scope once per run instead,
+        // for example after a model change left collections or indexes that conflict.
         bool first;
         lock (InitializedScopes)
         {
             first = InitializedScopes.Add(Name);
         }
 
-        if (first)
+        if (first && ResetScopes)
         {
             await DropScopeAsync();
             await EnsureCreatedAsync(context);
             return;
         }
 
+        // Documents first: EnsureCreated's index check fails on a collection that still holds
+        // documents (a provider bug), so it must run against empty collections.
         await DeleteAllDocumentsAsync();
         await EnsureCreatedAsync(context);
     }
@@ -79,6 +84,8 @@ public class CouchbaseTestStore : TestStore
     }
 
     private static readonly HashSet<string> InitializedScopes = [];
+
+    private static bool ResetScopes => Environment.GetEnvironmentVariable("COUCHBASE_SPEC_RESET_SCOPES") == "1";
 
     private async Task DeleteAllDocumentsAsync()
     {
