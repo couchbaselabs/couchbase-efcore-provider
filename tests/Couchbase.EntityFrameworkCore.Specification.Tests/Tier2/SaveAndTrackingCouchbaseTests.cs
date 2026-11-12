@@ -169,8 +169,10 @@ public class ManyToManyTrackingCouchbaseTest(ManyToManyTrackingCouchbaseTest.Man
         finally { await Fixture.ReseedAsync(); }
     }
 
-    public class ManyToManyTrackingCouchbaseFixture : ManyToManyTrackingRelationalFixture
+    public class ManyToManyTrackingCouchbaseFixture : ManyToManyTrackingRelationalFixture, ITestSqlLoggerFactory
     {
+        public TestSqlLoggerFactory TestSqlLoggerFactory => (TestSqlLoggerFactory)ListLoggerFactory;
+
         protected override ITestStoreFactory TestStoreFactory => SqlLoggingCouchbaseTestStoreFactory.ForStore(StoreName);
 
         public override DbContextOptionsBuilder AddOptions(DbContextOptionsBuilder builder)

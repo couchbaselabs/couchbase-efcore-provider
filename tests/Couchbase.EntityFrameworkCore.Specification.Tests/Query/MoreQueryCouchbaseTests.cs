@@ -29,8 +29,10 @@ internal static class ParameterizedCollections
 public class Ef6GroupByCouchbaseTest(Ef6GroupByCouchbaseTest.Ef6GroupByCouchbaseFixture fixture)
     : Ef6GroupByTestBase<Ef6GroupByCouchbaseTest.Ef6GroupByCouchbaseFixture>(fixture)
 {
-    public class Ef6GroupByCouchbaseFixture : Ef6GroupByFixtureBase
+    public class Ef6GroupByCouchbaseFixture : Ef6GroupByFixtureBase, ITestSqlLoggerFactory
     {
+        public TestSqlLoggerFactory TestSqlLoggerFactory => (TestSqlLoggerFactory)ListLoggerFactory;
+
         protected override ITestStoreFactory TestStoreFactory => SqlLoggingCouchbaseTestStoreFactory.ForStore(StoreName);
 
         protected override void OnModelCreating(ModelBuilder modelBuilder, DbContext context)
@@ -45,8 +47,10 @@ public class Ef6GroupByCouchbaseTest(Ef6GroupByCouchbaseTest.Ef6GroupByCouchbase
 public class FunkyDataQueryCouchbaseTest(FunkyDataQueryCouchbaseTest.FunkyDataQueryCouchbaseFixture fixture)
     : FunkyDataQueryTestBase<FunkyDataQueryCouchbaseTest.FunkyDataQueryCouchbaseFixture>(fixture)
 {
-    public class FunkyDataQueryCouchbaseFixture : FunkyDataQueryFixtureBase
+    public class FunkyDataQueryCouchbaseFixture : FunkyDataQueryFixtureBase, ITestSqlLoggerFactory
     {
+        public TestSqlLoggerFactory TestSqlLoggerFactory => (TestSqlLoggerFactory)ListLoggerFactory;
+
         protected override ITestStoreFactory TestStoreFactory => SqlLoggingCouchbaseTestStoreFactory.ForStore(StoreName);
 
         protected override void OnModelCreating(ModelBuilder modelBuilder, DbContext context)
@@ -201,6 +205,14 @@ public class OperatorsQueryCouchbaseTest(NonSharedFixture fixture)
     : OperatorsQueryTestBase(fixture), IClassFixture<NonSharedFixture>
 {
     protected override string StoreName => "OperatorsQueryTest";
+
+    protected override ITestStoreFactory TestStoreFactory => SqlLoggingCouchbaseTestStoreFactory.ForStore(StoreName);
+}
+
+public class OperatorsProceduralQueryCouchbaseTest(NonSharedFixture fixture)
+    : OperatorsProceduralQueryTestBase(fixture), IClassFixture<NonSharedFixture>
+{
+    protected override string StoreName => "OperatorsProceduralQueryTest";
 
     protected override ITestStoreFactory TestStoreFactory => SqlLoggingCouchbaseTestStoreFactory.ForStore(StoreName);
 }

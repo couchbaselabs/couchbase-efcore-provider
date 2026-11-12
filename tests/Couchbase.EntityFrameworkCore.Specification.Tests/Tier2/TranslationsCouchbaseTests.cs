@@ -8,8 +8,10 @@ using Microsoft.EntityFrameworkCore.TestUtilities;
 
 namespace Couchbase.EntityFrameworkCore.SpecificationTests.Tier2;
 
-public class BasicTypesQueryCouchbaseFixture : BasicTypesQueryFixtureBase
+public class BasicTypesQueryCouchbaseFixture : BasicTypesQueryFixtureBase, ITestSqlLoggerFactory
 {
+    public TestSqlLoggerFactory TestSqlLoggerFactory => (TestSqlLoggerFactory)ListLoggerFactory;
+
     protected override ITestStoreFactory TestStoreFactory => SqlLoggingCouchbaseTestStoreFactory.ForStore(StoreName);
 
     protected override void OnModelCreating(ModelBuilder modelBuilder, DbContext context)

@@ -48,8 +48,10 @@ public class FieldsOnlyLoadCouchbaseTest(FieldsOnlyLoadCouchbaseTest.FieldsOnlyL
 public class ManyToManyLoadCouchbaseTest(ManyToManyLoadCouchbaseTest.ManyToManyLoadCouchbaseFixture fixture)
     : ManyToManyLoadTestBase<ManyToManyLoadCouchbaseTest.ManyToManyLoadCouchbaseFixture>(fixture)
 {
-    public class ManyToManyLoadCouchbaseFixture : ManyToManyLoadFixtureBase
+    public class ManyToManyLoadCouchbaseFixture : ManyToManyLoadFixtureBase, ITestSqlLoggerFactory
     {
+        public TestSqlLoggerFactory TestSqlLoggerFactory => (TestSqlLoggerFactory)ListLoggerFactory;
+
         protected override ITestStoreFactory TestStoreFactory => SqlLoggingCouchbaseTestStoreFactory.ForStore(StoreName);
 
         protected override void OnModelCreating(ModelBuilder modelBuilder, DbContext context)
@@ -63,8 +65,10 @@ public class ManyToManyLoadCouchbaseTest(ManyToManyLoadCouchbaseTest.ManyToManyL
 public class ManyToManyFieldsLoadCouchbaseTest(ManyToManyFieldsLoadCouchbaseTest.ManyToManyFieldsLoadCouchbaseFixture fixture)
     : ManyToManyFieldsLoadTestBase<ManyToManyFieldsLoadCouchbaseTest.ManyToManyFieldsLoadCouchbaseFixture>(fixture)
 {
-    public class ManyToManyFieldsLoadCouchbaseFixture : ManyToManyFieldsLoadFixtureBase
+    public class ManyToManyFieldsLoadCouchbaseFixture : ManyToManyFieldsLoadFixtureBase, ITestSqlLoggerFactory
     {
+        public TestSqlLoggerFactory TestSqlLoggerFactory => (TestSqlLoggerFactory)ListLoggerFactory;
+
         protected override ITestStoreFactory TestStoreFactory => SqlLoggingCouchbaseTestStoreFactory.ForStore(StoreName);
 
         protected override void OnModelCreating(ModelBuilder modelBuilder, DbContext context)

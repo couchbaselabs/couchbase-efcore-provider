@@ -63,11 +63,32 @@ public class CouchbaseTestStore : TestStore
             return;
         }
 
-        // Documents first: EnsureCreated's index check fails on a collection that still holds
+        // A shared store keeps one model for the whole test class. Its first clean in this process
+        // runs EnsureCreated; later cleans (suites that reseed after every test) only delete
+        // documents, since re-checking every index costs seconds each once the bucket holds many
+        // scopes. A non-shared store gets a different model in each test, so it also drops the
+        // collections the current model doesn't use (otherwise the scope collects every test's
+        // collections until the cluster's collection limit is reached) and runs EnsureCreated.
+        // Documents go first: EnsureCreated's index check fails on a collection that still holds
         // documents (a provider bug), so it must run against empty collections.
-        await DeleteAllDocumentsAsync();
-        await EnsureCreatedAsync(context);
+        var keep = Shared ? null : ModelCollections(context);
+        await DeleteAllDocumentsAsync(keep);
+        if (first || !Shared)
+        {
+            await EnsureCreatedAsync(context);
+        }
     }
+
+    // The collections in this store's scope that the model maps entity types to. A table name is
+    // either "collection" or "scope.collection"; other scopes are not this store's to manage.
+    private HashSet<string> ModelCollections(DbContext context)
+        => context.Model.GetEntityTypes()
+            .Select(e => e.GetTableName())
+            .OfType<string>()
+            .Select(t => t.Split('.'))
+            .Where(p => p.Length == 1 || p[^2] == Name)
+            .Select(p => p[^1])
+            .ToHashSet();
 
     // Management errors (e.g. creating a collection) carry the server's reason only in their
     // context, not the message; surface it so a failed fixture says why.
@@ -87,7 +108,9 @@ public class CouchbaseTestStore : TestStore
 
     private static bool ResetScopes => Environment.GetEnvironmentVariable("COUCHBASE_SPEC_RESET_SCOPES") == "1";
 
-    private async Task DeleteAllDocumentsAsync()
+    // Deletes every document in the scope. With keepCollections, collections outside that set are
+    // dropped instead (the default collection can't be).
+    private async Task DeleteAllDocumentsAsync(HashSet<string>? keepCollections)
     {
         var cluster = await Cluster.ConnectAsync(
             CouchbaseTestEnvironment.ConnectionString,
@@ -100,6 +123,12 @@ public class CouchbaseTestStore : TestStore
             if (scopeSpec == null) return;
             foreach (var collection in scopeSpec.Collections)
             {
+                if (keepCollections != null && !keepCollections.Contains(collection.Name) && collection.Name != "_default")
+                {
+                    await bucket.Collections.DropCollectionAsync(Name, collection.Name);
+                    continue;
+                }
+
                 await cluster.QueryAsync<object>(
                     $"DELETE FROM `{CouchbaseTestEnvironment.Bucket}`.`{Name}`.`{collection.Name}`",
                     new global::Couchbase.Query.QueryOptions().ScanConsistency(global::Couchbase.Query.QueryScanConsistency.RequestPlus));

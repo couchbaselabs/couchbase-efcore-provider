@@ -50,8 +50,10 @@ public class NullSemanticsQueryCouchbaseTest(NullSemanticsQueryCouchbaseTest.Nul
 public class PrimitiveCollectionsQueryCouchbaseTest(PrimitiveCollectionsQueryCouchbaseTest.PrimitiveCollectionsQueryCouchbaseFixture fixture)
     : PrimitiveCollectionsQueryRelationalTestBase<PrimitiveCollectionsQueryCouchbaseTest.PrimitiveCollectionsQueryCouchbaseFixture>(fixture)
 {
-    public class PrimitiveCollectionsQueryCouchbaseFixture : PrimitiveCollectionsQueryFixtureBase
+    public class PrimitiveCollectionsQueryCouchbaseFixture : PrimitiveCollectionsQueryFixtureBase, ITestSqlLoggerFactory
     {
+        public TestSqlLoggerFactory TestSqlLoggerFactory => (TestSqlLoggerFactory)ListLoggerFactory;
+
         protected override ITestStoreFactory TestStoreFactory => SqlLoggingCouchbaseTestStoreFactory.ForStore(StoreName);
 
         protected override void OnModelCreating(ModelBuilder modelBuilder, DbContext context)
