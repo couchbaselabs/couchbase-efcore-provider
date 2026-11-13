@@ -83,9 +83,18 @@ the whole solution. See `.github/workflows/ci.yml`.
 ## Continuous integration
 
 `.github/workflows/ci.yml` runs on every push/PR to `main`: it builds the whole solution in
-`Release` configuration and runs the unit test suite. The integration tests and the EF Core
-specification tests are not part of CI — they need a running cluster and take real time — so
-they stay a manual/local gate before merging anything that touches provider internals.
+`Release` configuration and runs the unit test suite. The integration tests are not part of CI
+— they need a running cluster and take real time — so they stay a manual/local gate before
+merging anything that touches provider internals.
+
+`.github/workflows/spec-tests.yml` runs the EF Core specification tests on a 3-node cluster that
+[cbdinocluster](https://github.com/couchbaselabs/cbdinocluster) starts on the runner. It is run
+by hand (Actions → EF Core specification tests → Run workflow), optionally with a server version
+and class-name fragments to run part of the suite. It fails only on a failure, or an aborted test
+class, that is not in `known-failures.txt`; the job summary lists those and the tests that now
+pass. The TRX files are uploaded as the `spec-test-results` artifact; to regenerate the baseline
+from a CI run, download it and run
+`scripts/compare-baseline.py --results <artifact>/spec-results --update`.
 
 ## Cutting a release
 
