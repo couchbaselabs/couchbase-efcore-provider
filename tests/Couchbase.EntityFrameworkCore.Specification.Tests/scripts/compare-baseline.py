@@ -24,7 +24,9 @@ def read_results(results_dir):
     if os.path.exists(summary):
         with open(summary) as f:
             for line in f:
+                # class, status, and (in newer summaries) the class's run time
                 cls, _, status = line.rstrip("\n").partition("\t")
+                status = status.partition("\t")[0]
                 if status in ("aborted", "no-result"):
                     aborted.add(cls)
     for path in glob.glob(os.path.join(results_dir, "*.trx")):

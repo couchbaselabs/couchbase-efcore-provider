@@ -36,7 +36,7 @@ done
 
 mkdir -p "$out_dir"
 out_dir="$(cd "$out_dir" && pwd)"
-cd "$project_dir"
+cd "$project_dir" || exit 1
 
 if [[ $build -eq 1 ]]; then
   dotnet build -c Release --nologo -v q || exit 1
@@ -52,7 +52,7 @@ done < <(
     | sed -n '/The following Tests are available/,$p' | sed 1d \
     | sed -E 's/^[[:space:]]+//; s/\(.*//' \
     | awk -F. '{ NF--; print }' OFS=. \
-    | sort -u)
+    | LC_ALL=C sort -u)
 
 if [[ ${#filters[@]} -gt 0 ]]; then
   selected=()
@@ -64,6 +64,38 @@ if [[ ${#filters[@]} -gt 0 ]]; then
   classes=("${selected[@]}")
 fi
 
+# The suites keep each store's scope between test classes (recreating the larger ones takes
+# minutes), so a full run accumulates scopes until the bucket reaches its collection limit (1200
+# on Couchbase Server 8.0), after which EnsureCreated fails. Before each class, if the bucket is
+# past a threshold, drop all its scopes; the next suites recreate the ones they use.
+max_collections=${COUCHBASE_SPEC_MAX_COLLECTIONS:-800}
+mgmt_url=""
+if [[ -n "${COUCHBASE_CONNECTION_STRING:-}" ]]; then
+  host="${COUCHBASE_CONNECTION_STRING#*://}"
+  host="${host%%[,/?]*}"
+  host="${host%%:*}"
+  if [[ "$COUCHBASE_CONNECTION_STRING" == couchbases://* ]]; then
+    mgmt_url="https://$host:18091"
+  else
+    mgmt_url="http://$host:8091"
+  fi
+  mgmt_url="$mgmt_url/pools/default/buckets/${COUCHBASE_BUCKET:-default}/scopes"
+fi
+
+prune_scopes() {
+  [[ -n "$mgmt_url" ]] || return 0
+  local scopes count
+  scopes=$(curl -sfk -u "$COUCHBASE_USERNAME:$COUCHBASE_PASSWORD" "$mgmt_url") || return 0
+  count=$(python3 -c 'import json,sys; print(sum(len(s["collections"]) for s in json.load(sys.stdin)["scopes"]))' <<<"$scopes") || return 0
+  [[ "$count" -gt "$max_collections" ]] || return 0
+  echo "# $count collections in the bucket; dropping its scopes"
+  python3 -c 'import json,sys; [print(s["name"]) for s in json.load(sys.stdin)["scopes"] if not s["name"].startswith("_")]' <<<"$scopes" \
+    | while IFS= read -r scope; do
+        curl -sfk -o /dev/null -X DELETE -u "$COUCHBASE_USERNAME:$COUCHBASE_PASSWORD" "$mgmt_url/$scope" \
+          || echo "# could not drop scope $scope"
+      done
+}
+
 echo "Running ${#classes[@]} test classes; results in $out_dir"
 summary="$out_dir/summary.tsv"
 : > "$summary"
@@ -72,6 +104,8 @@ for class in "${classes[@]}"; do
   short="${class##*.}"
   trx="$out_dir/$short.trx"
   rm -f "$trx"
+  prune_scopes
+  start=$SECONDS
   # The trailing '.' stops one class name matching another that starts with it.
   output=$(dotnet test -c Release --no-build --nologo \
     --filter "FullyQualifiedName~$class." \
@@ -85,7 +119,7 @@ for class in "${classes[@]}"; do
   else
     status="no-result"
   fi
-  printf '%s\t%s\n' "$class" "$status" | tee -a "$summary"
+  printf '%s\t%s\t%ss\n' "$class" "$status" "$((SECONDS - start))" | tee -a "$summary"
 done
 
 if [[ $update -eq 1 ]]; then
