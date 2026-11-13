@@ -6,6 +6,9 @@ name: EF Core specification tests
 # on a failure, or an aborted test class, that is not in that list; tests that now pass are
 # reported. See CONTRIBUTING.md.
 #
+# The classes are split into two shards, each run on its own runner and cluster, balanced by the
+# per-class times in scripts/class-times.tsv: about 3 hours each, against about 6 for one job.
+#
 # Manual for now: when it runs automatically (and whether it gates PRs) waits until we know how
 # long a run takes.
 
@@ -42,10 +45,15 @@ env:
 
 jobs:
   spec-tests:
+    name: spec-tests (shard ${{ matrix.shard }}/2)
     runs-on: ubuntu-latest
-    # GitHub's limit is 360 minutes. A full run was about 4 hours of test time on a local cluster;
-    # the first runs here tell us whether one job is enough.
-    timeout-minutes: 355
+    strategy:
+      # One shard's new failures shouldn't hide the other's results.
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    # A shard takes about 3 hours; GitHub's limit is 6.
+    timeout-minutes: 300
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -115,7 +123,8 @@ jobs:
         run: |
           set -o pipefail
           # shellcheck disable=SC2086 # CLASSES is a space-separated list of filters.
-          "$SPEC_PROJECT/scripts/run-suites.sh" --no-build --out "$RUNNER_TEMP/spec-results" $CLASSES \
+          "$SPEC_PROJECT/scripts/run-suites.sh" --no-build --shard "${{ matrix.shard }}/2" \
+            --out "$RUNNER_TEMP/spec-results" $CLASSES \
             | tee "$RUNNER_TEMP/spec-run.log"
 
       - name: Summary
@@ -124,7 +133,7 @@ jobs:
           results="$RUNNER_TEMP/spec-results"
           [ -f "$results/summary.tsv" ] || exit 0
           {
-            echo '## EF Core specification tests'
+            echo '## EF Core specification tests, shard ${{ matrix.shard }}/2'
             echo
             echo '```'
             # Capped: a step summary is limited to 1 MB, and a first run can list many tests.
@@ -133,12 +142,12 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       # TRX files and the per-class summary: for investigating failures, and for regenerating
-      # known-failures.txt from a CI run (compare-baseline.py --results <dir> --update).
+      # known-failures.txt from a CI run (compare-baseline.py --results <shard dirs> --update).
       - name: Upload results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: spec-test-results
+          name: spec-test-results-${{ matrix.shard }}
           path: |
             ${{ runner.temp }}/spec-results
             ${{ runner.temp }}/spec-run.log

@@ -87,14 +87,16 @@ the whole solution. See `.github/workflows/ci.yml`.
 — they need a running cluster and take real time — so they stay a manual/local gate before
 merging anything that touches provider internals.
 
-`.github/workflows/spec-tests.yml` runs the EF Core specification tests on a 3-node cluster that
-[cbdinocluster](https://github.com/couchbaselabs/cbdinocluster) starts on the runner. It is run
+`.github/workflows/spec-tests.yml` runs the EF Core specification tests on 3-node clusters that
+[cbdinocluster](https://github.com/couchbaselabs/cbdinocluster) starts on the runners. The classes
+are split into two shards (`run-suites.sh --shard I/N`), each on its own runner and cluster and
+balanced by the per-class times in `scripts/class-times.tsv`, so a run takes about 3 hours. It is run
 by hand (Actions → EF Core specification tests → Run workflow), optionally with a server version
 and class-name fragments to run part of the suite. It fails only on a failure, or an aborted test
 class, that is not in `known-failures.txt`; the job summary lists those and the tests that now
-pass. The TRX files are uploaded as the `spec-test-results` artifact; to regenerate the baseline
-from a CI run, download it and run
-`scripts/compare-baseline.py --results <artifact>/spec-results --update`.
+pass. Each shard's TRX files are uploaded as a `spec-test-results-<shard>` artifact; to regenerate
+the baseline from a CI run, download both and run
+`scripts/compare-baseline.py --results <shard 1>/spec-results <shard 2>/spec-results --update`.
 
 ## Cutting a release
 

@@ -4,9 +4,10 @@
 known-failures.txt lists every test expected to fail, one display name per line, sorted, plus
 '# aborted: <class>' lines for test classes whose process crashed. A run passes when nothing
 outside the baseline fails. Tests that now pass but are still listed are reported so the baseline
-can shrink; pass --update to rewrite it from the run.
+can shrink; pass --update to rewrite it from the run. Pass several result directories (for
+example one per CI shard) to treat them as one run.
 
-Usage: compare-baseline.py --results DIR [--baseline FILE] [--update]
+Usage: compare-baseline.py --results DIR [DIR...] [--baseline FILE] [--update]
 """
 import argparse
 import glob
@@ -19,7 +20,7 @@ DEFAULT_BASELINE = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 
 
 def read_results(results_dir):
-    passed, failed, aborted = set(), set(), set()
+    passed, failed, aborted, ran = set(), set(), set(), set()
     summary = os.path.join(results_dir, "summary.tsv")
     if os.path.exists(summary):
         with open(summary) as f:
@@ -27,6 +28,7 @@ def read_results(results_dir):
                 # class, status, and (in newer summaries) the class's run time
                 cls, _, status = line.rstrip("\n").partition("\t")
                 status = status.partition("\t")[0]
+                ran.add(cls)
                 if status in ("aborted", "no-result"):
                     aborted.add(cls)
     for path in glob.glob(os.path.join(results_dir, "*.trx")):
@@ -40,7 +42,7 @@ def read_results(results_dir):
                 passed.add(name)
             elif outcome == "Failed":
                 failed.add(name)
-    return passed, failed, aborted
+    return passed, failed, aborted, ran
 
 
 def read_baseline(path):
@@ -68,12 +70,15 @@ def write_baseline(path, failed, aborted):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--results", required=True)
+    parser.add_argument("--results", required=True, nargs="+")
     parser.add_argument("--baseline", default=DEFAULT_BASELINE)
     parser.add_argument("--update", action="store_true")
     args = parser.parse_args()
 
-    passed, failed, aborted = read_results(args.results)
+    passed, failed, aborted, ran = set(), set(), set(), set()
+    for results_dir in args.results:
+        for total, part in zip((passed, failed, aborted, ran), read_results(results_dir)):
+            total |= part
     print(f"Run: {len(passed)} passed, {len(failed)} failed, {len(aborted)} classes aborted")
 
     if args.update:
@@ -85,7 +90,8 @@ def main():
     new_failures = sorted(failed - known)
     newly_aborted = sorted(aborted - known_aborted)
     now_passing = sorted(known & passed)
-    recovered = sorted(known_aborted - aborted)
+    # Only classes this run included (a shard or a filtered run skips the rest).
+    recovered = sorted((known_aborted - aborted) & ran)
 
     for title, items in (("New failures", new_failures), ("Newly aborted classes", newly_aborted),
                          ("Now passing (remove from the baseline)", now_passing),

@@ -6,11 +6,13 @@
 # and keeps each suite's fixture setup independent.
 #
 # Usage:
-#   scripts/run-suites.sh [--out DIR] [--no-build] [--update-baseline] [CLASS_FILTER...]
+#   scripts/run-suites.sh [--out DIR] [--no-build] [--update-baseline] [--shard I/N] [CLASS_FILTER...]
 #
 #   --out DIR           where TRX files and the summary go (default: ./TestResults/spec)
 #   --no-build          skip the Release build
 #   --update-baseline   rewrite known-failures.txt from this run instead of comparing
+#   --shard I/N         run only shard I (1-based) of N, balanced by scripts/class-times.tsv;
+#                       for running the suite on N clusters at once
 #   CLASS_FILTER        run only classes whose name contains one of these strings
 #
 # Cluster settings come from COUCHBASE_CONNECTION_STRING, COUCHBASE_USERNAME, COUCHBASE_PASSWORD
@@ -22,6 +24,7 @@ project_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 out_dir="$project_dir/TestResults/spec"
 build=1
 update=0
+shard=""
 filters=()
 
 while [[ $# -gt 0 ]]; do
@@ -29,7 +32,8 @@ while [[ $# -gt 0 ]]; do
     --out) out_dir="$2"; shift 2 ;;
     --no-build) build=0; shift ;;
     --update-baseline) update=1; shift ;;
-    -h|--help) sed -n '2,19p' "$0"; exit 0 ;;
+    --shard) shard="$2"; shift 2 ;;
+    -h|--help) sed -n '2,21p' "$0"; exit 0 ;;
     *) filters+=("$1"); shift ;;
   esac
 done
@@ -61,6 +65,34 @@ if [[ ${#filters[@]} -gt 0 ]]; then
       if [[ "$c" == *"$f"* ]]; then selected+=("$c"); break; fi
     done
   done
+  classes=("${selected[@]}")
+fi
+
+# Longest-first onto the least-loaded shard, using each class's time from an earlier CI run
+# (60 s for a class with no recorded time); the shard's classes keep their usual order.
+if [[ -n "$shard" ]]; then
+  selected=()
+  while IFS= read -r c; do
+    [[ -n "$c" ]] && selected+=("$c")
+  done < <(printf '%s\n' "${classes[@]}" | python3 -c '
+import sys
+index, count = (int(x) for x in sys.argv[2].split("/"))
+times = {}
+with open(sys.argv[1]) as f:
+    for line in f:
+        if line.strip() and not line.startswith("#"):
+            name, secs = line.split("\t")
+            times[name] = int(secs)
+classes = [c for c in sys.stdin.read().splitlines() if c]
+load, mine = [0] * count, set()
+for c in sorted(classes, key=lambda c: -times.get(c.rsplit(".", 1)[-1], 60)):
+    i = load.index(min(load))
+    load[i] += times.get(c.rsplit(".", 1)[-1], 60)
+    if i == index - 1:
+        mine.add(c)
+print(f"Shard {index}/{count}: about {load[index - 1] // 60} min of {sum(load) // 60}", file=sys.stderr)
+print("\n".join(c for c in classes if c in mine))
+' "$project_dir/scripts/class-times.tsv" "$shard")
   classes=("${selected[@]}")
 fi
 
