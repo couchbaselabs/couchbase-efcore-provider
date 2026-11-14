@@ -45,8 +45,99 @@ public class CouchbaseTestStore : TestStore
     /// </summary>
     public override async Task CleanAsync(DbContext context)
     {
-        await DropScopeAsync();
-        await context.Database.EnsureCreatedAsync();
+        // Creating a scope's collections and indexes is slow (minutes for the larger models), and
+        // every suite usually runs in its own test process. So an existing scope is reused: its
+        // documents are deleted and EnsureCreated adds whatever the model needs that is missing.
+        // Set COUCHBASE_SPEC_RESET_SCOPES=1 to drop and recreate each scope once per run instead,
+        // for example after a model change left collections or indexes that conflict.
+        bool first;
+        lock (InitializedScopes)
+        {
+            first = InitializedScopes.Add(Name);
+        }
+
+        if (first && ResetScopes)
+        {
+            await DropScopeAsync();
+            await EnsureCreatedAsync(context);
+            return;
+        }
+
+        // A shared store keeps one model for the whole test class. Its first clean in this process
+        // runs EnsureCreated; later cleans (suites that reseed after every test) only delete
+        // documents, since re-checking every index costs seconds each once the bucket holds many
+        // scopes. A non-shared store gets a different model in each test, so it also drops the
+        // collections the current model doesn't use (otherwise the scope collects every test's
+        // collections until the cluster's collection limit is reached) and runs EnsureCreated.
+        // Documents go first: EnsureCreated's index check fails on a collection that still holds
+        // documents (a provider bug), so it must run against empty collections.
+        var keep = Shared ? null : ModelCollections(context);
+        await DeleteAllDocumentsAsync(keep);
+        if (first || !Shared)
+        {
+            await EnsureCreatedAsync(context);
+        }
+    }
+
+    // The collections in this store's scope that the model maps entity types to. A table name is
+    // either "collection" or "scope.collection"; other scopes are not this store's to manage.
+    private HashSet<string> ModelCollections(DbContext context)
+        => context.Model.GetEntityTypes()
+            .Select(e => e.GetTableName())
+            .OfType<string>()
+            .Select(t => t.Split('.'))
+            .Where(p => p.Length == 1 || p[^2] == Name)
+            .Select(p => p[^1])
+            .ToHashSet();
+
+    // Management errors (e.g. creating a collection) carry the server's reason only in their
+    // context, not the message; surface it so a failed fixture says why.
+    private static async Task EnsureCreatedAsync(DbContext context)
+    {
+        try
+        {
+            await context.Database.EnsureCreatedAsync();
+        }
+        catch (CouchbaseException e) when (e.Context != null && string.IsNullOrEmpty(e.Message.Replace("Exception of type 'Couchbase.CouchbaseException' was thrown.", "")))
+        {
+            throw new InvalidOperationException($"EnsureCreated failed: {e.Context}", e);
+        }
+    }
+
+    private static readonly HashSet<string> InitializedScopes = [];
+
+    private static bool ResetScopes => Environment.GetEnvironmentVariable("COUCHBASE_SPEC_RESET_SCOPES") == "1";
+
+    // Deletes every document in the scope. With keepCollections, collections outside that set are
+    // dropped instead (the default collection can't be).
+    private async Task DeleteAllDocumentsAsync(HashSet<string>? keepCollections)
+    {
+        var cluster = await Cluster.ConnectAsync(
+            CouchbaseTestEnvironment.ConnectionString,
+            CouchbaseTestEnvironment.Username,
+            CouchbaseTestEnvironment.Password);
+        try
+        {
+            var bucket = await cluster.BucketAsync(CouchbaseTestEnvironment.Bucket);
+            var scopeSpec = (await bucket.Collections.GetAllScopesAsync()).FirstOrDefault(s => s.Name == Name);
+            if (scopeSpec == null) return;
+            foreach (var collection in scopeSpec.Collections)
+            {
+                if (keepCollections != null && !keepCollections.Contains(collection.Name) && collection.Name != "_default")
+                {
+                    await bucket.Collections.DropCollectionAsync(Name, collection.Name);
+                    continue;
+                }
+
+                await cluster.QueryAsync<object>(
+                    $"DELETE FROM `{CouchbaseTestEnvironment.Bucket}`.`{Name}`.`{collection.Name}`",
+                    new global::Couchbase.Query.QueryOptions().ScanConsistency(global::Couchbase.Query.QueryScanConsistency.RequestPlus));
+            }
+        }
+        finally
+        {
+            await cluster.DisposeAsync();
+        }
     }
 
     private async Task DropScopeAsync()
@@ -80,6 +171,9 @@ public class CouchbaseTestStore : TestStore
                 o.Bucket = CouchbaseTestEnvironment.Bucket;
                 o.Scope = Name;
                 o.AutoCreateScopes = true;
+                // Long entity names produce index names the server can't create (a provider bug, recorded
+                // separately); skip auto-indexing for that one suite's scope.
+                o.AutoCreateIndexes = Name != "UpdateTest";
                 // Spec tests seed and then immediately query through N1QL; wait for the index.
                 o.ScanConsistency = global::Couchbase.Query.QueryScanConsistency.RequestPlus;
             }).ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning));
