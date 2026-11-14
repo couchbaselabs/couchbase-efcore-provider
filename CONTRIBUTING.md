@@ -90,8 +90,9 @@ merging anything that touches provider internals.
 `.github/workflows/spec-tests.yml` runs the EF Core specification tests on 3-node clusters that
 [cbdinocluster](https://github.com/couchbaselabs/cbdinocluster) starts on the runners. The classes
 are split into two shards (`run-suites.sh --shard I/N`), each on its own runner and cluster and
-balanced by the per-class times in `scripts/class-times.tsv`, so a run takes about 3 hours. It is run
-by hand (Actions → EF Core specification tests → Run workflow), optionally with a server version
+balanced by the per-class times in `scripts/class-times.tsv`, so a run takes about 3 hours: too long
+to gate PRs. It runs nightly on `main` (06:00 UTC), and can be run by hand (Actions → EF Core
+specification tests → Run workflow) before merging a provider change, optionally with a server version
 and class-name fragments to run part of the suite. It fails only on a failure, or an aborted test
 class, that is not in `known-failures.txt`; the job summary lists those and the tests that now
 pass. Each shard's TRX files are uploaded as a `spec-test-results-<shard>` artifact; to regenerate

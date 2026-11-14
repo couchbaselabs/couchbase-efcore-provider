@@ -7,10 +7,8 @@ name: EF Core specification tests
 # reported. See CONTRIBUTING.md.
 #
 # The classes are split into two shards, each run on its own runner and cluster, balanced by the
-# per-class times in scripts/class-times.tsv: about 3 hours each, against about 6 for one job.
-#
-# Manual for now: when it runs automatically (and whether it gates PRs) waits until we know how
-# long a run takes.
+# per-class times in scripts/class-times.tsv: about 3 hours, against about 6 for one job. That is
+# too long to gate PRs, so it runs nightly on main and by hand (Actions → Run workflow).
 
 on:
   workflow_dispatch:
@@ -25,10 +23,9 @@ on:
         required: false
         default: ""
         type: string
-  # TEMPORARY: lets the workflow run on its own PR before it exists on main (workflow_dispatch
-  # only works for workflows on the default branch). Remove once the run time is measured.
-  pull_request:
-    branches: [main]
+  # Nightly on main, with the defaults above (scheduled runs have no inputs).
+  schedule:
+    - cron: "0 6 * * *"
 
 permissions:
   contents: read
