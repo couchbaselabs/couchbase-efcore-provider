@@ -103,7 +103,6 @@ public class CouchbaseSaveChangesInterceptor : SaveChangesInterceptor
 
         if (eventData.Context != null)
         {
-            await GenerateSequenceValuesAsync(eventData.Context, synchronous: false, cancellationToken);
             MarkOwnersWithReplacedCollections(eventData.Context);
 
             if (IsTransactionActive(eventData.Context))
@@ -121,10 +120,6 @@ public class CouchbaseSaveChangesInterceptor : SaveChangesInterceptor
     {
         if (eventData.Context != null)
         {
-            // Synchronous: each value comes from the generator's Next, which checks
-            // CouchbaseEventId.SyncNotSupported, so the task has already completed here.
-            GenerateSequenceValuesAsync(eventData.Context, synchronous: true, CancellationToken.None)
-                .AsTask().GetAwaiter().GetResult();
             MarkOwnersWithReplacedCollections(eventData.Context);
 
             if (IsTransactionActive(eventData.Context))
@@ -134,66 +129,6 @@ public class CouchbaseSaveChangesInterceptor : SaveChangesInterceptor
         }
 
         return base.SavingChanges(eventData, result);
-    }
-
-    private static async ValueTask GenerateSequenceValuesAsync(
-        DbContext context, bool synchronous, CancellationToken cancellationToken)
-    {
-        var selector = context.GetService<IValueGeneratorSelector>();
-
-        foreach (var entry in context.ChangeTracker.Entries())
-        {
-            if (entry.State != EntityState.Added)
-            {
-                continue;
-            }
-
-            var entityType = entry.Metadata;
-
-            foreach (var property in entityType.GetProperties())
-            {
-                // Check if this property uses a Couchbase sequence
-                var sequenceName = property.FindAnnotation(CouchbaseValueGeneratorSelector.SequenceNameAnnotation)?.Value as string;
-
-                if (string.IsNullOrEmpty(sequenceName))
-                {
-                    continue;
-                }
-
-                // Check if the property needs a value generated
-                // EF Core may have already assigned a temporary negative value for tracking purposes
-                var propertyEntry = entry.Property(property.Name);
-
-                // Skip if the value was explicitly set by the user (not temporary and not default)
-                if (!propertyEntry.IsTemporary)
-                {
-                    var currentValue = propertyEntry.CurrentValue;
-                    var clrType = property.ClrType;
-                    var defaultValue = clrType.IsValueType ? Activator.CreateInstance(clrType) : null;
-
-                    if (currentValue != null && !currentValue.Equals(defaultValue))
-                    {
-                        // Value was explicitly set by user, skip generation
-                        continue;
-                    }
-                }
-
-                // Get the value generator from the selector (throw if none — the documented
-                // replacement for the obsolete Select).
-                if (!selector.TrySelect(property, entityType, out var generator) || generator == null)
-                {
-                    throw new InvalidOperationException(
-                        $"Could not create value generator for property '{property.Name}' on entity '{entityType.ClrType.Name}'. " +
-                        $"Selector type: {selector?.GetType().FullName}");
-                }
-
-                // Generate the value
-                var value = synchronous
-                    ? generator.Next(entry)
-                    : await generator.NextAsync(entry, cancellationToken);
-                entry.Property(property.Name).CurrentValue = value;
-            }
-        }
     }
 
     public override async ValueTask<int> SavedChangesAsync(
@@ -239,11 +174,17 @@ public class CouchbaseSaveChangesInterceptor : SaveChangesInterceptor
     // (reference replaced, items added/removed, or item property mutated), mark it as Modified
     // so EF Core includes it in GetEntriesToSave and our SaveChangesAsync rewrites the document.
     //
-    // GenerateSequenceValuesAsync (called just before this) already triggered DetectChanges,
-    // so we disable AutoDetectChanges here to avoid a redundant second pass.
+    // EF Core calls this interceptor before it detects changes, so detect them first (when the
+    // application has not turned that off) and then disable AutoDetectChanges for the loop so
+    // each Entries() call doesn't run a redundant second pass.
     private static void MarkOwnersWithReplacedCollections(DbContext context)
     {
         var autoDetect = context.ChangeTracker.AutoDetectChangesEnabled;
+        if (autoDetect)
+        {
+            context.ChangeTracker.DetectChanges();
+        }
+
         context.ChangeTracker.AutoDetectChangesEnabled = false;
         try
         {

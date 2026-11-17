@@ -251,13 +251,11 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
 
         foreach (var entityType in _designTimeModel.Model.GetEntityTypes())
         {
-            var sequenceBucket = CouchbaseKeyspace.ResolveBucket(
-                entityType.GetTableName(), _couchbaseDbContextOptionsBuilder.Bucket);
-
             foreach (var property in entityType.GetProperties())
             {
-                var sequenceName = property.FindAnnotation(CouchbaseValueGeneratorSelector.SequenceNameAnnotation)?.Value as string;
-                if (string.IsNullOrEmpty(sequenceName))
+                if (CouchbaseSequenceLocation.Find(
+                        property, _couchbaseDbContextOptionsBuilder.Bucket, _couchbaseDbContextOptionsBuilder.Scope)
+                    is not var (sequenceBucket, sequenceScope, sequenceName))
                 {
                     continue;
                 }
@@ -272,9 +270,7 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
                     continue;
                 }
 
-                // Get scope override or use default
                 var scopeOverride = property.FindAnnotation(CouchbaseValueGeneratorSelector.SequenceScopeAnnotation)?.Value as string;
-                var sequenceScope = scopeOverride ?? _couchbaseDbContextOptionsBuilder.Scope;
 
                 // Skip auto-creation for sequences in non-default scopes (scope may not exist)
                 if (scopeOverride != null && scopeOverride != _couchbaseDbContextOptionsBuilder.Scope)
@@ -776,21 +772,14 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
 
         foreach (var entityType in _designTimeModel.Model.GetEntityTypes())
         {
-            var sequenceBucket = CouchbaseKeyspace.ResolveBucket(
-                entityType.GetTableName(), _couchbaseDbContextOptionsBuilder.Bucket);
-
             foreach (var property in entityType.GetProperties())
             {
-                var sequenceName = property.FindAnnotation(CouchbaseValueGeneratorSelector.SequenceNameAnnotation)?.Value as string;
-                if (string.IsNullOrEmpty(sequenceName))
+                if (CouchbaseSequenceLocation.Find(
+                        property, _couchbaseDbContextOptionsBuilder.Bucket, _couchbaseDbContextOptionsBuilder.Scope)
+                    is var (bucket, scope, name))
                 {
-                    continue;
+                    sequences.Add((bucket, scope, name));
                 }
-
-                var sequenceScope = property.FindAnnotation(CouchbaseValueGeneratorSelector.SequenceScopeAnnotation)?.Value as string
-                    ?? _couchbaseDbContextOptionsBuilder.Scope;
-
-                sequences.Add((sequenceBucket, sequenceScope, sequenceName));
             }
         }
 

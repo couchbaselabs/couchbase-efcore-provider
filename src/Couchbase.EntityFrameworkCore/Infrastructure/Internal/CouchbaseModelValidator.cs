@@ -1,3 +1,4 @@
+using Couchbase.EntityFrameworkCore.ValueGeneration;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -13,33 +14,56 @@ public class CouchbaseModelValidator : RelationalModelValidator
         
     }
     
-    //TODO override required methods
     public override void Validate(IModel model, IDiagnosticsLogger<DbLoggerCategory.Model.Validation> logger)
     {
         base.Validate(model, logger);
-        ValidatePropertyMapping(model, logger);
-       
+        ValidateSequenceTypes(model);
     }
 
-    protected override void ValidatePropertyMapping(IModel model, IDiagnosticsLogger<DbLoggerCategory.Model.Validation> logger)
+    /// <summary>
+    /// A TPC hierarchy stores each concrete type in its own collection, so a generated key must be
+    /// unique across them. EF Core warns about any generated TPC key, because an identity column
+    /// generates values per table. A key drawn from a Couchbase sequence is shared by the whole
+    /// hierarchy, so it is accepted; any other generated TPC key still gets the warning.
+    /// </summary>
+    protected override void ValidateValueGeneration(
+        IEntityType entityType, IKey key, IDiagnosticsLogger<DbLoggerCategory.Model.Validation> logger)
     {
-        IConventionModel? conventionModel = model as IConventionModel;
-        if (conventionModel == null)
-            return;
-        
-        foreach (IConventionTypeBase entityType in conventionModel.GetEntityTypes())
+        if (key.Properties.All(p => p.ValueGenerated == ValueGenerated.Never
+                || p.FindAnnotation(CouchbaseValueGeneratorSelector.SequenceNameAnnotation) != null))
         {
-            var unmappedProperty = entityType.GetDeclaredProperties().FirstOrDefault(
-                p => (!ConfigurationSource.Convention.Overrides(p.GetConfigurationSource())
-                      // Use a better condition for non-persisted properties when issue #14121 is implemented
-                      || !p.IsImplicitlyCreated())
-                     && p.FindTypeMapping() == null);
+            return;
+        }
 
-            if (unmappedProperty != null)
-            {
-            }
-        } 
+        base.ValidateValueGeneration(entityType, key, logger);
     }
+
+    /// <summary>
+    /// A Couchbase sequence produces integers, so it can only feed an integer (or decimal) property.
+    /// </summary>
+    private static void ValidateSequenceTypes(IModel model)
+    {
+        foreach (var entityType in model.GetEntityTypes())
+        {
+            foreach (var property in entityType.GetDeclaredProperties())
+            {
+                if (property.FindAnnotation(CouchbaseValueGeneratorSelector.SequenceNameAnnotation) is null)
+                {
+                    continue;
+                }
+
+                var type = Nullable.GetUnderlyingType(property.ClrType) ?? property.ClrType;
+                if (!CouchbaseSequenceTypes.IsSupported(type))
+                {
+                    throw new InvalidOperationException(
+                        $"Cannot use Couchbase sequence for property '{entityType.DisplayName()}.{property.Name}' "
+                        + $"because the property type '{property.ClrType.Name}' is not supported. "
+                        + "Supported types are: int, long, short, byte, uint, ulong, ushort, decimal.");
+                }
+            }
+        }
+    }
+
 }
 
 /* ************************************************************

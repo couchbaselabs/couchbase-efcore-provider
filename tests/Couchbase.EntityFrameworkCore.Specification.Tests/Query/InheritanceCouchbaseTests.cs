@@ -47,7 +47,7 @@ public class InheritanceRelationshipsQueryCouchbaseFixture : InheritanceRelation
     protected override void OnModelCreating(ModelBuilder modelBuilder, DbContext context)
     {
         base.OnModelCreating(modelBuilder, context);
-        CouchbaseSpecModel.Apply(modelBuilder, context, generateIntKeys: true);
+        CouchbaseSpecModel.Apply(modelBuilder, context);
     }
 }
 
@@ -66,7 +66,7 @@ public class TPCRelationshipsQueryCouchbaseFixture : TPCRelationshipsQueryRelati
     protected override void OnModelCreating(ModelBuilder modelBuilder, DbContext context)
     {
         base.OnModelCreating(modelBuilder, context);
-        CouchbaseSpecModel.Apply(modelBuilder, context, generateIntKeys: true);
+        CouchbaseSpecModel.Apply(modelBuilder, context);
     }
 }
 
@@ -84,7 +84,7 @@ public class ManyToManyQueryCouchbaseFixture : ManyToManyQueryRelationalFixture
     protected override void OnModelCreating(ModelBuilder modelBuilder, DbContext context)
     {
         base.OnModelCreating(modelBuilder, context);
-        CouchbaseSpecModel.Apply(modelBuilder, context, generateIntKeys: true);
+        CouchbaseSpecModel.Apply(modelBuilder, context);
     }
 }
 
@@ -106,7 +106,7 @@ public class TPCManyToManyQueryCouchbaseFixture : TPCManyToManyQueryRelationalFi
     protected override void OnModelCreating(ModelBuilder modelBuilder, DbContext context)
     {
         base.OnModelCreating(modelBuilder, context);
-        CouchbaseSpecModel.Apply(modelBuilder, context, generateIntKeys: true);
+        CouchbaseSpecModel.Apply(modelBuilder, context);
     }
 }
 
@@ -146,7 +146,7 @@ public class TPCInheritanceBulkUpdatesCouchbaseFixture : TPCInheritanceBulkUpdat
     protected override void OnModelCreating(ModelBuilder modelBuilder, DbContext context)
     {
         base.OnModelCreating(modelBuilder, context);
-        CouchbaseSpecModel.Apply(modelBuilder, context, generateIntKeys: true);
+        CouchbaseSpecModel.Apply(modelBuilder, context);
     }
 }
 

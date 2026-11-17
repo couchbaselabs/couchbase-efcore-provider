@@ -1,4 +1,3 @@
-using System.Reflection;
 using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore;
@@ -11,13 +10,12 @@ namespace Couchbase.EntityFrameworkCore.ValueGeneration;
 /// Selects the appropriate value generator for properties in a Couchbase EF Core context.
 /// </summary>
 /// <remarks>
-/// This selector creates <see cref="CouchbaseSequenceValueGenerator{T}"/> instances for properties
-/// configured to use Couchbase sequences via <see cref="CouchbasePropertyExtensions.UseSequence"/>.
+/// A property that uses a Couchbase sequence gets a temporary value when the entity is added, from
+/// the relational base selector. The real value comes from the sequence when the changes are saved
+/// (see <c>CouchbaseDatabaseWrapper</c>), so <c>Add</c> never does I/O.
 /// </remarks>
 public class CouchbaseValueGeneratorSelector : RelationalValueGeneratorSelector
 {
-    private readonly ICouchbaseDbContextOptionsBuilder _optionsBuilder;
-
     /// <summary>
     /// The annotation key used to mark a property as using a Couchbase sequence.
     /// </summary>
@@ -44,53 +42,41 @@ public class CouchbaseValueGeneratorSelector : RelationalValueGeneratorSelector
     /// </summary>
     public const string GuidStringFormatAnnotation = "Couchbase:GuidStringFormat";
 
-    private static readonly MethodInfo CreateSequenceGeneratorMethod =
-        typeof(CouchbaseValueGeneratorSelector).GetMethod(
-            nameof(CreateSequenceValueGeneratorOfType),
-            BindingFlags.NonPublic | BindingFlags.Instance)!;
-
     /// <summary>
     /// Creates a new instance of <see cref="CouchbaseValueGeneratorSelector"/>.
     /// </summary>
+    /// <param name="dependencies">The selector's dependencies.</param>
+    /// <param name="optionsBuilder">Unused; kept so existing service registrations still resolve.</param>
     public CouchbaseValueGeneratorSelector(
         ValueGeneratorSelectorDependencies dependencies,
         ICouchbaseDbContextOptionsBuilder optionsBuilder)
         : base(dependencies)
     {
-        _optionsBuilder = optionsBuilder;
     }
 
     /// <summary>
-    /// Selects a value generator for the given property, preferring a Couchbase sequence or GUID
-    /// string generator when the corresponding annotation is present.
+    /// Selects a value generator for the given property, preferring the GUID string generator when
+    /// its annotation is present.
     /// </summary>
     public override bool TrySelect(IProperty property, ITypeBase typeBase, out ValueGenerator? valueGenerator)
         => TryCreateCouchbaseValueGenerator(property, out valueGenerator)
             || base.TrySelect(property, typeBase, out valueGenerator);
 
     /// <summary>
-    /// Creates a value generator for the given property, preferring a Couchbase sequence or GUID
-    /// string generator when the corresponding annotation is present.
+    /// Creates a value generator for the given property, preferring the GUID string generator when
+    /// its annotation is present.
     /// </summary>
     public override bool TryCreate(IProperty property, ITypeBase typeBase, out ValueGenerator? valueGenerator)
         => TryCreateCouchbaseValueGenerator(property, out valueGenerator)
             || base.TryCreate(property, typeBase, out valueGenerator);
 
     /// <summary>
-    /// Returns a Couchbase-specific value generator (sequence or GUID string) when the property is
-    /// annotated for one, otherwise <c>false</c> so the relational base can select a generator.
+    /// Returns the GUID string generator when the property is annotated for one, otherwise
+    /// <c>false</c> so the relational base can select a generator. Sequence properties fall through
+    /// to the base, which gives them temporary values.
     /// </summary>
-    private bool TryCreateCouchbaseValueGenerator(IProperty property, out ValueGenerator? valueGenerator)
+    private static bool TryCreateCouchbaseValueGenerator(IProperty property, out ValueGenerator? valueGenerator)
     {
-        // Check for sequence-based generation
-        var sequenceName = property.FindAnnotation(SequenceNameAnnotation)?.Value as string;
-        if (!string.IsNullOrEmpty(sequenceName))
-        {
-            valueGenerator = CreateSequenceValueGenerator(property, sequenceName);
-            return true;
-        }
-
-        // Check for GUID string generation
         var guidStringFormat = property.FindAnnotation(GuidStringFormatAnnotation)?.Value as string;
         if (guidStringFormat != null && property.ClrType == typeof(string))
         {
@@ -100,49 +86,5 @@ public class CouchbaseValueGeneratorSelector : RelationalValueGeneratorSelector
 
         valueGenerator = null;
         return false;
-    }
-
-    private ValueGenerator CreateSequenceValueGenerator(
-        IProperty property,
-        string sequenceName)
-    {
-        var clrType = property.ClrType;
-
-        // Handle nullable types by getting the underlying type
-        var underlyingType = Nullable.GetUnderlyingType(clrType) ?? clrType;
-
-        // Validate that the property type is supported
-        if (!CouchbaseSequenceValueGenerator<int>.IsTypeSupported(underlyingType))
-        {
-            throw new InvalidOperationException(
-                $"Cannot use Couchbase sequence for property '{property.DeclaringType.ClrType.Name}.{property.Name}' " +
-                $"because the property type '{clrType.Name}' is not supported. " +
-                $"Supported types are: int, long, short, byte, uint, ulong, ushort, decimal.");
-        }
-
-        // Use reflection to create the correct generic type
-        var method = CreateSequenceGeneratorMethod.MakeGenericMethod(underlyingType);
-        return (ValueGenerator)method.Invoke(this, [property, sequenceName])!;
-    }
-
-    private CouchbaseSequenceValueGenerator<T> CreateSequenceValueGeneratorOfType<T>(
-        IProperty property,
-        string sequenceName)
-        where T : struct
-    {
-        var scopeOverride = property.FindAnnotation(SequenceScopeAnnotation)?.Value as string;
-        var scope = scopeOverride ?? _optionsBuilder.Scope;
-
-        // Resolve the OWNING entity's actual bucket (mirroring CouchbaseDatabaseCreator's
-        // schema-management resolution) rather than assuming the configured bucket -- an entity
-        // mapped to a different bucket via ToCouchbaseCollection/[CouchbaseKeyspace] must generate
-        // its sequence values against that same bucket, not the context's default.
-        var tableName = (property.DeclaringType as IReadOnlyEntityType)?.GetTableName();
-        var bucket = CouchbaseKeyspace.ResolveBucket(tableName, _optionsBuilder.Bucket);
-
-        return new CouchbaseSequenceValueGenerator<T>(
-            sequenceName,
-            bucket,
-            scope);
     }
 }

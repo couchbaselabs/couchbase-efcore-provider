@@ -17,11 +17,26 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
   `ConfigureWarnings(w => w.Ignore(CouchbaseEventId.SyncNotSupported))`, or `w.Log(...)` to log each one.
   Synchronous enumeration of a `FromSql`/`FromSqlRaw` query now works when enabled, instead of throwing
   `NotImplementedException`. See [Limitations](docs/limitations.md#asynchronous-io-only).
+- **Integer primary keys are generated from a Couchbase sequence by default.** A single-property
+  integer key that EF Core generates on add now uses a sequence named `<EntityName>Sequence`, shared by
+  the whole inheritance hierarchy. Previously no value was generated, so every new entity was written
+  with key `0`. `EnsureCreatedAsync` creates the sequences; a save that needs a missing one throws with
+  the `CREATE SEQUENCE` statement to run. A new sequence starts at 1: if a collection already holds
+  integer-keyed documents, create the sequence with a higher start value. Configure
+  `ValueGeneratedNever()` to keep setting keys yourself. See [Sequences](docs/sequences.md).
+- **Sequence values are assigned at save time.** `Add` gives a sequence key a temporary value and does
+  no I/O, so it works synchronously; `SaveChangesAsync` fetches all the values it needs from each
+  sequence in one query. Previously `Add` fetched each value, one query per entity, and a synchronous
+  `Add` blocked on the query.
+- **TPC hierarchies with integer keys are supported.** The keys come from the root type's sequence, so
+  they are unique across the hierarchy's collections.
 
 ### Removed
 
 - **`ExceptionHelper.SyncroIONotSupportedException`** (breaking). The provider no longer uses it:
   synchronous calls raise `CouchbaseEventId.SyncNotSupported` instead.
+- **`CouchbaseSequenceValueGenerator<T>`** (breaking, added in 2.0.0-beta.1). Sequence values are now
+  fetched in one query per sequence when the context saves, so nothing uses the generator.
 
 ### Added
 

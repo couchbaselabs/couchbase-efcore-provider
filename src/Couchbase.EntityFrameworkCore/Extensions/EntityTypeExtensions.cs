@@ -26,11 +26,36 @@ public static class EntityTypeExtensions
             : value?.ToString();
 
     public static string GetPrimaryKey(this IEntityType entityType, object entity)
+        => BuildLegacyKey(entityType, entity, static (_, clrProperty, entity) => clrProperty.GetValue(entity), entity);
+
+    /// <summary>
+    /// The legacy document key of <paramref name="entity"/>: the same string as
+    /// <see cref="GetPrimaryKey(IEntityType,object)"/> (the key parts in CLR property order), but
+    /// with the values read from <paramref name="updateEntry"/>.
+    /// </summary>
+    /// <remarks>
+    /// During a save, a store-generated key value (such as a sequence value, or a foreign key that
+    /// EF Core set from one) is in the update entry only: EF Core copies it to the CLR object when
+    /// it accepts the changes, after the documents are written.
+    /// </remarks>
+    internal static string GetLegacyPrimaryKey(
+        this IEntityType entityType, object entity, Microsoft.EntityFrameworkCore.Update.IUpdateEntry updateEntry)
+        => BuildLegacyKey(entityType, entity, static (key, _, entry) => entry.GetCurrentValue(key), updateEntry);
+
+    /// <summary>
+    /// Joins the key parts with <c>'_'</c>, ordered by the entity's CLR properties in reverse
+    /// declaration order (the legacy format), reading each value with <paramref name="readValue"/>.
+    /// </summary>
+    private static string BuildLegacyKey<TState>(
+        IEntityType entityType,
+        object entity,
+        Func<IProperty, System.Reflection.PropertyInfo, TState, object?> readValue,
+        TState state)
     {
         var keys = (entityType.FindPrimaryKey()
                 ?? throw new InvalidOperationException(
                     $"Entity type '{entityType.DisplayName()}' has no primary key defined."))
-            .Properties.ToArray();
+            .Properties;
 
         var compositeKey = new StringBuilder();
         foreach (var property in entity.GetType().GetProperties().Reverse())
@@ -40,11 +65,10 @@ public static class EntityTypeExtensions
                 if (key.Name != property.Name) continue;
                 if (compositeKey.Length > 0)
                 {
-                    compositeKey.Append("_"); //TODO delimiter should be optional and customizable
+                    compositeKey.Append('_'); //TODO delimiter should be optional and customizable
                 }
 
-                var keyValue = property.GetValue(entity);
-                compositeKey.Append(FormatKeyPart(keyValue));
+                compositeKey.Append(FormatKeyPart(readValue(key, property, state)));
             }
         }
 

@@ -135,10 +135,9 @@ public class SequenceValueGenerationTests : IAsyncLifetime
     /// End-to-end test proving the entire DI/model/save pipeline works:
     /// 1. CouchbaseValueGeneratorSelector is registered and resolved via DI
     /// 2. Property has correct sequence annotation from UseSequence()
-    /// 3. SaveChangesAsync invokes the interceptor which calls the selector
-    /// 4. Selector creates the correct CouchbaseSequenceValueGenerator
-    /// 5. Generator executes sequence query and returns value
-    /// 6. Value is assigned to entity before INSERT
+    /// 3. The selector gives the key a temporary value when the entity is added
+    /// 4. SaveChangesAsync fetches the value from the sequence before the insert
+    /// 5. The entity has the sequence value after the save
     ///
     /// This test would fail if any part of the registration in
     /// CouchbaseServiceCollectionExtensions.cs line 62+ is broken.
@@ -165,11 +164,12 @@ public class SequenceValueGenerationTests : IAsyncLifetime
         Assert.Equal(Microsoft.EntityFrameworkCore.Metadata.ValueGenerated.OnAdd, idProperty.ValueGenerated);
         _outputHelper.WriteLine($"Step 2 PASS: Property has annotation '{sequenceAnnotation.Value}' and ValueGenerated.OnAdd");
 
-        // Step 3: Verify selector can create the generator for this property
-        var generator = selector.Select(idProperty, entityType);
+        // Step 3: Add gives the key a temporary value (no I/O); the sequence value is fetched at
+        // SaveChanges by the database wrapper.
+        Assert.True(selector.TrySelect(idProperty, entityType, out var generator));
         Assert.NotNull(generator);
-        Assert.IsType<CouchbaseSequenceValueGenerator<long>>(generator);
-        _outputHelper.WriteLine($"Step 3 PASS: Selector created {generator.GetType().Name}");
+        Assert.True(generator.GeneratesTemporaryValues);
+        _outputHelper.WriteLine($"Step 3 PASS: Selector created temporary generator {generator.GetType().Name}");
 
         // Step 4: Create entity with default Id (0) and save
         var entity = new SequenceTestEntity { Name = "E2E Test Entity" };
@@ -178,7 +178,7 @@ public class SequenceValueGenerationTests : IAsyncLifetime
 
         await context.SequenceTestEntities.AddAsync(entity);
 
-        // Step 5: SaveChangesAsync should trigger interceptor -> selector -> generator -> sequence query
+        // Step 5: SaveChangesAsync fetches the value from the sequence
         await context.SaveChangesAsync();
 
         // Step 6: Verify Id was assigned a positive value from the sequence

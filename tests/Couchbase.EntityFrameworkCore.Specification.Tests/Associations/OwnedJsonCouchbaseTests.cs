@@ -153,7 +153,7 @@ public class OwnedQueryCouchbaseTest(OwnedQueryCouchbaseTest.OwnedQueryCouchbase
         protected override void OnModelCreating(ModelBuilder modelBuilder, DbContext context)
         {
             base.OnModelCreating(modelBuilder, context);
-            CouchbaseSpecModel.Apply(modelBuilder, context, generateIntKeys: true);
+            CouchbaseSpecModel.Apply(modelBuilder, context);
         }
     }
 }
