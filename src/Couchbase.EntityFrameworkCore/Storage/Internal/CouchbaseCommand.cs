@@ -75,7 +75,8 @@ public class CouchbaseCommand : DbCommand
 
     public override int ExecuteNonQuery()
     {
-        return AsyncHelper.RunSync(
+        return SyncIo.Run(
+            (DbConnection as CouchbaseConnection)?.SyncIoCheck,
             static state => state.ExecuteNonQueryAsync(CancellationToken.None),
             this);
     }
@@ -106,7 +107,7 @@ public class CouchbaseCommand : DbCommand
         using var linkedCts = CreateLinkedTokenSource(cancellationToken);
         var options = BuildQueryOptions(linkedCts.Token);
 
-        var cluster = ResolveCluster();
+        var cluster = await ResolveClusterAsync(linkedCts.Token).ConfigureAwait(false);
         var result = await cluster.QueryAsync<object>(CommandText, options).ConfigureAwait(false);
 
         // Drain all rows to ensure query completes
@@ -139,7 +140,8 @@ public class CouchbaseCommand : DbCommand
 
     public override object? ExecuteScalar()
     {
-        return AsyncHelper.RunSync(
+        return SyncIo.Run(
+            (DbConnection as CouchbaseConnection)?.SyncIoCheck,
             static state => state.ExecuteScalarAsync(CancellationToken.None),
             this);
     }
@@ -149,7 +151,7 @@ public class CouchbaseCommand : DbCommand
         using var linkedCts = CreateLinkedTokenSource(cancellationToken);
         var options = BuildQueryOptions(linkedCts.Token);
 
-        var cluster = ResolveCluster();
+        var cluster = await ResolveClusterAsync(linkedCts.Token).ConfigureAwait(false);
         var result = await cluster.QueryAsync<JsonElement>(CommandText, options).ConfigureAwait(false);
 
         await foreach (var row in result.Rows.WithCancellation(linkedCts.Token).ConfigureAwait(false))
@@ -216,7 +218,8 @@ public class CouchbaseCommand : DbCommand
 
     protected override DbDataReader ExecuteDbDataReader(CommandBehavior behavior)
     {
-        return AsyncHelper.RunSync(
+        return SyncIo.Run(
+            (DbConnection as CouchbaseConnection)?.SyncIoCheck,
             static state => state.Command.ExecuteDbDataReaderAsync(state.Behavior, CancellationToken.None),
             (Command: this, Behavior: behavior));
     }
@@ -232,7 +235,7 @@ public class CouchbaseCommand : DbCommand
         try
         {
             var options = BuildQueryOptions(linkedCts.Token);
-            var cluster = ResolveCluster();
+            var cluster = await ResolveClusterAsync(linkedCts.Token).ConfigureAwait(false);
             var queryResult = await cluster.QueryAsync<JsonElement>(CommandText, options).ConfigureAwait(false);
 
             reader = new CouchbaseDbDataReader<JsonElement>(queryResult, DbConnection, behavior, linkedCts.Token);
@@ -269,16 +272,29 @@ public class CouchbaseCommand : DbCommand
         await base.DisposeAsync().ConfigureAwait(false);
     }
 
-    private ICluster ResolveCluster()
+    /// <summary>
+    /// The cluster to run the command on. Opens a closed <see cref="CouchbaseConnection"/> first,
+    /// asynchronously: <see cref="CouchbaseConnection"/> does not open itself when it creates a
+    /// command, so that an async caller never blocks on a synchronous open.
+    /// </summary>
+    private async ValueTask<ICluster> ResolveClusterAsync(CancellationToken cancellationToken)
     {
         if (Cluster != null)
         {
             return Cluster;
         }
 
-        if (DbConnection is CouchbaseConnection couchbaseConnection && couchbaseConnection.Cluster != null)
+        if (DbConnection is CouchbaseConnection couchbaseConnection)
         {
-            return couchbaseConnection.Cluster;
+            if (couchbaseConnection.Cluster == null)
+            {
+                await couchbaseConnection.OpenAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            if (couchbaseConnection.Cluster != null)
+            {
+                return couchbaseConnection.Cluster;
+            }
         }
 
         throw new InvalidOperationException(

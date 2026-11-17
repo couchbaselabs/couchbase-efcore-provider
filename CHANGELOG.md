@@ -7,6 +7,22 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ## [Unreleased]
 
+### Changed
+
+- **Synchronous calls throw by default, the same in Debug and Release builds, and can be enabled.**
+  `SaveChanges()`, synchronous query enumeration, `EnsureCreated()`, `BeginTransaction()` and the other
+  synchronous APIs raise the new `CouchbaseEventId.SyncNotSupported` warning, which the provider
+  configures as an error (`InvalidOperationException`). Previously they threw `NotSupportedException`
+  in Release builds and blocked in Debug builds. To allow blocking calls, configure
+  `ConfigureWarnings(w => w.Ignore(CouchbaseEventId.SyncNotSupported))`, or `w.Log(...)` to log each one.
+  Synchronous enumeration of a `FromSql`/`FromSqlRaw` query now works when enabled, instead of throwing
+  `NotImplementedException`. See [Limitations](docs/limitations.md#asynchronous-io-only).
+
+### Removed
+
+- **`ExceptionHelper.SyncroIONotSupportedException`** (breaking). The provider no longer uses it:
+  synchronous calls raise `CouchbaseEventId.SyncNotSupported` instead.
+
 ### Added
 
 - **Opt-in `V2` document key format for composite primary keys** (`UseDocumentKeyFormat`,

@@ -1,3 +1,5 @@
+using Couchbase.EntityFrameworkCore.Diagnostics.Internal;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using System.Data;
 using Couchbase.EntityFrameworkCore.Storage.Internal;
 using Couchbase.Extensions.DependencyInjection;
@@ -106,7 +108,8 @@ public static class CouchbaseDatabaseFacadeExtensions
     {
         var connectionString = databaseFacade.GetConnectionString()
             ?? throw new InvalidOperationException("No Couchbase connection string is configured.");
-        return Couchbase.EntityFrameworkCore.Internal.AsyncHelper.RunSync(
+        return Couchbase.EntityFrameworkCore.Internal.SyncIo.Run(
+            databaseFacade.GetService<IDiagnosticsLogger<DbLoggerCategory.Database>>().SyncNotSupported,
             static state => state.GetClusterAsync(),
             GetService<IClusterProvider>(databaseFacade, connectionString));
     }
@@ -124,19 +127,10 @@ public static class CouchbaseDatabaseFacadeExtensions
     }
 
     public static void EnsureClean(this DatabaseFacade databaseFacade)
-    {
-        var connectionString = databaseFacade.GetConnectionString()
-            ?? throw new InvalidOperationException("No Couchbase connection string is configured.");
-        var clusterOptions = new ClusterOptions().WithConnectionString(connectionString);
-
-        if (clusterOptions.TryGetRawParameter("bucket", out object? bucketName) && bucketName != null)
-        {
-            var couchbaseClient = GetCouchbaseClient(databaseFacade);
-            Couchbase.EntityFrameworkCore.Internal.AsyncHelper.RunSync(
-                static state => state.client.Buckets.FlushBucketAsync(state.bucket),
-                (client: couchbaseClient, bucket: bucketName.ToString()!));
-        }
-    }
+        => Couchbase.EntityFrameworkCore.Internal.SyncIo.Run(
+            databaseFacade.GetService<IDiagnosticsLogger<DbLoggerCategory.Database>>().SyncNotSupported,
+            static facade => facade.EnsureCleanAsync(),
+            databaseFacade);
 
     public static async Task EnsureCleanAsync(this DatabaseFacade databaseFacade)
     {

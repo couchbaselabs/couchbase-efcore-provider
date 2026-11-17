@@ -1,4 +1,5 @@
 using System.Collections;
+using Couchbase.EntityFrameworkCore.Diagnostics.Internal;
 using System.Text.Json;
 using Couchbase.EntityFrameworkCore.Extensions;
 using Couchbase.EntityFrameworkCore.Infrastructure;
@@ -7,6 +8,8 @@ using Couchbase.EntityFrameworkCore.Metadata;
 using Couchbase.EntityFrameworkCore.Utils;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking.Internal;
+using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.EntityFrameworkCore.Update;
@@ -58,13 +61,10 @@ public class CouchbaseDatabaseWrapper : Database
 
     public override int SaveChanges(IList<IUpdateEntry> entries)
     {
-#if DEBUG
-        return AsyncHelper.RunSync(
+        return SyncIo.Run(
+            _relationalConnection.Context.GetService<IDiagnosticsLogger<DbLoggerCategory.Update>>().SyncNotSupported,
             static state => state.self.SaveChangesAsync(state.entries),
             (self: this, entries));
-#else
-        throw ExceptionHelper.SyncroIONotSupportedException();
-#endif
     }
 
     public override async Task<int> SaveChangesAsync(IList<IUpdateEntry> entries, CancellationToken cancellationToken = new())

@@ -1,3 +1,4 @@
+using Couchbase.EntityFrameworkCore.Diagnostics;
 using Couchbase.Core.Exceptions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
@@ -176,5 +177,8 @@ public class CouchbaseTestStore : TestStore
                 o.AutoCreateIndexes = Name != "UpdateTest";
                 // Spec tests seed and then immediately query through N1QL; wait for the index.
                 o.ScanConsistency = global::Couchbase.Query.QueryScanConsistency.RequestPlus;
-            }).ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning));
+            }).ConfigureWarnings(w => w
+                .Ignore(CoreEventId.ManyServiceProvidersCreatedWarning)
+                // EF's suites run sync variants of most tests; opt in to blocking sync I/O.
+                .Ignore(CouchbaseEventId.SyncNotSupported));
 }

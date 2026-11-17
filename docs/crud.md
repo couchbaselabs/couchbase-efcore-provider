@@ -24,7 +24,7 @@ The code above performs the following steps:
 * Finally, DbContext.SaveChangesAsync() is called and the entities modified properties are persisted to the database.
 
 > [!NOTE]
-> This provider is asynchronous-only — synchronous APIs like `SaveChanges()`/`.Single()` throw `NotSupportedException` in Release builds. Use the `Async` variants throughout, as in the examples on this page. See [Limitations](limitations.md#asynchronous-io-only).
+> Synchronous APIs like `SaveChanges()`/`.Single()` throw by default, because the Couchbase SDK is asynchronous. Use the `Async` variants throughout, as in the examples on this page. See [Limitations](limitations.md#asynchronous-io-only) to opt in to synchronous calls.
 
 ## Approach 2: Bulk update with ExecuteUpdateAsync and ExecuteDeleteAsync
 

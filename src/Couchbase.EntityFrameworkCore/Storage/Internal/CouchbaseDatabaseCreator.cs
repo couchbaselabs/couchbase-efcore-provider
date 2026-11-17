@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using Couchbase.EntityFrameworkCore.Internal;
+using Couchbase.EntityFrameworkCore.Diagnostics.Internal;
 using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.EntityFrameworkCore.Metadata;
 using Couchbase.EntityFrameworkCore.Utils;
@@ -833,7 +835,7 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
     /// </summary>
     public override void Create()
     {
-        throw ExceptionHelper.SyncroIONotSupportedException();
+        SyncIo.Run(Dependencies.CommandLogger.SyncNotSupported, static self => self.CreateAsync(), this);
     }
 
     public override async Task CreateAsync(CancellationToken cancellationToken = new CancellationToken())
@@ -862,7 +864,7 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
     /// </summary>
     public override void Delete()
     {
-        throw ExceptionHelper.SyncroIONotSupportedException();
+        SyncIo.Run(Dependencies.CommandLogger.SyncNotSupported, static self => self.DeleteAsync(), this);
     }
 
     /// <summary>
@@ -874,11 +876,7 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
     /// </returns>
     public override bool Exists()
     {
-#if DEBUG
-        return ExistsAsync().GetAwaiter().GetResult();
-#else
-        throw ExceptionHelper.SyncroIONotSupportedException();
-#endif
+        return SyncIo.Run(Dependencies.CommandLogger.SyncNotSupported, static self => self.ExistsAsync(), this);
     }
 
     public override async Task<bool> ExistsAsync(CancellationToken cancellationToken = new CancellationToken())
@@ -916,6 +914,43 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
     /// </returns>
     public override async Task<bool> EnsureCreatedAsync(CancellationToken cancellationToken = new CancellationToken())
     {
+        var (created, schemaCreated) = await CreateBucketAndSchemaAsync(cancellationToken).ConfigureAwait(false);
+        await SeedAsync(created || schemaCreated, cancellationToken);
+        return created;
+    }
+
+    /// <summary>
+    /// Ensures that the database for the context exists, as <see cref="EnsureCreatedAsync"/> does,
+    /// and blocks on it. Synchronous I/O must be enabled (<c>CouchbaseEventId.SyncNotSupported</c>).
+    /// </summary>
+    /// <remarks>
+    /// EF Core's relational version would check <c>Exists()</c> and then <c>HasTables()</c>, which is
+    /// always <see langword="true"/> here, so on an existing bucket it would create nothing. Runs the
+    /// seeding configured with <c>UseSeeding</c>, as EF Core's <c>EnsureCreated</c> does.
+    /// </remarks>
+    public override bool EnsureCreated()
+    {
+        var (created, schemaCreated) = SyncIo.Run(
+            Dependencies.CommandLogger.SyncNotSupported,
+            static self => self.CreateBucketAndSchemaAsync(CancellationToken.None),
+            this);
+        Seed(created || schemaCreated);
+        return created;
+    }
+
+    /// <summary>
+    /// Deletes the database, as <c>EnsureDeletedAsync</c> does, and blocks on it. Checks
+    /// <c>CouchbaseEventId.SyncNotSupported</c> once, not once for <c>Exists</c> and once for <c>Delete</c>.
+    /// </summary>
+    public override bool EnsureDeleted()
+        => SyncIo.Run(Dependencies.CommandLogger.SyncNotSupported, static self => self.EnsureDeletedAsync(), this);
+
+    /// <summary>
+    /// Creates the bucket if it does not exist, then the scopes, collections, sequences and indexes.
+    /// Returns whether the bucket was created, and whether any scope or collection was created.
+    /// </summary>
+    private async Task<(bool Created, bool SchemaCreated)> CreateBucketAndSchemaAsync(CancellationToken cancellationToken)
+    {
         var created = false;
 
         if (!await ExistsAsync(cancellationToken).ConfigureAwait(false))
@@ -934,9 +969,7 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
         await CreateIndexesAsync(cancellationToken);
         await CreateSecondaryIndexesAsync(cancellationToken);
 
-        await SeedAsync(created || schemaCreated, cancellationToken);
-
-        return created;
+        return (created, schemaCreated);
     }
 
     /// <summary>
@@ -965,6 +998,28 @@ public class CouchbaseDatabaseCreator :  RelationalDatabaseCreator
             throw new InvalidOperationException(
                 "Seeding was configured with 'UseSeeding' but not 'UseAsyncSeeding'. " +
                 "Configure both, because EnsureCreatedAsync runs the asynchronous delegate.");
+        }
+    }
+
+    /// <summary>
+    /// Runs the seeding configured with <c>UseSeeding</c>, as EF Core's own <c>EnsureCreated</c>
+    /// does. See <see cref="SeedAsync"/>.
+    /// </summary>
+    private void Seed(bool created)
+    {
+        var coreOptions = Dependencies.ContextOptions.FindExtension<CoreOptionsExtension>()
+            ?? new CoreOptionsExtension();
+
+        if (coreOptions.Seeder is { } seed)
+        {
+            seed(Dependencies.CurrentContext.Context, created);
+        }
+        else if (coreOptions.AsyncSeeder != null)
+        {
+            // Same rule as EF Core: the synchronous creation path needs the synchronous seeding delegate.
+            throw new InvalidOperationException(
+                "Seeding was configured with 'UseAsyncSeeding' but not 'UseSeeding'. " +
+                "Configure both, because EnsureCreated runs the synchronous delegate.");
         }
     }
 

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Couchbase.EntityFrameworkCore.Diagnostics;
 using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.EntityFrameworkCore.Infrastructure.Internal;
 using Couchbase.EntityFrameworkCore.Storage.Internal;
@@ -128,8 +129,10 @@ public static class CouchbaseDbContextOptionsBuilderExtensions
                                     ?? new CoreOptionsExtension();
 
         coreOptionsExtension = coreOptionsExtension.WithWarningsConfiguration(
-            coreOptionsExtension.WarningsConfiguration.TryWithExplicit(
-                RelationalEventId.AmbientTransactionWarning, WarningBehavior.Throw));
+            coreOptionsExtension.WarningsConfiguration
+                .TryWithExplicit(RelationalEventId.AmbientTransactionWarning, WarningBehavior.Throw)
+                // Synchronous I/O throws unless the application opts in (Ignore or Log).
+                .TryWithExplicit(CouchbaseEventId.SyncNotSupported, WarningBehavior.Throw));
 
         ((IDbContextOptionsBuilderInfrastructure)optionsBuilder).AddOrUpdateExtension(coreOptionsExtension);
     }

@@ -103,7 +103,7 @@ public class CouchbaseSaveChangesInterceptor : SaveChangesInterceptor
 
         if (eventData.Context != null)
         {
-            await GenerateSequenceValuesAsync(eventData.Context, cancellationToken);
+            await GenerateSequenceValuesAsync(eventData.Context, synchronous: false, cancellationToken);
             MarkOwnersWithReplacedCollections(eventData.Context);
 
             if (IsTransactionActive(eventData.Context))
@@ -121,7 +121,9 @@ public class CouchbaseSaveChangesInterceptor : SaveChangesInterceptor
     {
         if (eventData.Context != null)
         {
-            GenerateSequenceValuesAsync(eventData.Context, CancellationToken.None)
+            // Synchronous: each value comes from the generator's Next, which checks
+            // CouchbaseEventId.SyncNotSupported, so the task has already completed here.
+            GenerateSequenceValuesAsync(eventData.Context, synchronous: true, CancellationToken.None)
                 .AsTask().GetAwaiter().GetResult();
             MarkOwnersWithReplacedCollections(eventData.Context);
 
@@ -134,7 +136,8 @@ public class CouchbaseSaveChangesInterceptor : SaveChangesInterceptor
         return base.SavingChanges(eventData, result);
     }
 
-    private static async ValueTask GenerateSequenceValuesAsync(DbContext context, CancellationToken cancellationToken)
+    private static async ValueTask GenerateSequenceValuesAsync(
+        DbContext context, bool synchronous, CancellationToken cancellationToken)
     {
         var selector = context.GetService<IValueGeneratorSelector>();
 
@@ -185,7 +188,9 @@ public class CouchbaseSaveChangesInterceptor : SaveChangesInterceptor
                 }
 
                 // Generate the value
-                var value = await generator.NextAsync(entry, cancellationToken);
+                var value = synchronous
+                    ? generator.Next(entry)
+                    : await generator.NextAsync(entry, cancellationToken);
                 entry.Property(property.Name).CurrentValue = value;
             }
         }

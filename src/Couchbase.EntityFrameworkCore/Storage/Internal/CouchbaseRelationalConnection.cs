@@ -1,4 +1,5 @@
 using System.Data;
+using Couchbase.EntityFrameworkCore.Diagnostics.Internal;
 using System.Data.Common;
 using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.EntityFrameworkCore.Infrastructure.Internal;
@@ -84,7 +85,13 @@ public class CouchbaseRelationalConnection : RelationalConnection
     protected override DbConnection CreateDbConnection()
     {
         var connLogger = _loggerFactory?.CreateLogger<CouchbaseConnection>();
-        return new CouchbaseConnection(_bucketProvider, _couchbaseDbContextOptionsBuilder, connLogger);
+        // Synchronous ADO.NET calls on this connection that do I/O (Open, Commit, ExecuteNonQuery,
+        // ExecuteScalar, ExecuteReader) go through this context's SyncNotSupported setting.
+        var connectionLogger = Dependencies.ConnectionLogger;
+        return new CouchbaseConnection(_bucketProvider, _couchbaseDbContextOptionsBuilder, connLogger)
+        {
+            SyncIoCheck = connectionLogger.SyncNotSupported
+        };
     }
 
     /// <summary>

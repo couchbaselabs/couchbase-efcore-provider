@@ -243,18 +243,33 @@ public class CouchbaseCommandTests
         await Assert.ThrowsAsync<InvalidOperationException>(() => command.ExecuteNonQueryAsync(CancellationToken.None));
     }
 
+    // Creating a command does not open the connection (EF's async query pipeline creates commands
+    // only to read their text, and a synchronous open would block it); running one opens it
+    // asynchronously.
     [Fact]
-    public async Task ResolveCluster_WithConnectionButNoCluster_ThrowsInvalidOperationException()
+    public void CreateCommand_DoesNotOpenTheConnection()
     {
         var connection = new CouchbaseConnection(_mockBucketProvider.Object, _mockOptions.Object);
-        // Connection is not opened, so Cluster is null
-        var command = new CouchbaseCommand
-        {
-            Connection = connection,
-            CommandText = "SELECT 1"
-        };
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() => command.ExecuteNonQueryAsync(CancellationToken.None));
+        using var command = connection.CreateCommand();
+
+        Assert.Equal(ConnectionState.Closed, connection.State);
+        _mockBucketProvider.Verify(p => p.GetBucketAsync(It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ExecuteNonQueryAsync_OnAClosedConnection_OpensItAsynchronously()
+    {
+        _mockCluster.Setup(c => c.QueryAsync<object>(It.IsAny<string>(), It.IsAny<QueryOptions>()))
+            .ReturnsAsync(CreateMockQueryResultWithRows<object>(new List<object>()));
+        var connection = new CouchbaseConnection(_mockBucketProvider.Object, _mockOptions.Object);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT 1";
+
+        await command.ExecuteNonQueryAsync(CancellationToken.None);
+
+        Assert.Equal(ConnectionState.Open, connection.State);
+        _mockCluster.Verify(c => c.QueryAsync<object>("SELECT 1", It.IsAny<QueryOptions>()), Times.Once);
     }
 
     [Fact]

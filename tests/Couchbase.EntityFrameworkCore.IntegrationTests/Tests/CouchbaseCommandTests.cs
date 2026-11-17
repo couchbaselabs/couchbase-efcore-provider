@@ -143,7 +143,7 @@ public class CouchbaseCommandTests(
     }
 
     [Fact]
-    public async Task ExecuteNonQuery_WithSelectQuery_ReturnsResult()
+    public async Task ExecuteNonQuery_IsRejectedByDefault()
     {
         await using var context = bloggingFixture.GetDbContext();
         var connection = context.Database.GetDbConnection();
@@ -152,10 +152,10 @@ public class CouchbaseCommandTests(
         using var command = connection.CreateCommand();
         command.CommandText = "SELECT RAW 1";
 
-        var result = command.ExecuteNonQuery();
-
-        Assert.True(result is 0 or -1, $"Expected ExecuteNonQuery to return 0 or -1 for a SELECT query, but got {result}.");
-        outputHelper.WriteLine($"ExecuteNonQuery result: {result}");
+        // Synchronous I/O is rejected unless the context opts in
+        // (CouchbaseEventId.SyncNotSupported); SyncIoTests covers the opted-in path.
+        var e = Assert.Throws<InvalidOperationException>(() => command.ExecuteNonQuery());
+        Assert.Contains("SyncNotSupported", e.Message);
     }
 
     [Fact]
@@ -176,7 +176,7 @@ public class CouchbaseCommandTests(
     }
 
     [Fact]
-    public async Task ExecuteScalar_WithSimpleQuery_ReturnsValue()
+    public async Task ExecuteScalar_IsRejectedByDefault()
     {
         await using var context = bloggingFixture.GetDbContext();
         var connection = context.Database.GetDbConnection();
@@ -185,11 +185,10 @@ public class CouchbaseCommandTests(
         using var command = connection.CreateCommand();
         command.CommandText = "SELECT 'hello' AS greeting";
 
-        var result = command.ExecuteScalar();
-
-        Assert.NotNull(result);
-        Assert.Equal("hello", result);
-        outputHelper.WriteLine($"ExecuteScalar result: {result}");
+        // Synchronous I/O is rejected unless the context opts in
+        // (CouchbaseEventId.SyncNotSupported); SyncIoTests covers the opted-in path.
+        var e = Assert.Throws<InvalidOperationException>(() => command.ExecuteScalar());
+        Assert.Contains("SyncNotSupported", e.Message);
     }
 
     [Fact]
@@ -240,7 +239,7 @@ public class CouchbaseCommandTests(
     }
 
     [Fact]
-    public async Task ExecuteReader_WithSelectQuery_ReturnsDataReader()
+    public async Task ExecuteReader_IsRejectedByDefault()
     {
         await using var context = bloggingFixture.GetDbContext();
         var connection = context.Database.GetDbConnection();
@@ -249,10 +248,10 @@ public class CouchbaseCommandTests(
         using var command = connection.CreateCommand();
         command.CommandText = "SELECT * FROM `default`.`blogs`.`blog` LIMIT 5";
 
-        using var reader = command.ExecuteReader();
-
-        Assert.NotNull(reader);
-        Assert.IsType<CouchbaseDbDataReader<JsonElement>>(reader);
+        // Synchronous I/O is rejected unless the context opts in
+        // (CouchbaseEventId.SyncNotSupported); SyncIoTests covers the opted-in path.
+        var e = Assert.Throws<InvalidOperationException>(() => command.ExecuteReader());
+        Assert.Contains("SyncNotSupported", e.Message);
     }
 
     [Fact]
@@ -472,7 +471,7 @@ public class CouchbaseCommandTests(
 
         await using var reader = await command.ExecuteReaderAsync(CancellationToken.None);
 
-        var hasRows = reader.Read();
+        var hasRows = await reader.ReadAsync();
         Assert.True(hasRows);
         outputHelper.WriteLine("Successfully read first row from reader");
     }

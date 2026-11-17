@@ -13,15 +13,6 @@ public static class ExceptionHelper
         throw new NotSupportedException(message);
     }
 
-    public static Exception SyncroIONotSupportedException()
-    {
-        return NotSupportedException(
-            "Couchbase EF Core Database Provider does not support synchronous I/O. " +
-            "Make sure to use and correctly await only async methods when using Entity Framework " +
-            "Core to access Couchbase database. See Couchbase EF Core Database Provider " +
-            "documentation for more information.");
-    }
-
     public static Exception InvalidKeyspaceFormatOrMissingCollection(string? keyspace, Exception? innerException = null)
     {
         return new CollectionNotFoundException(
