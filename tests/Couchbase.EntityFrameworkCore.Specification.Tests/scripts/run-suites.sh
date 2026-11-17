@@ -143,7 +143,7 @@ for class in "${classes[@]}"; do
     --filter "FullyQualifiedName~$class." \
     --blame-hang-timeout 30m --blame-hang-dump-type none \
     --logger "trx;LogFileName=$trx" 2>&1)
-  line=$(grep -E "Passed!|Failed!" <<<"$output" | tail -1)
+  line=$(grep -E "Passed!|Failed!|Skipped!" <<<"$output" | tail -1)
   # Match the runner's own lines, not a test's failure message that happens to say "aborted".
   if grep -qE "^Test Run Aborted|The active test run was aborted" <<<"$output"; then
     status="aborted"
