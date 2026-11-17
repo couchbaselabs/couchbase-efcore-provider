@@ -17,6 +17,36 @@ require Docker to be running:
 dotnet test tests/Couchbase.EntityFrameworkCore.IntegrationTests/Couchbase.EntityFrameworkCore.IntegrationTests.csproj --configuration Release --no-build
 ```
 
+### EF Core specification tests
+
+`tests/Couchbase.EntityFrameworkCore.Specification.Tests` runs EF Core's own provider
+specification suites (the tests every EF Core provider is checked against) on Couchbase. Many
+of them fail today; `known-failures.txt` in that project lists every test expected to fail, and a
+run passes when nothing outside that list fails. When a change makes listed tests pass, update
+the list in the same PR so it only ever shrinks.
+
+The suites need a Couchbase cluster with a bucket they can create scopes in. EF's transaction
+suite needs a multi-node cluster: a single node hides the node-pinning that SQL++ transactions
+depend on. Point the suites at a cluster and run them with the script, which starts one test
+process per test class so a crash in one suite can't abort the rest:
+
+```sh
+export COUCHBASE_CONNECTION_STRING=couchbase://host1,host2,host3
+export COUCHBASE_USERNAME=Administrator COUCHBASE_PASSWORD=password COUCHBASE_BUCKET=default
+tests/Couchbase.EntityFrameworkCore.Specification.Tests/scripts/run-suites.sh
+```
+
+It prints new failures and tests that now pass, and exits non-zero on new failures. Pass class
+name fragments to run part of the suite (`run-suites.sh Northwind GearsOfWar`), and
+`--update-baseline` after a full run to rewrite `known-failures.txt`. Each suite keeps its data in
+its own scope, reused between runs; set `COUCHBASE_SPEC_RESET_SCOPES=1` to recreate them, for
+example after changing a test model. Without `COUCHBASE_CONNECTION_STRING`, the tests start the
+Aspire `AppHost` container instead, like the integration tests.
+
+A few harness classes emulate provider fixes so that suites can seed and run at all; each is
+marked "Test-harness only" and says which provider bug it works around. Remove the emulation
+when the provider fix lands.
+
 ### Updating `packages.lock.json` after a version bump
 
 Every project restores with `RestorePackagesWithLockFile=true` (set in `Directory.Build.props`),
@@ -53,9 +83,21 @@ the whole solution. See `.github/workflows/ci.yml`.
 ## Continuous integration
 
 `.github/workflows/ci.yml` runs on every push/PR to `main`: it builds the whole solution in
-`Release` configuration and runs the unit test suite. The integration tests are not part of CI —
-they need Docker-in-runner and take real time to spin up a cluster — so they stay a manual/local
-gate before merging anything that touches provider internals.
+`Release` configuration and runs the unit test suite. The integration tests are not part of CI
+— they need a running cluster and take real time — so they stay a manual/local gate before
+merging anything that touches provider internals.
+
+`.github/workflows/spec-tests.yml` runs the EF Core specification tests on 3-node clusters that
+[cbdinocluster](https://github.com/couchbaselabs/cbdinocluster) starts on the runners. The classes
+are split into two shards (`run-suites.sh --shard I/N`), each on its own runner and cluster and
+balanced by the per-class times in `scripts/class-times.tsv`, so a run takes about 3 hours: too long
+to gate PRs. It runs nightly on `main` (06:00 UTC), and can be run by hand (Actions → EF Core
+specification tests → Run workflow) before merging a provider change, optionally with a server version
+and class-name fragments to run part of the suite. It fails only on a failure, or an aborted test
+class, that is not in `known-failures.txt`; the job summary lists those and the tests that now
+pass. Each shard's TRX files are uploaded as a `spec-test-results-<shard>` artifact; to regenerate
+the baseline from a CI run, download both and run
+`scripts/compare-baseline.py --results <shard 1>/spec-results <shard 2>/spec-results --update`.
 
 ## Cutting a release
 

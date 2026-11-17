@@ -1,0 +1,7 @@
+using Microsoft.EntityFrameworkCore.Query;
+using Microsoft.EntityFrameworkCore.TestUtilities;
+
+namespace Couchbase.EntityFrameworkCore.SpecificationTests.Query;
+
+public class NorthwindAggregateOperatorsQueryCouchbaseTest(NorthwindQueryCouchbaseFixture<NoopModelCustomizer> fixture)
+    : NorthwindAggregateOperatorsQueryRelationalTestBase<NorthwindQueryCouchbaseFixture<NoopModelCustomizer>>(fixture);
