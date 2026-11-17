@@ -144,7 +144,8 @@ for class in "${classes[@]}"; do
     --blame-hang-timeout 30m --blame-hang-dump-type none \
     --logger "trx;LogFileName=$trx" 2>&1)
   line=$(grep -E "Passed!|Failed!" <<<"$output" | tail -1)
-  if grep -q "aborted" <<<"$output"; then
+  # Match the runner's own lines, not a test's failure message that happens to say "aborted".
+  if grep -qE "^Test Run Aborted|The active test run was aborted" <<<"$output"; then
     status="aborted"
   elif [[ -n "$line" ]]; then
     status=$(sed -E 's/.*Failed: *([0-9]+), Passed: *([0-9]+), Skipped: *([0-9]+), Total: *([0-9]+).*/failed=\1 passed=\2 skipped=\3 total=\4/' <<<"$line")

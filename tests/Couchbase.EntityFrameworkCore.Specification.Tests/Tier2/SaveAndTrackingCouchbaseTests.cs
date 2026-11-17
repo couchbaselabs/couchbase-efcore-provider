@@ -9,6 +9,7 @@ using Microsoft.EntityFrameworkCore.TestModels.ManyToManyModel;
 using Microsoft.EntityFrameworkCore.TestModels.UpdatesModel;
 using Microsoft.EntityFrameworkCore.TestUtilities;
 using Microsoft.EntityFrameworkCore.Update;
+using Xunit;
 
 namespace Couchbase.EntityFrameworkCore.SpecificationTests.Tier2;
 
@@ -46,6 +47,8 @@ public class OptimisticConcurrencyCouchbaseTest(F1CouchbaseFixture fixture)
 public class UpdatesCouchbaseTest(UpdatesCouchbaseTest.UpdatesCouchbaseFixture fixture)
     : UpdatesRelationalTestBase<UpdatesCouchbaseTest.UpdatesCouchbaseFixture>(fixture)
 {
+    [Fact(Skip = "Not written yet: EF Core makes this test abstract so that each provider asserts the names it generates "
+        + "for very long identifiers (tables, keys, indexes). The Couchbase names are not checked yet.")]
     public override void Identifiers_are_generated_correctly() { }
 
     protected override void UseTransaction(DatabaseFacade facade, IDbContextTransaction transaction) { }

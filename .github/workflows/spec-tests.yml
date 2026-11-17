@@ -30,8 +30,10 @@ on:
 permissions:
   contents: read
 
+# A new manual run cancels an earlier manual run on the same branch, but manual and nightly runs
+# never cancel each other: each takes about 3 hours.
 concurrency:
-  group: spec-tests-${{ github.ref }}
+  group: spec-tests-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 env:
