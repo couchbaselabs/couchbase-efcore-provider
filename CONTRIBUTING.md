@@ -99,6 +99,11 @@ pass. Each shard's TRX files are uploaded as a `spec-test-results-<shard>` artif
 the baseline from a CI run, download both and run
 `scripts/compare-baseline.py --results <shard 1>/spec-results <shard 2>/spec-results --update`.
 
+A `report` job then summarizes both shards together and groups the failures by root cause, using
+the patterns in `scripts/root-causes.tsv`; run `scripts/root-causes.py --results <dirs>` to do the
+same locally. When a change fixes a cause, delete its row; when the "other failures" list shows a
+new common cause, add one.
+
 ## Cutting a release
 
 `.github/workflows/release.yml` runs on manual dispatch (`workflow_dispatch`) against an existing
