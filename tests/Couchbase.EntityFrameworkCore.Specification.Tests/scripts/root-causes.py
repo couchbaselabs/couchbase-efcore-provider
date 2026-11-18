@@ -10,12 +10,11 @@ Usage: root-causes.py --results DIR [DIR...] [--causes FILE] [--top N]
 """
 import argparse
 import collections
-import glob
 import os
 import re
-import xml.etree.ElementTree as ET
 
-NS = {"t": "http://microsoft.com/schemas/VisualStudio/TeamTest/2010"}
+from trx import read_trx
+
 DEFAULT_CAUSES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "root-causes.tsv")
 
 
@@ -32,16 +31,12 @@ def read_causes(path):
 
 
 def read_results(dirs):
+    """Return (outcome, message) once for each test name, as compare-baseline.py counts them."""
+    results = {}
     for results_dir in dirs:
-        for path in glob.glob(os.path.join(results_dir, "**", "*.trx"), recursive=True):
-            try:
-                root = ET.parse(path).getroot()
-            except ET.ParseError:
-                continue
-            for result in root.iterfind(".//t:UnitTestResult", NS):
-                message = result.find("t:Output/t:ErrorInfo/t:Message", NS)
-                text = message.text or "" if message is not None else ""
-                yield result.get("testName"), result.get("outcome"), text
+        for name, outcome, message in read_trx(results_dir):
+            results[name] = (outcome, message)
+    return results.values()
 
 
 def normalize(message):
@@ -64,7 +59,7 @@ def main():
     outcomes = collections.Counter()
     by_cause = collections.Counter()
     unmatched = collections.Counter()
-    for _, outcome, message in read_results(args.results):
+    for outcome, message in read_results(args.results):
         outcomes[outcome] += 1
         if outcome != "Failed":
             continue
