@@ -412,4 +412,151 @@ public class EntityTypeExtensionsTests
 
         Assert.Equal("1000001", key);
     }
+
+    // -----------------------------------------------------------------------
+    // Legacy key parts that are not public CLR properties
+    // -----------------------------------------------------------------------
+
+    // Declared Value, B, A so that the legacy (reverse CLR declaration) order is A, B: the
+    // opposite of the HasKey order B, A below.
+    private class ReversedCompositeKeyEntity
+    {
+        public string Value { get; set; } = "";
+        public int B { get; set; }
+        public int A { get; set; }
+    }
+
+    private class ShadowKeyEntity
+    {
+        public string Name { get; set; } = "";
+    }
+
+    private class FieldKeyEntity
+    {
+#pragma warning disable CS0649 // Set by EF Core through the field mapping.
+        public int Id;
+#pragma warning restore CS0649
+        public string Name { get; set; } = "";
+    }
+
+    private class PartlyShadowCompositeKeyEntity
+    {
+        public int Visible { get; set; }
+    }
+
+    [Fact]
+    public void GetLegacyPrimaryKey_AllKeyPartsArePublicProperties_KeepsTheReverseClrOrder()
+    {
+        var entityType = BuildEntityType<ReversedCompositeKeyEntity>(mb =>
+            mb.Entity<ReversedCompositeKeyEntity>(b =>
+            {
+                b.ToCouchbaseCollection("bucket", "scope", "entity");
+                b.HasKey(e => new { e.B, e.A });
+            }));
+
+        var entry = MockUpdateEntry(entityType, ("A", 1), ("B", 2));
+
+        Assert.Equal("1_2", entityType.GetLegacyPrimaryKey(new ReversedCompositeKeyEntity(), entry));
+        Assert.Equal("1_2", entityType.GetPrimaryKey(new ReversedCompositeKeyEntity { A = 1, B = 2 }));
+    }
+
+    [Fact]
+    public void GetLegacyPrimaryKey_ShadowKey_UsesTheValueFromTheUpdateEntry()
+    {
+        // The legacy format looked for the key among the public CLR properties only, so a shadow
+        // key gave an empty document key and the insert failed.
+        var entityType = BuildEntityType<ShadowKeyEntity>(mb =>
+            mb.Entity<ShadowKeyEntity>(b =>
+            {
+                b.ToCouchbaseCollection("bucket", "scope", "entity");
+                b.Property<int>("Id");
+                b.HasKey("Id");
+            }));
+
+        var key = entityType.GetLegacyPrimaryKey(new ShadowKeyEntity(), MockUpdateEntry(entityType, ("Id", 5)));
+
+        Assert.Equal("5", key);
+    }
+
+    [Fact]
+    public void GetLegacyPrimaryKey_FieldMappedKey_UsesTheValueFromTheUpdateEntry()
+    {
+        var entityType = BuildEntityType<FieldKeyEntity>(mb =>
+            mb.Entity<FieldKeyEntity>(b =>
+            {
+                b.ToCouchbaseCollection("bucket", "scope", "entity");
+                b.HasKey(e => e.Id);
+            }));
+
+        var key = entityType.GetLegacyPrimaryKey(new FieldKeyEntity(), MockUpdateEntry(entityType, ("Id", 8)));
+
+        Assert.Equal("8", key);
+    }
+
+    [Fact]
+    public void GetLegacyPrimaryKey_CompositeKeyWithAShadowPart_HasEveryPartInKeyOrder()
+    {
+        // The legacy format skipped the shadow part, so different entities that shared the
+        // visible part got the same document key.
+        var entityType = BuildEntityType<PartlyShadowCompositeKeyEntity>(mb =>
+            mb.Entity<PartlyShadowCompositeKeyEntity>(b =>
+            {
+                b.ToCouchbaseCollection("bucket", "scope", "entity");
+                b.Property<int>("Hidden");
+                b.HasKey("Hidden", nameof(PartlyShadowCompositeKeyEntity.Visible));
+            }));
+
+        var key = entityType.GetLegacyPrimaryKey(
+            new PartlyShadowCompositeKeyEntity(), MockUpdateEntry(entityType, ("Hidden", 3), ("Visible", 4)));
+
+        Assert.Equal("3_4", key);
+    }
+
+    [Fact]
+    public void GetLegacyPrimaryKey_EmptyKey_ThrowsAndNamesTheEntityType()
+    {
+        var entityType = BuildEntityType<StringKeyEntity>(mb =>
+            mb.Entity<StringKeyEntity>(b =>
+            {
+                b.ToCouchbaseCollection("bucket", "scope", "entity");
+                b.HasKey(e => e.Code);
+            }));
+
+        var ex = Assert.Throws<InvalidOperationException>(
+            () => entityType.GetLegacyPrimaryKey(new StringKeyEntity(), MockUpdateEntry(entityType, ("Code", ""))));
+
+        Assert.Contains(nameof(StringKeyEntity), ex.Message);
+    }
+
+    [Fact]
+    public void GetPrimaryKey_FieldMappedKey_ReadsTheField()
+    {
+        var entityType = BuildEntityType<FieldKeyEntity>(mb =>
+            mb.Entity<FieldKeyEntity>(b =>
+            {
+                b.ToCouchbaseCollection("bucket", "scope", "entity");
+                b.HasKey(e => e.Id);
+            }));
+
+        var entity = new FieldKeyEntity();
+        typeof(FieldKeyEntity).GetField(nameof(FieldKeyEntity.Id))!.SetValue(entity, 6);
+
+        Assert.Equal("6", entityType.GetPrimaryKey(entity));
+    }
+
+    [Fact]
+    public void GetPrimaryKey_ShadowKey_ThrowsBecauseTheObjectHasNoValue()
+    {
+        var entityType = BuildEntityType<ShadowKeyEntity>(mb =>
+            mb.Entity<ShadowKeyEntity>(b =>
+            {
+                b.ToCouchbaseCollection("bucket", "scope", "entity");
+                b.Property<int>("Id");
+                b.HasKey("Id");
+            }));
+
+        var ex = Assert.Throws<InvalidOperationException>(() => entityType.GetPrimaryKey(new ShadowKeyEntity()));
+
+        Assert.Contains("shadow", ex.Message);
+    }
 }

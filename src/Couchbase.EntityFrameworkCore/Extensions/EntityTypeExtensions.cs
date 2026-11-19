@@ -26,30 +26,44 @@ public static class EntityTypeExtensions
             : value?.ToString();
 
     public static string GetPrimaryKey(this IEntityType entityType, object entity)
-        => BuildLegacyKey(entityType, entity, static (_, clrProperty, entity) => clrProperty.GetValue(entity), entity);
+        => BuildLegacyKey(entityType, entity,
+            static (key, entity) => key.IsShadowProperty()
+                ? throw new InvalidOperationException(
+                    $"The key property '{key.DeclaringType.DisplayName()}.{key.Name}' is a shadow property, so its " +
+                    "value cannot be read from the entity object. Build the key from the change tracker entry instead.")
+                : key.GetGetter().GetClrValueUsingContainingEntity(entity),
+            entity);
 
     /// <summary>
     /// The legacy document key of <paramref name="entity"/>: the same string as
-    /// <see cref="GetPrimaryKey(IEntityType,object)"/> (the key parts in CLR property order), but
-    /// with the values read from <paramref name="updateEntry"/>.
+    /// <see cref="GetPrimaryKey(IEntityType,object)"/>, but with the values read from
+    /// <paramref name="updateEntry"/>.
     /// </summary>
     /// <remarks>
     /// During a save, a store-generated key value (such as a sequence value, or a foreign key that
     /// EF Core set from one) is in the update entry only: EF Core copies it to the CLR object when
-    /// it accepts the changes, after the documents are written.
+    /// it accepts the changes, after the documents are written. The update entry also has the
+    /// values of shadow key properties, which the CLR object does not.
     /// </remarks>
     internal static string GetLegacyPrimaryKey(
         this IEntityType entityType, object entity, Microsoft.EntityFrameworkCore.Update.IUpdateEntry updateEntry)
-        => BuildLegacyKey(entityType, entity, static (key, _, entry) => entry.GetCurrentValue(key), updateEntry);
+        => BuildLegacyKey(entityType, entity, static (key, entry) => entry.GetCurrentValue(key), updateEntry);
 
     /// <summary>
-    /// Joins the key parts with <c>'_'</c>, ordered by the entity's CLR properties in reverse
-    /// declaration order (the legacy format), reading each value with <paramref name="readValue"/>.
+    /// Joins the key parts with <c>'_'</c>, reading each value with <paramref name="readValue"/>.
     /// </summary>
+    /// <remarks>
+    /// The legacy format orders the parts by the entity's public CLR properties in reverse
+    /// declaration order. Existing documents use that order, so it is kept whenever every key part
+    /// is a public CLR property. A key part can also be a shadow property, a mapped field or a
+    /// non-public property. The legacy format skipped such parts, which gave an empty key (the
+    /// insert failed) or a composite key with parts missing (different entities shared one
+    /// document). Such a key uses the primary key's declared order instead.
+    /// </remarks>
     private static string BuildLegacyKey<TState>(
         IEntityType entityType,
         object entity,
-        Func<IProperty, System.Reflection.PropertyInfo, TState, object?> readValue,
+        Func<IProperty, TState, object?> readValue,
         TState state)
     {
         var keys = (entityType.FindPrimaryKey()
@@ -57,19 +71,28 @@ public static class EntityTypeExtensions
                     $"Entity type '{entityType.DisplayName()}' has no primary key defined."))
             .Properties;
 
-        var compositeKey = new StringBuilder();
-        foreach (var property in entity.GetType().GetProperties().Reverse())
-        {
-            foreach (var key in keys)
-            {
-                if (key.Name != property.Name) continue;
-                if (compositeKey.Length > 0)
-                {
-                    compositeKey.Append('_'); //TODO delimiter should be optional and customizable
-                }
+        var publicProperties = entity.GetType().GetProperties();
+        var orderedKeys = keys.All(key => publicProperties.Any(property => property.Name == key.Name))
+            ? publicProperties.Reverse()
+                .SelectMany(property => keys.Where(key => key.Name == property.Name))
+            : keys;
 
-                compositeKey.Append(FormatKeyPart(readValue(key, property, state)));
+        var compositeKey = new StringBuilder();
+        foreach (var key in orderedKeys)
+        {
+            if (compositeKey.Length > 0)
+            {
+                compositeKey.Append('_'); //TODO delimiter should be optional and customizable
             }
+
+            compositeKey.Append(FormatKeyPart(readValue(key, state)));
+        }
+
+        if (compositeKey.Length == 0)
+        {
+            throw new InvalidOperationException(
+                $"The document key for entity type '{entityType.DisplayName()}' is empty, and Couchbase does not " +
+                "allow an empty document id. Give the key property a non-empty value.");
         }
 
         return compositeKey.ToString();

@@ -9,6 +9,12 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ### Changed
 
+- **`V2` is the default document key format** (breaking for some 1.x data). For a single key of type
+  `int`, `long`, `Guid` or `string`, the document key does not change. It changes for a composite key,
+  and for a single key that is an enum, a date or time, a `decimal`, a floating-point number, or a
+  value-converted value. There is no automatic migration. To keep the keys of such documents saved by
+  1.x, call `UseDocumentKeyFormat(CouchbaseDocumentKeyFormat.Legacy)`. See
+  [Document keys](docs/configuration.md#document-keys).
 - **An unfiltered `Count()`/`LongCount()` needs a primary index under `RequestPlus`.** When a query
   uses `RequestPlus` (the context default or `WithScanConsistency`) or a non-null `ConsistentWith`, the
   count now goes through the primary index so that it is exact (see Fixed). `EnsureCreatedAsync`
@@ -45,12 +51,11 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ### Added
 
-- **Opt-in `V2` document key format for composite primary keys** (`UseDocumentKeyFormat`,
-  `CouchbaseDocumentKeyFormat`, `DocumentKeyFormat`/`DocumentKeyDelimiter`). `V2` orders key parts by
-  `HasKey(...)` instead of the reverse CLR declaration order, formats them with the invariant culture,
-  escapes the delimiter so distinct keys cannot collide, and rejects `null` parts. The default stays
-  `Legacy`, so existing documents keep their keys; switching an existing collection is not migrated
-  automatically. See [Configuration](docs/configuration.md#document-keys).
+- **`V2` document key format** (`UseDocumentKeyFormat`, `CouchbaseDocumentKeyFormat`,
+  `DocumentKeyFormat`/`DocumentKeyDelimiter`). `V2` orders key parts by `HasKey(...)` instead of the
+  reverse CLR declaration order, formats them with the invariant culture, escapes the delimiter in
+  composite keys so distinct keys cannot collide, and rejects `null` parts. It is the default; see
+  Changed. See [Configuration](docs/configuration.md#document-keys).
 
 ### Fixed
 
@@ -60,6 +65,14 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
   default or `WithScanConsistency`) or a non-null `ConsistentWith`, an unfiltered
   `Count()`/`LongCount()` now counts through the primary index instead. A `NotBounded` count is
   unchanged.
+- **Legacy document keys now include key parts that are not public properties.** The legacy format
+  looked for key parts among the entity's public CLR properties only, so a shadow key, a key mapped to
+  a field or a non-public key property was left out. A single-part key became empty and the insert
+  failed; a composite key lost that part, so different entities could share one document. These keys
+  now include every part, in the order of `HasKey(...)`. Keys whose parts are all public properties
+  do not change. A composite-key document saved before under a key with a missing part is not found
+  by later updates and deletes. An empty legacy key now throws `InvalidOperationException` that names
+  the entity type, instead of failing on the server.
 - **Shadow properties are now written to the document.** An entity's shadow properties, including the
   shadow foreign key EF Core creates for a relationship with no FK property, were left out of the stored
   document, so a reloaded entity lost them (and the relationship) or failed to materialize. They are now
