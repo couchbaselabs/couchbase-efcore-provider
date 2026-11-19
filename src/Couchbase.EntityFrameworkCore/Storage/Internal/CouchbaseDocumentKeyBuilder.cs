@@ -9,7 +9,7 @@ namespace Couchbase.EntityFrameworkCore.Storage.Internal;
 
 /// <summary>
 /// Builds <see cref="Infrastructure.CouchbaseDocumentKeyFormat.V2"/> document keys. The legacy
-/// format lives in <see cref="Extensions.EntityTypeExtensions"/> and is deliberately left untouched.
+/// format lives in <see cref="Extensions.EntityTypeExtensions"/>.
 /// </summary>
 internal static class CouchbaseDocumentKeyBuilder
 {
@@ -51,6 +51,10 @@ internal static class CouchbaseDocumentKeyBuilder
                     "and must be a non-empty string, so a document key cannot be built for it.");
         }
 
+        // Escaping keeps the parts of a composite key apart. A single-part key has nothing to keep
+        // apart (every value already gives a different key), so it is written as is. That keeps a
+        // single string key such as "user_1" the same as in the legacy format.
+        var escape = primaryKey.Properties.Count > 1;
         var documentKey = new StringBuilder();
         var first = true;
         foreach (var property in primaryKey.Properties)
@@ -123,7 +127,14 @@ internal static class CouchbaseDocumentKeyBuilder
             var text = rawValue is byte[] { Length: 0 } && property.GetValueConverter() is null
                 ? "~"
                 : FormatPart(value);
-            Escape(text, delimiter, documentKey);
+            if (escape)
+            {
+                Escape(text, delimiter, documentKey);
+            }
+            else
+            {
+                documentKey.Append(text);
+            }
         }
 
         if (documentKey.Length == 0)
