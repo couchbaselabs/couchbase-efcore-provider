@@ -647,7 +647,10 @@ public class CouchbaseDatabaseWrapper : Database
             // Skip only when the navigation is not owned or cannot be read at all.
             // Read via PropertyInfo when available; fall back to FieldInfo for field-access
             // navigations (backing-field or [BackingField]-annotated) where PropertyInfo is null.
-            if (!nav.TargetEntityType.IsOwned() || (nav.PropertyInfo == null && nav.FieldInfo == null)) continue;
+            // Follow only navigations from an owner to what it owns: an owned type's navigation
+            // back to its owner (also an owned type when nested) would recurse without end.
+            if (!nav.ForeignKey.IsOwnership || nav.IsOnDependent
+                || (nav.PropertyInfo == null && nav.FieldInfo == null)) continue;
             var navValue = nav.PropertyInfo != null
                 ? nav.PropertyInfo.GetValue(item)
                 : nav.FieldInfo?.GetValue(item);

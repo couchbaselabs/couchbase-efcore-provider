@@ -827,12 +827,56 @@ public class CouchbaseDatabaseWrapperHydrateTests
         nav.Setup(n => n.IsCollection).Returns(false);
         nav.Setup(n => n.Name).Returns("label");
         nav.Setup(n => n.TargetEntityType).Returns(targetType.Object);
+        nav.Setup(n => n.ForeignKey).Returns(OwnershipForeignKey());
+        nav.Setup(n => n.IsOnDependent).Returns(false);
         // PropertyInfo is null (field-access); the FieldInfo points at the backing field.
         nav.Setup(n => n.PropertyInfo).Returns((PropertyInfo?)null);
         nav.Setup(n => n.FieldInfo).Returns(
             typeof(OwnedContact).GetField("_label", BindingFlags.NonPublic | BindingFlags.Instance));
 
         return nav.Object;
+    }
+
+    private static IForeignKey OwnershipForeignKey()
+    {
+        var foreignKey = new Mock<IForeignKey>();
+        foreignKey.Setup(f => f.IsOwnership).Returns(true);
+        return foreignKey.Object;
+    }
+
+    [Fact]
+    public void SerializeOwnedItem_DoesNotFollowTheNavigationBackToTheOwner()
+    {
+        // Regression: a nested owned type's navigation back to its owner (itself owned) was
+        // followed, and serializing owner -> child -> owner overflowed the stack.
+        var ownerType = new Mock<IEntityType>();
+        ownerType.Setup(t => t.GetProperties()).Returns([]);
+        ownerType.Setup(t => t.IsOwned()).Returns(true);
+
+        var toOwner = new Mock<INavigation>();
+        toOwner.Setup(n => n.IsCollection).Returns(false);
+        toOwner.Setup(n => n.Name).Returns("Owner");
+        toOwner.Setup(n => n.TargetEntityType).Returns(ownerType.Object);
+        toOwner.Setup(n => n.ForeignKey).Returns(OwnershipForeignKey());
+        toOwner.Setup(n => n.IsOnDependent).Returns(true);
+        toOwner.Setup(n => n.PropertyInfo).Returns(typeof(BackReferencingItem).GetProperty(nameof(BackReferencingItem.Owner)));
+
+        var childType = new Mock<IEntityType>();
+        childType.Setup(t => t.GetProperties()).Returns([]);
+        childType.Setup(t => t.GetNavigations()).Returns([toOwner.Object]);
+        ownerType.Setup(t => t.GetNavigations()).Returns([]);
+
+        var child = new BackReferencingItem();
+        child.Owner = child; // a cycle: following the navigation would never end
+
+        var result = CouchbaseDatabaseWrapper.SerializeOwnedItem(child, childType.Object, null);
+
+        Assert.False(result.ContainsKey("Owner"));
+    }
+
+    private sealed class BackReferencingItem
+    {
+        public BackReferencingItem? Owner { get; set; }
     }
 
     [Fact]
