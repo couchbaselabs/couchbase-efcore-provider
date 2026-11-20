@@ -82,9 +82,9 @@ public static class CouchbaseDbContextOptionsBuilderExtensions
     /// <summary>
     /// Sets how an entity's primary key is turned into its Couchbase document key, and optionally the
     /// delimiter between the parts of a composite key. Defaults to
-    /// <see cref="CouchbaseDocumentKeyFormat.Legacy"/>; see <see cref="CouchbaseDocumentKeyFormat"/>
-    /// for what <see cref="CouchbaseDocumentKeyFormat.V2"/> changes. Switching an existing collection
-    /// changes its documents' keys and is not migrated automatically.
+    /// <see cref="CouchbaseDocumentKeyFormat.V2"/>. Use <see cref="CouchbaseDocumentKeyFormat.Legacy"/>
+    /// for documents saved by 1.x; see <see cref="CouchbaseDocumentKeyFormat"/> for the differences.
+    /// Switching an existing collection changes its documents' keys and is not migrated automatically.
     /// </summary>
     public static CouchbaseDbContextOptionsBuilder UseDocumentKeyFormat(
         this CouchbaseDbContextOptionsBuilder builder,

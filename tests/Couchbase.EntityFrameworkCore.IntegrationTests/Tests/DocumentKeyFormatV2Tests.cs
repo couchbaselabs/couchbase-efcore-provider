@@ -12,6 +12,7 @@ namespace Couchbase.EntityFrameworkCode.IntegrationTests.Tests;
 /// Proves <see cref="CouchbaseDocumentKeyFormat.V2"/> end to end: composite keys that collide under
 /// the legacy format (<c>("x_y","z")</c> and <c>("y","z_x")</c> both give <c>z_x_y</c>) are stored as
 /// separate documents under the escaped keys, and updates and deletes find their own document.
+/// Also covers legacy keys whose parts are not public CLR properties.
 /// </summary>
 [Collection(CouchbaseTestingCollection.Name)]
 public class DocumentKeyFormatV2Tests(BloggingFixture fixture)
@@ -375,7 +376,56 @@ public class DocumentKeyFormatV2Tests(BloggingFixture fixture)
         }
     }
 
-    private DbContextOptionsBuilder<TContext> CreateOptionsBuilder<TContext>(string serviceKey)
+    [Fact]
+    public async Task Legacy_ShadowKey_IsStoredUnderItsValue_AndUpdateAndDeleteFindIt()
+    {
+        // The legacy format looked for key parts among the public CLR properties only, so a shadow
+        // key gave an empty document key and the insert failed.
+        var collectionName = "keylegacy" + Guid.NewGuid().ToString("N");
+        var optionsBuilder = CreateOptionsBuilder<KeyLegacyShadowDbContext>(collectionName, CouchbaseDocumentKeyFormat.Legacy);
+
+        try
+        {
+            await using (var writer = new KeyLegacyShadowDbContext(optionsBuilder.Options, collectionName))
+            {
+                await writer.Database.EnsureCreatedAsync();
+                var entity = new KeyLegacyShadowEntity { Value = "original" };
+                writer.Add(entity);
+                writer.Entry(entity).Property("Id").CurrentValue = 41;
+                await writer.SaveChangesAsync();
+            }
+
+            Assert.Equal(["41"], await QueryDocumentIdsAsync(collectionName, expectedCount: 1));
+
+            await using (var updater = new KeyLegacyShadowDbContext(optionsBuilder.Options, collectionName))
+            {
+                var entity = Assert.Single(await updater.Set<KeyLegacyShadowEntity>().ToListAsync());
+                entity.Value = "updated";
+                await updater.SaveChangesAsync();
+            }
+
+            await using (var reader = new KeyLegacyShadowDbContext(optionsBuilder.Options, collectionName))
+            {
+                var entity = Assert.Single(await reader.Set<KeyLegacyShadowEntity>().AsNoTracking().ToListAsync());
+                Assert.Equal("updated", entity.Value);
+            }
+
+            await using (var deleter = new KeyLegacyShadowDbContext(optionsBuilder.Options, collectionName))
+            {
+                deleter.Remove(Assert.Single(await deleter.Set<KeyLegacyShadowEntity>().ToListAsync()));
+                await deleter.SaveChangesAsync();
+            }
+
+            Assert.Empty(await QueryDocumentIdsAsync(collectionName, expectedCount: 0));
+        }
+        finally
+        {
+            await DropCollectionAsync(collectionName);
+        }
+    }
+
+    private DbContextOptionsBuilder<TContext> CreateOptionsBuilder<TContext>(
+        string serviceKey, CouchbaseDocumentKeyFormat format = CouchbaseDocumentKeyFormat.V2)
         where TContext : DbContext
     {
         var optionsBuilder = new DbContextOptionsBuilder<TContext>();
@@ -389,7 +439,7 @@ public class DocumentKeyFormatV2Tests(BloggingFixture fixture)
                 o.Scope = fixture.ScopeName;
                 o.ScanConsistency = global::Couchbase.Query.QueryScanConsistency.RequestPlus;
                 o.AutoCreateIndexes = true;
-                o.UseDocumentKeyFormat(CouchbaseDocumentKeyFormat.V2);
+                o.UseDocumentKeyFormat(format);
                 o.ServiceKey = "keyv2-" + serviceKey;
             });
         optionsBuilder.ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning));
@@ -398,7 +448,7 @@ public class DocumentKeyFormatV2Tests(BloggingFixture fixture)
 
     // A raw SDK query right after a collection is created can fail until the query service has
     // seen the new keyspace (the EF contexts under test already retry/poll), so retry that.
-    private async Task<List<string>> QueryDocumentIdsAsync(string collectionName)
+    private async Task<List<string>> QueryDocumentIdsAsync(string collectionName, int expectedCount = 2)
     {
         var clusterOptions = new global::Couchbase.ClusterOptions()
             .WithConnectionString(fixture.Host)
@@ -419,7 +469,7 @@ public class DocumentKeyFormatV2Tests(BloggingFixture fixture)
                     ids.Add(id);
                 }
 
-                if (ids.Count >= 2 || DateTime.UtcNow >= deadline)
+                if (ids.Count >= expectedCount || DateTime.UtcNow >= deadline)
                 {
                     return ids;
                 }
@@ -446,6 +496,22 @@ public class DocumentKeyFormatV2Tests(BloggingFixture fixture)
         catch (global::Couchbase.Management.Collections.CollectionNotFoundException)
         {
         }
+    }
+
+    public class KeyLegacyShadowEntity
+    {
+        public string Value { get; set; } = string.Empty;
+    }
+
+    public class KeyLegacyShadowDbContext(DbContextOptions<KeyLegacyShadowDbContext> options, string collectionName) : DbContext(options)
+    {
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+            => modelBuilder.Entity<KeyLegacyShadowEntity>(b =>
+            {
+                b.ToCouchbaseCollection(this, collectionName);
+                b.Property<int>("Id").ValueGeneratedNever();
+                b.HasKey("Id");
+            });
     }
 
     public class KeyV2Entity
