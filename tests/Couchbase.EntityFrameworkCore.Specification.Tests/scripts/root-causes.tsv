@@ -3,7 +3,6 @@
 # narrow patterns before broad ones. When a fix removes a cause, delete its row.
 seed-doc-exists	Insert failed for key .*\n.*DocumentExistsException	Seeding inserts a key that already exists (owned types with explicit keys, among others)
 seed-empty-key	Insert failed for key  in keyspace	Document key is empty: the save path reads the key by CLR reflection, not from the update entry
-key-getter	Property Get method was not found	Document key read by CLR reflection fails for a property with no getter
 split-query	SplitQueryResultCoordinator	Split queries are compiled with the single-query coordinator
 proxies-harness	AddEntityFrameworkProxies	Test harness: the internal service provider lacks EF proxies
 default-mappings	annotation 'Relational:DefaultMappings' cannot be added	Relational model built twice for JSON entity types
