@@ -4,8 +4,10 @@
 known-failures.txt lists every test expected to fail, one display name per line, sorted, plus
 '# aborted: <class>' lines for test classes whose process crashed. A run passes when nothing
 outside the baseline fails. Tests that now pass but are still listed are reported so the baseline
-can shrink; pass --update to rewrite it from the run. Pass several result directories (for
-example one per CI shard) to treat them as one run.
+can shrink; pass --update to rewrite it from the run. --update replaces the entries of only the
+classes the run included, so a run filtered to a few classes updates their part of the baseline and
+keeps the rest. Pass several result directories (for example one per CI shard) to treat them as one
+run.
 
 Usage: compare-baseline.py --results DIR [DIR...] [--baseline FILE] [--update]
 """
@@ -51,6 +53,11 @@ def read_baseline(path):
     return tests, aborted
 
 
+def test_class(name):
+    """The class part of a test display name: what comes before the method, ignoring arguments."""
+    return name.partition("(")[0].rpartition(".")[0]
+
+
 def write_baseline(path, failed, aborted):
     with open(path, "w") as f:
         f.write("# EF Core specification tests known to fail against this provider.\n")
@@ -74,12 +81,17 @@ def main():
             total |= part
     print(f"Run: {len(passed)} passed, {len(failed)} failed, {len(aborted)} classes aborted")
 
+    known, known_aborted = read_baseline(args.baseline)
+
     if args.update:
-        write_baseline(args.baseline, failed, aborted)
-        print(f"Baseline written: {len(failed)} failing tests, {len(aborted)} aborted classes -> {args.baseline}")
+        # Keep the entries of classes this run did not include (a shard or a filtered run).
+        kept = {name for name in known if test_class(name) not in ran}
+        kept_aborted = known_aborted - ran
+        write_baseline(args.baseline, failed | kept, aborted | kept_aborted)
+        print(f"Baseline written: {len(failed | kept)} failing tests ({len(kept)} kept from classes "
+              f"not in this run), {len(aborted | kept_aborted)} aborted classes -> {args.baseline}")
         return 0
 
-    known, known_aborted = read_baseline(args.baseline)
     new_failures = sorted(failed - known)
     newly_aborted = sorted(aborted - known_aborted)
     now_passing = sorted(known & passed)
