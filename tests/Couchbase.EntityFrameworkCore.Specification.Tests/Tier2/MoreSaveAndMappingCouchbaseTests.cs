@@ -57,7 +57,7 @@ public class ManyToManyLoadCouchbaseTest(ManyToManyLoadCouchbaseTest.ManyToManyL
         protected override void OnModelCreating(ModelBuilder modelBuilder, DbContext context)
         {
             base.OnModelCreating(modelBuilder, context);
-            CouchbaseSpecModel.Apply(modelBuilder, context, generateIntKeys: true);
+            CouchbaseSpecModel.Apply(modelBuilder, context);
         }
     }
 }
@@ -74,7 +74,7 @@ public class ManyToManyFieldsLoadCouchbaseTest(ManyToManyFieldsLoadCouchbaseTest
         protected override void OnModelCreating(ModelBuilder modelBuilder, DbContext context)
         {
             base.OnModelCreating(modelBuilder, context);
-            CouchbaseSpecModel.Apply(modelBuilder, context, generateIntKeys: true);
+            CouchbaseSpecModel.Apply(modelBuilder, context);
         }
     }
 }
@@ -211,6 +211,20 @@ public class MonsterFixupSnapshotCouchbaseTest(MonsterFixupSnapshotCouchbaseTest
 public class ConferencePlannerCouchbaseTest(ConferencePlannerCouchbaseTest.ConferencePlannerCouchbaseFixture fixture)
     : ConferencePlannerTestBase<ConferencePlannerCouchbaseTest.ConferencePlannerCouchbaseFixture>(fixture)
 {
+    // The base tests undo their changes by rolling back a per-test transaction, which this harness
+    // turns into a no-op (NoOpTransactionInterceptor), so their writes commit. Reseed after each
+    // test, as StoreGeneratedCouchbaseTest does. Without it, SessionsController_Put's rename of a
+    // "C#" session leaks into SearchController_Search("C#").
+    protected override async Task ExecuteWithStrategyInTransactionAsync(
+        Func<Microsoft.EntityFrameworkCore.TestModels.ConferencePlanner.ApplicationDbContext, Task> testOperation,
+        Func<Microsoft.EntityFrameworkCore.TestModels.ConferencePlanner.ApplicationDbContext, Task>? nestedTestOperation1 = null,
+        Func<Microsoft.EntityFrameworkCore.TestModels.ConferencePlanner.ApplicationDbContext, Task>? nestedTestOperation2 = null,
+        Func<Microsoft.EntityFrameworkCore.TestModels.ConferencePlanner.ApplicationDbContext, Task>? nestedTestOperation3 = null)
+    {
+        try { await base.ExecuteWithStrategyInTransactionAsync(testOperation, nestedTestOperation1, nestedTestOperation2, nestedTestOperation3); }
+        finally { await Fixture.ReseedAsync(); }
+    }
+
     public class ConferencePlannerCouchbaseFixture : ConferencePlannerFixtureBase
     {
         protected override ITestStoreFactory TestStoreFactory => SqlLoggingCouchbaseTestStoreFactory.ForStore(StoreName);
@@ -218,7 +232,7 @@ public class ConferencePlannerCouchbaseTest(ConferencePlannerCouchbaseTest.Confe
         protected override void OnModelCreating(ModelBuilder modelBuilder, DbContext context)
         {
             base.OnModelCreating(modelBuilder, context);
-            CouchbaseSpecModel.Apply(modelBuilder, context, generateIntKeys: true);
+            CouchbaseSpecModel.Apply(modelBuilder, context);
         }
     }
 }
@@ -233,7 +247,7 @@ public class MusicStoreCouchbaseTest(MusicStoreCouchbaseTest.MusicStoreCouchbase
         protected override void OnModelCreating(ModelBuilder modelBuilder, DbContext context)
         {
             base.OnModelCreating(modelBuilder, context);
-            CouchbaseSpecModel.Apply(modelBuilder, context, generateIntKeys: true);
+            CouchbaseSpecModel.Apply(modelBuilder, context);
         }
     }
 }
@@ -248,7 +262,7 @@ public class CompositeKeyEndToEndCouchbaseTest(CompositeKeyEndToEndCouchbaseTest
         protected override void OnModelCreating(ModelBuilder modelBuilder, DbContext context)
         {
             base.OnModelCreating(modelBuilder, context);
-            CouchbaseSpecModel.Apply(modelBuilder, context, generateIntKeys: true);
+            CouchbaseSpecModel.Apply(modelBuilder, context);
         }
     }
 }

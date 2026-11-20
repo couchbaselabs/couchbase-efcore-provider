@@ -4,6 +4,45 @@ Beyond client-generated GUIDs, the provider supports server-side Couchbase seque
 integer/long primary keys, configured either via the fluent `UseSequence` API or a
 `[CouchbaseSequence]` attribute.
 
+## Integer keys use a sequence by default
+
+Couchbase has no identity columns, so the provider generates an integer primary key from a
+sequence. A single-property `int`, `long` or other integer key that EF Core generates on add
+(the default for a key named `Id` or `<Type>Id`) uses a sequence named `<EntityName>Sequence`,
+for example `BlogSequence` for `Blog`. All the types in an inheritance hierarchy share the root
+type's sequence, so their keys are unique across collections; this also makes integer keys work
+with TPC mapping.
+
+```csharp
+public class Blog
+{
+    public int Id { get; set; }   // uses BlogSequence
+    public string Name { get; set; }
+}
+```
+
+`EnsureCreatedAsync` creates the sequences. If you manage the cluster yourself, create them
+before the first insert; a save that needs a missing sequence throws `InvalidOperationException`
+with the `CREATE SEQUENCE` statement to run. To set the keys yourself instead, configure the key
+with `ValueGeneratedNever()`. `UseSequence`, `[CouchbaseSequence]` and a custom value generator
+also replace the default.
+
+The values are assigned when you save, not when you add the entity. `Add` gives the key a
+temporary value, so it does no I/O and works synchronously; `SaveChangesAsync` fetches the values
+it needs from each sequence in one query, sets the keys, and EF Core updates the foreign keys of
+the related entities. A key you set yourself (a non-default value) is kept.
+
+The keys are store-generated values, like identity columns in a relational database: the entity's
+key property gets its value when the save completes. If the save fails, the keys keep their
+temporary values and the next save fetches new ones. Values that a failed save fetched are not
+used again, so the keys can have gaps.
+
+> [!IMPORTANT]
+> A new sequence starts at 1. If the collection already has documents whose keys came from
+> somewhere else (an import, seed data with explicit keys, an earlier version of the provider),
+> new keys can collide with them and the insert fails. Create the sequence with a start value
+> above the existing keys, or set `StartWith` with `UseSequence`.
+
 ## UseSequence (fluent API)
 
 The simplest form looks up a sequence of the given name in the bucket/scope the `DbContext` is
@@ -109,7 +148,7 @@ way.
 
 ## Generated GUIDs
 
-For distributed-ID scenarios where a server round-trip per insert isn't worth it, `UseGuid()`
+For distributed-ID scenarios where a server round-trip per save isn't worth it, `UseGuid()`
 and `UseGuidString()` generate a value client-side (via EF Core's built-in generator) instead of
 using a server-side sequence:
 

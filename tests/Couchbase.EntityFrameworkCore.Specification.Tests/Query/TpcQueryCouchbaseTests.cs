@@ -26,7 +26,7 @@ public class TPCInheritanceQueryCouchbaseFixture : TPCInheritanceQueryFixture
     protected override void OnModelCreating(ModelBuilder modelBuilder, DbContext context)
     {
         base.OnModelCreating(modelBuilder, context);
-        CouchbaseSpecModel.Apply(modelBuilder, context, generateIntKeys: true);
+        CouchbaseSpecModel.Apply(modelBuilder, context);
     }
 }
 
@@ -47,7 +47,7 @@ public class TPCGearsOfWarQueryCouchbaseFixture : TPCGearsOfWarQueryRelationalFi
     protected override void OnModelCreating(ModelBuilder modelBuilder, DbContext context)
     {
         base.OnModelCreating(modelBuilder, context);
-        CouchbaseSpecModel.Apply(modelBuilder, context, generateIntKeys: true);
+        CouchbaseSpecModel.Apply(modelBuilder, context);
     }
 }
 

@@ -41,7 +41,7 @@ public class NullSemanticsQueryCouchbaseTest(NullSemanticsQueryCouchbaseTest.Nul
         protected override void OnModelCreating(ModelBuilder modelBuilder, DbContext context)
         {
             base.OnModelCreating(modelBuilder, context);
-            CouchbaseSpecModel.Apply(modelBuilder, context, generateIntKeys: true);
+            CouchbaseSpecModel.Apply(modelBuilder, context);
         }
     }
 }
@@ -59,7 +59,7 @@ public class PrimitiveCollectionsQueryCouchbaseTest(PrimitiveCollectionsQueryCou
         protected override void OnModelCreating(ModelBuilder modelBuilder, DbContext context)
         {
             base.OnModelCreating(modelBuilder, context);
-            CouchbaseSpecModel.Apply(modelBuilder, context, generateIntKeys: true);
+            CouchbaseSpecModel.Apply(modelBuilder, context);
         }
     }
 }
@@ -75,7 +75,7 @@ public class ComplexTypeQueryCouchbaseTest(ComplexTypeQueryCouchbaseTest.Complex
         protected override void OnModelCreating(ModelBuilder modelBuilder, DbContext context)
         {
             base.OnModelCreating(modelBuilder, context);
-            CouchbaseSpecModel.Apply(modelBuilder, context, generateIntKeys: true);
+            CouchbaseSpecModel.Apply(modelBuilder, context);
         }
     }
 }
@@ -103,7 +103,7 @@ public class TPHInheritanceQueryCouchbaseFixture : TPHInheritanceQueryFixture
     protected override void OnModelCreating(ModelBuilder modelBuilder, DbContext context)
     {
         base.OnModelCreating(modelBuilder, context);
-        CouchbaseSpecModel.Apply(modelBuilder, context, generateIntKeys: true);
+        CouchbaseSpecModel.Apply(modelBuilder, context);
     }
 }
 
@@ -125,7 +125,7 @@ public class TPHInheritanceBulkUpdatesCouchbaseFixture : TPHInheritanceBulkUpdat
     protected override void OnModelCreating(ModelBuilder modelBuilder, DbContext context)
     {
         base.OnModelCreating(modelBuilder, context);
-        CouchbaseSpecModel.Apply(modelBuilder, context, generateIntKeys: true);
+        CouchbaseSpecModel.Apply(modelBuilder, context);
     }
 }
 

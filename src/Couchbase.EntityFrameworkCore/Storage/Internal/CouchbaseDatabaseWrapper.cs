@@ -6,6 +6,7 @@ using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.EntityFrameworkCore.Internal;
 using Couchbase.EntityFrameworkCore.Metadata;
 using Couchbase.EntityFrameworkCore.Utils;
+using Couchbase.EntityFrameworkCore.ValueGeneration;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking.Internal;
 using Microsoft.EntityFrameworkCore.Diagnostics;
@@ -25,6 +26,8 @@ public class CouchbaseDatabaseWrapper : Database
     private readonly CouchbaseDocumentKeyFormat _documentKeyFormat;
     private readonly char _documentKeyDelimiter;
     private readonly CouchbaseMutationStateTracker _mutationStateTracker;
+    private readonly string _bucket;
+    private readonly string _scope;
 
     public CouchbaseDatabaseWrapper(
         DatabaseDependencies dependencies,
@@ -39,13 +42,16 @@ public class CouchbaseDatabaseWrapper : Database
         _fieldNamingPolicy = couchbaseDbContextOptionsBuilder.FieldNamingPolicy;
         _documentKeyFormat = couchbaseDbContextOptionsBuilder.DocumentKeyFormat;
         _documentKeyDelimiter = couchbaseDbContextOptionsBuilder.DocumentKeyDelimiter;
+        _bucket = couchbaseDbContextOptionsBuilder.Bucket;
+        _scope = couchbaseDbContextOptionsBuilder.Scope;
         _mutationStateTracker = mutationStateTracker ?? throw new ArgumentNullException(nameof(mutationStateTracker));
     }
 
     /// <summary>
     /// The document key for an entry, in the configured <see cref="CouchbaseDocumentKeyFormat"/>.
-    /// Legacy keys keep their original behavior exactly (shared entity types read the update entry,
-    /// everything else the CLR object); V2 keys always read the update entry.
+    /// Values always come from the update entry, which has store-generated values (such as sequence
+    /// values) before EF Core copies them to the CLR object. Legacy keys keep their original part
+    /// order (PK order for shared entity types, CLR property order for everything else).
     /// </summary>
     private string GetDocumentKey(IEntityType entityType, IUpdateEntry updateEntry, object entity)
     {
@@ -56,7 +62,7 @@ public class CouchbaseDatabaseWrapper : Database
 
         return entityType.HasSharedClrType
             ? entityType.GetPrimaryKey(updateEntry)
-            : entityType.GetPrimaryKey(entity);
+            : entityType.GetLegacyPrimaryKey(entity, updateEntry);
     }
 
     public override int SaveChanges(IList<IUpdateEntry> entries)
@@ -69,6 +75,9 @@ public class CouchbaseDatabaseWrapper : Database
 
     public override async Task<int> SaveChangesAsync(IList<IUpdateEntry> entries, CancellationToken cancellationToken = new())
     {
+        // Before any document is built: a dependent's foreign key gets its principal's value.
+        await GenerateSequenceValuesAsync(entries, cancellationToken).ConfigureAwait(false);
+
         var transaction = GetCurrentTransaction();
 
         // Track root-entity keys written in the main loop so the second pass can skip
@@ -220,6 +229,70 @@ public class CouchbaseDatabaseWrapper : Database
 
         return await ExecutePendingWritesAsync(pendingWrites, transaction, cancellationToken).ConfigureAwait(false);
     }
+
+    /// <summary>
+    /// Gives every added entry whose key uses a Couchbase sequence its value from the sequence, as
+    /// a store-generated value, like an identity column: EF Core's checks before the save see the
+    /// temporary value, the dependents' foreign keys get the new value, and a failed save discards
+    /// it. Fetches all the values each sequence needs in one query. A key the application set
+    /// itself (not temporary and not the CLR default) is kept.
+    /// </summary>
+    private async Task GenerateSequenceValuesAsync(IList<IUpdateEntry> entries, CancellationToken cancellationToken)
+    {
+        // Grouped by location only: the options only feed the error message for a missing
+        // sequence (its CREATE SEQUENCE statement), so they come from the group's first property.
+        Dictionary<CouchbaseSequenceLocation, (CouchbaseSequenceOptions Options, List<(IUpdateEntry, IProperty)> Keys)>? groups = null;
+
+        foreach (var entry in entries)
+        {
+            if (entry.EntityState != EntityState.Added)
+            {
+                continue;
+            }
+
+            foreach (var property in entry.EntityType.GetProperties())
+            {
+                if (property.FindAnnotation(CouchbaseValueGeneratorSelector.SequenceNameAnnotation) is null
+                    || (!entry.HasTemporaryValue(property) && !IsClrDefault(entry.GetCurrentValue(property), property.ClrType)))
+                {
+                    continue;
+                }
+
+                var location = CouchbaseSequenceLocation.Find(property, _bucket, _scope)!.Value;
+                groups ??= [];
+                if (!groups.TryGetValue(location, out var group))
+                {
+                    var options = property.FindAnnotation(CouchbaseValueGeneratorSelector.SequenceOptionsAnnotation)?.Value
+                        as CouchbaseSequenceOptions ?? CouchbaseSequenceOptions.Default;
+                    groups[location] = group = (options, []);
+                }
+
+                group.Keys.Add((entry, property));
+            }
+        }
+
+        if (groups is null)
+        {
+            return;
+        }
+
+        foreach (var (location, (options, keys)) in groups)
+        {
+            var values = await CouchbaseSequenceBatch
+                .NextValuesAsync(_relationalConnection.Context, location, options, keys.Count, cancellationToken)
+                .ConfigureAwait(false);
+
+            for (var i = 0; i < keys.Count; i++)
+            {
+                var (entry, property) = keys[i];
+                var clrType = Nullable.GetUnderlyingType(property.ClrType) ?? property.ClrType;
+                entry.SetStoreGeneratedValue(property, Convert.ChangeType(values[i], clrType));
+            }
+        }
+    }
+
+    private static bool IsClrDefault(object? value, Type clrType)
+        => value is null || (clrType.IsValueType && value.Equals(Activator.CreateInstance(clrType)));
 
     // A [CouchbaseMeta(Cas)]-annotated property, refreshed with the resulting CAS after every
     // successful insert/update regardless of whether it's also a concurrency token (harmless and

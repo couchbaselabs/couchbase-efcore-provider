@@ -49,7 +49,7 @@ public class GraphUpdatesCouchbaseTest(GraphUpdatesCouchbaseTest.GraphUpdatesCou
         protected override void OnModelCreating(ModelBuilder modelBuilder, DbContext context)
         {
             base.OnModelCreating(modelBuilder, context);
-            CouchbaseSpecModel.Apply(modelBuilder, context, generateIntKeys: true);
+            CouchbaseSpecModel.Apply(modelBuilder, context);
         }
     }
 }
@@ -82,7 +82,7 @@ public class ComplexTypesTrackingCouchbaseTest(ComplexTypesTrackingCouchbaseTest
         protected override void OnModelCreating(ModelBuilder modelBuilder, DbContext context)
         {
             base.OnModelCreating(modelBuilder, context);
-            CouchbaseSpecModel.Apply(modelBuilder, context, generateIntKeys: true);
+            CouchbaseSpecModel.Apply(modelBuilder, context);
         }
     }
 }
@@ -100,7 +100,7 @@ public class PropertyValuesCouchbaseTest(PropertyValuesCouchbaseTest.PropertyVal
         protected override void OnModelCreating(ModelBuilder modelBuilder, DbContext context)
         {
             base.OnModelCreating(modelBuilder, context);
-            CouchbaseSpecModel.Apply(modelBuilder, context, generateIntKeys: true);
+            CouchbaseSpecModel.Apply(modelBuilder, context);
         }
     }
 }
@@ -218,7 +218,7 @@ public class DataAnnotationCouchbaseTest(DataAnnotationCouchbaseTest.DataAnnotat
         protected override void OnModelCreating(ModelBuilder modelBuilder, DbContext context)
         {
             base.OnModelCreating(modelBuilder, context);
-            CouchbaseSpecModel.Apply(modelBuilder, context, generateIntKeys: true);
+            CouchbaseSpecModel.Apply(modelBuilder, context);
         }
     }
 }

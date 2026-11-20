@@ -14,8 +14,11 @@ public class CouchbaseConventionSetBuilder : RelationalConventionSetBuilder
     public override ConventionSet CreateConventionSet()
     {
         var conventionSet = base.CreateConventionSet();
+        conventionSet.Replace<ValueGenerationConvention>(
+            new CouchbaseValueGenerationConvention(Dependencies, RelationalDependencies));
         conventionSet.Add(new CouchbaseKeyspaceConvention(Dependencies));
         conventionSet.Add(new CouchbaseSequenceConvention(Dependencies));
+        conventionSet.Add(new CouchbaseKeySequenceConvention());
         conventionSet.Add(new JsonPropertyNameConvention(Dependencies));
         conventionSet.Add(new JsonPropertyConvention(Dependencies));
         conventionSet.Add(new DateTimeFormatConvention(Dependencies));

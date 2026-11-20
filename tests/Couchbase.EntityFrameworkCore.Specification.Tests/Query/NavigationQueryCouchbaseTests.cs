@@ -24,7 +24,7 @@ public class ComplexNavigationsQueryCouchbaseFixture : ComplexNavigationsQueryRe
     protected override void OnModelCreating(ModelBuilder modelBuilder, DbContext context)
     {
         base.OnModelCreating(modelBuilder, context);
-        CouchbaseSpecModel.Apply(modelBuilder, context, generateIntKeys: true);
+        CouchbaseSpecModel.Apply(modelBuilder, context);
     }
 }
 
@@ -45,7 +45,7 @@ public class ComplexNavigationsSharedTypeQueryCouchbaseFixture : ComplexNavigati
     protected override void OnModelCreating(ModelBuilder modelBuilder, DbContext context)
     {
         base.OnModelCreating(modelBuilder, context);
-        CouchbaseSpecModel.Apply(modelBuilder, context, generateIntKeys: true);
+        CouchbaseSpecModel.Apply(modelBuilder, context);
     }
 }
 
@@ -127,7 +127,7 @@ public class IncludeOneToOneCouchbaseTest(IncludeOneToOneCouchbaseTest.OneToOneQ
         protected override void OnModelCreating(ModelBuilder modelBuilder, DbContext context)
         {
             base.OnModelCreating(modelBuilder, context);
-            CouchbaseSpecModel.Apply(modelBuilder, context, generateIntKeys: true);
+            CouchbaseSpecModel.Apply(modelBuilder, context);
         }
     }
 }

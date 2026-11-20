@@ -92,6 +92,7 @@ public static class CouchbaseServiceCollectionExtensions
             //Model's primary key automatically based off of properties that have 'Id' in their`
             //name was getting ignored.
             .TryAdd<IProviderConventionSetBuilder, CouchbaseConventionSetBuilder>()
+            .TryAdd<IModelValidator, CouchbaseModelValidator>()
             .TryAddProviderSpecificServices(m => m
                 .TryAddScoped<QuerySqlGenerator, CouchbaseQuerySqlGenerator>()
                 .TryAddScoped<ICouchbaseClientWrapper, CouchbaseClientWrapper>()

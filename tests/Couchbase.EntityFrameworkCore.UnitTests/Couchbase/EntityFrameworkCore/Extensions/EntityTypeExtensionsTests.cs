@@ -369,4 +369,47 @@ public class EntityTypeExtensionsTests
         Assert.Equal(fromEntity, fromEntry);
         Assert.NotEqual(entityType.GetPrimaryKey(new BytesKeyEntity { Id = [0] }), fromEntity);
     }
+
+    // -----------------------------------------------------------------------
+    // Legacy key with values from the update entry — GetLegacyPrimaryKey
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public void GetLegacyPrimaryKey_CompositeKey_MatchesTheClrKeyWithTheSameValues()
+    {
+        var entityType = BuildEntityType<CompositeKeyEntity>(mb =>
+        {
+            mb.Entity<CompositeKeyEntity>(b =>
+            {
+                b.ToCouchbaseCollection("bucket", "scope", "entity");
+                b.HasKey(e => new { e.TenantId, e.UserId });
+            });
+        });
+
+        var fromClr = entityType.GetPrimaryKey(new CompositeKeyEntity { TenantId = 3, UserId = 7 });
+        var fromEntry = entityType.GetLegacyPrimaryKey(
+            new CompositeKeyEntity(), MockUpdateEntry(entityType, ("TenantId", 3), ("UserId", 7)));
+
+        Assert.Equal(fromClr, fromEntry);
+    }
+
+    [Fact]
+    public void GetLegacyPrimaryKey_ReadsTheValuesFromTheUpdateEntry_NotTheClrObject()
+    {
+        // During a save, a store-generated value (a sequence value, or a foreign key set from
+        // one) is in the update entry; the CLR object still has the default until EF Core
+        // accepts the changes.
+        var entityType = BuildEntityType<SingleKeyEntity>(mb =>
+        {
+            mb.Entity<SingleKeyEntity>(b =>
+            {
+                b.ToCouchbaseCollection("bucket", "scope", "entity");
+                b.HasKey(e => e.Id);
+            });
+        });
+
+        var key = entityType.GetLegacyPrimaryKey(new SingleKeyEntity { Id = 0 }, MockUpdateEntry(entityType, ("Id", 1_000_001)));
+
+        Assert.Equal("1000001", key);
+    }
 }

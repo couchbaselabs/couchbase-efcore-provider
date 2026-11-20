@@ -72,7 +72,7 @@ public class LazyLoadProxyCouchbaseTest(LazyLoadProxyCouchbaseTest.LoadCouchbase
         protected override void OnModelCreating(ModelBuilder modelBuilder, DbContext context)
         {
             base.OnModelCreating(modelBuilder, context);
-            CouchbaseSpecModel.Apply(modelBuilder, context, generateIntKeys: true);
+            CouchbaseSpecModel.Apply(modelBuilder, context);
         }
     }
 }
@@ -97,7 +97,7 @@ public class ProxyGraphUpdatesWithLazyLoadingCouchbaseTest(ProxyGraphUpdatesWith
         protected override void OnModelCreating(ModelBuilder modelBuilder, DbContext context)
         {
             base.OnModelCreating(modelBuilder, context);
-            CouchbaseSpecModel.Apply(modelBuilder, context, generateIntKeys: true);
+            CouchbaseSpecModel.Apply(modelBuilder, context);
         }
     }
 }
