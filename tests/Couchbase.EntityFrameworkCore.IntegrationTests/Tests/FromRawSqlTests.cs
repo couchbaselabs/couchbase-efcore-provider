@@ -58,25 +58,21 @@ public class FromRawSqlTests(
     }
 
     [Fact]
-    public async Task Test_FromRaw_Throws_NotImplementedException()
+    public async Task Test_FromSql_ToList_Is_Rejected_By_Default()
     {
         await using var context = bloggingFixture.GetDbContext();
 
-        // CouchbaseFromSqlQueryingEnumerable<T>.GetEnumerator() (sync) is unimplemented for
-        // non-composed FromSql-style queries; see Test_FromSqlRaw_ToList_Throws_NotImplementedException
-        // below for the equivalent FromSqlRaw case.
-        Assert.Throws<NotImplementedException>(()=>context.Blogs
+        // Synchronous enumeration is rejected unless the context opts in
+        // (CouchbaseEventId.SyncNotSupported).
+        var e = Assert.Throws<InvalidOperationException>(() => context.Blogs
             .FromSql($"SELECT * FROM `default`.`blogs`.`blog`")
             .ToList());
+        Assert.Contains("SyncNotSupported", e.Message);
     }
 
     [Fact]
     public async Task Test_FromSql_ToListAsync_Returns_Results()
     {
-        // Only the synchronous enumeration path (see Test_FromRaw_Throws_NotImplementedException
-        // and Test_FromSqlRaw_ToList_Throws_NotImplementedException) is unimplemented for
-        // non-composed FromSql-style queries — the async path is a separate, fully-implemented
-        // code path (CouchbaseFromSqlQueryingEnumerable.GetAsyncEnumerator).
         await using var context = bloggingFixture.GetDbContext();
 
         var results = await context.Blogs
@@ -88,17 +84,14 @@ public class FromRawSqlTests(
     }
 
     [Fact]
-    public async Task Test_FromSqlRaw_ToList_Throws_NotImplementedException()
+    public async Task Test_FromSqlRaw_ToList_Is_Rejected_By_Default()
     {
-        // The sync-enumeration gap isn't specific to interpolated FromSql (see
-        // Test_FromRaw_Throws_NotImplementedException above) — CouchbaseFromSqlQueryingEnumerable
-        // is used for any non-composed FromSql-style query, so FromSqlRaw hits the same
-        // unimplemented GetEnumerator() when enumerated synchronously.
         await using var context = bloggingFixture.GetDbContext();
 
-        Assert.Throws<NotImplementedException>(() => context.Blogs
+        var e = Assert.Throws<InvalidOperationException>(() => context.Blogs
             .FromSqlRaw("SELECT * FROM `default`.`blogs`.`blog`")
             .ToList());
+        Assert.Contains("SyncNotSupported", e.Message);
     }
     
     [Fact]

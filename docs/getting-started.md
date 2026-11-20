@@ -100,7 +100,7 @@ public class Post
 ## Create, read, update & delete
 * Open _Program.cs_ and replace the contents with the following code
 > [!NOTE]
-> This provider is asynchronous-only — synchronous APIs like `SaveChanges()`/`.First()` throw `NotSupportedException` in Release builds. Use the `Async` variants throughout, as below.
+> Synchronous APIs like `SaveChanges()`/`.First()` throw by default, because the Couchbase SDK is asynchronous. Use the `Async` variants throughout, as below. See [Limitations](limitations.md#asynchronous-io-only) to opt in to synchronous calls.
 ```
 using Microsoft.EntityFrameworkCore;
 

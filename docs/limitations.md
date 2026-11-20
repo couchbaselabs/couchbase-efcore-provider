@@ -29,7 +29,8 @@ have no Couchbase equivalent.
   until commit and is subject to the transaction timeout, so seeding a large data set in one would
   fail. Make the delegate idempotent (check whether the data already exists). If you configure
   `UseSeeding`, configure `UseAsyncSeeding` too — `EnsureCreatedAsync` throws otherwise. The
-  synchronous `EnsureCreated()` is not supported (the provider is async-only).
+  synchronous `EnsureCreated()` throws unless you opt in to synchronous I/O (see
+  [Asynchronous I/O](#asynchronous-io-only)).
 
 * **`EnsureCreatedAsync` does not create any index by default.** It always creates the bucket's
   scopes and collections (and any configured sequences — see [Sequences](sequences.md)). LINQ,
@@ -60,7 +61,24 @@ See also [Modeling](modeling.md).
 
 ## Asynchronous I/O only
 
-The Couchbase SDK is asynchronous, so the synchronous EF Core code paths throw `NotSupportedException` in Release builds. Use the async variants throughout: `ToListAsync`, `FirstAsync`, `SingleAsync`, `FindAsync`, `SaveChangesAsync`, `EnsureCreatedAsync`, and so on.
+The Couchbase SDK is asynchronous, so a synchronous EF Core call (`SaveChanges()`, `.ToList()`,
+`.First()`, `Find()`, `EnsureCreated()`, `BeginTransaction()` and so on) would have to block a
+thread on the SDK. By default these calls throw `InvalidOperationException`: the provider raises
+the `CouchbaseEventId.SyncNotSupported` warning, which it configures as an error. Use the async
+variants: `ToListAsync`, `FirstAsync`, `SingleAsync`, `FindAsync`, `SaveChangesAsync`,
+`EnsureCreatedAsync`, and so on.
+
+An application that accepts blocking calls (a console tool, for example) can opt in:
+
+```csharp
+options.UseCouchbase(clusterOptions, couchbase => { /* ... */ })
+    .ConfigureWarnings(w => w.Ignore(CouchbaseEventId.SyncNotSupported));
+```
+
+Use `w.Log(CouchbaseEventId.SyncNotSupported)` instead to allow the calls and log each one. This
+works the same in Debug and Release builds. `Add` and `Attach` do no I/O, so they never need the
+opt-in.
+
 ## Querying and consistency
 
 * **Query scan consistency defaults to `NotBounded`.** Because secondary (GSI) indexes

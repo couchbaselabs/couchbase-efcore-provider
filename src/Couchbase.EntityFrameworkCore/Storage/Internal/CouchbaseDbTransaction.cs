@@ -1,4 +1,5 @@
 using System.Data;
+using Couchbase.EntityFrameworkCore.Internal;
 using System.Data.Common;
 using Couchbase.Client.Transactions.Config;
 using Couchbase.KeyValue;
@@ -146,7 +147,7 @@ public class CouchbaseDbTransaction : DbTransaction
 
     public override void Commit()
     {
-        CommitAsync().GetAwaiter().GetResult();
+        SyncIo.Run(_connection.SyncIoCheck, static self => self.CommitAsync(), this);
     }
 
     public override async Task CommitAsync(CancellationToken cancellationToken = default)

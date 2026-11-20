@@ -1,3 +1,6 @@
+using Couchbase.EntityFrameworkCore.Diagnostics.Internal;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -100,7 +103,9 @@ public class CouchbaseSequenceValueGenerator<T> : ValueGenerator<T>
     /// </summary>
     public override T Next(EntityEntry entry)
     {
-        return NextAsync(entry).GetAwaiter().GetResult();
+        return Couchbase.EntityFrameworkCore.Internal.SyncIo.Run(
+            entry.Context.GetService<IDiagnosticsLogger<DbLoggerCategory.Database>>().SyncNotSupported,
+            static state => state.self.NextAsync(state.entry).AsTask(), (self: this, entry));
     }
 
     /// <summary>

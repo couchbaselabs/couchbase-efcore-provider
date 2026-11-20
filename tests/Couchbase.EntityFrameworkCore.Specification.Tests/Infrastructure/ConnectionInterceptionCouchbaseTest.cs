@@ -1,3 +1,4 @@
+using Couchbase.EntityFrameworkCore.Diagnostics;
 using Couchbase.EntityFrameworkCore.SpecificationTests.TestUtilities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
@@ -22,6 +23,8 @@ public abstract class ConnectionInterceptionCouchbaseTestBase(
                     o.Bucket = CouchbaseTestEnvironment.Bucket;
                     o.Scope = "ConnectionInterception";
                 })
+            // Like CouchbaseTestStore: the base tests also make synchronous calls.
+            .ConfigureWarnings(w => w.Ignore(CouchbaseEventId.SyncNotSupported))
             .Options);
 
     public abstract class InterceptionCouchbaseFixtureBase : InterceptionFixtureBase

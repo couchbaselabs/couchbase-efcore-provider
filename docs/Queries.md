@@ -325,11 +325,10 @@ navigation is not supported).
 ## SQL queries
 
 > [!NOTE]
-> Synchronous enumeration (`.ToList()`, `.First()`, etc.) of a `FromSqlRaw`/`FromSql` query that
-> hasn't been composed with further LINQ operators (`Where`, `OrderBy`, ...) throws
-> `NotImplementedException` — this applies to both `FromSqlRaw` and the interpolated `FromSql`
-> overload alike, not just one of them. The async form (`ToListAsync`/`FirstOrDefaultAsync`/etc.)
-> works for both and is used throughout the examples below.
+> Synchronous enumeration (`.ToList()`, `.First()`, etc.) of a `FromSqlRaw`/`FromSql` query
+> throws by default, like any synchronous call (see
+> [Limitations](limitations.md#asynchronous-io-only)). The async form
+> (`ToListAsync`/`FirstOrDefaultAsync`/etc.) is used throughout the examples below.
 
 ### FromSqlRaw
 `FromSqlRaw` lets you write a raw SQL++ query directly, with parameters passed positionally (`{0}`, `{1}`, ...) rather than interpolated into the string — this is the recommended way to include variable data in a raw query, since it goes through the database parameter mechanism instead of string concatenation:

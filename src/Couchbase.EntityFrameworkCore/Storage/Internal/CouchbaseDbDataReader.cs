@@ -219,8 +219,19 @@ public class CouchbaseDbDataReader<T> : DbDataReader
     /// <summary>
     /// Advances the reader to the next row synchronously.
     /// </summary>
-    public override bool Read() =>
-        AsyncHelper.RunSync(static self => self.ReadAsync(CancellationToken.None), this);
+    /// <remarks>
+    /// Checks <c>CouchbaseEventId.SyncNotSupported</c> on the first synchronous read only, so an
+    /// application that logs the event gets one entry per reader, not one per row.
+    /// </remarks>
+    public override bool Read()
+    {
+        var check = _syncReadChecked ? null : (_connection as CouchbaseConnection)?.SyncIoCheck;
+        var hasRow = SyncIo.Run(check, static self => self.ReadAsync(CancellationToken.None), this);
+        _syncReadChecked = true;
+        return hasRow;
+    }
+
+    private bool _syncReadChecked;
 
     /// <summary>
     /// Asynchronously advances the reader to the next row.

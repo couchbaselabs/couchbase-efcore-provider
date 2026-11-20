@@ -39,6 +39,8 @@ public class CouchbaseLoggingDefinitions : RelationalLoggingDefinitions
     public EventDefinitionBase? LogOutOfRangeWarning;
 
     public EventDefinitionBase? LogFormatWarning;
+
+    public EventDefinitionBase? LogSyncNotSupported;
 }
 
 /* ************************************************************

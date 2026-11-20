@@ -73,6 +73,10 @@
              CouchbaseFromSqlQueryingEnumerable all live under a ".Storage.Internal"/".Query.Internal"
              namespace and are provider-plumbing, not part of the supported public surface — the
              same spirit as the project-wide EF1001 suppression above.
+             - ExceptionHelper.SyncroIONotSupportedException (CP0002, removed 2026-11, CBEF-127): the
+               one deliberate removal of public API in 2.0. It shipped in 1.0.x but the provider no
+               longer calls it (synchronous calls raise CouchbaseEventId.SyncNotSupported), and 2.0
+               is a major version. Any other public removal needs its own entry here and in the CHANGELOG.
 
              CP0003 (strong-name difference) previously needed suppressing because the release
              assembly used to be signed manually *after* compilation, so the in-build assembly

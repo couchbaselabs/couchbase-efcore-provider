@@ -37,6 +37,7 @@ public static class CouchbaseEventId
 
         // Infrastructure events
         UnexpectedConnectionTypeWarning = CoreEventId.ProviderBaseId + 100,
+        SyncNotSupported,
 
         // Migrations events
         TableRebuildPendingWarning = CoreEventId.ProviderBaseId + 200,
@@ -120,6 +121,24 @@ public static class CouchbaseEventId
     ///     </para>
     /// </remarks>
     public static readonly EventId UnexpectedConnectionTypeWarning = MakeInfraId(Id.UnexpectedConnectionTypeWarning);
+
+    /// <summary>
+    ///     A synchronous API was called (SaveChanges, a synchronous query, BeginTransaction, Commit,
+    ///     EnsureCreated, ...). Couchbase has only asynchronous I/O, so a synchronous call blocks a
+    ///     thread on asynchronous work.
+    /// </summary>
+    /// <remarks>
+    ///     <para>
+    ///         This event is in the <see cref="DbLoggerCategory.Database" /> category.
+    ///     </para>
+    ///     <para>
+    ///         It is configured to throw by default. To allow synchronous calls, call
+    ///         <c>ConfigureWarnings(w => w.Ignore(CouchbaseEventId.SyncNotSupported))</c> (or <c>Log</c>
+    ///         to log each blocking call) after <c>UseCouchbase</c>.
+    ///     </para>
+    /// </remarks>
+    public static readonly EventId SyncNotSupported =
+        new((int)Id.SyncNotSupported, DbLoggerCategory.Database.Name + "." + nameof(Id.SyncNotSupported));
 
     private static readonly string MigrationsPrefix = DbLoggerCategory.Migrations.Name + ".";
 

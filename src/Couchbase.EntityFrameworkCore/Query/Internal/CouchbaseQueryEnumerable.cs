@@ -1,6 +1,8 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
+using Couchbase.EntityFrameworkCore.Internal;
+using Couchbase.EntityFrameworkCore.Diagnostics.Internal;
 using System.Collections;
 using System.Data.Common;
 using System.Text.Json;
@@ -238,7 +240,8 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
     /// <returns>An enumerator that can be used to iterate through the collection.</returns>
     public IEnumerator<T> GetEnumerator()
     {
-        throw ExceptionHelper.SyncroIONotSupportedException();
+        _relationalQueryContext.QueryLogger.SyncNotSupported();
+        return new BlockingAsyncEnumerator<T>(GetAsyncEnumerator());
     }
 
     /// <summary>Returns an enumerator that iterates through a collection.</summary>

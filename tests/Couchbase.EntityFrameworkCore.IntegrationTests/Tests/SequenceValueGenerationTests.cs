@@ -176,7 +176,7 @@ public class SequenceValueGenerationTests : IAsyncLifetime
         Assert.Equal(0, entity.Id); // Confirm Id starts at default
         _outputHelper.WriteLine($"Step 4: Entity created with Id={entity.Id}");
 
-        context.SequenceTestEntities.Add(entity);
+        await context.SequenceTestEntities.AddAsync(entity);
 
         // Step 5: SaveChangesAsync should trigger interceptor -> selector -> generator -> sequence query
         await context.SaveChangesAsync();
@@ -232,7 +232,7 @@ public class SequenceValueGenerationTests : IAsyncLifetime
         };
 
         // Act - Add entity with Id = 0 (default), SaveChanges should fetch sequence value
-        context.SequenceTestEntities.Add(entity);
+        await context.SequenceTestEntities.AddAsync(entity);
         await context.SaveChangesAsync();
 
         // Assert - Id should have been assigned from sequence
@@ -257,7 +257,7 @@ public class SequenceValueGenerationTests : IAsyncLifetime
         };
 
         // Act
-        context.SequenceTestEntities.AddRange(entities);
+        await context.SequenceTestEntities.AddRangeAsync(entities);
         await context.SaveChangesAsync();
 
         // Assert - All entities should have unique, non-zero IDs
@@ -283,7 +283,7 @@ public class SequenceValueGenerationTests : IAsyncLifetime
         };
 
         // Act
-        context.IntIdEntities.Add(entity);
+        await context.IntIdEntities.AddAsync(entity);
         await context.SaveChangesAsync();
 
         // Assert
@@ -308,7 +308,7 @@ public class SequenceValueGenerationTests : IAsyncLifetime
         // Act & Assert
         // Cancellation may result in OperationCanceledException, TaskCanceledException, 
         // or a Couchbase-specific exception like AmbiguousTimeoutException
-        context.SequenceTestEntities.Add(entity);
+        await context.SequenceTestEntities.AddAsync(entity);
         var exception = await Assert.ThrowsAnyAsync<Exception>(() => 
             context.SaveChangesAsync(cts.Token));
         
@@ -461,7 +461,7 @@ public class SequenceValueGenerationTests : IAsyncLifetime
         Assert.Equal(0, entity.Id);
 
         // Add and save - should use the auto-created sequence
-        context.Entities.Add(entity);
+        await context.Entities.AddAsync(entity);
         await context.SaveChangesAsync();
 
         // Verify Id was assigned from sequence (starts at 1)
@@ -542,7 +542,7 @@ public class SequenceValueGenerationTests : IAsyncLifetime
             var entity = new SecondaryBucketSequenceEntity { Name = "Cross-bucket sequence test" };
             Assert.Equal(0, entity.Id);
 
-            context.Entities.Add(entity);
+            await context.Entities.AddAsync(entity);
             await context.SaveChangesAsync();
 
             Assert.True(entity.Id > 0, $"Expected positive Id from sequence, got {entity.Id}");

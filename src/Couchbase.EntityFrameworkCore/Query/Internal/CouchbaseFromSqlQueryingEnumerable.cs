@@ -1,4 +1,6 @@
 using System.Collections;
+using Couchbase.EntityFrameworkCore.Internal;
+using Couchbase.EntityFrameworkCore.Diagnostics.Internal;
 using System.Data.Common;
 using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.EntityFrameworkCore.Storage.Internal;
@@ -104,7 +106,8 @@ public class CouchbaseFromSqlQueryingEnumerable<T> : IEnumerable<T>, IAsyncEnume
     
     public IEnumerator<T> GetEnumerator()
     {
-        throw new NotImplementedException();
+        _relationalQueryContext.QueryLogger.SyncNotSupported();
+        return new BlockingAsyncEnumerator<T>(GetAsyncEnumerator());
     }
 
     IEnumerator IEnumerable.GetEnumerator()

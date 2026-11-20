@@ -68,6 +68,13 @@ public class CouchbaseConnection : DbConnection
     public override string ServerVersion => _serverVersion ?? "Couchbase";
 
     /// <summary>
+    /// Called before any blocking synchronous operation on this connection, its commands or its
+    /// transactions; throws unless the owning context opted in to synchronous I/O. Null for a
+    /// connection created outside a context (then synchronous calls are allowed).
+    /// </summary>
+    internal Action? SyncIoCheck { get; init; }
+
+    /// <summary>
     /// Gets the current Couchbase cluster instance when connected.
     /// </summary>
     public ICluster? Cluster => _cluster;
@@ -177,7 +184,12 @@ public class CouchbaseConnection : DbConnection
 
     public override void Open()
     {
-        AsyncHelper.RunSync(static self => self.OpenAsync(CancellationToken.None), this);
+        if (_state == ConnectionState.Open)
+        {
+            return;
+        }
+
+        SyncIo.Run(SyncIoCheck, static self => self.OpenAsync(CancellationToken.None), this);
     }
 
     public override async Task OpenAsync(CancellationToken cancellationToken)
@@ -205,15 +217,13 @@ public class CouchbaseConnection : DbConnection
 
     protected override DbCommand CreateDbCommand()
     {
-        if (_state != ConnectionState.Open)
-        {
-            Open();
-        }
-
+        // Does not open the connection: EF's async query pipeline creates commands only to read
+        // their text and parameters, and a synchronous open here would block it. A command opens
+        // a closed connection asynchronously when it runs.
         return new CouchbaseCommand
         {
             Connection = this,
-            Cluster = _cluster!,
+            Cluster = _cluster,
             ScanConsistency = _couchbaseDbContextOptionsBuilder.ScanConsistency
         };
     }
