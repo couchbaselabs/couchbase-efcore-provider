@@ -10,12 +10,11 @@ example one per CI shard) to treat them as one run.
 Usage: compare-baseline.py --results DIR [DIR...] [--baseline FILE] [--update]
 """
 import argparse
-import glob
 import os
 import sys
-import xml.etree.ElementTree as ET
 
-NS = {"t": "http://microsoft.com/schemas/VisualStudio/TeamTest/2010"}
+from trx import read_trx
+
 DEFAULT_BASELINE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "known-failures.txt")
 
 
@@ -31,17 +30,11 @@ def read_results(results_dir):
                 ran.add(cls)
                 if status in ("aborted", "no-result"):
                     aborted.add(cls)
-    for path in glob.glob(os.path.join(results_dir, "*.trx")):
-        try:
-            root = ET.parse(path).getroot()
-        except ET.ParseError:
-            continue
-        for result in root.iterfind(".//t:UnitTestResult", NS):
-            name, outcome = result.get("testName"), result.get("outcome")
-            if outcome == "Passed":
-                passed.add(name)
-            elif outcome == "Failed":
-                failed.add(name)
+    for name, outcome, _ in read_trx(results_dir):
+        if outcome == "Passed":
+            passed.add(name)
+        elif outcome == "Failed":
+            failed.add(name)
     return passed, failed, aborted, ran
 
 

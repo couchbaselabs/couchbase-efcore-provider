@@ -156,3 +156,35 @@ jobs:
       - name: Remove cluster
         if: always() && env.CBDINO_CLUSTER_ID != ''
         run: cbdinocluster rm "$CBDINO_CLUSTER_ID" || true
+
+  # One view of the whole run: both shards compared with the baseline together, and the
+  # failures grouped by root cause (scripts/root-causes.tsv).
+  report:
+    name: report
+    needs: spec-tests
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download results
+        uses: actions/download-artifact@v4
+        with:
+          pattern: spec-test-results-*
+          path: ${{ runner.temp }}/shards
+
+      - name: Summary
+        run: |
+          shopt -s nullglob
+          dirs=("$RUNNER_TEMP"/shards/*/spec-results)
+          [ ${#dirs[@]} -gt 0 ] || { echo "No shard results."; exit 0; }
+          {
+            echo '## EF Core specification tests, all shards'
+            echo
+            echo '```'
+            python3 "$SPEC_PROJECT/scripts/root-causes.py" --results "${dirs[@]}" || true
+            echo
+            python3 "$SPEC_PROJECT/scripts/compare-baseline.py" --results "${dirs[@]}" | head -n 300 || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
