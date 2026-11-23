@@ -7,7 +7,11 @@ outside the baseline fails. Tests that now pass but are still listed are reporte
 can shrink; pass --update to rewrite it from the run. Pass several result directories (for
 example one per CI shard) to treat them as one run.
 
-Usage: compare-baseline.py --results DIR [DIR...] [--baseline FILE] [--update]
+flaky.txt lists tests that pass in some runs and fail in others (scripts/find-flaky.py finds them).
+Their outcome is ignored: they are never a new failure, never reported as now passing, and never
+written to known-failures.txt.
+
+Usage: compare-baseline.py --results DIR [DIR...] [--baseline FILE] [--flaky FILE] [--update]
 """
 import argparse
 import os
@@ -15,7 +19,8 @@ import sys
 
 from trx import read_trx
 
-DEFAULT_BASELINE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "known-failures.txt")
+DEFAULT_BASELINE = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "known-failures.txt"))
+DEFAULT_FLAKY = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "flaky.txt"))
 
 
 def read_results(results_dir):
@@ -51,6 +56,21 @@ def read_baseline(path):
     return tests, aborted
 
 
+def read_flaky(path):
+    if not os.path.exists(path):
+        return set()
+    with open(path) as f:
+        return {line.rstrip("\n") for line in f if line.strip() and not line.startswith("#")}
+
+
+def write_flaky(path, tests):
+    with open(path, "w") as f:
+        f.write("# EF Core specification tests that pass in some runs and fail in others.\n")
+        f.write("# compare-baseline.py ignores their outcome; scripts/find-flaky.py adds to this list.\n")
+        for name in sorted(tests):
+            f.write(name + "\n")
+
+
 def write_baseline(path, failed, aborted):
     with open(path, "w") as f:
         f.write("# EF Core specification tests known to fail against this provider.\n")
@@ -65,6 +85,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--results", required=True, nargs="+")
     parser.add_argument("--baseline", default=DEFAULT_BASELINE)
+    parser.add_argument("--flaky", default=DEFAULT_FLAKY)
     parser.add_argument("--update", action="store_true")
     args = parser.parse_args()
 
@@ -72,7 +93,11 @@ def main():
     for results_dir in args.results:
         for total, part in zip((passed, failed, aborted, ran), read_results(results_dir)):
             total |= part
-    print(f"Run: {len(passed)} passed, {len(failed)} failed, {len(aborted)} classes aborted")
+    flaky = read_flaky(args.flaky)
+    print(f"Run: {len(passed)} passed, {len(failed)} failed, {len(aborted)} classes aborted; "
+          f"{len(flaky & failed)} of the failures are flaky tests")
+    failed -= flaky
+    passed -= flaky
 
     if args.update:
         write_baseline(args.baseline, failed, aborted)
