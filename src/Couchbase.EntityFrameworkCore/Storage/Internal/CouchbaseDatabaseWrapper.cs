@@ -80,6 +80,18 @@ public class CouchbaseDatabaseWrapper : Database
 
         var transaction = GetCurrentTransaction();
 
+        var pendingWrites = PlanWrites(entries, cancellationToken);
+
+        return await ExecutePendingWritesAsync(pendingWrites, transaction, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The writes a save sends, in order, without sending them: one per added, modified or deleted
+    /// entity, plus a write of the owner document for each changed owned entity whose owner is not
+    /// already written. Building the documents is CPU-only.
+    /// </summary>
+    internal IReadOnlyList<PendingWrite> PlanWrites(IList<IUpdateEntry> entries, CancellationToken cancellationToken = default)
+    {
         // Track root-entity keys written in the main loop so the second pass can skip
         // owners that were already written (e.g. user manually set entry.State = Modified).
         var writtenRoots = new HashSet<string>();
@@ -200,7 +212,10 @@ public class CouchbaseDatabaseWrapper : Database
                 if (!ownership.PrincipalEntityType.IsOwned())
                 {
                     rootInternalEntry = ownerEntry;
-                    rootEntityType = ownership.PrincipalEntityType;
+                    // The owner's actual type, not the type that declares the owned navigation: for
+                    // an owned type declared on a base type, that is the base type, and the main pass
+                    // recorded the owner under its derived type, so the owner would be written twice.
+                    rootEntityType = ownerEntry.EntityType;
                     break;
                 }
 
@@ -227,7 +242,7 @@ public class CouchbaseDatabaseWrapper : Database
                 rootInternalEntry, ownerCasProperty, GetCasCheckValue(ownerCasProperty, rootInternalEntry)));
         }
 
-        return await ExecutePendingWritesAsync(pendingWrites, transaction, cancellationToken).ConfigureAwait(false);
+        return pendingWrites;
     }
 
     /// <summary>
@@ -318,9 +333,9 @@ public class CouchbaseDatabaseWrapper : Database
             ? (ulong)updateEntry.GetOriginalValue(casProperty)!
             : null;
 
-    private enum CouchbaseWriteKind { Insert, Upsert, Delete }
+    internal enum CouchbaseWriteKind { Insert, Upsert, Delete }
 
-    private readonly record struct PendingWrite(
+    internal readonly record struct PendingWrite(
         CouchbaseWriteKind Kind, string Key, string Keyspace, object? Document,
         IUpdateEntry? UpdateEntry, IProperty? CasProperty, ulong? Cas);
 

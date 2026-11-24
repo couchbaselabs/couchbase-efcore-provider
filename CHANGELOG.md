@@ -54,6 +54,10 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ### Fixed
 
+- **A derived entity is written once when an owned type declared on its base type changes.** With
+  TPH, saving a derived entity together with a change to an owned type declared on the base type
+  wrote its document twice, an insert and an upsert at the same time. An add then failed at random
+  with `DocumentExistsException`.
 - **`Count()` with no predicate is exact under `RequestPlus`.** The query service answers a bare
   `COUNT(*)` from the collection's document count, which ignores the scan consistency and can be
   stale just after documents are deleted and inserted. When a query uses `RequestPlus` (the context
