@@ -181,9 +181,10 @@ var orders = await context.Orders
 ```
 
 It works on LINQ queries and on `FromSqlRaw`/`FromSql`; for a raw ADO.NET command, set
-`CouchbaseCommand.ScanConsistency` instead. It does not change the generated SQL++ text, only how
-the query is executed. `QueryScanConsistency.NotBounded` can likewise be used to opt a single query
-out of a context whose default is `RequestPlus`.
+`CouchbaseCommand.ScanConsistency` instead. It changes how the query is executed, and the generated
+SQL++ text only for an unfiltered `Count()`/`LongCount()` (see the note below).
+`QueryScanConsistency.NotBounded` can likewise be used to opt a single query out of a context whose
+default is `RequestPlus`.
 
 How it combines with the other options:
 
@@ -197,6 +198,14 @@ How it combines with the other options:
 > Like `ConsistentWith`, `WithScanConsistency(...)` applies to the whole query and can appear
 > anywhere in the chain, including before `Count()`, `LongCount()` or `Any()`. If it is used inside a
 > subquery it applies to the whole request.
+
+> [!NOTE]
+> The query service answers a bare `COUNT(*)` from the collection's document count, which ignores
+> the scan consistency and can be stale just after documents are deleted and inserted. So when a
+> query uses `RequestPlus` or `ConsistentWith`, an unfiltered `Count()`/`LongCount()` is sent as
+> `... WHERE META(d).id IS NOT MISSING`, which counts through the primary index and is exact. That
+> needs a primary index on the collection, which `EnsureCreatedAsync` creates unless
+> `AutoCreateIndexes` is `false`. A `NotBounded` count keeps the faster document count.
 
 `RequestPlus` waits for the index to reflect *all* writes made before the query was issued, from any
 client, not just this context's. If you only need to see this context's own recent writes, prefer

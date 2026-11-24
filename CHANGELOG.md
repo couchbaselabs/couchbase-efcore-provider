@@ -49,6 +49,12 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ### Fixed
 
+- **`Count()` with no predicate is exact under `RequestPlus`.** The query service answers a bare
+  `COUNT(*)` from the collection's document count, which ignores the scan consistency and can be
+  stale just after documents are deleted and inserted. When a query uses `RequestPlus` (the context
+  default or `WithScanConsistency`) or `ConsistentWith`, an unfiltered `Count()`/`LongCount()` now
+  counts through the primary index instead, so it needs one (`EnsureCreatedAsync` creates it unless
+  `AutoCreateIndexes` is `false`). A `NotBounded` count is unchanged.
 - **Shadow properties are now written to the document.** An entity's shadow properties, including the
   shadow foreign key EF Core creates for a relationship with no FK property, were left out of the stored
   document, so a reloaded entity lost them (and the relationship) or failed to materialize. They are now

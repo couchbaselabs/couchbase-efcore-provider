@@ -2,6 +2,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Linq.Expressions;
 using System.Reflection;
 using Couchbase.EntityFrameworkCore.Extensions;
+using Couchbase.EntityFrameworkCore.Infrastructure.Internal;
 using Couchbase.Query;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
@@ -156,6 +157,7 @@ public class CouchbaseQueryableMethodTranslatingExpressionVisitor : RelationalQu
             && methodCallExpression.Arguments[1] is QueryParameterExpression { Name: var parameterName })
         {
             CouchbaseQueryExecutionOptions.GetOrCreate(_queryCompilationContext).ConsistentWithParameterName = parameterName;
+            return UpdateConsistentCountMarkers((ShapedQueryExpression)source);
         }
 
         return source!;
@@ -175,10 +177,88 @@ public class CouchbaseQueryableMethodTranslatingExpressionVisitor : RelationalQu
             && methodCallExpression.Arguments[1] is ConstantExpression { Value: QueryScanConsistency scanConsistency })
         {
             CouchbaseQueryExecutionOptions.GetOrCreate(_queryCompilationContext).ScanConsistency = scanConsistency;
+            return UpdateConsistentCountMarkers((ShapedQueryExpression)source);
         }
 
         return source!;
     }
+
+    /// <inheritdoc />
+    protected override ShapedQueryExpression? TranslateCount(ShapedQueryExpression source, LambdaExpression? predicate)
+        => base.TranslateCount(predicate is null ? MarkUnfilteredCount(source) : source, predicate);
+
+    /// <inheritdoc />
+    protected override ShapedQueryExpression? TranslateLongCount(ShapedQueryExpression source, LambdaExpression? predicate)
+        => base.TranslateLongCount(predicate is null ? MarkUnfilteredCount(source) : source, predicate);
+
+    /// <summary>
+    /// Marks the table of an unfiltered count with <see cref="CouchbaseQueryHintAnnotationNames.ConsistentCount"/>,
+    /// set to whether the query needs read-your-writes consistency (see <see cref="NeedsConsistentCount"/>).
+    /// A count over a filtered, joined or otherwise composed source already has a predicate or is not
+    /// a plain <c>COUNT(*)</c> over one keyspace, so the query service does not use a <c>CountScan</c>
+    /// for it, and it is left alone.
+    /// </summary>
+    private ShapedQueryExpression MarkUnfilteredCount(ShapedQueryExpression source)
+    {
+        if (source.QueryExpression is SelectExpression selectExpression
+            && IsUnpushedDownTable(selectExpression, out var table))
+        {
+            var markedTable = SetHintAnnotation(table, CouchbaseQueryHintAnnotationNames.ConsistentCount, NeedsConsistentCount());
+            return source.UpdateQueryExpression(new TableSwapExpressionVisitor(table, markedTable).Visit(selectExpression));
+        }
+
+        return source;
+    }
+
+    /// <summary>
+    /// <c>WithScanConsistency</c> and <c>ConsistentWith</c> apply to the whole query, and can come
+    /// after a count subquery in the chain (for example
+    /// <c>.Where(p =&gt; ctx.Posts.Select(x =&gt; p.Id).Count() &gt; 1).WithScanConsistency(...)</c>).
+    /// So a count marked before the hint was translated is set to the decision the hint gives.
+    /// </summary>
+    private ShapedQueryExpression UpdateConsistentCountMarkers(ShapedQueryExpression source)
+    {
+        if (source.QueryExpression is not SelectExpression selectExpression)
+        {
+            return source;
+        }
+
+        var updated = new ConsistentCountMarkerVisitor(NeedsConsistentCount()).Visit(selectExpression);
+        return ReferenceEquals(updated, selectExpression) ? source : source.UpdateQueryExpression(updated);
+    }
+
+    /// <summary>
+    /// True when this query must see the latest writes: it uses <c>ConsistentWith</c>, or its scan
+    /// consistency (from <c>WithScanConsistency</c>, or else the context's <c>ScanConsistency</c>)
+    /// is not <see cref="QueryScanConsistency.NotBounded"/>. A <c>NotBounded</c> query already accepts
+    /// stale results, so it keeps the faster <c>CountScan</c>.
+    /// </summary>
+    private bool NeedsConsistentCount()
+    {
+        var executionOptions = CouchbaseQueryExecutionOptions.Find(_queryCompilationContext);
+        if (executionOptions?.ConsistentWithParameterName != null)
+        {
+            return true;
+        }
+
+        var scanConsistency = executionOptions?.ScanConsistency
+            ?? _queryCompilationContext.ContextOptions.FindExtension<CouchbaseOptionsExtension>()
+                ?.CouchbaseDbContextOptionsBuilder?.ScanConsistency
+            ?? QueryScanConsistency.NotBounded;
+        return scanConsistency != QueryScanConsistency.NotBounded;
+    }
+
+    private sealed class ConsistentCountMarkerVisitor(bool consistent) : ExpressionVisitor
+    {
+        [return: NotNullIfNotNull(nameof(node))]
+        public override Expression? Visit(Expression? node)
+            => node is TableExpression table
+               && table.FindAnnotation(CouchbaseQueryHintAnnotationNames.ConsistentCount) is { } marker
+               && !Equals(marker.Value, consistent)
+                ? SetHintAnnotation(table, CouchbaseQueryHintAnnotationNames.ConsistentCount, consistent)
+                : base.Visit(node);
+    }
+
 
     /// <summary>
     /// True if <paramref name="selectExpression"/> is still exactly its bare, single, un-composed

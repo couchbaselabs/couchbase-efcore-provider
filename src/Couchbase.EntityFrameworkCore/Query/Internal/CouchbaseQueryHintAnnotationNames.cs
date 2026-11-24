@@ -24,4 +24,13 @@ internal static class CouchbaseQueryHintAnnotationNames
     /// annotated table.
     /// </summary>
     public const string UseHash = "Couchbase:UseHash";
+
+    /// <summary>
+    /// A <see cref="bool"/> on the table of an unfiltered <c>Count()</c>/<c>LongCount()</c>: true when
+    /// the query needs read-your-writes consistency, so <see cref="CouchbaseQuerySqlGenerator"/>
+    /// gives the <c>COUNT</c> a predicate. Without one, the query service answers <c>COUNT(*)</c>
+    /// from the collection's document count (a <c>CountScan</c>), which ignores the scan
+    /// consistency and can be stale just after documents are deleted and inserted.
+    /// </summary>
+    public const string ConsistentCount = "Couchbase:ConsistentCount";
 }
