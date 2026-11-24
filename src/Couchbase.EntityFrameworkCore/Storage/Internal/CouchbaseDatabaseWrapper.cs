@@ -77,6 +77,7 @@ public class CouchbaseDatabaseWrapper : Database
     {
         // Before any document is built: a dependent's foreign key gets its principal's value.
         await GenerateSequenceValuesAsync(entries, cancellationToken).ConfigureAwait(false);
+        AssignOwnedCollectionKeys(entries);
 
         var transaction = GetCurrentTransaction();
 
@@ -290,6 +291,85 @@ public class CouchbaseDatabaseWrapper : Database
             }
         }
     }
+
+    /// <summary>
+    /// Gives each added item of an owned collection a real value for the generated part of its key.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// When an <c>OwnsMany</c> item type has no key of its own, EF Core keys the item by its owner's
+    /// key plus a generated integer (<c>Id</c>, or <c>__synthesizedOrdinal</c> for a collection
+    /// mapped with <c>ToJson()</c>). <c>Add</c> gives that integer a temporary value, which the save
+    /// must replace; EF Core drops temporary values when it accepts the changes, so without a real
+    /// value every item in the collection would get 0, and the second item would collide with the
+    /// first in the change tracker.
+    /// </para>
+    /// <para>
+    /// The value is the item's 1-based position in the collection, as EF Core's relational providers
+    /// use for a JSON collection. Items that already have a real value keep it, and new items get
+    /// values above the highest one, so they cannot collide. A key value the application set itself
+    /// is kept. The value is not stored: owned items are written without their shadow properties and
+    /// rebuilt from the document when they are read.
+    /// </para>
+    /// </remarks>
+    internal static void AssignOwnedCollectionKeys(IList<IUpdateEntry> entries)
+    {
+        HashSet<(InternalEntityEntry Owner, INavigation Navigation)>? assigned = null;
+
+        // The order does not matter for nested collections: an item is found from its owner's key
+        // as it is now, and when the owner's generated value is set, EF Core updates its items'
+        // foreign keys.
+        foreach (var entry in entries.Where(e => e.EntityState == EntityState.Added
+                     && e.EntityType.FindOwnership() is { IsUnique: false }))
+        {
+            var ownership = entry.EntityType.FindOwnership()!;
+            if (GeneratedKeyProperty(entry.EntityType, ownership) is not { } keyProperty
+                || !entry.HasTemporaryValue(keyProperty)
+                || ownership.PrincipalToDependent is not { } navigation
+                || entry is not InternalEntityEntry itemEntry
+                || itemEntry.StateManager.FindPrincipal(itemEntry, ownership) is not { } ownerEntry)
+            {
+                continue;
+            }
+
+            assigned ??= [];
+            if (!assigned.Add((ownerEntry, navigation))
+                || ownerEntry.GetCurrentValue(navigation) is not IEnumerable items)
+            {
+                continue;
+            }
+
+            var itemEntries = new List<InternalEntityEntry>();
+            foreach (var item in items)
+            {
+                if (item != null && itemEntry.StateManager.TryGetEntry(item, entry.EntityType) is { } e)
+                {
+                    itemEntries.Add(e);
+                }
+            }
+
+            var next = itemEntries
+                .Where(e => !e.HasTemporaryValue(keyProperty))
+                .Select(e => Convert.ToInt64(e.GetCurrentValue(keyProperty)))
+                .DefaultIfEmpty(0)
+                .Max() + 1;
+
+            var clrType = Nullable.GetUnderlyingType(keyProperty.ClrType) ?? keyProperty.ClrType;
+            foreach (var e in itemEntries.Where(e => e.HasTemporaryValue(keyProperty)))
+            {
+                e.SetStoreGeneratedValue(keyProperty, Convert.ChangeType(next++, clrType));
+            }
+        }
+    }
+
+    // The key property of an owned collection item that EF Core generates: the one key property that
+    // is not part of the foreign key to the owner, if it is a generated integer.
+    private static IProperty? GeneratedKeyProperty(IEntityType itemType, IForeignKey ownership)
+        => itemType.FindPrimaryKey()?.Properties.Where(p => !ownership.Properties.Contains(p)).ToList() is [var property]
+           && property.ValueGenerated != ValueGenerated.Never
+           && CouchbaseSequenceTypes.IsSupported(Nullable.GetUnderlyingType(property.ClrType) ?? property.ClrType)
+            ? property
+            : null;
 
     private static bool IsClrDefault(object? value, Type clrType)
         => value is null || (clrType.IsValueType && value.Equals(Activator.CreateInstance(clrType)));

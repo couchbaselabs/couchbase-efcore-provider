@@ -54,6 +54,13 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ### Fixed
 
+- **Saving an owned collection whose items have no key no longer throws after the write.** For an
+  `OwnsMany` item type with no key of its own, EF Core keys each item by its owner's key plus a
+  generated integer, which the provider never set. With two or more items, `SaveChangesAsync` wrote
+  the document and then threw `InvalidOperationException` ("... is already being tracked"), and a
+  retry failed with `DocumentExistsException`. Each new item now gets its position in the collection.
+  Also, changes to the owned collections of an entity added in the same context are now saved by a
+  later `SaveChangesAsync`; before, they were silently not written.
 - **`Count()` with no predicate is exact under `RequestPlus`.** The query service answers a bare
   `COUNT(*)` from the collection's document count, which ignores the scan consistency and can be
   stale just after documents are deleted and inserted. When a query uses `RequestPlus` (the context

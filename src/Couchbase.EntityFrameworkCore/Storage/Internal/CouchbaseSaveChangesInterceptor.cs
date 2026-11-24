@@ -263,7 +263,9 @@ public class CouchbaseSaveChangesInterceptor : SaveChangesInterceptor
 
     // After a successful save, update OwnedCollectionSnapshot with the current collection
     // reference AND current item property values so subsequent SaveChanges calls won't see
-    // a stale mismatch from the just-written state.
+    // a stale mismatch from the just-written state. An owner that was added in this context has
+    // no snapshot yet (the query path records one only for entities it reads), so one is created
+    // here; otherwise later changes to its collections in the same context would not be saved.
     private static void RefreshOwnedCollectionSnapshots(DbContext context)
     {
         foreach (var entry in context.ChangeTracker.Entries())
@@ -271,13 +273,16 @@ public class CouchbaseSaveChangesInterceptor : SaveChangesInterceptor
             if (entry.Metadata.IsOwned()) continue;
             if (entry.State != EntityState.Unchanged) continue;
 
-            var owner = entry.Entity;
-            if (!OwnedCollectionSnapshot.OriginalRefs.TryGetValue(owner, out var refs)) continue;
+            var ownedCollections = entry.Metadata.GetNavigations()
+                .Where(n => n.TargetEntityType.IsOwned() && n.IsCollection && n.PropertyInfo != null)
+                .ToList();
+            if (ownedCollections.Count == 0) continue;
 
+            var owner = entry.Entity;
+            var refs = OwnedCollectionSnapshot.OriginalRefs.GetOrCreateValue(owner);
             var itemsTable = OwnedCollectionSnapshot.OriginalItems.GetOrCreateValue(owner);
 
-            foreach (var nav in entry.Metadata.GetNavigations()
-                         .Where(n => n.TargetEntityType.IsOwned() && n.IsCollection && n.PropertyInfo != null))
+            foreach (var nav in ownedCollections)
             {
                 var current = nav.PropertyInfo!.GetValue(owner);
                 refs[nav.Name] = current;
