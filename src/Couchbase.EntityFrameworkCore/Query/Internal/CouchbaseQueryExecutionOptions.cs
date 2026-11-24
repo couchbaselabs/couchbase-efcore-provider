@@ -25,8 +25,9 @@ namespace Couchbase.EntityFrameworkCore.Query.Internal;
 /// <para>
 /// A subquery is translated with the same <see cref="QueryCompilationContext"/>, so an option applied
 /// to a subquery applies to the whole request the query is sent as (a query is one request).
-/// If the same option is set more than once, the last call wins. They do not alter the generated
-/// SQL++, only how it is executed.
+/// If the same option is set more than once, the last call wins. They change how the SQL++ is
+/// executed, and one thing in it: an unfiltered <c>COUNT</c> goes through an index when the query
+/// needs consistency (see <see cref="ConsistentCountMarker"/>).
 /// </para>
 /// </remarks>
 internal sealed class CouchbaseQueryExecutionOptions

@@ -488,10 +488,10 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
         }
     }
 
-        /// <inheritdoc />
     /// <summary>
-    /// True for a <c>COUNT</c> with no predicate over one table that the translator marked with
-    /// <see cref="CouchbaseQueryHintAnnotationNames.ConsistentCount"/> = true: the query needs
+    /// True for a <c>COUNT</c> with no predicate over one table whose
+    /// <see cref="CouchbaseQueryHintAnnotationNames.ConsistentCount"/> annotation
+    /// <see cref="CouchbaseParameterBasedSqlProcessor"/> resolved to true: the query needs
     /// read-your-writes consistency, so the count must not be a <c>CountScan</c>.
     /// </summary>
     private static bool IsConsistentUnfilteredCount(
@@ -510,6 +510,7 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
         return false;
     }
 
+        /// <inheritdoc />
     protected override Expression VisitSelect(SelectExpression selectExpression)
     {
         IDisposable? subQueryIndent = null;

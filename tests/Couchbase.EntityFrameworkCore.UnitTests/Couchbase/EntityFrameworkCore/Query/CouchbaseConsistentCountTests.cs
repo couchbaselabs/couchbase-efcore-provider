@@ -148,6 +148,74 @@ public class CouchbaseConsistentCountTests
         Assert.DoesNotContain("META(", ctx.Posts.ToQueryString());
     }
 
+    [Fact]
+    public void Count_ConstantTruePredicate_RequestPlusContext_CountsThroughTheIndex()
+    {
+        // EF Core drops a predicate that is always true, which leaves a bare COUNT(*).
+        using var ctx = CreateContext(QueryScanConsistency.RequestPlus);
+
+        var sql = ctx.Posts.Where(p => ctx.Posts.Select(x => p.Id).Count(x => true) > 1).ToQueryString();
+
+        Assert.Contains(IndexedCount, sql);
+    }
+
+    [Fact]
+    public void LongCount_ConstantTruePredicate_RequestPlusContext_CountsThroughTheIndex()
+    {
+        using var ctx = CreateContext(QueryScanConsistency.RequestPlus);
+
+        var sql = ctx.Posts.Where(p => ctx.Posts.Select(x => p.Id).LongCount(x => true) > 1).ToQueryString();
+
+        Assert.Contains(IndexedCount, sql);
+    }
+
+    [Fact]
+    public void Count_WithScanConsistencyInALaterSiblingSubquery_CountsThroughTheIndex()
+    {
+        // The hint is translated after the count and in another subquery, but still applies to the
+        // whole query.
+        using var ctx = CreateContext(QueryScanConsistency.NotBounded);
+
+        var sql = ctx.Posts.Where(p => ctx.Posts.Select(x => p.Id).Count() > 1)
+            .Where(p => ctx.Posts.WithScanConsistency(QueryScanConsistency.RequestPlus).Any(x => x.Id == p.Id))
+            .ToQueryString();
+
+        Assert.Contains(IndexedCount, sql);
+    }
+
+    [Fact]
+    public void Count_ConsistentWithNull_NotBoundedContext_HasNoPredicate()
+    {
+        // A null MutationState leaves the query NotBounded, so the count does not need the index.
+        using var ctx = CreateContext(QueryScanConsistency.NotBounded);
+
+        var sql = CountWithConsistentWith(ctx, null).ToQueryString();
+
+        Assert.DoesNotContain("META(", sql);
+    }
+
+    [Fact]
+    public void Count_ConsistentWithNullThenNotNull_SameQuery_FollowsTheValue()
+    {
+        // The same compiled query runs with both values; the SQL cache must keep them apart.
+        using var ctx = CreateContext(QueryScanConsistency.NotBounded);
+
+        Assert.DoesNotContain("META(", CountWithConsistentWith(ctx, null).ToQueryString());
+        Assert.Contains(IndexedCount, CountWithConsistentWith(ctx, new MutationState()).ToQueryString());
+        Assert.DoesNotContain("META(", CountWithConsistentWith(ctx, null).ToQueryString());
+    }
+
+    [Fact]
+    public void Count_ConsistentWithNull_RequestPlusContext_CountsThroughTheIndex()
+    {
+        using var ctx = CreateContext(QueryScanConsistency.RequestPlus);
+
+        Assert.Contains(IndexedCount, CountWithConsistentWith(ctx, null).ToQueryString());
+    }
+
+    private static IQueryable<Post> CountWithConsistentWith(CountContext ctx, MutationState? mutationState)
+        => ctx.Posts.Where(p => ctx.Posts.Select(x => p.Id).Count() > 1).ConsistentWith(mutationState!);
+
     private static CountContext CreateContext(QueryScanConsistency contextDefault)
     {
         var clusterOptions = new ClusterOptions()
