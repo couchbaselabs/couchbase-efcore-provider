@@ -2,6 +2,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Linq.Expressions;
 using System.Reflection;
 using Couchbase.EntityFrameworkCore.Extensions;
+using Couchbase.EntityFrameworkCore.Infrastructure.Internal;
 using Couchbase.Query;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
@@ -91,7 +92,7 @@ public class CouchbaseQueryableMethodTranslatingExpressionVisitor : RelationalQu
     /// or -- the bug this guard specifically prevents -- silently annotating a table that a later
     /// pushdown buries inside a subquery, rendering the hint on the wrong FROM term. Chaining
     /// <c>.UseIndex(...)</c> more than once on the same queryable is last-call-wins -- see
-    /// <see cref="SetHintAnnotation"/>.
+    /// <see cref="TableHintAnnotations.SetHintAnnotation"/>.
     /// </summary>
     private Expression TranslateUseIndex(MethodCallExpression methodCallExpression)
     {
@@ -101,9 +102,8 @@ public class CouchbaseQueryableMethodTranslatingExpressionVisitor : RelationalQu
         {
             var indexName = (string?)((ConstantExpression)methodCallExpression.Arguments[1]).Value;
             var indexType = (CouchbaseIndexType)((ConstantExpression)methodCallExpression.Arguments[2]).Value!;
-            var annotatedTable = SetHintAnnotation(table, CouchbaseQueryHintAnnotationNames.UseIndex, (indexName, indexType));
-            var newSelectExpression = (SelectExpression)new TableSwapExpressionVisitor(table, annotatedTable).Visit(selectExpression);
-            return shapedQueryExpression.UpdateQueryExpression(newSelectExpression);
+            return shapedQueryExpression.UpdateQueryExpression(TableHintAnnotations.AnnotateTable(
+                selectExpression, table, CouchbaseQueryHintAnnotationNames.UseIndex, (indexName, indexType)));
         }
 
         return source!;
@@ -125,9 +125,8 @@ public class CouchbaseQueryableMethodTranslatingExpressionVisitor : RelationalQu
             && IsUnpushedDownTable(selectExpression, out var table))
         {
             var hashType = (CouchbaseHashHintType)((ConstantExpression)methodCallExpression.Arguments[1]).Value!;
-            var annotatedTable = SetHintAnnotation(table, CouchbaseQueryHintAnnotationNames.UseHash, hashType);
-            var newSelectExpression = (SelectExpression)new TableSwapExpressionVisitor(table, annotatedTable).Visit(selectExpression);
-            return shapedQueryExpression.UpdateQueryExpression(newSelectExpression);
+            return shapedQueryExpression.UpdateQueryExpression(TableHintAnnotations.AnnotateTable(
+                selectExpression, table, CouchbaseQueryHintAnnotationNames.UseHash, hashType));
         }
 
         return source!;
@@ -180,6 +179,35 @@ public class CouchbaseQueryableMethodTranslatingExpressionVisitor : RelationalQu
         return source!;
     }
 
+    /// <inheritdoc />
+    protected override ShapedQueryExpression? TranslateCount(ShapedQueryExpression source, LambdaExpression? predicate)
+        => base.TranslateCount(MarkCount(source), predicate);
+
+    /// <inheritdoc />
+    protected override ShapedQueryExpression? TranslateLongCount(ShapedQueryExpression source, LambdaExpression? predicate)
+        => base.TranslateLongCount(MarkCount(source), predicate);
+
+    /// <summary>
+    /// Marks the table of a count over a bare keyspace (see <see cref="CouchbaseQueryHintAnnotationNames.ConsistentCount"/>).
+    /// Counts with a predicate are marked too, because EF Core drops a predicate that is always true.
+    /// </summary>
+    private ShapedQueryExpression MarkCount(ShapedQueryExpression source)
+    {
+        if (source.QueryExpression is SelectExpression selectExpression
+            && IsUnpushedDownTable(selectExpression, out var table))
+        {
+            var marker = new ConsistentCountMarker(
+                CouchbaseQueryExecutionOptions.GetOrCreate(_queryCompilationContext),
+                _queryCompilationContext.ContextOptions.FindExtension<CouchbaseOptionsExtension>()
+                    ?.CouchbaseDbContextOptionsBuilder?.ScanConsistency
+                ?? QueryScanConsistency.NotBounded);
+            return source.UpdateQueryExpression(TableHintAnnotations.AnnotateTable(
+                selectExpression, table, CouchbaseQueryHintAnnotationNames.ConsistentCount, marker));
+        }
+
+        return source;
+    }
+
     /// <summary>
     /// True if <paramref name="selectExpression"/> is still exactly its bare, single, un-composed
     /// table -- i.e. annotating that <paramref name="table"/> now is guaranteed to still be
@@ -216,58 +244,6 @@ public class CouchbaseQueryableMethodTranslatingExpressionVisitor : RelationalQu
 
         table = null;
         return false;
-    }
-
-    /// <summary>
-    /// Sets a hint annotation on <paramref name="table"/>, replacing (last-call-wins) whatever value
-    /// it may already carry under <paramref name="name"/>, instead of the
-    /// <see cref="InvalidOperationException"/> (EF Core's internal "duplicate annotation" guard)
-    /// that <see cref="TableExpressionBase.AddAnnotation"/> throws when asked to add a second,
-    /// different value under a name that's already set -- reachable simply by chaining
-    /// <c>.UseIndex("a").UseIndex("b")</c> (or <c>.UseHash(...)</c> twice) on the same queryable.
-    /// A single N1QL keyspace reference can carry only one <c>USE INDEX</c>/<c>USE HASH</c> clause,
-    /// so "the last hint applied wins" is the only sensible repeat semantics -- matching how e.g.
-    /// chaining <c>.OrderBy(...)</c> twice replaces the earlier ordering rather than erroring.
-    /// </summary>
-    private static TableExpression SetHintAnnotation(TableExpression table, string name, object? value)
-    {
-        var existing = table.FindAnnotation(name);
-        if (existing is null || Equals(existing.Value, value))
-        {
-            // AddAnnotation itself already no-ops (returns an equal table) for a repeated,
-            // identical value -- only a genuinely different value needs the rebuild below.
-            return (TableExpression)table.AddAnnotation(name, value);
-        }
-
-        var annotations = new SortedDictionary<string, IAnnotation>(StringComparer.Ordinal);
-        foreach (var annotation in table.GetAnnotations())
-        {
-            if (annotation.Name != name)
-            {
-                annotations[annotation.Name] = annotation;
-            }
-        }
-
-        annotations[name] = new Annotation(name, value);
-
-#pragma warning disable EF1001 // TableExpression's (alias, table, annotations) constructor is an internal API.
-        return new TableExpression(table.Alias, table.Table, annotations);
-#pragma warning restore EF1001
-    }
-
-    /// <summary>
-    /// Replaces a single <see cref="TableExpressionBase"/> reference (by-reference, not by value
-    /// equality) throughout an expression tree. Relies on <see cref="SelectExpression"/>'s own
-    /// <c>VisitChildren</c> to correctly propagate the swap through its <c>Tables</c> list (mutating
-    /// in place while the select is still in its pre-projection-finalization mutable state) -- the
-    /// same mechanism EF Core's own internal rewrite passes (e.g. the nullability processor) use for
-    /// tree-local node replacement, needing no EF1001-marked internal API.
-    /// </summary>
-    private sealed class TableSwapExpressionVisitor(TableExpressionBase oldTable, TableExpressionBase newTable) : ExpressionVisitor
-    {
-        [return: NotNullIfNotNull(nameof(node))]
-        public override Expression? Visit(Expression? node)
-            => ReferenceEquals(node, oldTable) ? newTable : base.Visit(node);
     }
 
     /// <summary>

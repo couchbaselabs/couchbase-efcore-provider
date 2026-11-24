@@ -160,6 +160,47 @@ public class CouchbaseWithScanConsistencyTests(BloggingFixture fixture, ITestOut
         }
     }
 
+    [Fact]
+    public async Task Linq_RequestPlusContext_UnfilteredCountAfterDeleteAndInsert_IsExact()
+    {
+        // The query service answers a bare COUNT(*) from the collection's document count (a
+        // CountScan), which ignores request_plus and lags just after documents are deleted and
+        // inserted again. Every round must see exactly the documents just written.
+        const int rounds = 20;
+        const int documentsPerRound = 4;
+        var collectionName = "scancount" + Guid.NewGuid().ToString("N");
+        var optionsBuilder = CreateOptionsBuilder<ScanCountDbContext>(QueryScanConsistency.RequestPlus);
+
+        await using var ctx = new ScanCountDbContext(optionsBuilder.Options, collectionName);
+        try
+        {
+            await ctx.Database.EnsureCreatedAsync();
+            await WaitForKeyspaceReadyAsync(collectionName);
+
+            for (var round = 0; round < rounds; round++)
+            {
+                await DeleteAllDocumentsAsync(collectionName);
+
+                await using (var writeCtx = new ScanCountDbContext(optionsBuilder.Options, collectionName))
+                {
+                    for (var i = 0; i < documentsPerRound; i++)
+                    {
+                        writeCtx.Add(new ScanEntity { Id = $"{round}-{i}", Content = "doc" });
+                    }
+
+                    await writeCtx.SaveChangesAsync();
+                }
+
+                await using var readCtx = new ScanCountDbContext(optionsBuilder.Options, collectionName);
+                Assert.Equal(documentsPerRound, await readCtx.Entities.CountAsync());
+            }
+        }
+        finally
+        {
+            await DropCollectionAsync(collectionName);
+        }
+    }
+
     private static async Task WriteDocumentsAsync(DbContext ctx)
     {
         for (var i = 0; i < DocumentCount; i++)
@@ -170,7 +211,8 @@ public class CouchbaseWithScanConsistencyTests(BloggingFixture fixture, ITestOut
         await ctx.SaveChangesAsync();
     }
 
-    private DbContextOptionsBuilder<TContext> CreateOptionsBuilder<TContext>()
+    private DbContextOptionsBuilder<TContext> CreateOptionsBuilder<TContext>(
+        QueryScanConsistency scanConsistency = QueryScanConsistency.NotBounded)
         where TContext : DbContext
     {
         var optionsBuilder = new DbContextOptionsBuilder<TContext>();
@@ -183,7 +225,7 @@ public class CouchbaseWithScanConsistencyTests(BloggingFixture fixture, ITestOut
                 o.Bucket = fixture.BucketName;
                 o.Scope = fixture.ScopeName;
                 o.AutoCreateIndexes = true;
-                o.ScanConsistency = QueryScanConsistency.NotBounded;
+                o.ScanConsistency = scanConsistency;
             });
         optionsBuilder.UseCamelCaseNamingConvention();
         optionsBuilder.ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning));
@@ -220,6 +262,22 @@ public class CouchbaseWithScanConsistencyTests(BloggingFixture fixture, ITestOut
         }
     }
 
+    // Deletes every document in the collection, reading the response to the end so the delete has
+    // finished before the next round writes.
+    private async Task DeleteAllDocumentsAsync(string collectionName)
+    {
+        var clusterOptions = new global::Couchbase.ClusterOptions()
+            .WithConnectionString(fixture.Host)
+            .WithPasswordAuthentication(fixture.Username, fixture.Password);
+        using var cluster = await global::Couchbase.Cluster.ConnectAsync(clusterOptions);
+        using var result = await cluster.QueryAsync<object>(
+            $"DELETE FROM {DelimitKeyspace(collectionName)}",
+            new QueryOptions().ScanConsistency(QueryScanConsistency.RequestPlus));
+        await foreach (var _ in result.Rows)
+        {
+        }
+    }
+
     private async Task DropCollectionAsync(string collectionName)
     {
         var clusterOptions = new global::Couchbase.ClusterOptions()
@@ -243,6 +301,21 @@ public class CouchbaseWithScanConsistencyTests(BloggingFixture fixture, ITestOut
     }
 
     public class ScanLinqDbContext(DbContextOptions<ScanLinqDbContext> options, string collectionName) : DbContext(options)
+    {
+        public DbSet<ScanEntity> Entities { get; set; } = null!;
+
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            base.OnModelCreating(modelBuilder);
+            modelBuilder.Entity<ScanEntity>(b =>
+            {
+                b.ToCouchbaseCollection(this, collectionName);
+                b.HasKey(e => e.Id);
+            });
+        }
+    }
+
+    public class ScanCountDbContext(DbContextOptions<ScanCountDbContext> options, string collectionName) : DbContext(options)
     {
         public DbSet<ScanEntity> Entities { get; set; } = null!;
 

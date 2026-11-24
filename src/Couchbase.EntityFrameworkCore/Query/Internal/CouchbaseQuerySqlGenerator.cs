@@ -488,6 +488,26 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
         }
     }
 
+    /// <summary>
+    /// True for a <c>COUNT</c> with no predicate over one table whose
+    /// <see cref="CouchbaseQueryHintAnnotationNames.ConsistentCount"/> annotation is true.
+    /// </summary>
+    private static bool IsConsistentUnfilteredCount(
+        SelectExpression selectExpression,
+        [NotNullWhen(true)] out TableExpression? table)
+    {
+        if (selectExpression is { Predicate: null, GroupBy.Count: 0, Tables: [TableExpression singleTable], Projection: [var projection] }
+            && projection.Expression is SqlFunctionExpression { Name: "COUNT" }
+            && singleTable.FindAnnotation(CouchbaseQueryHintAnnotationNames.ConsistentCount)?.Value is true)
+        {
+            table = singleTable;
+            return true;
+        }
+
+        table = null;
+        return false;
+    }
+
         /// <inheritdoc />
     protected override Expression VisitSelect(SelectExpression selectExpression)
     {
@@ -637,6 +657,14 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
                 Sql.AppendLine().Append("WHERE ");
 
                 Visit(selectExpression.Predicate);
+            }
+            else if (IsConsistentUnfilteredCount(selectExpression, out var countedTable))
+            {
+                // True for every document; makes the count use the primary index instead of a
+                // CountScan. See CouchbaseQueryHintAnnotationNames.ConsistentCount.
+                Sql.AppendLine().Append("WHERE META(")
+                    .Append(Dependencies.SqlGenerationHelper.DelimitIdentifier(countedTable.Alias))
+                    .Append(").id IS NOT MISSING");
             }
 
             if (selectExpression.GroupBy.Count > 0)
