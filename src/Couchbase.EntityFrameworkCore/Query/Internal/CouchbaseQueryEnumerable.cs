@@ -433,14 +433,8 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
 
         // A per-query WithScanConsistency overrides the context-wide default. A ConsistentWith
         // MutationState (applied below) is stricter and still wins for the query.
-        if (_scanConsistency is { } perQueryScanConsistency)
-        {
-            queryOptions.ScanConsistency(perQueryScanConsistency);
-        }
-        else
-        {
-            queryOptions.ScanConsistency(_couchbaseDbContextOptionsBuilder.ScanConsistency);
-        }
+        queryOptions.ScanConsistency(CouchbaseQueryExecutionOptions.EffectiveScanConsistency(
+            _scanConsistency, _couchbaseDbContextOptionsBuilder.ScanConsistency));
         foreach (CouchbaseParameter parameter in command.Parameters)
         {
             queryOptions.Parameter(parameter.ParameterName, parameter.Value!);
@@ -450,7 +444,8 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
         // QueryContext.Parameters, rather than baked in at compile time -- see
         // CouchbaseQueryHintAnnotationNames.ConsistentWith's doc comment for why. Overrides the
         // ScanConsistency call above to AtPlus internally (the SDK's own QueryOptions.ConsistentWith
-        // behavior) only when a non-null MutationState was actually supplied.
+        // behavior) only when a non-null MutationState was actually supplied. ConsistentCountMarker
+        // makes the same decision when it picks how a COUNT is sent; keep the two in step.
         if (_consistentWithParameterName != null
             && _relationalQueryContext.Parameters.TryGetValue(_consistentWithParameterName, out var consistentWithValue)
             && consistentWithValue is MutationState mutationState)

@@ -165,8 +165,7 @@ public class CouchbaseWithScanConsistencyTests(BloggingFixture fixture, ITestOut
     {
         // The query service answers a bare COUNT(*) from the collection's document count (a
         // CountScan), which ignores request_plus and lags just after documents are deleted and
-        // inserted again: before the provider counted through the primary index, most rounds below
-        // returned fewer than 4. Every round must see exactly the documents just written.
+        // inserted again. Every round must see exactly the documents just written.
         const int rounds = 20;
         const int documentsPerRound = 4;
         var collectionName = "scancount" + Guid.NewGuid().ToString("N");

@@ -202,7 +202,7 @@ How it combines with the other options:
 > [!NOTE]
 > The query service answers a bare `COUNT(*)` from the collection's document count, which ignores
 > the scan consistency and can be stale just after documents are deleted and inserted. So when a
-> query uses `RequestPlus` or `ConsistentWith`, an unfiltered `Count()`/`LongCount()` is sent as
+> query uses `RequestPlus` or a non-null `ConsistentWith`, an unfiltered `Count()`/`LongCount()` is sent as
 > `... WHERE META(d).id IS NOT MISSING`, which counts through the primary index and is exact. That
 > needs a primary index on the collection, which `EnsureCreatedAsync` creates unless
 > `AutoCreateIndexes` is `false`. A `NotBounded` count keeps the faster document count.

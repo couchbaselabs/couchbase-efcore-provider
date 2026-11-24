@@ -490,13 +490,11 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
 
     /// <summary>
     /// True for a <c>COUNT</c> with no predicate over one table whose
-    /// <see cref="CouchbaseQueryHintAnnotationNames.ConsistentCount"/> annotation
-    /// <see cref="CouchbaseParameterBasedSqlProcessor"/> resolved to true: the query needs
-    /// read-your-writes consistency, so the count must not be a <c>CountScan</c>.
+    /// <see cref="CouchbaseQueryHintAnnotationNames.ConsistentCount"/> annotation is true.
     /// </summary>
     private static bool IsConsistentUnfilteredCount(
         SelectExpression selectExpression,
-        [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out TableExpression? table)
+        [NotNullWhen(true)] out TableExpression? table)
     {
         if (selectExpression is { Predicate: null, GroupBy.Count: 0, Tables: [TableExpression singleTable], Projection: [var projection] }
             && projection.Expression is SqlFunctionExpression { Name: "COUNT" }
@@ -662,10 +660,8 @@ public class CouchbaseQuerySqlGenerator : QuerySqlGenerator
             }
             else if (IsConsistentUnfilteredCount(selectExpression, out var countedTable))
             {
-                // Without a predicate the query service answers COUNT(*) from the collection's
-                // document count (a CountScan), which ignores the scan consistency and can be stale
-                // just after documents are deleted and inserted. This predicate is true for every
-                // document but makes it count through the primary index, which honours it.
+                // True for every document; makes the count use the primary index instead of a
+                // CountScan. See CouchbaseQueryHintAnnotationNames.ConsistentCount.
                 Sql.AppendLine().Append("WHERE META(")
                     .Append(Dependencies.SqlGenerationHelper.DelimitIdentifier(countedTable.Alias))
                     .Append(").id IS NOT MISSING");

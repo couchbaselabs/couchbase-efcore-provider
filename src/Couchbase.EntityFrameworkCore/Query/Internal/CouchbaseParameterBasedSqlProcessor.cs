@@ -29,8 +29,8 @@ public class CouchbaseParameterBasedSqlProcessor(
         public override Expression? Visit(Expression? node)
             => node is TableExpression table
                && table.FindAnnotation(CouchbaseQueryHintAnnotationNames.ConsistentCount)?.Value is ConsistentCountMarker marker
-                ? CouchbaseQueryableMethodTranslatingExpressionVisitor.SetHintAnnotation(
-                    table, CouchbaseQueryHintAnnotationNames.ConsistentCount, marker.IsNeeded(parametersDecorator))
+                ? TableHintAnnotations.SetHintAnnotation(
+                    table, CouchbaseQueryHintAnnotationNames.ConsistentCount, marker.RequiresIndexCount(parametersDecorator))
                 : base.Visit(node);
     }
 }

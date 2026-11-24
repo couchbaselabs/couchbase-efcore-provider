@@ -46,6 +46,17 @@ internal sealed class CouchbaseQueryExecutionOptions
     /// </summary>
     public QueryScanConsistency? ScanConsistency { get; set; }
 
+    /// <summary>
+    /// The scan consistency a query runs with before any <c>ConsistentWith</c>: its own
+    /// <c>WithScanConsistency</c>, or else the context-wide setting. A non-null
+    /// <see cref="MutationState"/> then makes the query <c>AtPlus</c> (the SDK's
+    /// <c>QueryOptions.ConsistentWith</c>); see <see cref="CouchbaseQueryEnumerable{T}"/> and
+    /// <see cref="ConsistentCountMarker"/>, which both apply this order.
+    /// </summary>
+    public static QueryScanConsistency EffectiveScanConsistency(
+        QueryScanConsistency? perQueryScanConsistency, QueryScanConsistency contextScanConsistency)
+        => perQueryScanConsistency ?? contextScanConsistency;
+
     /// <summary>Gets the options for <paramref name="context"/>, creating them on first use.</summary>
     public static CouchbaseQueryExecutionOptions GetOrCreate(QueryCompilationContext context)
         => Options.GetValue(context, static _ => new CouchbaseQueryExecutionOptions());

@@ -9,6 +9,11 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ### Changed
 
+- **An unfiltered `Count()`/`LongCount()` needs a primary index under `RequestPlus`.** When a query
+  uses `RequestPlus` (the context default or `WithScanConsistency`) or a non-null `ConsistentWith`, the
+  count now goes through the primary index so that it is exact (see Fixed). `EnsureCreatedAsync`
+  creates the index, but an app with `AutoCreateIndexes = false` and no primary index on the
+  collection gets an error from such a count; create one with `CREATE PRIMARY INDEX`.
 - **Synchronous calls throw by default, the same in Debug and Release builds, and can be enabled.**
   `SaveChanges()`, synchronous query enumeration, `EnsureCreated()`, `BeginTransaction()` and the other
   synchronous APIs raise the new `CouchbaseEventId.SyncNotSupported` warning, which the provider
@@ -52,9 +57,9 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 - **`Count()` with no predicate is exact under `RequestPlus`.** The query service answers a bare
   `COUNT(*)` from the collection's document count, which ignores the scan consistency and can be
   stale just after documents are deleted and inserted. When a query uses `RequestPlus` (the context
-  default or `WithScanConsistency`) or `ConsistentWith`, an unfiltered `Count()`/`LongCount()` now
-  counts through the primary index instead, so it needs one (`EnsureCreatedAsync` creates it unless
-  `AutoCreateIndexes` is `false`). A `NotBounded` count is unchanged.
+  default or `WithScanConsistency`) or a non-null `ConsistentWith`, an unfiltered
+  `Count()`/`LongCount()` now counts through the primary index instead. A `NotBounded` count is
+  unchanged.
 - **Shadow properties are now written to the document.** An entity's shadow properties, including the
   shadow foreign key EF Core creates for a relationship with no FK property, were left out of the stored
   document, so a reloaded entity lost them (and the relationship) or failed to materialize. They are now

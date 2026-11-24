@@ -26,12 +26,23 @@ internal static class CouchbaseQueryHintAnnotationNames
     public const string UseHash = "Couchbase:UseHash";
 
     /// <summary>
-    /// Marks the table of a <c>Count()</c>/<c>LongCount()</c> over one keyspace. The translator sets a
-    /// <see cref="ConsistentCountMarker"/>; when the query runs, <see cref="CouchbaseParameterBasedSqlProcessor"/>
-    /// replaces it with a <see cref="bool"/>: true when the query needs read-your-writes consistency,
-    /// so <see cref="CouchbaseQuerySqlGenerator"/> gives a <c>COUNT</c> without a predicate one. Without one, the query service answers <c>COUNT(*)</c>
-    /// from the collection's document count (a <c>CountScan</c>), which ignores the scan
-    /// consistency and can be stale just after documents are deleted and inserted.
+    /// Marks the table of a <c>Count()</c>/<c>LongCount()</c> over one keyspace.
+    /// <para>
+    /// Without a predicate, the query service answers <c>COUNT(*)</c> from the collection's document
+    /// count (a <c>CountScan</c>), which ignores the scan consistency and can be stale just after
+    /// documents are deleted and inserted. So when the query needs read-your-writes consistency,
+    /// <see cref="CouchbaseQuerySqlGenerator"/> gives such a <c>COUNT</c> the predicate
+    /// <c>WHERE META(d).id IS NOT MISSING</c>: true for every document, but it makes the count go
+    /// through the primary index, which honours the consistency. A <c>NotBounded</c> query keeps the
+    /// faster <c>CountScan</c>.
+    /// </para>
+    /// <para>
+    /// Whether the query needs consistency is only known when it runs: a <c>WithScanConsistency</c>
+    /// or <c>ConsistentWith</c> anywhere in the query applies to the whole query, and a
+    /// <c>ConsistentWith</c> value can be null. So the translator sets a
+    /// <see cref="ConsistentCountMarker"/>, and <see cref="CouchbaseParameterBasedSqlProcessor"/>
+    /// replaces it with a <see cref="bool"/> when the query runs.
+    /// </para>
     /// </summary>
     public const string ConsistentCount = "Couchbase:ConsistentCount";
 }
