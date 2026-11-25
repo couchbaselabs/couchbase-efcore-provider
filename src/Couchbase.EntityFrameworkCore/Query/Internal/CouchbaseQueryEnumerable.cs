@@ -151,7 +151,7 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
         _ownedCollectionNavigations = ownerEntityType == null ? [] :
             ownerEntityType.GetNavigations()
                 .Concat(ownerEntityType.GetDerivedTypes().SelectMany(t => t.GetDeclaredNavigations()))
-                .Where(n => n.IsCollection && n.TargetEntityType.IsOwned())
+                .Where(n => n.IsCollection && n.IsOwnedChild())
                 .ToArray();
         // Per-row filtering is only needed when an owned collection is declared on a STRICT
         // DESCENDANT of the queried type — those navigations apply to a subset of the rows.
@@ -168,7 +168,7 @@ public class CouchbaseQueryEnumerable<T> : IEnumerable<T>, IAsyncEnumerable<T>, 
         _ownedReferenceNavigations = ownerEntityType == null ? [] :
             ownerEntityType.GetNavigations()
                 .Concat(ownerEntityType.GetDerivedTypes().SelectMany(t => t.GetDeclaredNavigations()))
-                .Where(n => !n.IsCollection && n.TargetEntityType.IsOwned())
+                .Where(n => !n.IsCollection && n.IsOwnedChild())
                 .ToArray();
         _ownedReferencesSpanInheritance = ownerEntityType != null &&
             _ownedReferenceNavigations.Any(

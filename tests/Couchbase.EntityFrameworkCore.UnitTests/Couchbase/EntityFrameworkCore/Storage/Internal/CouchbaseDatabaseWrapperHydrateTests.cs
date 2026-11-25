@@ -827,12 +827,86 @@ public class CouchbaseDatabaseWrapperHydrateTests
         nav.Setup(n => n.IsCollection).Returns(false);
         nav.Setup(n => n.Name).Returns("label");
         nav.Setup(n => n.TargetEntityType).Returns(targetType.Object);
+        nav.Setup(n => n.ForeignKey).Returns(OwnershipForeignKey());
+        nav.Setup(n => n.IsOnDependent).Returns(false);
         // PropertyInfo is null (field-access); the FieldInfo points at the backing field.
         nav.Setup(n => n.PropertyInfo).Returns((PropertyInfo?)null);
         nav.Setup(n => n.FieldInfo).Returns(
             typeof(OwnedContact).GetField("_label", BindingFlags.NonPublic | BindingFlags.Instance));
 
         return nav.Object;
+    }
+
+    private static IForeignKey OwnershipForeignKey()
+    {
+        var foreignKey = new Mock<IForeignKey>();
+        foreignKey.Setup(f => f.IsOwnership).Returns(true);
+        return foreignKey.Object;
+    }
+
+    private class TreeRoot
+    {
+        public int Id { get; set; }
+        public TreeBranch Branch { get; set; } = null!;
+    }
+
+    private class TreeBranch
+    {
+        public string? Name { get; set; }
+        public TreeRoot? Root { get; set; }
+        public List<TreeLeaf> Leaves { get; set; } = [];
+    }
+
+    private class TreeLeaf
+    {
+        public string? Name { get; set; }
+        public TreeBranch? Parent { get; set; }
+    }
+
+    private class TreeContext(DbContextOptions<TreeContext> options) : DbContext(options)
+    {
+        public DbSet<TreeRoot> Roots { get; set; } = null!;
+
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            modelBuilder.Entity<TreeRoot>(b =>
+            {
+                b.ToCouchbaseCollection("bucket", "scope", "roots");
+                b.HasKey(r => r.Id);
+                b.OwnsOne(r => r.Branch, branch =>
+                {
+                    branch.WithOwner(x => x.Root);
+                    branch.OwnsMany(x => x.Leaves, leaf => leaf.WithOwner(x => x.Parent));
+                });
+            });
+        }
+    }
+
+    [Fact]
+    public void SerializeOwnedItem_WithOwnerNavigations_AreNotWritten()
+    {
+        var opts = new global::Couchbase.ClusterOptions()
+            .WithConnectionString("couchbase://localhost")
+            .WithPasswordAuthentication("Administrator", "password");
+        var builder = new DbContextOptionsBuilder<TreeContext>();
+        builder.UseCouchbaseProvider(opts);
+        using var ctx = new TreeContext(builder.Options);
+        var branchType = ctx.Model.FindEntityType(typeof(TreeRoot))!
+            .FindNavigation(nameof(TreeRoot.Branch))!.TargetEntityType;
+
+        // The object graph as EF Core fixes it up: every owned item points back to its owner.
+        var root = new TreeRoot { Id = 1 };
+        var branch = new TreeBranch { Name = "branch", Root = root };
+        root.Branch = branch;
+        branch.Leaves.Add(new TreeLeaf { Name = "leaf", Parent = branch });
+
+        var result = CouchbaseDatabaseWrapper.SerializeOwnedItem(branch, branchType, null);
+
+        Assert.False(result.ContainsKey(nameof(TreeBranch.Root)));
+        var leaves = Assert.IsType<List<Dictionary<string, object?>>>(result[nameof(TreeBranch.Leaves)]);
+        var leaf = Assert.Single(leaves);
+        Assert.Equal("leaf", leaf[nameof(TreeLeaf.Name)]);
+        Assert.False(leaf.ContainsKey(nameof(TreeLeaf.Parent)));
     }
 
     [Fact]
