@@ -9,15 +9,19 @@ fixed or broke also changes outcome, but it is not flaky.
 With --update, the tests are added to flaky.txt and removed from known-failures.txt. Without it,
 they are only listed.
 
+It also lists the flaky.txt entries whose outcome did not change: those that passed in every run
+where they ran (perhaps no longer flaky; remove them) and those that failed in every run where they
+ran (perhaps a real failure; move them to known-failures.txt). --update does not change these; an
+entry that did not run is in neither list. Both lists must exist.
+
 Usage: find-flaky.py --runs DIR DIR [DIR...] [--baseline FILE] [--flaky FILE] [--update]
 """
 import argparse
 import os
 import sys
 
-from trx import read_trx
-
-compare_baseline = __import__("compare-baseline")
+from testlists import (DEFAULT_BASELINE, DEFAULT_FLAKY, read_baseline, read_flaky, read_results,
+                       write_baseline, write_flaky)
 
 
 def result_dirs(run_dir):
@@ -30,34 +34,37 @@ def result_dirs(run_dir):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--runs", required=True, nargs="+")
-    parser.add_argument("--baseline", default=compare_baseline.DEFAULT_BASELINE)
-    parser.add_argument("--flaky", default=compare_baseline.DEFAULT_FLAKY)
+    parser.add_argument("--baseline", default=DEFAULT_BASELINE)
+    parser.add_argument("--flaky", default=DEFAULT_FLAKY)
     parser.add_argument("--update", action="store_true")
     args = parser.parse_args()
     if len(args.runs) < 2:
         sys.exit("Give at least two runs.")
 
-    passed, failed = set(), set()
-    for run_dir in args.runs:
-        for results_dir in result_dirs(run_dir):
-            for name, outcome, _ in read_trx(results_dir):
-                if outcome == "Passed":
-                    passed.add(name)
-                elif outcome == "Failed":
-                    failed.add(name)
+    # Read the lists first, so that a wrong path stops before anything is written.
+    flaky = read_flaky(args.flaky)
+    known, known_aborted = read_baseline(args.baseline)
+    passed, failed, _, _ = read_results([d for run_dir in args.runs for d in result_dirs(run_dir)])
 
-    flaky = compare_baseline.read_flaky(args.flaky)
     found = (passed & failed) - flaky
     print(f"{len(args.runs)} runs: {len(passed & failed)} tests both passed and failed; "
           f"{len(found)} are not in {os.path.basename(args.flaky)} yet")
     for name in sorted(found):
         print(f"  {name}")
 
+    for title, items in ((f"In {os.path.basename(args.flaky)} but passed in every run where they ran",
+                          sorted(flaky & (passed - failed))),
+                         (f"In {os.path.basename(args.flaky)} but failed in every run where they ran",
+                          sorted(flaky & (failed - passed)))):
+        if items:
+            print(f"\n{title} ({len(items)}):")
+            for name in items:
+                print(f"  {name}")
+
     if args.update and found:
-        compare_baseline.write_flaky(args.flaky, flaky | found)
-        known, known_aborted = compare_baseline.read_baseline(args.baseline)
-        compare_baseline.write_baseline(args.baseline, known - found, known_aborted)
-        print(f"Added {len(found)} to {args.flaky}; removed {len(known & found)} from {args.baseline}")
+        write_flaky(args.flaky, flaky | found)
+        write_baseline(args.baseline, known - found, known_aborted)
+        print(f"\nAdded {len(found)} to {args.flaky}; removed {len(known & found)} from {args.baseline}")
     return 0
 
 

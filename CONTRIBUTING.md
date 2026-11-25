@@ -29,7 +29,9 @@ Some tests pass in one run and fail in the next. They are in `flaky.txt` instead
 outcome is ignored, so a list taken from one run can't drop a flaky test that happened to pass.
 When a run of unchanged code has a new failure, check whether the test is flaky with
 `scripts/find-flaky.py --runs <run> <run> ...`, giving it several runs of the same code (for
-example downloaded nightly runs); `--update` moves the tests it finds into `flaky.txt`.
+example downloaded nightly runs); `--update` moves the tests it finds into `flaky.txt`. It also
+lists the `flaky.txt` entries that passed in every run (remove them) or failed in every run (move
+them to `known-failures.txt`); check these by hand.
 
 The suites need a Couchbase cluster with a bucket they can create scopes in. EF's transaction
 suite needs a multi-node cluster: a single node hides the node-pinning that SQL++ transactions
@@ -100,9 +102,9 @@ balanced by the per-class times in `scripts/class-times.tsv`, so a run takes abo
 to gate PRs. It runs nightly on `main` (06:00 UTC), and can be run by hand (Actions → EF Core
 specification tests → Run workflow) before merging a provider change, optionally with a server version
 and class-name fragments to run part of the suite. It fails only on a failure, or an aborted test
-class, that is not in `known-failures.txt` or `flaky.txt`; the job summary lists those and the
-tests that now pass. Each shard's TRX files are uploaded as a `spec-test-results-<shard>` artifact;
-to regenerate the baseline from a CI run, download both and run
+class, that is not in `known-failures.txt` or `flaky.txt`; the job summary lists those, the
+tests that now pass, and the flaky tests that failed. Each shard's TRX files are uploaded as a
+`spec-test-results-<shard>` artifact; to regenerate the baseline from a CI run, download both and run
 `scripts/compare-baseline.py --results <shard 1>/spec-results <shard 2>/spec-results --update`.
 To look for flaky tests, download several nightly runs (`gh run download <run id>` into one
 directory each) and pass the directories to `scripts/find-flaky.py --runs`.

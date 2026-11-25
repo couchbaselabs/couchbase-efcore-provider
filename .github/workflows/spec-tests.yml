@@ -114,8 +114,9 @@ jobs:
             echo "COUCHBASE_BUCKET=default"
           } >> "$GITHUB_ENV"
 
-      # One test process per class; compares with known-failures.txt and exits non-zero only on
-      # failures or aborted classes that are not in it.
+      # One test process per class; compares with known-failures.txt and flaky.txt and exits
+      # non-zero only on failures or aborted classes that are in neither list. The outcome of a
+      # flaky test is ignored; the ones that failed are listed.
       - name: Run specification tests
         env:
           CLASSES: ${{ inputs.classes }}
@@ -140,8 +141,9 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
-      # TRX files and the per-class summary: for investigating failures, and for regenerating
-      # known-failures.txt from a CI run (compare-baseline.py --results <shard dirs> --update).
+      # TRX files and the per-class summary: for investigating failures, for regenerating
+      # known-failures.txt from a CI run (compare-baseline.py --results <shard dirs> --update), and
+      # for finding flaky tests across several runs (find-flaky.py --runs <run dirs>).
       - name: Upload results
         if: always()
         uses: actions/upload-artifact@v4
