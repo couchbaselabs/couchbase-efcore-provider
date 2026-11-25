@@ -34,27 +34,6 @@ public class ComplexNavigationsQueryCouchbaseTest(ComplexNavigationsQueryCouchba
 public class ComplexNavigationsCollectionsQueryCouchbaseTest(ComplexNavigationsQueryCouchbaseFixture fixture)
     : ComplexNavigationsCollectionsQueryRelationalTestBase<ComplexNavigationsQueryCouchbaseFixture>(fixture);
 
-// The same model with its levels mapped as shared-type (property bag) entity types.
-public class ComplexNavigationsSharedTypeQueryCouchbaseFixture : ComplexNavigationsSharedTypeQueryRelationalFixtureBase
-{
-    protected override ITestStoreFactory TestStoreFactory => SqlLoggingCouchbaseTestStoreFactory.ForStore(StoreName);
-
-    public override DbContextOptionsBuilder AddOptions(DbContextOptionsBuilder builder)
-        => base.AddOptions(builder).ConfigureWarnings(w => w.Ignore(RelationalEventId.MultipleCollectionIncludeWarning));
-
-    protected override void OnModelCreating(ModelBuilder modelBuilder, DbContext context)
-    {
-        base.OnModelCreating(modelBuilder, context);
-        CouchbaseSpecModel.Apply(modelBuilder, context);
-    }
-}
-
-public class ComplexNavigationsSharedTypeQueryCouchbaseTest(ComplexNavigationsSharedTypeQueryCouchbaseFixture fixture)
-    : ComplexNavigationsSharedTypeQueryRelationalTestBase<ComplexNavigationsSharedTypeQueryCouchbaseFixture>(fixture);
-
-public class ComplexNavigationsCollectionsSharedTypeQueryCouchbaseTest(ComplexNavigationsSharedTypeQueryCouchbaseFixture fixture)
-    : ComplexNavigationsCollectionsSharedTypeQueryRelationalTestBase<ComplexNavigationsSharedTypeQueryCouchbaseFixture>(fixture);
-
 // ---------- Associations matrix with plain navigations (each related entity in its own document) ----------
 public class NavigationsCouchbaseFixture : NavigationsRelationalFixtureBase
 {

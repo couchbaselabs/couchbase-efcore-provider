@@ -20,9 +20,6 @@ public class NorthwindSplitIncludeNoTrackingQueryCouchbaseTest(NorthwindQueryCou
 public class ComplexNavigationsCollectionsSplitQueryCouchbaseTest(ComplexNavigationsQueryCouchbaseFixture fixture)
     : ComplexNavigationsCollectionsSplitQueryRelationalTestBase<ComplexNavigationsQueryCouchbaseFixture>(fixture);
 
-public class ComplexNavigationsCollectionsSplitSharedTypeQueryCouchbaseTest(ComplexNavigationsSharedTypeQueryCouchbaseFixture fixture)
-    : ComplexNavigationsCollectionsSplitSharedTypeQueryRelationalTestBase<ComplexNavigationsSharedTypeQueryCouchbaseFixture>(fixture);
-
 public class CompositeKeysSplitQueryCouchbaseTest(CompositeKeysQueryCouchbaseFixture fixture)
     : CompositeKeysSplitQueryRelationalTestBase<CompositeKeysQueryCouchbaseFixture>(fixture);
 

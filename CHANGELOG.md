@@ -35,6 +35,18 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
   `Add` blocked on the query.
 - **TPC hierarchies with integer keys are supported.** The keys come from the root type's sequence, so
   they are unique across the hierarchy's collections.
+- **Table splitting and TPT are rejected when the model is built.** Table splitting maps two entity
+  types that are not owned and not in one inheritance hierarchy to the same collection. The provider
+  used to accept such a model. It then wrote one document per entity type with the same document key,
+  so an insert failed with `DocumentExistsException` and an update overwrote the fields of the other
+  type. A bare collection name and the full `bucket.scope.collection` name of the same collection count
+  as the same collection. TPT (`UseTptMappingStrategy()`, or a derived type in a different collection
+  than its base type) was also accepted. Its queries join the base collection, which the provider never
+  wrote to, so they returned nothing. Now the model fails to build with an `InvalidOperationException`
+  that names the entity types and the collections. For table splitting, map each entity type to its
+  own collection, or make the dependent an owned type. For TPT, use TPH: map the derived types to the
+  base type's collection. See [Limitations](docs/limitations.md#table-splitting) and
+  [Inheritance](docs/limitations.md#inheritance).
 
 ### Removed
 

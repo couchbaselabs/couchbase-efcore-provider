@@ -1,7 +1,9 @@
 # Known root causes of spec-test failures, matched against each failed test's error message.
 # Columns (tab-separated): id, Python regex, description. The first matching row wins, so put
 # narrow patterns before broad ones. When a fix removes a cause, delete its row.
-seed-doc-exists	Insert failed for key .*\n.*DocumentExistsException	Seeding inserts a key that already exists (owned types with explicit keys, among others)
+model-table-splitting	does not support table splitting	The model maps two entity types to one collection (table splitting), which the provider rejects
+model-tpt	uses table-per-type \(TPT\) mapping	The model uses TPT, which the provider rejects
+seed-doc-exists	Insert failed for key .*\n.*DocumentExistsException	Seeding inserts a key that already exists: two entity types are written to the same document key (table splitting, among others)
 seed-empty-key	Insert failed for key  in keyspace	Document key is empty: the save path reads the key by CLR reflection, not from the update entry
 split-query	SplitQueryResultCoordinator	Split queries are compiled with the single-query coordinator
 proxies-harness	AddEntityFrameworkProxies	Test harness: the internal service provider lacks EF proxies
