@@ -84,6 +84,9 @@ public class ManyToManyQueryCouchbaseFixture : ManyToManyQueryRelationalFixture
     protected override void OnModelCreating(ModelBuilder modelBuilder, DbContext context)
     {
         base.OnModelCreating(modelBuilder, context);
+        // EF maps EntityTableSharing1 and EntityTableSharing2 into one table. The provider rejects
+        // table splitting; this keeps the rest of the fixture's tests running.
+        modelBuilder.MapToOwnCollections(typeof(Microsoft.EntityFrameworkCore.TestModels.ManyToManyModel.EntityTableSharing2));
         CouchbaseSpecModel.Apply(modelBuilder, context);
     }
 }
@@ -106,6 +109,9 @@ public class TPCManyToManyQueryCouchbaseFixture : TPCManyToManyQueryRelationalFi
     protected override void OnModelCreating(ModelBuilder modelBuilder, DbContext context)
     {
         base.OnModelCreating(modelBuilder, context);
+        // EF maps EntityTableSharing1 and EntityTableSharing2 into one table. The provider rejects
+        // table splitting; this keeps the rest of the fixture's tests running.
+        modelBuilder.MapToOwnCollections(typeof(Microsoft.EntityFrameworkCore.TestModels.ManyToManyModel.EntityTableSharing2));
         CouchbaseSpecModel.Apply(modelBuilder, context);
     }
 }

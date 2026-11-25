@@ -35,6 +35,7 @@ public class CouchbaseComplianceTest : RelationalComplianceTestBase
 
         // Table and entity splitting: embedded data is stored as nested JSON in the owning
         // document, never flattened into the owner's fields or spread over several collections.
+        // The ComplexNavigations shared-type fixtures map Level2-Level4 into Level1's table.
         typeof(TableSplittingTestBase),
         typeof(EntitySplittingTestBase),
         typeof(EntitySplittingQueryTestBase),
@@ -47,6 +48,11 @@ public class CouchbaseComplianceTest : RelationalComplianceTestBase
         typeof(OwnedTableSplittingMiscellaneousRelationalTestBase<>),
         typeof(OwnedTableSplittingPrimitiveCollectionRelationalTestBase<>),
         typeof(OwnedTableSplittingStructuralEqualityRelationalTestBase<>),
+        typeof(ComplexNavigationsSharedTypeQueryTestBase<>),
+        typeof(ComplexNavigationsSharedTypeQueryRelationalTestBase<>),
+        typeof(ComplexNavigationsCollectionsSharedTypeQueryTestBase<>),
+        typeof(ComplexNavigationsCollectionsSharedTypeQueryRelationalTestBase<>),
+        typeof(ComplexNavigationsCollectionsSplitSharedTypeQueryRelationalTestBase<>),
 
         // Migrations: Couchbase has no schema to migrate; EnsureCreated creates collections and indexes.
         typeof(MigrationsTestBase<>),

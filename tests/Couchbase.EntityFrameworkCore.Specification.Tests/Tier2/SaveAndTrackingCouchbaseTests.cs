@@ -30,6 +30,14 @@ public class F1CouchbaseFixture : F1RelationalFixture<ulong>
         base.OnModelCreating(modelBuilder, context);
         CouchbaseSpecModel.Apply(modelBuilder, context, mapRowVersionsToCas: true);
     }
+
+    // The F1 model is built here (the fixture passes it to UseModel), not in OnModelCreating.
+    // The provider rejects table splitting and TPT; this keeps the rest of the fixture's tests running.
+    protected override void BuildModelExternal(ModelBuilder modelBuilder)
+    {
+        base.BuildModelExternal(modelBuilder);
+        modelBuilder.MapF1ForCouchbase();
+    }
 }
 
 public class OptimisticConcurrencyCouchbaseTest(F1CouchbaseFixture fixture)
@@ -184,6 +192,9 @@ public class ManyToManyTrackingCouchbaseTest(ManyToManyTrackingCouchbaseTest.Man
         protected override void OnModelCreating(ModelBuilder modelBuilder, DbContext context)
         {
             base.OnModelCreating(modelBuilder, context);
+            // EF maps EntityTableSharing1 and EntityTableSharing2 into one table. The provider rejects
+            // table splitting; this keeps the rest of the fixture's tests running.
+            modelBuilder.MapToOwnCollections(typeof(Microsoft.EntityFrameworkCore.TestModels.ManyToManyModel.EntityTableSharing2));
             CouchbaseSpecModel.Apply(modelBuilder, context);
         }
     }

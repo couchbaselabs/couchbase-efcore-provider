@@ -75,6 +75,15 @@ public static class CouchbaseServiceCollectionExtensions
             sp.GetRequiredService<QuerySqlGeneratorDependencies>(),
             optionsExtension.DbContextOptionsBuilder.FieldNamingPolicy));
 
+        // IModelValidator is Singleton-lifetime too. It resolves bare collection names with the
+        // context's bucket and scope, which are part of the service provider key (see
+        // CouchbaseOptionsExtensionInfo), so capturing them here is safe.
+        serviceCollection.TryAddSingleton<IModelValidator>(sp => new CouchbaseModelValidator(
+            sp.GetRequiredService<ModelValidatorDependencies>(),
+            sp.GetRequiredService<RelationalModelValidatorDependencies>(),
+            optionsExtension.DbContextOptionsBuilder.Bucket,
+            optionsExtension.DbContextOptionsBuilder.Scope));
+
         var builder = new EntityFrameworkRelationalServicesBuilder(serviceCollection)
             .TryAdd<IDatabaseProvider, DatabaseProvider<CouchbaseOptionsExtension>>()
             .TryAdd<LoggingDefinitions, CouchbaseLoggingDefinitions>()
@@ -92,7 +101,6 @@ public static class CouchbaseServiceCollectionExtensions
             //Model's primary key automatically based off of properties that have 'Id' in their`
             //name was getting ignored.
             .TryAdd<IProviderConventionSetBuilder, CouchbaseConventionSetBuilder>()
-            .TryAdd<IModelValidator, CouchbaseModelValidator>()
             .TryAddProviderSpecificServices(m => m
                 .TryAddScoped<QuerySqlGenerator, CouchbaseQuerySqlGenerator>()
                 .TryAddScoped<ICouchbaseClientWrapper, CouchbaseClientWrapper>()

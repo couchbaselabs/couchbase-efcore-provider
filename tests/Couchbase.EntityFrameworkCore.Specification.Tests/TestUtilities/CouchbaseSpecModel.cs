@@ -103,6 +103,56 @@ public static class CouchbaseSpecModel
 public static class CouchbaseSpecModelExtensions
 {
     /// <summary>
+    /// Gives each type its own collection, named after the type. The provider rejects table
+    /// splitting (two entity types in one collection would write to the same document key). EF
+    /// fixtures that use it call this so that the rest of their tests keep running. Call it before
+    /// <see cref="CouchbaseSpecModel.Apply"/>, which qualifies the names.
+    /// </summary>
+    public static void MapToOwnCollections(this ModelBuilder modelBuilder, params Type[] types)
+    {
+        foreach (var type in types)
+        {
+            modelBuilder.Entity(type).ToTable(CouchbaseSpecModel.CollectionName(type.Name));
+        }
+    }
+
+    /// <summary>
+    /// Maps TPT hierarchies as TPH: the derived types go to the root's collection. The provider
+    /// rejects TPT (queries join a base collection that the save path never writes to). EF fixtures
+    /// that use it call this so that the rest of their tests keep running.
+    /// </summary>
+    public static void MapTptAsTph(this ModelBuilder modelBuilder, params Type[] roots)
+    {
+        foreach (var root in roots)
+        {
+            var builder = modelBuilder.Entity(root);
+            builder.UseTphMappingStrategy();
+            foreach (var derived in builder.Metadata.GetDerivedTypes())
+            {
+                derived.RemoveAnnotation(RelationalAnnotationNames.TableName);
+            }
+        }
+    }
+
+    /// <summary>
+    /// The F1 model maps each City type into its circuit's table (table splitting), and the
+    /// FanTpt and CircuitTpt hierarchies as TPT. The provider rejects both, so the cities get their
+    /// own collections and the TPT hierarchies are mapped as TPH. This keeps the rest of the F1
+    /// suites running. The F1 fixtures build their model in <c>BuildModelExternal</c>, not in
+    /// <c>OnModelCreating</c>, so they call this there.
+    /// </summary>
+    public static void MapF1ForCouchbase(this ModelBuilder modelBuilder)
+    {
+        modelBuilder.MapToOwnCollections(
+            typeof(Microsoft.EntityFrameworkCore.TestModels.ConcurrencyModel.City),
+            typeof(Microsoft.EntityFrameworkCore.TestModels.ConcurrencyModel.CityTpt),
+            typeof(Microsoft.EntityFrameworkCore.TestModels.ConcurrencyModel.CityTpc));
+        modelBuilder.MapTptAsTph(
+            typeof(Microsoft.EntityFrameworkCore.TestModels.ConcurrencyModel.FanTpt),
+            typeof(Microsoft.EntityFrameworkCore.TestModels.ConcurrencyModel.CircuitTpt));
+    }
+
+    /// <summary>
     /// EF's relational model validator rejects primitive collections of primitive collections
     /// (<c>bool[][]</c>) on every relational provider, and the relational providers' own fixtures
     /// ignore those properties. Same here.

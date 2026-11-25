@@ -172,7 +172,40 @@ See also [Querying](Queries.md) and [Configuration](configuration.md).
   on a navigation declared on a derived type, owned types on a derived type, and
   `Find`/`FindAsync` all work with TPH. Map the derived types to the same collection
   as the base type to opt into TPH.
-* **Table-per-type (TPT) and table-per-concrete-type (TPC) are not supported.**
+* **Table-per-type (TPT) is not supported, and the provider rejects it when the model is built.**
+  A TPT query joins the base type's collection to the derived type's collection. But the provider
+  writes each entity as one document in the collection of its own type. So the base collection
+  stays empty, and the queries return nothing. The error is an `InvalidOperationException` that
+  names the hierarchy and the collection of each type. Use TPH instead: map the derived types to
+  the collection of the base type, and do not call `UseTptMappingStrategy()`. A derived type that
+  is mapped to a different collection than its base type is TPT, also without
+  `UseTptMappingStrategy()`.
+* **Table-per-concrete-type (TPC) works for basic use.** Each concrete type is stored in its own
+  collection. An abstract base type has no collection. Add, query, `Find`, update and delete work
+  through the base type's `DbSet` and through each concrete type's `DbSet`. A query on the base
+  type reads all the collections of the hierarchy (`UNION ALL`). `OfType<T>()` works.
+* **In a TPC hierarchy, keys must be unique across all the collections of the hierarchy.** The
+  provider does not check this. If two concrete types have an entity with the same key, both
+  documents are saved, and a no-tracking query on the base type returns both. Integer keys that the
+  provider generates come from one sequence for the whole hierarchy, so they are unique. See [Sequences and generated values](sequences.md).
+
+## Table splitting
+
+* **Table splitting is not supported.** Table splitting maps two or more entity types to the same
+  collection. The provider writes one document for each entity, and the document key comes only from
+  the primary key. Two entity types with the same key would write to the same document.
+* **The provider rejects such a model when the model is built.** The error is an
+  `InvalidOperationException` that names the entity types and the collection. The check applies to
+  entity types that are not owned, have a primary key, and are not in the same inheritance hierarchy.
+  A one-to-one relationship between the primary keys does not change this. A bare collection name
+  is the collection with that name in the context's bucket and scope. So `orders` and
+  `bucket.scope.orders` are the same collection when the context uses that bucket and scope.
+* **These mappings are not table splitting and are supported:** a TPH hierarchy in one collection,
+  `OwnsOne` and `OwnsMany` owned types (they are stored in the owner's document), and the join entity
+  of a many-to-many relationship in its own collection.
+* **What to do instead:** map each entity type to its own collection. Or, if the dependent data
+  belongs to the principal, make the dependent an owned type (`OwnsOne`). Then it is stored in the
+  principal's document.
 
 ## Optimistic concurrency and document metadata
 

@@ -176,6 +176,14 @@ public class F1BytesCouchbaseFixture : F1RelationalFixture<byte[]>
         base.OnModelCreating(modelBuilder, context);
         CouchbaseSpecModel.Apply(modelBuilder, context);
     }
+
+    // The F1 model is built here (the fixture passes it to UseModel), not in OnModelCreating.
+    // The provider rejects table splitting and TPT; this keeps the rest of the fixture's tests running.
+    protected override void BuildModelExternal(ModelBuilder modelBuilder)
+    {
+        base.BuildModelExternal(modelBuilder);
+        modelBuilder.MapF1ForCouchbase();
+    }
 }
 
 public class DataBindingCouchbaseTest(F1BytesCouchbaseFixture fixture)
