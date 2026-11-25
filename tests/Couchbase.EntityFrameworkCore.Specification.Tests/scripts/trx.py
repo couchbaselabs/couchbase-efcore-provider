@@ -1,8 +1,9 @@
 """Read test results from the TRX files of a spec-suite run.
 
-Shared by compare-baseline.py and root-causes.py so that both count the same tests. run-suites.sh
-writes the TRX files directly into its output directory, so only that directory is searched, not
-its subdirectories.
+Shared, through testlists.py, by compare-baseline.py and find-flaky.py, and by root-causes.py, so
+that all three count the same tests. run-suites.sh writes the TRX files directly into its output
+directory, so only that directory is searched, not its subdirectories; find-flaky.py finds the
+result directories under a downloaded CI run itself.
 """
 import glob
 import os

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Runs the EF Core specification suites against a Couchbase cluster, one test class per test
-# process, and compares the results with the known-failures baseline.
+# process, and compares the results with known-failures.txt and flaky.txt.
 #
 # One process per class keeps a crash (for example a stack overflow) from aborting the whole run,
 # and keeps each suite's fixture setup independent.
@@ -10,7 +10,8 @@
 #
 #   --out DIR           where TRX files and the summary go (default: ./TestResults/spec)
 #   --no-build          skip the Release build
-#   --update-baseline   rewrite known-failures.txt from this run instead of comparing
+#   --update-baseline   rewrite known-failures.txt from this run instead of comparing (flaky.txt
+#                       tests are left out; scripts/find-flaky.py looks for new flaky tests)
 #   --shard I/N         run only shard I (1-based) of N, balanced by scripts/class-times.tsv;
 #                       for running the suite on N clusters at once
 #   CLASS_FILTER        run only classes whose name contains one of these strings
