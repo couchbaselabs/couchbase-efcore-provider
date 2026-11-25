@@ -6,8 +6,9 @@ known-failures.txt lists every test expected to fail, one display name per line,
 outside the baseline fails. Tests that now pass but are still listed are reported so the baseline
 can shrink; pass --update to rewrite it from the run. --update replaces the entries of only the
 classes the run included, so a run filtered to a few classes updates their part of the baseline and
-keeps the rest. Pass several result directories (for example one per CI shard) to treat them as one
-run.
+keeps the rest; it lists the classes it kept. Only the classes in a directory's summary.tsv count,
+so TRX files left from an earlier run are ignored. Pass several result directories (for example
+one per CI shard) to treat them as one run.
 
 flaky.txt lists tests that pass in some runs and fail in others (scripts/find-flaky.py finds them).
 Their outcome is ignored: they are never a new failure, never reported as now passing, and never
@@ -19,16 +20,12 @@ Both lists must exist, except that --update may create the baseline.
 Usage: compare-baseline.py --results DIR [DIR...] [--baseline FILE] [--flaky FILE] [--update]
 """
 import argparse
+import collections
 import os
 import sys
 
 from testlists import (DEFAULT_BASELINE, DEFAULT_FLAKY, read_baseline, read_flaky, read_results,
-                       write_baseline)
-
-
-def test_class(name):
-    """The class part of a test display name: what comes before the method, ignoring arguments."""
-    return name.partition("(")[0].rpartition(".")[0]
+                       test_class, write_baseline)
 
 
 def main():
@@ -59,6 +56,14 @@ def main():
         write_baseline(args.baseline, failed | kept, aborted | kept_aborted)
         print(f"Baseline written: {len(failed | kept)} failing tests ({len(kept)} kept from classes "
               f"not in this run), {len(aborted | kept_aborted)} aborted classes -> {args.baseline}")
+        # A renamed or removed class is never in a run, so its entries stay until removed by hand.
+        counts = collections.Counter(test_class(name) for name in kept)
+        kept_classes = [f"{cls}: {counts[cls]} tests" for cls in sorted(counts)]
+        kept_classes += [f"{cls}: aborted" for cls in sorted(kept_aborted)]
+        if kept_classes:
+            print(f"\nKept classes not in this run ({len(kept_classes)}):")
+            for item in kept_classes:
+                print(f"  {item}")
         return 0
 
     new_failures = sorted(failed - known)

@@ -844,39 +844,69 @@ public class CouchbaseDatabaseWrapperHydrateTests
         return foreignKey.Object;
     }
 
-    [Fact]
-    public void SerializeOwnedItem_DoesNotFollowTheNavigationBackToTheOwner()
+    private class TreeRoot
     {
-        // Regression: a nested owned type's navigation back to its owner (itself owned) was
-        // followed, and serializing owner -> child -> owner overflowed the stack.
-        var ownerType = new Mock<IEntityType>();
-        ownerType.Setup(t => t.GetProperties()).Returns([]);
-        ownerType.Setup(t => t.IsOwned()).Returns(true);
-
-        var toOwner = new Mock<INavigation>();
-        toOwner.Setup(n => n.IsCollection).Returns(false);
-        toOwner.Setup(n => n.Name).Returns("Owner");
-        toOwner.Setup(n => n.TargetEntityType).Returns(ownerType.Object);
-        toOwner.Setup(n => n.ForeignKey).Returns(OwnershipForeignKey());
-        toOwner.Setup(n => n.IsOnDependent).Returns(true);
-        toOwner.Setup(n => n.PropertyInfo).Returns(typeof(BackReferencingItem).GetProperty(nameof(BackReferencingItem.Owner)));
-
-        var childType = new Mock<IEntityType>();
-        childType.Setup(t => t.GetProperties()).Returns([]);
-        childType.Setup(t => t.GetNavigations()).Returns([toOwner.Object]);
-        ownerType.Setup(t => t.GetNavigations()).Returns([]);
-
-        var child = new BackReferencingItem();
-        child.Owner = child; // a cycle: following the navigation would never end
-
-        var result = CouchbaseDatabaseWrapper.SerializeOwnedItem(child, childType.Object, null);
-
-        Assert.False(result.ContainsKey("Owner"));
+        public int Id { get; set; }
+        public TreeBranch Branch { get; set; } = null!;
     }
 
-    private sealed class BackReferencingItem
+    private class TreeBranch
     {
-        public BackReferencingItem? Owner { get; set; }
+        public string? Name { get; set; }
+        public TreeRoot? Root { get; set; }
+        public List<TreeLeaf> Leaves { get; set; } = [];
+    }
+
+    private class TreeLeaf
+    {
+        public string? Name { get; set; }
+        public TreeBranch? Parent { get; set; }
+    }
+
+    private class TreeContext(DbContextOptions<TreeContext> options) : DbContext(options)
+    {
+        public DbSet<TreeRoot> Roots { get; set; } = null!;
+
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            modelBuilder.Entity<TreeRoot>(b =>
+            {
+                b.ToCouchbaseCollection("bucket", "scope", "roots");
+                b.HasKey(r => r.Id);
+                b.OwnsOne(r => r.Branch, branch =>
+                {
+                    branch.WithOwner(x => x.Root);
+                    branch.OwnsMany(x => x.Leaves, leaf => leaf.WithOwner(x => x.Parent));
+                });
+            });
+        }
+    }
+
+    [Fact]
+    public void SerializeOwnedItem_WithOwnerNavigations_AreNotWritten()
+    {
+        var opts = new global::Couchbase.ClusterOptions()
+            .WithConnectionString("couchbase://localhost")
+            .WithPasswordAuthentication("Administrator", "password");
+        var builder = new DbContextOptionsBuilder<TreeContext>();
+        builder.UseCouchbaseProvider(opts);
+        using var ctx = new TreeContext(builder.Options);
+        var branchType = ctx.Model.FindEntityType(typeof(TreeRoot))!
+            .FindNavigation(nameof(TreeRoot.Branch))!.TargetEntityType;
+
+        // The object graph as EF Core fixes it up: every owned item points back to its owner.
+        var root = new TreeRoot { Id = 1 };
+        var branch = new TreeBranch { Name = "branch", Root = root };
+        root.Branch = branch;
+        branch.Leaves.Add(new TreeLeaf { Name = "leaf", Parent = branch });
+
+        var result = CouchbaseDatabaseWrapper.SerializeOwnedItem(branch, branchType, null);
+
+        Assert.False(result.ContainsKey(nameof(TreeBranch.Root)));
+        var leaves = Assert.IsType<List<Dictionary<string, object?>>>(result[nameof(TreeBranch.Leaves)]);
+        var leaf = Assert.Single(leaves);
+        Assert.Equal("leaf", leaf[nameof(TreeLeaf.Name)]);
+        Assert.False(leaf.ContainsKey(nameof(TreeLeaf.Parent)));
     }
 
     [Fact]

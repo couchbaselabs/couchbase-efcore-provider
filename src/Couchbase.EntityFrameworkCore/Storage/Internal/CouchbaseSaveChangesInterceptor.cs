@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Runtime.CompilerServices;
+using Couchbase.EntityFrameworkCore.Extensions;
 using Couchbase.EntityFrameworkCore.Query.Internal;
 using Couchbase.EntityFrameworkCore.ValueGeneration;
 using Microsoft.EntityFrameworkCore;
@@ -199,7 +200,7 @@ public class CouchbaseSaveChangesInterceptor : SaveChangesInterceptor
                 OwnedCollectionSnapshot.OriginalItems.TryGetValue(owner, out var origItems);
 
                 foreach (var nav in entry.Metadata.GetNavigations()
-                             .Where(n => n.TargetEntityType.IsOwned() && n.IsCollection && n.PropertyInfo != null))
+                             .Where(n => n.IsOwnedChild() && n.IsCollection && n.PropertyInfo != null))
                 {
                     if (!origRefs.TryGetValue(nav.Name, out var origRef)) continue;
 
@@ -277,7 +278,7 @@ public class CouchbaseSaveChangesInterceptor : SaveChangesInterceptor
             var itemsTable = OwnedCollectionSnapshot.OriginalItems.GetOrCreateValue(owner);
 
             foreach (var nav in entry.Metadata.GetNavigations()
-                         .Where(n => n.TargetEntityType.IsOwned() && n.IsCollection && n.PropertyInfo != null))
+                         .Where(n => n.IsOwnedChild() && n.IsCollection && n.PropertyInfo != null))
             {
                 var current = nav.PropertyInfo!.GetValue(owner);
                 refs[nav.Name] = current;

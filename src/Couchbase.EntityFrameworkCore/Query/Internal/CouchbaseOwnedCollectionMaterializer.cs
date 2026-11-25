@@ -219,7 +219,7 @@ internal sealed class CouchbaseOwnedCollectionMaterializer
 
         foreach (var ownedNav in entityType.GetNavigations())
         {
-            if (!ownedNav.TargetEntityType.IsOwned()) continue;
+            if (!ownedNav.IsOwnedChild()) continue;
             var fieldName = fieldNamingPolicy?.ConvertName(ownedNav.Name) ?? ownedNav.Name;
             if (!itemElement.TryGetPropertyCI(fieldName, out var nestedElement)) continue;
 
@@ -266,7 +266,7 @@ internal sealed class CouchbaseOwnedCollectionMaterializer
         // Nested owned navigations
         foreach (var ownedNav in entityType.GetNavigations())
         {
-            if (!ownedNav.TargetEntityType.IsOwned()) continue;
+            if (!ownedNav.IsOwnedChild()) continue;
             var fieldName = fieldNamingPolicy?.ConvertName(ownedNav.Name) ?? ownedNav.Name;
             if (!itemElement.TryGetPropertyCI(fieldName, out var nestedElement)) continue;
 

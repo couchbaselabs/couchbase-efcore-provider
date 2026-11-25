@@ -748,6 +748,107 @@ public class CouchbaseOwnedCollectionMaterializerTests
         Assert.Null(result);
     }
 
+    // -------------------------------------------------------------------------
+    // WithOwner navigations — never followed on read
+    // -------------------------------------------------------------------------
+
+    private class TreeRoot
+    {
+        public int Id { get; set; }
+        public TreeBranch Branch { get; set; } = new();
+    }
+
+    private class TreeBranch
+    {
+        public string? Name { get; set; }
+        public TreeRoot? Root { get; set; }
+        public TreeTwig? Twig { get; set; }
+        public List<TreeLeaf> Leaves { get; set; } = [];
+    }
+
+    private class TreeTwig
+    {
+        public string? Name { get; set; }
+        public TreeBranch? Branch { get; set; }
+    }
+
+    private class TreeLeaf
+    {
+        public string? Name { get; set; }
+        public TreeBranch? Parent { get; set; }
+    }
+
+    private class TreeContext(DbContextOptions<TreeContext> options) : DbContext(options)
+    {
+        public DbSet<TreeRoot> Roots { get; set; } = null!;
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            modelBuilder.Entity<TreeRoot>(b =>
+            {
+                b.ToCouchbaseCollection("bucket", "scope", "roots");
+                b.HasKey(r => r.Id);
+                b.OwnsOne(r => r.Branch, branch =>
+                {
+                    branch.WithOwner(x => x.Root);
+                    branch.OwnsOne(x => x.Twig, twig => twig.WithOwner(x => x.Branch));
+                    branch.OwnsMany(x => x.Leaves, leaf => leaf.WithOwner(x => x.Parent));
+                });
+            });
+        }
+    }
+
+    private static TreeContext CreateTreeContext()
+    {
+        var opts = new global::Couchbase.ClusterOptions()
+            .WithConnectionString("couchbase://localhost")
+            .WithPasswordAuthentication("Administrator", "password");
+        var builder = new DbContextOptionsBuilder<TreeContext>();
+        builder.UseCouchbaseProvider(opts);
+        return new TreeContext(builder.Options);
+    }
+
+    private static Microsoft.EntityFrameworkCore.Metadata.INavigation GetBranchNavigation(TreeContext ctx)
+        => ctx.Model.FindEntityType(typeof(TreeRoot))!.FindNavigation(nameof(TreeRoot.Branch))!;
+
+    [Fact]
+    public void MaterializeOwnedItem_WithOwnerNavigation_IsNotMaterializedFromJson()
+    {
+        using var ctx = CreateTreeContext();
+        var branchType = GetBranchNavigation(ctx).TargetEntityType;
+
+        var json = JsonDocument.Parse(
+            """{"name":"branch","leaves":[{"name":"leaf","parent":{"name":"other"}}]}""").RootElement;
+        var result = CouchbaseOwnedCollectionMaterializer.MaterializeOwnedItem(
+            json, branchType, JsonNamingPolicy.CamelCase, _webOptions);
+
+        var branch = Assert.IsType<TreeBranch>(result);
+        var leaf = Assert.Single(branch.Leaves);
+        Assert.Equal("leaf", leaf.Name);
+        Assert.Null(leaf.Parent);
+    }
+
+    [Fact]
+    public void PopulateReference_WithOwnerNavigation_DoesNotOverwriteTheOwner()
+    {
+        using var ctx = CreateTreeContext();
+        var branchNav = GetBranchNavigation(ctx);
+
+        // The object graph as EF Core fixes it up: the twig points back to its branch.
+        var root = new TreeRoot { Id = 1 };
+        var twig = new TreeTwig { Name = "twig" };
+        root.Branch = new TreeBranch { Name = "old", Root = root, Twig = twig };
+        twig.Branch = root.Branch;
+
+        var doc = JsonDocument.Parse(
+            """{"branch":{"name":"branch","twig":{"name":"new twig","branch":{"name":"other"}}}}""").RootElement;
+        var materializer = new CouchbaseOwnedCollectionMaterializer();
+        materializer.PopulateReference(root, doc, [branchNav], JsonNamingPolicy.CamelCase, _webOptions);
+
+        Assert.Equal("branch", root.Branch.Name);
+        Assert.Equal("new twig", twig.Name);
+        Assert.Same(root.Branch, twig.Branch);
+    }
+
     // Note: MaterializeOwnedItem requires IEntityType from an EF Core model, which
     // requires model-building infrastructure. Those scenarios are covered by the
     // existing integration tests (OwnedTypeTests). The pure JSON → CLR conversion

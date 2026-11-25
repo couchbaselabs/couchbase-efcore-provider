@@ -484,7 +484,7 @@ public class CouchbaseDatabaseWrapper : Database
         // back. Only META()-backed properties have no field in the document body.
 
         var ownedNavs = entityType.GetNavigations()
-            .Where(n => n.TargetEntityType.IsOwned() && n.PropertyInfo != null)
+            .Where(n => n.IsOwnedChild() && n.PropertyInfo != null)
             .ToList();
 
         // No owned navigations: build a dictionary keyed by GetColumnName() so that
@@ -644,13 +644,9 @@ public class CouchbaseDatabaseWrapper : Database
 
         foreach (var nav in entityType.GetNavigations())
         {
-            // Skip only when the navigation is not owned or cannot be read at all.
-            // Read via PropertyInfo when available; fall back to FieldInfo for field-access
-            // navigations (backing-field or [BackingField]-annotated) where PropertyInfo is null.
-            // Follow only navigations from an owner to what it owns: an owned type's navigation
-            // back to its owner (also an owned type when nested) would recurse without end.
-            if (!nav.ForeignKey.IsOwnership || nav.IsOnDependent
-                || (nav.PropertyInfo == null && nav.FieldInfo == null)) continue;
+            // Follow only navigations to an owned child, never back to the owner. Read via
+            // PropertyInfo, or via FieldInfo for field-access navigations.
+            if (!nav.IsOwnedChild() || (nav.PropertyInfo == null && nav.FieldInfo == null)) continue;
             var navValue = nav.PropertyInfo != null
                 ? nav.PropertyInfo.GetValue(item)
                 : nav.FieldInfo?.GetValue(item);

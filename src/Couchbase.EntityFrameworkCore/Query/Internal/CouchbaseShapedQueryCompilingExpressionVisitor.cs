@@ -6,6 +6,7 @@ using System.Linq.Expressions;
 using Couchbase.Query;
 using System.Reflection;
 using System.Reflection.Metadata;
+using Couchbase.EntityFrameworkCore.Extensions;
 using Couchbase.EntityFrameworkCore.Infrastructure;
 using Couchbase.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
@@ -381,7 +382,7 @@ public class CouchbaseShapedQueryCompilingExpressionVisitor : RelationalShapedQu
         // used only as a fallback — see the PopulateReference reference in the doc comment above).
         var ownedNavs = entityType.GetNavigations()
             .Concat(entityType.GetDerivedTypes().SelectMany(t => t.GetDeclaredNavigations()))
-            .Where(n => n.TargetEntityType.IsOwned())
+            .Where(n => n.IsOwnedChild())
             .ToList();
         if (ownedNavs.Count == 0) return result;
 

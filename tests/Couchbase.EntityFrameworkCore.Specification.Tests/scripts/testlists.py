@@ -60,21 +60,39 @@ def write_flaky(path, tests):
             f.write(name + "\n")
 
 
+def test_class(name):
+    """The class part of a test display name: what comes before the method, ignoring arguments."""
+    return name.partition("(")[0].rpartition(".")[0]
+
+
 def read_results(results_dirs):
-    """Return (passed, failed, aborted classes, classes run) for result directories read as one run."""
+    """Return (passed, failed, aborted classes, classes run) for result directories read as one run.
+
+    A directory's summary.tsv lists the classes that its run included. run-suites.sh deletes the
+    TRX files of only those classes, so the TRX results of other classes are from an earlier run
+    and are ignored. In a directory without summary.tsv, every TRX result counts, and the classes
+    run are the classes of those results.
+    """
     passed, failed, aborted, ran = set(), set(), set(), set()
     for results_dir in results_dirs:
         summary = os.path.join(results_dir, "summary.tsv")
+        classes = None
         if os.path.exists(summary):
+            classes = set()
             with open(summary) as f:
                 for line in f:
                     # class, status, and (in newer summaries) the class's run time
                     cls, _, status = line.rstrip("\n").partition("\t")
                     status = status.partition("\t")[0]
-                    ran.add(cls)
+                    classes.add(cls)
                     if status in ("aborted", "no-result"):
                         aborted.add(cls)
+            ran |= classes
         for name, outcome, _ in read_trx(results_dir):
+            cls = test_class(name)
+            if classes is not None and cls not in classes:
+                continue
+            ran.add(cls)
             if outcome == "Passed":
                 passed.add(name)
             elif outcome == "Failed":
