@@ -293,25 +293,10 @@ public class CouchbaseDatabaseWrapper : Database
     }
 
     /// <summary>
-    /// Gives each added item of an owned collection a real value for the generated part of its key.
+    /// Gives each added owned collection item with a temporary generated key (an <c>OwnsMany</c> item
+    /// type with no key of its own) a number unique within its collection: the highest value already
+    /// in the collection plus one. A key value the application set itself is kept.
     /// </summary>
-    /// <remarks>
-    /// <para>
-    /// When an <c>OwnsMany</c> item type has no key of its own, EF Core keys the item by its owner's
-    /// key plus a generated integer (<c>Id</c>, or <c>__synthesizedOrdinal</c> for a collection
-    /// mapped with <c>ToJson()</c>). <c>Add</c> gives that integer a temporary value, which the save
-    /// must replace; EF Core drops temporary values when it accepts the changes, so without a real
-    /// value every item in the collection would get 0, and the second item would collide with the
-    /// first in the change tracker.
-    /// </para>
-    /// <para>
-    /// The value is the item's 1-based position in the collection, as EF Core's relational providers
-    /// use for a JSON collection. Items that already have a real value keep it, and new items get
-    /// values above the highest one, so they cannot collide. A key value the application set itself
-    /// is kept. The value is not stored: owned items are written without their shadow properties and
-    /// rebuilt from the document when they are read.
-    /// </para>
-    /// </remarks>
     internal static void AssignOwnedCollectionKeys(IList<IUpdateEntry> entries)
     {
         HashSet<(InternalEntityEntry Owner, INavigation Navigation)>? assigned = null;
@@ -357,17 +342,33 @@ public class CouchbaseDatabaseWrapper : Database
             var clrType = Nullable.GetUnderlyingType(keyProperty.ClrType) ?? keyProperty.ClrType;
             foreach (var e in itemEntries.Where(e => e.HasTemporaryValue(keyProperty)))
             {
-                e.SetStoreGeneratedValue(keyProperty, Convert.ChangeType(next++, clrType));
+                var value = Convert.ChangeType(next++, clrType);
+                if (keyProperty.IsShadowProperty())
+                {
+                    // Not in the document; a failed save discards it and a retry assigns it again.
+                    e.SetStoreGeneratedValue(keyProperty, value);
+                }
+                else
+                {
+                    // The document is built from the CLR object, so set the value on the object now
+                    // (this also clears the temporary flag). It stays after a failed save, so a retry
+                    // keeps it.
+                    e.SetProperty(keyProperty, value, isMaterialization: false, setModified: false);
+                }
             }
         }
     }
 
     // The key property of an owned collection item that EF Core generates: the one key property that
-    // is not part of the foreign key to the owner, if it is a generated integer.
+    // is not part of the foreign key to the owner, if it is a generated int or long. The key must
+    // contain the whole foreign key, because the values are only unique within one owner.
     private static IProperty? GeneratedKeyProperty(IEntityType itemType, IForeignKey ownership)
-        => itemType.FindPrimaryKey()?.Properties.Where(p => !ownership.Properties.Contains(p)).ToList() is [var property]
+        => itemType.FindPrimaryKey() is { } key
+           && ownership.Properties.All(key.Properties.Contains)
+           && key.Properties.Where(p => !ownership.Properties.Contains(p)).ToList() is [var property]
            && property.ValueGenerated != ValueGenerated.Never
-           && CouchbaseSequenceTypes.IsSupported(Nullable.GetUnderlyingType(property.ClrType) ?? property.ClrType)
+           && (Nullable.GetUnderlyingType(property.ClrType) ?? property.ClrType) is var type
+           && (type == typeof(int) || type == typeof(long))
             ? property
             : null;
 

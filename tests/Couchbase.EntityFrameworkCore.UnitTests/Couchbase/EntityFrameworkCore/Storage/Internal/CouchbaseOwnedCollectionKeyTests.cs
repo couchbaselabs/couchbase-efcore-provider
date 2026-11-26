@@ -101,14 +101,66 @@ public class CouchbaseOwnedCollectionKeyTests
         Assert.Equal([7L, 9L], KeyValues(ctx, order.Tags));
     }
 
+    [Fact]
+    public void ItemsWithAClrKeyLeftAtZero_GetTheValueOnTheObjectBeforeTheWrite()
+    {
+        // The document is built from the item objects, before EF Core accepts the changes.
+        using var ctx = OrderContext.Create(json: false);
+        var order = new Order { Id = 1, Tags = [new() { Name = "a" }, new() { Name = "b" }] };
+        ctx.Orders.Add(order);
+
+        AssignKeys(ctx);
+
+        Assert.Equal([1, 2], order.Tags.Select(t => t.Id));
+        Assert.All(order.Tags, t => Assert.False(ctx.Entry(t).Property(nameof(Tag.Id)).IsTemporary));
+
+        AcceptChanges(ctx);
+        Assert.Equal([1L, 2L], KeyValues(ctx, order.Tags));
+    }
+
+    [Fact]
+    public void AKeyOfTheGeneratedPropertyAlone_IsLeftAlone()
+    {
+        // Values are unique only within one owner, so they cannot be a key without the owner's key.
+        using var ctx = OrderContext.Create(json: false);
+        var order = new Order { Id = 1, Parts = [new() { Name = "a" }, new() { Name = "b" }] };
+        ctx.Orders.Add(order);
+
+        AssignKeys(ctx);
+
+        Assert.All(order.Parts, p => Assert.True(ctx.Entry(p).Property(nameof(Part.Id)).IsTemporary));
+    }
+
+    [Fact]
+    public void AKeyOfASmallIntegerType_IsLeftAlone()
+    {
+        using var ctx = OrderContext.Create(json: false);
+        var order = new Order { Id = 1, Badges = [new() { Name = "a" }, new() { Name = "b" }] };
+        ctx.Orders.Add(order);
+
+        AssignKeys(ctx);
+
+        Assert.All(order.Badges, b => Assert.True(ctx.Entry(b).Property(nameof(Badge.Id)).IsTemporary));
+    }
+
     // What SaveChangesAsync does around the write: detect changes, assign the keys, then accept the
     // changes. Change detection after that is what threw before the keys were assigned.
     private static void Save(DbContext ctx)
     {
+        AssignKeys(ctx);
+        AcceptChanges(ctx);
+    }
+
+    private static void AssignKeys(DbContext ctx)
+    {
         ctx.ChangeTracker.DetectChanges();
         var stateManager = ctx.GetService<IStateManager>();
         CouchbaseDatabaseWrapper.AssignOwnedCollectionKeys(stateManager.GetEntriesToSave(cascadeChanges: true));
-        stateManager.AcceptAllChanges();
+    }
+
+    private static void AcceptChanges(DbContext ctx)
+    {
+        ctx.ChangeTracker.AcceptAllChanges();
         ctx.ChangeTracker.DetectChanges();
     }
 
@@ -128,6 +180,8 @@ public class CouchbaseOwnedCollectionKeyTests
         public int Id { get; set; }
         public List<Line> Lines { get; set; } = [];
         public List<Tag> Tags { get; set; } = [];
+        public List<Part> Parts { get; set; } = [];
+        public List<Badge> Badges { get; set; } = [];
     }
 
     private class Line
@@ -144,6 +198,18 @@ public class CouchbaseOwnedCollectionKeyTests
     private class Tag
     {
         public int Id { get; set; }
+        public string Name { get; set; } = string.Empty;
+    }
+
+    private class Part
+    {
+        public int Id { get; set; }
+        public string Name { get; set; } = string.Empty;
+    }
+
+    private class Badge
+    {
+        public short Id { get; set; }
         public string Name { get; set; } = string.Empty;
     }
 
@@ -175,6 +241,8 @@ public class CouchbaseOwnedCollectionKeyTests
                     }
                 });
                 b.OwnsMany(o => o.Tags);
+                b.OwnsMany(o => o.Parts, p => p.HasKey(x => x.Id));
+                b.OwnsMany(o => o.Badges);
             });
     }
 
