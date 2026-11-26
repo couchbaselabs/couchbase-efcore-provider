@@ -198,12 +198,11 @@ public class CouchbaseSaveChangesInterceptor : SaveChangesInterceptor
 
                 OwnedCollectionSnapshot.OriginalItems.TryGetValue(owner, out var origItems);
 
-                foreach (var nav in entry.Metadata.GetNavigations()
-                             .Where(n => n.TargetEntityType.IsOwned() && n.IsCollection && n.PropertyInfo != null))
+                foreach (var nav in OwnedCollectionNavigations(entry.Metadata))
                 {
                     if (!origRefs.TryGetValue(nav.Name, out var origRef)) continue;
 
-                    var current = nav.PropertyInfo!.GetValue(owner);
+                    var current = GetValue(nav, owner);
 
                     // Reference replaced (e.g. customer.ContactMethods = [])
                     if (!ReferenceEquals(origRef, current))
@@ -252,7 +251,7 @@ public class CouchbaseSaveChangesInterceptor : SaveChangesInterceptor
             var origSnapshot = origItemSnapshots[i];
             foreach (var prop in itemProps)
             {
-                var currentValue = prop.PropertyInfo?.GetValue(currentItems[i]);
+                var currentValue = GetValue(prop, currentItems[i]);
                 if (!origSnapshot.TryGetValue(prop.Name, out var origValue)) return true;
                 if (!OwnedCollectionSnapshot.GetComparer(prop).Equals(currentValue, origValue)) return true;
             }
@@ -261,9 +260,10 @@ public class CouchbaseSaveChangesInterceptor : SaveChangesInterceptor
         return false;
     }
 
-    // After a successful save, update OwnedCollectionSnapshot with the current collection
-    // reference AND current item property values so subsequent SaveChanges calls won't see
-    // a stale mismatch from the just-written state.
+    // After a successful save, record the current collection reference and item values again, so
+    // later saves do not see a stale mismatch from the just-written state. An owner added in this
+    // context has no snapshot yet (the query path records one only for entities it reads), so one
+    // is created here; otherwise later changes to its collections would not be saved.
     private static void RefreshOwnedCollectionSnapshots(DbContext context)
     {
         foreach (var entry in context.ChangeTracker.Entries())
@@ -271,45 +271,27 @@ public class CouchbaseSaveChangesInterceptor : SaveChangesInterceptor
             if (entry.Metadata.IsOwned()) continue;
             if (entry.State != EntityState.Unchanged) continue;
 
-            var owner = entry.Entity;
-            if (!OwnedCollectionSnapshot.OriginalRefs.TryGetValue(owner, out var refs)) continue;
+            var ownedCollections = OwnedCollectionNavigations(entry.Metadata);
+            if (ownedCollections.Count == 0) continue;
 
-            var itemsTable = OwnedCollectionSnapshot.OriginalItems.GetOrCreateValue(owner);
-
-            foreach (var nav in entry.Metadata.GetNavigations()
-                         .Where(n => n.TargetEntityType.IsOwned() && n.IsCollection && n.PropertyInfo != null))
-            {
-                var current = nav.PropertyInfo!.GetValue(owner);
-                refs[nav.Name] = current;
-
-                // Refresh item-level snapshots so subsequent saves detect mutations correctly.
-                if (current is IEnumerable collection)
-                {
-                    var itemProps = OwnedCollectionSnapshot.GetTrackedProperties(nav);
-                    var snapshot = new List<Dictionary<string, object?>>();
-                    foreach (var item in collection)
-                    {
-                        if (item == null) continue;
-                        var propSnapshot = new Dictionary<string, object?>();
-                        foreach (var prop in itemProps)
-                        {
-                            var raw = prop.PropertyInfo?.GetValue(item);
-                            // Use EF Core's ValueComparer.Snapshot so mutable reference types
-                            // (e.g. byte[]) are deep-copied. For immutable types (string, int, …)
-                            // Snapshot is a no-op that returns the same reference.
-                            propSnapshot[prop.Name] = raw is null ? null : OwnedCollectionSnapshot.GetComparer(prop).Snapshot(raw);
-                        }
-                        snapshot.Add(propSnapshot);
-                    }
-                    itemsTable[nav.Name] = snapshot;
-                }
-                else
-                {
-                    itemsTable[nav.Name] = [];
-                }
-            }
+            Snapshot.Record(entry.Entity, ownedCollections, isTracking: true);
         }
     }
+
+    private static readonly CouchbaseCollectionSnapshot Snapshot = new();
+
+    // The owned collections whose changes are detected: those the snapshot can read, through the
+    // property or, for a field-only navigation, the field.
+    private static IReadOnlyList<INavigation> OwnedCollectionNavigations(IEntityType entityType)
+        => entityType.GetNavigations()
+            .Where(n => n.TargetEntityType.IsOwned() && n.IsCollection && (n.PropertyInfo != null || n.FieldInfo != null))
+            .ToList();
+
+    // Reads a value the way CouchbaseCollectionSnapshot.Record does: the property, else the field.
+    private static object? GetValue(IPropertyBase property, object instance)
+        => property.PropertyInfo != null
+            ? property.PropertyInfo.GetValue(instance)
+            : property.FieldInfo?.GetValue(instance);
 
     private static bool IsTransactionActive(DbContext context)
     {
