@@ -69,6 +69,21 @@ public class CouchbaseDocumentKeyBuilderTests
         public string B { get; set; } = "";
     }
 
+    private class IntKeyEntity
+    {
+        public int Id { get; set; }
+    }
+
+    private class LongKeyEntity
+    {
+        public long Id { get; set; }
+    }
+
+    private class GuidKeyEntity
+    {
+        public Guid Id { get; set; }
+    }
+
     private class SingleKeyEntity
     {
         public decimal Amount { get; set; }
@@ -526,8 +541,12 @@ public class CouchbaseDocumentKeyBuilderTests
                 b.HasKey(e => e.Code);
             }));
 
-        var ex = Assert.Throws<InvalidOperationException>(
-            () => CouchbaseDocumentKeyBuilder.BuildV2(entityType, Entry(entityType, ("Code", "")), '_'));
+        // BuildV2 gives the empty key; GetDocumentKey rejects it for every format.
+        Assert.Equal("", CouchbaseDocumentKeyBuilder.BuildV2(entityType, Entry(entityType, ("Code", "")), '_'));
+#pragma warning disable EF1001 // Internal API of this provider.
+        var ex = Assert.Throws<InvalidOperationException>(() => CouchbaseDatabaseWrapper.GetDocumentKey(
+            CouchbaseDocumentKeyFormat.V2, '_', entityType, Entry(entityType, ("Code", "")), new EmptyTextKeyEntity()));
+#pragma warning restore EF1001
 
         Assert.Contains("empty", ex.Message);
     }
@@ -556,12 +575,65 @@ public class CouchbaseDocumentKeyBuilderTests
         Assert.Contains("B", ex.Message);
     }
 
+    [Theory]
+    [InlineData("user_1")]
+    [InlineData(@"a\b")]
+    [InlineData(@"x_y\z_")]
+    public void V2_SingleStringKey_IsNotEscaped(string code)
+    {
+        // Escaping only keeps the parts of a composite key apart, so a single key is written as is.
+        var entityType = BuildEntityType<EmptyTextKeyEntity>(mb =>
+            mb.Entity<EmptyTextKeyEntity>(b =>
+            {
+                b.ToCouchbaseCollection("bucket", "scope", "code");
+                b.HasKey(e => e.Code);
+            }));
+
+        Assert.Equal(code, CouchbaseDocumentKeyBuilder.BuildV2(entityType, Entry(entityType, ("Code", code)), '_'));
+    }
+
+    // V2 is the default, so the common single keys must give the same document key as Legacy:
+    // collections saved by 1.x with such keys need no change.
     [Fact]
-    public void Options_DefaultToLegacyWithAnUnderscoreDelimiter()
+    public void V2_CommonSingleKeys_MatchTheLegacyKey()
+    {
+        static IEntityType KeyedById<T>() where T : class => BuildEntityType<T>(mb =>
+            mb.Entity<T>(b =>
+            {
+                b.ToCouchbaseCollection("bucket", "scope", typeof(T).Name);
+                b.HasKey("Id");
+            }));
+
+        AssertSame<IntKeyEntity>(KeyedById<IntKeyEntity>(), -42);
+        AssertSame<LongKeyEntity>(KeyedById<LongKeyEntity>(), long.MaxValue);
+        AssertSame<GuidKeyEntity>(KeyedById<GuidKeyEntity>(), Guid.Parse("0f8fad5b-d9cb-469f-a165-70867728950e"));
+
+        var textType = BuildEntityType<EmptyTextKeyEntity>(mb =>
+            mb.Entity<EmptyTextKeyEntity>(b =>
+            {
+                b.ToCouchbaseCollection("bucket", "scope", "code");
+                b.HasKey(e => e.Code);
+            }));
+        var entry = Entry(textType, ("Code", @"user_1\x"));
+        Assert.Equal(
+            textType.GetLegacyPrimaryKey(new EmptyTextKeyEntity(), entry),
+            CouchbaseDocumentKeyBuilder.BuildV2(textType, entry, '_'));
+
+        static void AssertSame<T>(IEntityType entityType, object id) where T : class, new()
+        {
+            var entry = Entry(entityType, ("Id", id));
+            Assert.Equal(
+                entityType.GetLegacyPrimaryKey(new T(), entry),
+                CouchbaseDocumentKeyBuilder.BuildV2(entityType, entry, '_'));
+        }
+    }
+
+    [Fact]
+    public void Options_DefaultToV2WithAnUnderscoreDelimiter()
     {
         var builder = new CouchbaseDbContextOptionsBuilder(new DbContextOptionsBuilder(), "couchbase://localhost");
 
-        Assert.Equal(CouchbaseDocumentKeyFormat.Legacy, builder.DocumentKeyFormat);
+        Assert.Equal(CouchbaseDocumentKeyFormat.V2, builder.DocumentKeyFormat);
         Assert.Equal('_', builder.DocumentKeyDelimiter);
     }
 

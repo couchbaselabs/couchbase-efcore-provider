@@ -9,7 +9,7 @@ namespace Couchbase.EntityFrameworkCore.Storage.Internal;
 
 /// <summary>
 /// Builds <see cref="Infrastructure.CouchbaseDocumentKeyFormat.V2"/> document keys. The legacy
-/// format lives in <see cref="Extensions.EntityTypeExtensions"/> and is deliberately left untouched.
+/// format lives in <see cref="Extensions.EntityTypeExtensions"/>.
 /// </summary>
 internal static class CouchbaseDocumentKeyBuilder
 {
@@ -27,11 +27,9 @@ internal static class CouchbaseDocumentKeyBuilder
                 $"Entity type '{entityType.DisplayName()}' has no primary key defined. " +
                 "Keyless entity types cannot be saved to Couchbase.");
 
-        // A key sourced from META().id (HasCouchbaseMeta(CouchbaseMetaField.Id)) IS the document id:
-        // reading it back returns the id as stored, so it must be used verbatim. Escaping it would
-        // turn "a_b" into "a\_b" on the first save and re-escape that on every reload. A value
-        // converter still applies: the id is the converted (provider) value, and EF converts it back
-        // when it materialises META().id.
+        // A key sourced from META().id (HasCouchbaseMeta(CouchbaseMetaField.Id)) IS the document id,
+        // so the id is used as stored. A value converter still applies: the id is the converted
+        // (provider) value, and EF converts it back when it materialises META().id.
         var metaIdProperty = primaryKey.Properties.FirstOrDefault(IsMetaId);
         if (metaIdProperty is not null)
         {
@@ -51,6 +49,10 @@ internal static class CouchbaseDocumentKeyBuilder
                     "and must be a non-empty string, so a document key cannot be built for it.");
         }
 
+        // Escaping keeps the parts of a composite key apart. A single-part key has nothing to keep
+        // apart (every value already gives a different key), so it is written as is. That keeps a
+        // single string key such as "user_1" the same as in the legacy format.
+        var escape = primaryKey.Properties.Count > 1;
         var documentKey = new StringBuilder();
         var first = true;
         foreach (var property in primaryKey.Properties)
@@ -123,14 +125,14 @@ internal static class CouchbaseDocumentKeyBuilder
             var text = rawValue is byte[] { Length: 0 } && property.GetValueConverter() is null
                 ? "~"
                 : FormatPart(value);
-            Escape(text, delimiter, documentKey);
-        }
-
-        if (documentKey.Length == 0)
-        {
-            throw new InvalidOperationException(
-                $"The document key for entity type '{entityType.DisplayName()}' is empty, and Couchbase does not " +
-                "allow an empty document id. Give the key property a non-empty value.");
+            if (escape)
+            {
+                Escape(text, delimiter, documentKey);
+            }
+            else
+            {
+                documentKey.Append(text);
+            }
         }
 
         return documentKey.ToString();
