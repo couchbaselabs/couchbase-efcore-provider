@@ -1,6 +1,8 @@
 using System.Text;
+using Couchbase.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Update;
 
 namespace Couchbase.EntityFrameworkCore.Extensions;
 
@@ -14,52 +16,46 @@ public static class EntityTypeExtensions
     }
 
     /// <summary>
-    /// Formats one key value for the document key. A <c>byte[]</c> value is written as Base64:
-    /// formatting it like any other object gives the text <c>"System.Byte[]"</c> for every instance,
-    /// so every entity keyed by a byte array shared one document and silently overwrote the others.
-    /// An empty array would be an empty string (an invalid document ID), so it is written as
-    /// <c>"~"</c>, which can never be produced by Base64. Every other type is formatted exactly as before.
+    /// Formats one key value. A <c>byte[]</c> is written as Base64, and an empty array as <c>"~"</c>,
+    /// which Base64 never gives. Other values use <see cref="object.ToString"/>.
     /// </summary>
     private static string? FormatKeyPart(object? value)
         => value is byte[] bytes
             ? bytes.Length == 0 ? "~" : Convert.ToBase64String(bytes)
             : value?.ToString();
 
+    /// <summary>
+    /// Returns the <see cref="CouchbaseDocumentKeyFormat.Legacy"/> document key of
+    /// <paramref name="entity"/>, with the values read from the entity object.
+    /// </summary>
+    [Obsolete("This returns the Legacy-format document key. It matches the stored document id only when the " +
+              "context uses UseDocumentKeyFormat(CouchbaseDocumentKeyFormat.Legacy). V2 is the default.")]
     public static string GetPrimaryKey(this IEntityType entityType, object entity)
         => BuildLegacyKey(entityType, entity,
-            static (key, entity) => key.IsShadowProperty()
-                ? throw new InvalidOperationException(
-                    $"The key property '{key.DeclaringType.DisplayName()}.{key.Name}' is a shadow property, so its " +
-                    "value cannot be read from the entity object. Build the key from the change tracker entry instead.")
-                : key.GetGetter().GetClrValueUsingContainingEntity(entity),
-            entity);
+            static (key, entity) => key.GetGetter().GetClrValueUsingContainingEntity(entity), entity);
 
     /// <summary>
-    /// The legacy document key of <paramref name="entity"/>: the same string as
-    /// <see cref="GetPrimaryKey(IEntityType,object)"/>, but with the values read from
-    /// <paramref name="updateEntry"/>.
+    /// Returns the <see cref="CouchbaseDocumentKeyFormat.Legacy"/> document key of
+    /// <paramref name="entity"/>, with the values read from <paramref name="updateEntry"/>.
     /// </summary>
     /// <remarks>
-    /// During a save, a store-generated key value (such as a sequence value, or a foreign key that
-    /// EF Core set from one) is in the update entry only: EF Core copies it to the CLR object when
-    /// it accepts the changes, after the documents are written. The update entry also has the
-    /// values of shadow key properties, which the CLR object does not.
+    /// During a save, a store-generated key value is only in the update entry. EF Core copies it
+    /// to the entity object after the documents are written.
     /// </remarks>
-    internal static string GetLegacyPrimaryKey(
-        this IEntityType entityType, object entity, Microsoft.EntityFrameworkCore.Update.IUpdateEntry updateEntry)
+    internal static string GetLegacyPrimaryKey(this IEntityType entityType, object entity, IUpdateEntry updateEntry)
         => BuildLegacyKey(entityType, entity, static (key, entry) => entry.GetCurrentValue(key), updateEntry);
 
     /// <summary>
     /// Joins the key parts with <c>'_'</c>, reading each value with <paramref name="readValue"/>.
     /// </summary>
     /// <remarks>
-    /// The legacy format orders the parts by the entity's public CLR properties in reverse
-    /// declaration order. Existing documents use that order, so it is kept whenever every key part
-    /// is a public CLR property. A key part can also be a shadow property, a mapped field or a
-    /// non-public property. The legacy format skipped such parts, which gave an empty key (the
-    /// insert failed) or a composite key with parts missing (different entities shared one
-    /// document). Such a key uses the primary key's declared order instead.
+    /// The parts follow the reverse declaration order of the entity's public CLR properties. A shared-type
+    /// entity (such as a many-to-many join entity) has no such properties, so its parts follow the
+    /// declared primary key order.
     /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// A key part of a non-shared entity type is not a public property of the entity's CLR type.
+    /// </exception>
     private static string BuildLegacyKey<TState>(
         IEntityType entityType,
         object entity,
@@ -71,54 +67,42 @@ public static class EntityTypeExtensions
                     $"Entity type '{entityType.DisplayName()}' has no primary key defined."))
             .Properties;
 
-        var publicProperties = entity.GetType().GetProperties();
-        var orderedKeys = keys.All(key => publicProperties.Any(property => property.Name == key.Name))
-            ? publicProperties.Reverse()
-                .SelectMany(property => keys.Where(key => key.Name == property.Name))
-            : keys;
+        IEnumerable<IProperty> orderedKeys;
+        if (entityType.HasSharedClrType)
+        {
+            orderedKeys = keys;
+        }
+        else
+        {
+            var publicProperties = entity.GetType().GetProperties();
+            foreach (var key in keys)
+            {
+                if (key.IsShadowProperty() || key.PropertyInfo is null
+                    || !publicProperties.Any(property => property.Name == key.Name))
+                {
+                    throw new InvalidOperationException(
+                        $"The key property '{key.Name}' of entity type '{entityType.DisplayName()}' is not a public " +
+                        "property. The Legacy document key format supports only key parts that are public " +
+                        "properties. Use the V2 format, which is the default: remove the call to " +
+                        "UseDocumentKeyFormat(CouchbaseDocumentKeyFormat.Legacy).");
+                }
+            }
+
+            orderedKeys = publicProperties.Reverse()
+                .SelectMany(property => keys.Where(key => key.Name == property.Name));
+        }
 
         var compositeKey = new StringBuilder();
         foreach (var key in orderedKeys)
         {
             if (compositeKey.Length > 0)
             {
-                compositeKey.Append('_'); //TODO delimiter should be optional and customizable
+                compositeKey.Append('_');
             }
 
             compositeKey.Append(FormatKeyPart(readValue(key, state)));
         }
 
-        if (compositeKey.Length == 0)
-        {
-            throw new InvalidOperationException(
-                $"The document key for entity type '{entityType.DisplayName()}' is empty, and Couchbase does not " +
-                "allow an empty document id. Give the key property a non-empty value.");
-        }
-
-        return compositeKey.ToString();
-    }
-
-    /// <summary>
-    /// Returns the document key for <paramref name="updateEntry"/>, reading PK values
-    /// from the update entry directly.  This handles shared entity types (e.g. the hidden
-    /// join table created by <c>HasMany().WithMany()</c>) whose PK columns are shadow
-    /// properties — <see cref="GetPrimaryKey(IEntityType,object)"/> cannot read these via
-    /// CLR <c>PropertyInfo</c>.
-    /// </summary>
-    public static string GetPrimaryKey(this IEntityType entityType, Microsoft.EntityFrameworkCore.Update.IUpdateEntry updateEntry)
-    {
-        var primaryKey = entityType.FindPrimaryKey()
-            ?? throw new InvalidOperationException(
-                $"Entity type '{entityType.DisplayName()}' has no primary key defined. " +
-                "Keyless entity types cannot be used with GetPrimaryKey.");
-
-        var compositeKey = new StringBuilder();
-        foreach (var key in primaryKey.Properties)
-        {
-            if (compositeKey.Length > 0)
-                compositeKey.Append('_');
-            compositeKey.Append(FormatKeyPart(updateEntry.GetCurrentValue(key)));
-        }
         return compositeKey.ToString();
     }
 }

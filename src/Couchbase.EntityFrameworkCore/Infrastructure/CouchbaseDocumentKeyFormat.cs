@@ -12,7 +12,9 @@ public enum CouchbaseDocumentKeyFormat
     /// CLR declaration order of the key properties, formatted with the current culture, and not
     /// escaped. Because of that, reordering properties in the class changes the key, the same values
     /// saved under different cultures get different keys, and different composite keys can collide
-    /// (<c>("x_y","z")</c> and <c>("y","z_x")</c> both give <c>z_x_y</c>).
+    /// (<c>("x_y","z")</c> and <c>("y","z_x")</c> both give <c>z_x_y</c>). Every key part must be a
+    /// public property of the entity class, or the save throws; a many-to-many join entity is the only
+    /// exception, and its parts follow the declared key order.
     /// </summary>
     Legacy = 0,
 

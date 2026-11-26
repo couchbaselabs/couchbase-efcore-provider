@@ -541,8 +541,12 @@ public class CouchbaseDocumentKeyBuilderTests
                 b.HasKey(e => e.Code);
             }));
 
-        var ex = Assert.Throws<InvalidOperationException>(
-            () => CouchbaseDocumentKeyBuilder.BuildV2(entityType, Entry(entityType, ("Code", "")), '_'));
+        // BuildV2 gives the empty key; GetDocumentKey rejects it for every format.
+        Assert.Equal("", CouchbaseDocumentKeyBuilder.BuildV2(entityType, Entry(entityType, ("Code", "")), '_'));
+#pragma warning disable EF1001 // Internal API of this provider.
+        var ex = Assert.Throws<InvalidOperationException>(() => CouchbaseDatabaseWrapper.GetDocumentKey(
+            CouchbaseDocumentKeyFormat.V2, '_', entityType, Entry(entityType, ("Code", "")), new EmptyTextKeyEntity()));
+#pragma warning restore EF1001
 
         Assert.Contains("empty", ex.Message);
     }

@@ -15,6 +15,9 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
   value-converted value. There is no automatic migration. To keep the keys of such documents saved by
   1.x, call `UseDocumentKeyFormat(CouchbaseDocumentKeyFormat.Legacy)`. See
   [Document keys](docs/configuration.md#document-keys).
+- **`EntityTypeExtensions.GetPrimaryKey(IEntityType, object)` is obsolete.** It returns the `Legacy`
+  key, which is the document id only when the context uses `Legacy`.
+  `GetPrimaryKey(IEntityType, IUpdateEntry)` (added in 2.0.0-beta.1) is no longer public (breaking).
 - **An unfiltered `Count()`/`LongCount()` needs a primary index under `RequestPlus`.** When a query
   uses `RequestPlus` (the context default or `WithScanConsistency`) or a non-null `ConsistentWith`, the
   count now goes through the primary index so that it is exact (see Fixed). `EnsureCreatedAsync`
@@ -65,14 +68,11 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
   default or `WithScanConsistency`) or a non-null `ConsistentWith`, an unfiltered
   `Count()`/`LongCount()` now counts through the primary index instead. A `NotBounded` count is
   unchanged.
-- **Legacy document keys now include key parts that are not public properties.** The legacy format
-  looked for key parts among the entity's public CLR properties only, so a shadow key, a key mapped to
-  a field or a non-public key property was left out. A single-part key became empty and the insert
-  failed; a composite key lost that part, so different entities could share one document. These keys
-  now include every part, in the order of `HasKey(...)`. Keys whose parts are all public properties
-  do not change. A composite-key document saved before under a key with a missing part is not found
-  by later updates and deletes. An empty legacy key now throws `InvalidOperationException` that names
-  the entity type, instead of failing on the server.
+- **A Legacy document key with a key part that is not a public property now throws.** 1.x left such
+  parts (shadow properties, mapped fields, non-public properties) out of the key, so the key was empty
+  or missing a part. The save now throws `InvalidOperationException` that names the property. Use the
+  `V2` format (the default). A many-to-many join entity still works with `Legacy`. An empty document key
+  now throws `InvalidOperationException` in both formats, instead of failing on the server.
 - **Shadow properties are now written to the document.** An entity's shadow properties, including the
   shadow foreign key EF Core creates for a relationship with no FK property, were left out of the stored
   document, so a reloaded entity lost them (and the relationship) or failed to materialize. They are now

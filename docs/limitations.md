@@ -204,6 +204,9 @@ See also [Querying](Queries.md) and [Configuration](configuration.md).
   Documents saved that way sit at the old key and are not found by updates or deletes under the new
   format; re-save such entities (the old key can only have held one document per collection for a
   single-property key) or delete the stale `System.Byte[]` document.
+* **The `Legacy` document key format supports only key parts that are public properties.** A shadow,
+  field-mapped or non-public key part makes the save throw; use `V2` (the default). See
+  [Document keys](configuration.md#document-keys).
 * **Generated `Guid` primary keys are supported via `UseGuid()`/`UseGuidString()`** — see
   [Sequences and generated values](sequences.md#generated-guids) for details.
 

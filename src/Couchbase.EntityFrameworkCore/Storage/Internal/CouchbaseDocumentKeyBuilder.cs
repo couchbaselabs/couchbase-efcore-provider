@@ -27,11 +27,9 @@ internal static class CouchbaseDocumentKeyBuilder
                 $"Entity type '{entityType.DisplayName()}' has no primary key defined. " +
                 "Keyless entity types cannot be saved to Couchbase.");
 
-        // A key sourced from META().id (HasCouchbaseMeta(CouchbaseMetaField.Id)) IS the document id:
-        // reading it back returns the id as stored, so it must be used verbatim. Escaping it would
-        // turn "a_b" into "a\_b" on the first save and re-escape that on every reload. A value
-        // converter still applies: the id is the converted (provider) value, and EF converts it back
-        // when it materialises META().id.
+        // A key sourced from META().id (HasCouchbaseMeta(CouchbaseMetaField.Id)) IS the document id,
+        // so the id is used as stored. A value converter still applies: the id is the converted
+        // (provider) value, and EF converts it back when it materialises META().id.
         var metaIdProperty = primaryKey.Properties.FirstOrDefault(IsMetaId);
         if (metaIdProperty is not null)
         {
@@ -135,13 +133,6 @@ internal static class CouchbaseDocumentKeyBuilder
             {
                 documentKey.Append(text);
             }
-        }
-
-        if (documentKey.Length == 0)
-        {
-            throw new InvalidOperationException(
-                $"The document key for entity type '{entityType.DisplayName()}' is empty, and Couchbase does not " +
-                "allow an empty document id. Give the key property a non-empty value.");
         }
 
         return documentKey.ToString();

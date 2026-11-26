@@ -82,7 +82,8 @@ The default is `V2`. 1.x used the `Legacy` format, which has problems for compos
 - values are formatted with the **current culture**, so `1234.5` is `1234,5` under `de-DE`, and the same
   `DateTime` key gives different documents under different cultures.
 
-`V2` fixes all three. To keep the keys of documents saved by 1.x, choose `Legacy`:
+`V2` fixes all three. To keep the keys of documents saved by 1.x, choose `Legacy`. With `Legacy`, every
+key part must be a public property of the entity class:
 
 ```csharp
 optionsBuilder.UseCouchbase(clusterOptions, o =>
@@ -104,9 +105,10 @@ optionsBuilder.UseCouchbase(clusterOptions, o =>
 | `DateTime` / `DateTimeOffset` / `DateOnly` / `TimeOnly` part | current-culture text (`TimeOnly` loses its seconds) | round-trip (`O`) format; a `Local` `DateTime` is converted to UTC first so the key does not depend on the machine's time zone |
 | `decimal` part | current-culture text, trailing zeros kept | canonical (`1234.50` and `1234.5` are the same key); a value with more than about 17 significant digits throws, because Couchbase returns it rounded and its key would change on reload |
 | Enum part | its name | its underlying number |
-| `null` part, or a document key that is empty overall | an empty part; an empty key throws `InvalidOperationException` | throws `InvalidOperationException` |
+| `null` part | an empty part | throws `InvalidOperationException` |
+| A document key that is empty overall | throws `InvalidOperationException` | throws `InvalidOperationException` |
 | Value-converted key (e.g. `HasUnixMillisDateTime()`) | the model value | the **stored** value, so the key is the same after the entity is reloaded; a value the converter does not round-trip exactly (for example a `decimal` stored through `HasConversion<double>()`) throws |
-| Key parts that are not public properties (shadow properties, mapped fields, non-public properties) | the key is built from their values; the parts follow the order in `HasKey(...)`, because the reverse CLR order cannot place them | the key is built from their values, which are stored in the document like any other property |
+| Key parts that are not public properties (shadow properties, mapped fields, non-public properties) | the save throws `InvalidOperationException`; only a many-to-many join entity is allowed, and its parts follow the order in `HasKey(...)` | the key is built from their values, which are stored in the document like any other property |
 
 For example, with `HasKey(e => new { e.Tenant, e.User })`, tenant `7` and user `1` is `7_1`, and tenant
 `x_y` with user `z` is `x\_y_z`.

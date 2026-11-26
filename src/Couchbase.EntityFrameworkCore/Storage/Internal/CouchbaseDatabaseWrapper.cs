@@ -47,22 +47,31 @@ public class CouchbaseDatabaseWrapper : Database
         _mutationStateTracker = mutationStateTracker ?? throw new ArgumentNullException(nameof(mutationStateTracker));
     }
 
-    /// <summary>
-    /// The document key for an entry, in the configured <see cref="CouchbaseDocumentKeyFormat"/>.
-    /// Values always come from the update entry, which has store-generated values (such as sequence
-    /// values) before EF Core copies them to the CLR object. Legacy keys keep their original part
-    /// order (PK order for shared entity types, CLR property order for everything else).
-    /// </summary>
     private string GetDocumentKey(IEntityType entityType, IUpdateEntry updateEntry, object entity)
-    {
-        if (_documentKeyFormat == CouchbaseDocumentKeyFormat.V2)
-        {
-            return CouchbaseDocumentKeyBuilder.BuildV2(entityType, updateEntry, _documentKeyDelimiter);
-        }
+        => GetDocumentKey(_documentKeyFormat, _documentKeyDelimiter, entityType, updateEntry, entity);
 
-        return entityType.HasSharedClrType
-            ? entityType.GetPrimaryKey(updateEntry)
+    /// <summary>
+    /// The document key for an entry, in <paramref name="format"/>. The values come from the update
+    /// entry, which has store-generated values (such as sequence values) before EF Core copies them
+    /// to the entity object.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">The key is empty, which Couchbase does not allow.</exception>
+    internal static string GetDocumentKey(
+        CouchbaseDocumentKeyFormat format,
+        char delimiter,
+        IEntityType entityType,
+        IUpdateEntry updateEntry,
+        object entity)
+    {
+        var documentKey = format == CouchbaseDocumentKeyFormat.V2
+            ? CouchbaseDocumentKeyBuilder.BuildV2(entityType, updateEntry, delimiter)
             : entityType.GetLegacyPrimaryKey(entity, updateEntry);
+
+        return documentKey.Length > 0
+            ? documentKey
+            : throw new InvalidOperationException(
+                $"The document key for entity type '{entityType.DisplayName()}' is empty, and Couchbase does not " +
+                "allow an empty document id. Give the key property a non-empty value.");
     }
 
     public override int SaveChanges(IList<IUpdateEntry> entries)
@@ -124,9 +133,6 @@ public class CouchbaseDatabaseWrapper : Database
                 continue;
             }
 
-            // Shared entity types (e.g. hidden join table from HasMany().WithMany()) have
-            // all PK columns as shadow properties — use the IUpdateEntry overload so the
-            // values are read from the entry rather than the CLR Dictionary<string,object>.
             var primaryKey = GetDocumentKey(entityType, updateEntry, entity);
             var keyspace = entityType.GetCollectionName()
                 ?? throw new InvalidOperationException(

@@ -769,9 +769,8 @@ public class EagerLoadingTests(BloggingFixture fixture) : IAsyncLifetime
     }
 
     // -----------------------------------------------------------------------
-    // GetPrimaryKey integration — verifies correct document key generation
-    // for shared entity types (skip navigation join table) against the live DB.
-    // These tests exercise both overloads indirectly via write/read round-trips.
+    // Document keys for shared entity types (skip navigation join table)
+    // against the live DB, checked through write/read round-trips.
     // -----------------------------------------------------------------------
 
     [Fact]
