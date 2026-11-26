@@ -10,9 +10,7 @@ namespace Couchbase.EntityFrameworkCore.UnitTests.Couchbase.EntityFrameworkCore.
 
 /// <summary>
 /// When an owned entity changes, the save also writes its owner's document, unless the owner is
-/// already written. For an owned type declared on a base type, that check used the base type while
-/// the owner was recorded under its derived type, so a derived owner was written twice: an insert
-/// and an upsert sent at the same time, and the insert failed whenever the upsert landed first.
+/// already written.
 /// </summary>
 /// <remarks>
 /// These tests plan the writes of a save without sending them, so no cluster is needed.
@@ -73,7 +71,56 @@ public class CouchbaseOwnerWriteTests
         var writes = PlanWrites(ctx);
 
         var write = Assert.Single(writes);
+        Assert.Equal(CouchbaseDatabaseWrapper.CouchbaseWriteKind.Upsert, write.Kind);
         Assert.Equal("2", write.Key);
+    }
+
+    [Fact]
+    public void UnchangedOwner_WithTwoChangedOwnedTypes_IsWrittenOnce()
+    {
+        using var ctx = new AnimalContext();
+        var dog = new Dog { Id = 2, Tag = new Tag { Text = "old" }, Collar = new Tag { Text = "old" } };
+        ctx.Attach(dog);
+        dog.Tag.Text = "new";
+        dog.Collar.Text = "new";
+
+        var writes = PlanWrites(ctx);
+
+        var write = Assert.Single(writes);
+        Assert.Equal(CouchbaseDatabaseWrapper.CouchbaseWriteKind.Upsert, write.Kind);
+        Assert.Equal("2", write.Key);
+    }
+
+    [Fact]
+    public void DeletedDerivedEntity_WithOwnedTypeOnTheBaseType_IsOnlyDeleted()
+    {
+        // Deleting the owner also deletes its owned entities; the owner must not also be upserted.
+        using var ctx = new AnimalContext();
+        var dog = new Dog { Id = 2, Tag = new Tag { Text = "a" }, Collar = new Tag { Text = "c" } };
+        ctx.Attach(dog);
+        ctx.Remove(dog);
+
+        var writes = PlanWrites(ctx);
+
+        var write = Assert.Single(writes);
+        Assert.Equal(CouchbaseDatabaseWrapper.CouchbaseWriteKind.Delete, write.Kind);
+        Assert.Equal("2", write.Key);
+    }
+
+    [Fact]
+    public void UnchangedOwnersWithTheSameClrNameAndKey_WithChangedOwnedTypes_AreEachWritten()
+    {
+        using var ctx = new SameNameContext();
+        var first = new First.Item { Id = 1, Detail = new First.Detail { Text = "old" } };
+        var second = new Second.Item { Id = 1, Detail = new Second.Detail { Text = "old" } };
+        ctx.AttachRange(first, second);
+        first.Detail.Text = "new";
+        second.Detail.Text = "new";
+
+        var writes = PlanWrites(ctx);
+
+        Assert.Equal(["bucket.scope.first", "bucket.scope.second"], writes.Select(w => w.Keyspace).Order());
+        Assert.All(writes, w => Assert.Equal(CouchbaseDatabaseWrapper.CouchbaseWriteKind.Upsert, w.Kind));
     }
 
     private static IReadOnlyList<CouchbaseDatabaseWrapper.PendingWrite> PlanWrites(DbContext ctx)
@@ -100,16 +147,19 @@ public class CouchbaseOwnerWriteTests
         public string Text { get; set; } = string.Empty;
     }
 
-    private class AnimalContext : DbContext
+    private abstract class TestContext : DbContext
     {
-        public DbSet<Animal> Animals { get; set; } = null!;
-
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
             => optionsBuilder.UseCouchbaseProvider(
                 new ClusterOptions()
                     .WithConnectionString("couchbase://localhost")
                     .WithPasswordAuthentication("Administrator", "password"),
                 _ => { });
+    }
+
+    private class AnimalContext : TestContext
+    {
+        public DbSet<Animal> Animals { get; set; } = null!;
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -123,6 +173,54 @@ public class CouchbaseOwnerWriteTests
             {
                 b.HasBaseType<Animal>();
                 b.OwnsOne(d => d.Collar);
+            });
+        }
+    }
+
+    // Two entity types with the same short CLR name, in different containing types.
+    private static class First
+    {
+        public class Item
+        {
+            public int Id { get; set; }
+            public Detail Detail { get; set; } = null!;
+        }
+
+        public class Detail
+        {
+            public string Text { get; set; } = string.Empty;
+        }
+    }
+
+    private static class Second
+    {
+        public class Item
+        {
+            public int Id { get; set; }
+            public Detail Detail { get; set; } = null!;
+        }
+
+        public class Detail
+        {
+            public string Text { get; set; } = string.Empty;
+        }
+    }
+
+    private class SameNameContext : TestContext
+    {
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            modelBuilder.Entity<First.Item>(b =>
+            {
+                b.ToCouchbaseCollection("bucket", "scope", "first");
+                b.Property(i => i.Id).ValueGeneratedNever();
+                b.OwnsOne(i => i.Detail);
+            });
+            modelBuilder.Entity<Second.Item>(b =>
+            {
+                b.ToCouchbaseCollection("bucket", "scope", "second");
+                b.Property(i => i.Id).ValueGeneratedNever();
+                b.OwnsOne(i => i.Detail);
             });
         }
     }

@@ -86,15 +86,11 @@ public class CouchbaseDatabaseWrapper : Database
     }
 
     /// <summary>
-    /// The writes a save sends, in order, without sending them: one per added, modified or deleted
-    /// entity, plus a write of the owner document for each changed owned entity whose owner is not
-    /// already written. Building the documents is CPU-only.
+    /// Builds, without sending, one write per added, modified or deleted entity and one upsert of
+    /// each unchanged owner whose owned entity changed.
     /// </summary>
     internal IReadOnlyList<PendingWrite> PlanWrites(IList<IUpdateEntry> entries, CancellationToken cancellationToken = default)
     {
-        // Track root-entity keys written in the main loop so the second pass can skip
-        // owners that were already written (e.g. user manually set entry.State = Modified).
-        var writtenRoots = new HashSet<string>();
         // Owned entries whose owner must be written in the second pass.
         var deferredOwnedEntries = new List<IUpdateEntry>();
         // Writes are collected first (building the document is CPU-only) and dispatched together at
@@ -151,26 +147,21 @@ public class CouchbaseDatabaseWrapper : Database
             {
                 case EntityState.Detached:
                 case EntityState.Unchanged:
-                    // Not written — intentionally NOT added to writtenRoots so the deferred-owned
-                    // pass can still write the owner if an owned item triggered a change.
+                    // Not written here; the owner pass writes an unchanged owner whose owned entity changed.
                     break;
 
                 case EntityState.Deleted:
-                    // Add to writtenRoots so the deferred pass doesn't upsert a just-deleted doc.
-                    writtenRoots.Add($"{entityType.ClrType.Name}:{primaryKey}");
                     pendingWrites.Add(new PendingWrite(CouchbaseWriteKind.Delete, primaryKey, keyspace, null,
                         updateEntry, null, GetCasCheckValue(casProperty, updateEntry)));
                     break;
 
                 case EntityState.Modified:
-                    writtenRoots.Add($"{entityType.ClrType.Name}:{primaryKey}");
                     pendingWrites.Add(new PendingWrite(CouchbaseWriteKind.Upsert, primaryKey, keyspace,
                         HydrateObjectFromEntity(updateEntry, _fieldNamingPolicy),
                         updateEntry, casProperty, GetCasCheckValue(casProperty, updateEntry)));
                     break;
 
                 case EntityState.Added:
-                    writtenRoots.Add($"{entityType.ClrType.Name}:{primaryKey}");
                     pendingWrites.Add(new PendingWrite(CouchbaseWriteKind.Insert, primaryKey, keyspace,
                         HydrateObjectFromEntity(updateEntry, _fieldNamingPolicy),
                         updateEntry, casProperty, null));
@@ -181,68 +172,51 @@ public class CouchbaseDatabaseWrapper : Database
             }
         }
 
-        // Second pass: for each owned entry with a state change, write the owner document
-        // if it was not already written in the main loop above. This removes the need for
-        // callers to manually set ctx.Entry(owner).State = EntityState.Modified after
-        // mutating owned navigations (OwnsOne property changes, OwnsMany collection mutation).
+        // Second pass: for each owned entry with a state change, write its owner document. This
+        // removes the need for callers to set ctx.Entry(owner).State = EntityState.Modified after
+        // changing an owned navigation. The main pass writes every added, modified or deleted owner,
+        // so only an unchanged owner is written here, once however many of its owned entries changed.
+        var writtenOwners = new HashSet<InternalEntityEntry>(ReferenceEqualityComparer.Instance);
         foreach (var ownedEntry in deferredOwnedEntries)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            // Walk the ownership chain up to the root non-owned entity.
-            // Deeply nested owned types (e.g. ContactTag → ContactMethod → Customer) require
-            // multiple hops; stop at the first principal whose entity type is not owned —
-            // only non-owned types have an independent Couchbase keyspace to write to.
-            var currentEntry = (InternalEntityEntry)ownedEntry;
-            InternalEntityEntry? rootInternalEntry = null;
-            IEntityType? rootEntityType = null;
+            var ownerEntry = FindRootOwner((InternalEntityEntry)ownedEntry);
+            if (ownerEntry is not { EntityState: EntityState.Unchanged } || !writtenOwners.Add(ownerEntry))
+                continue;
 
-            while (true)
-            {
-                var ownership = currentEntry.EntityType.FindOwnership();
-                if (ownership == null) break;
-
-                var fkValues = ownership.Properties
-                    .Select(p => currentEntry.GetCurrentValue(p))
-                    .ToArray();
-
-                var ownerEntry = currentEntry.StateManager.TryGetEntry(ownership.PrincipalKey, fkValues);
-                if (ownerEntry == null) break;
-
-                if (!ownership.PrincipalEntityType.IsOwned())
-                {
-                    rootInternalEntry = ownerEntry;
-                    // The owner's actual type, not the type that declares the owned navigation: for
-                    // an owned type declared on a base type, that is the base type, and the main pass
-                    // recorded the owner under its derived type, so the owner would be written twice.
-                    rootEntityType = ownerEntry.EntityType;
-                    break;
-                }
-
-                currentEntry = ownerEntry;
-            }
-
-            if (rootInternalEntry == null || rootEntityType == null) continue;
-
-            var ownerEntity = rootInternalEntry.Entity;
-            var ownerPrimaryKey = GetDocumentKey(rootEntityType, rootInternalEntry, ownerEntity);
-            var rootKey = $"{rootEntityType.ClrType.Name}:{ownerPrimaryKey}";
-
-            if (writtenRoots.Contains(rootKey)) continue;
-            writtenRoots.Add(rootKey);
-
-            var ownerKeyspace = rootEntityType.GetCollectionName()
+            var ownerEntityType = ownerEntry.EntityType;
+            var ownerPrimaryKey = GetDocumentKey(ownerEntityType, ownerEntry, ownerEntry.Entity);
+            var ownerKeyspace = ownerEntityType.GetCollectionName()
                 ?? throw new InvalidOperationException(
-                    $"Owner entity type '{rootEntityType.ClrType.Name}' has no mapped table name. " +
+                    $"Owner entity type '{ownerEntityType.ClrType.Name}' has no mapped table name. " +
                     "Ensure the entity is mapped to a Couchbase collection via ToCouchbaseCollection().");
 
-            var ownerDocument = HydrateObjectFromEntity(rootInternalEntry, _fieldNamingPolicy);
-            var ownerCasProperty = GetCasProperty(rootEntityType);
+            var ownerDocument = HydrateObjectFromEntity(ownerEntry, _fieldNamingPolicy);
+            var ownerCasProperty = GetCasProperty(ownerEntityType);
             pendingWrites.Add(new PendingWrite(CouchbaseWriteKind.Upsert, ownerPrimaryKey, ownerKeyspace, ownerDocument,
-                rootInternalEntry, ownerCasProperty, GetCasCheckValue(ownerCasProperty, rootInternalEntry)));
+                ownerEntry, ownerCasProperty, GetCasCheckValue(ownerCasProperty, ownerEntry)));
         }
 
         return pendingWrites;
+    }
+
+    /// <summary>
+    /// The non-owned entity that owns <paramref name="entry"/>, through any number of owned levels
+    /// (e.g. ContactTag to ContactMethod to Customer), or null if an owner is not tracked.
+    /// </summary>
+    private static InternalEntityEntry? FindRootOwner(InternalEntityEntry entry)
+    {
+        var current = entry;
+        while (current.EntityType.FindOwnership() is { } ownership)
+        {
+            var principal = current.StateManager.FindPrincipal(current, ownership);
+            if (principal == null) return null;
+            if (!principal.EntityType.IsOwned()) return principal;
+            current = principal;
+        }
+
+        return null;
     }
 
     /// <summary>
